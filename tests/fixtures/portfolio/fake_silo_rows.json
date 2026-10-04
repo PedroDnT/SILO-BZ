@@ -4,12 +4,51 @@
   {
    "match": {
     "p_names": [
+     "XP LIQUIDEZ FIC",
+     "MN I FIDC"
+    ]
+   },
+   "rows": [
+    {
+     "line_no": 1,
+     "input_name": "XP LIQUIDEZ FIC",
+     "candidate_cnpj": "51488342000133",
+     "candidate_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+     "matched_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+     "matched_period": "2026-05-01",
+     "entity_type": "fi",
+     "match_kind": "cnpj",
+     "similarity": 1.0,
+     "rank": 1,
+     "quota_on_date": 1.289417,
+     "quota_rel_diff": 0.0,
+     "ambiguous": false,
+     "reason": "CNPJ informado no extrato."
+    },
+    {
+     "line_no": 2,
+     "input_name": "MN I FIDC",
+     "candidate_cnpj": "32113885000121",
+     "candidate_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+     "matched_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+     "matched_period": "2026-05-31",
+     "entity_type": "fidc",
+     "match_kind": "cnpj",
+     "similarity": 1.0,
+     "rank": 1,
+     "quota_on_date": null,
+     "quota_rel_diff": null,
+     "ambiguous": false,
+     "reason": "CNPJ informado no extrato."
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_names": [
      "GERAÇÃO L. PAR FIA",
      "XP BANCOS FIC",
-     "XP LIQUIDEZ FIC",
-     "MN I FIDC",
-     "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
-     "HGLG11 CSHG LOGISTICA FII"
+     "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO"
     ]
    },
    "rows": [
@@ -63,38 +102,6 @@
     },
     {
      "line_no": 3,
-     "input_name": "XP LIQUIDEZ FIC",
-     "candidate_cnpj": "51488342000133",
-     "candidate_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
-     "matched_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
-     "matched_period": "2026-05-01",
-     "entity_type": "fi",
-     "match_kind": "cnpj",
-     "similarity": 1.0,
-     "rank": 1,
-     "quota_on_date": 1.289417,
-     "quota_rel_diff": 0.0,
-     "ambiguous": false,
-     "reason": "CNPJ informado no extrato."
-    },
-    {
-     "line_no": 4,
-     "input_name": "MN I FIDC",
-     "candidate_cnpj": "32113885000121",
-     "candidate_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
-     "matched_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
-     "matched_period": "2026-05-31",
-     "entity_type": "fidc",
-     "match_kind": "cnpj",
-     "similarity": 1.0,
-     "rank": 1,
-     "quota_on_date": null,
-     "quota_rel_diff": null,
-     "ambiguous": false,
-     "reason": "CNPJ informado no extrato."
-    },
-    {
-     "line_no": 5,
      "input_name": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
      "candidate_cnpj": "42592315000115",
      "candidate_name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
@@ -108,9 +115,18 @@
      "quota_rel_diff": 0.0,
      "ambiguous": false,
      "reason": "O nome do extrato é um nome antigo do fundo."
-    },
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_names": [
+     "HGLG11 CSHG LOGISTICA FII"
+    ]
+   },
+   "rows": [
     {
-     "line_no": 6,
+     "line_no": 1,
      "input_name": "HGLG11 CSHG LOGISTICA FII",
      "candidate_cnpj": "11728688000147",
      "candidate_name": "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO",

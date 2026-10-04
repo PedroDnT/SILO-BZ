@@ -49,6 +49,8 @@ const PASS_HEADERS = [
 	"x-silo-engine-rev",
 	"x-silo-narrative-reason",
 	"x-silo-llm-calls",
+	// engine 1.7: a 503 when SILO did not answer says when to try again
+	"retry-after",
 ];
 
 // The class keeps the name of the first deploy (#519) so the Durable Object

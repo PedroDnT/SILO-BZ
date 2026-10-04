@@ -42,7 +42,10 @@ def pos(name, tipo, valor, codigo=None, qtd=1, preco=None, data=dt.date(2026, 9,
 
 def test_template_file_reads_and_reconciles():
     s = read_statement(TEMPLATE)
-    assert len(s.positions) == 8
+    assert len(s.positions) == 13  # the reader keeps every row; the engine merges the repeated CDB (engine 1.7)
+    cdb = s.positions[8]
+    assert cdb.tipo == "CDB" and cdb.vencimento == dt.date(2028, 3, 15) and cdb.taxa_texto == "105,00% do CDI"
+    assert s.positions[0].vencimento is None and s.positions[0].taxa_texto is None
     assert abs(s.sum_of_lines - s.stated_total) <= s.tolerance
     assert s.holder.titular == "[TITULAR]" and s.holder.cpf == "[CPF]" and s.holder.conta == "[CONTA]"
     assert s.position_date == dt.date(2026, 9, 30)

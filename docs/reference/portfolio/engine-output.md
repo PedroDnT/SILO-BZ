@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.6)
+# Portfolio engine output (schema 1.7)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,25 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.7 (owner, 2026-10-04: a real 41-line statement came out with half its value unidentified after one timeout).
+Keys were added, none renamed, retyped or removed. **Identification:** `portfolio_resolve` is split (the lines with a
+CNPJ on the statement in one call, the others in chunks of 3); a transient failure (timeout 57014, 5xx, 408/429,
+network) is retried once with the chunk halved, and a failure costs only its own lines. A line with a CNPJ on the
+statement that resolve does not return (error or no candidate) is identified by it: `fund_match.chosen.match_kind =
+"cnpj_extrato"`, `reason` "CNPJ do extrato; nome não conferido.", `identity.name` null, and every later block runs for
+it. An `ETF` line whose `codigo` is a ticker skips the name path (the ETF probe matches the bare ticker). A line without
+a CNPJ that still fails for an infrastructure reason raises `SiloUnavailable`: no document (the server answers 503).
+New: `lines[].reason_code`, `identification.unknown_groups[]` (`reason_code`, `line_nos`, `n_lines`, `value_brl`,
+`portfolio_pct`), `cnpj_extrato_line_nos`, `same_identity_line_groups[]` (`kind`, `key`, `line_nos`: lines printed
+apart that identify as one fund or ticker). **Every section** gains `reason_codes[]` (also in `section_status`), codes
+whose fixed Portuguese text is `src/portfolio/common.py` `REASON_TEXT`; the report prints that text, never `reason`.
+`errors[]` entries gain `transient`. `movement.lines[].reason_code` and `fees.lines[].reason_code` (failure lines).
+**Statement:** the spreadsheet reads the optional columns `vencimento` and `taxa` (`taxa_texto`); lines of one
+statement with the same identity (same CNPJ; same code and maturity; a codeless fund with the same name, type and
+printed quota) are merged into one position with its source lines in `contas` (`conta_ref` null), before
+identification: `statement.n_lines_read`, `n_positions_merged`, and a note. **Indexer:** four more `statement_taxa`
+rules (`CDI`, `CDI+x`, `x% CDI`, `IPCA+x`), rules version `2026-10-04.1`. **New section `concentration`** (below).
 
 1.6 (catalog v57, owner's decision of 2026-10-03: the report shows each ETF's cotistas and PL). Keys were added,
 none renamed, retyped or removed. CVM has no 2026 daily report row (no cotistas, no PL) for any of the 178 active
@@ -106,7 +125,7 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
 
 `schema_version`, `generated_at_utc`, `engine` (`version`, `client`, `params`), `statement`,
 `identification`, `fees`, `look_through`, `indexer`, `sector`, `restatements`, `risk_signals`, `movement`,
-`assumptions`, `section_status`, `provenance`.
+`concentration` (1.7), `assumptions`, `section_status`, `provenance`.
 
 - `engine.params`: `cda_month` (default: position month - 4), `fee_month` (default: position
   month - 1), `movement_month` (default: the position month when the position date is a month-end, else the
@@ -116,10 +135,11 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
 - `assumptions[]`: `{id, text}`, each a reading the engine could not verify (`fee_units`,
   `weight_in_root`, `position_date`, `valuation`, `direct_tesouro`, `economic_group`,
   `abnormal_movement`, `movement_class`). The report states the ones that touch what it says.
-- `section_status`: `{section: {status, reason}}`, for a cover-page summary.
+- `section_status`: `{section: {status, reason, reason_codes}}`, for a cover-page summary.
 - `provenance[]`: every tool call in order: `call_id`, `id` (`p<call_id>`), `tool`, `args`,
-  `requested_at_utc`, `row_count` (null on error), `error` (verbatim, null on success). No retry,
-  no trimming.
+  `requested_at_utc`, `row_count` (null on error), `error` (verbatim, null on success). No trimming;
+  the only retry is identification's (1.7), and the retried call is its own row. The report's view keeps
+  neither `args` nor `error`: they stay in this document.
 
 ## `statement`
 
@@ -144,9 +164,13 @@ lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titu
 
 ## `identification`
 
-`counts` (`identified`, `ambiguous`, `unknown`) and `lines[]`:
+`counts` (`identified`, `ambiguous`, `unknown`), `unknown_groups[]`, `cnpj_extrato_line_nos`,
+`same_identity_line_groups[]` (1.7) and `lines[]`:
 
-- `status`: `identified`, `ambiguous` (candidates and `reason`) or `unknown` (`reason`).
+- `status`: `identified`, `ambiguous` (candidates and `reason`) or `unknown` (`reason`). `reason_code` (1.7):
+  null for an identified line, `cnpj_extrato` for one identified by the statement's CNPJ only, else one of
+  `consulta_falhou`, `sem_candidato`, `ambiguo`, `credito_sem_fonte`, `bancario_sem_fonte`, `outro_sem_ticker`,
+  `acao_sem_ticker`, `ticker_nao_encontrado`, `tesouro_sem_vencimento`, `sem_identificacao`.
 - `identity`: `kind` (`fund`, `ticker`, `tesouro`, `caixa`), `cnpj`, `name`, `entity_type`,
   `ticker`, `isin`, `asset_class`, `issuer_cnpj` (a share's issuer, from `company_financials`,
   because `lookup` returns `cnpj` null for tickers), `tesouro_title`, `tesouro_maturity`.
@@ -347,6 +371,28 @@ rules about where a level may appear, and checks the served level against the se
   (beyond the 4-decimal rounding) becomes `nao_avaliado` and says so. Lines that are not funds with a CNPJ (shares, Tesouro,
   cash, unidentified) are in `not_applicable_lines[]` with a reason.
 
+## `concentration`
+
+1.7. Sums of statement values only (`source = "statement"`); the section is `partial` with `reason_codes`
+`gestor_sem_api` and `liquidez_sem_api` until SILO serves those.
+
+- `issuer`: direct credit (`CRA`, `CRI`, `debênture`, `CDB`, `LCI`, `LCA`, and an `outro` line whose name prints
+  `CDCA`) grouped by the issuer **as printed**: the line's name without the instrument type and the registry code,
+  accent-free upper text. `label` "emissor como impresso no extrato; grupo econômico não avaliado", `basis`,
+  `direct_credit_value_brl`, `direct_credit_portfolio_pct`, `groups[]` (`issuer_as_printed`, `line_nos`, `tipos`,
+  `value_brl`, `portfolio_pct`, `direct_credit_pct`), `not_printed_line_nos`. Never an economic group.
+- `maturity_ladder`: lines with a printed maturity (`vencimento`, or a Tesouro maturity in `codigo`) by time to
+  maturity from the position date: `buckets[]` (`vencido ou vence na data`, `até 1 ano`, `de 1 a 2 anos`, `de 2 a 5
+  anos`, `de 5 a 10 anos`, `acima de 10 anos`: `value_brl`, `portfolio_pct`, `n_lines`, `line_nos`), `no_maturity`,
+  `sum_check_brl` (0 within a cent).
+- `fgc`: CDB, LCI and LCA summed per issuer as printed, `above_limit` above `limit_brl` (250000.0), `excess_brl`;
+  `label` "a conferir: limite por CPF e instituição; o extrato consolidado pode ter mais de um titular", `rule`
+  (Regulamento do FGC, Anexo II da Resolução CMN nº 4.222/2013, art. 2º: CDB, RDB, LC, LCI, LCA, LCD covered; LF,
+  CRA, CRI, debêntures and fund quotas not), `scope_note`, `n_above_limit`.
+- `manager` and `fund_liquidity`: `{status: "unknown", reason_code, reason}`. No `api` function or view serves a
+  fund's manager CNPJ or the lâmina's `qt_dia_pagto_resgate` (checked 2026-10-04), and the engine reads SILO through
+  the public API only, so neither is computed.
+
 ## The report's view (mapping)
 
 `src/portfolio/report/adapt.py` is this table as code: `python -m src.portfolio.report.build engine.json` maps an
@@ -383,7 +429,12 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `movement` (`status`, `month`, `definition`, `class_note`, `levels_note`, `note`, `min_peers`, `thresholds`, `counts`, `n_not_fund_lines`) | `movement.*` of the same names (`min_peers` from `thresholds`, `n_not_fund_lines` the length of `not_applicable_lines`); absent from the view for an engine document before 1.3 |
 | `movement.by_line[i]` (`line_id`, `fund_name`, `class`, `subclass`, `class_as_filed`, `n_peers`, `own_value_pct`, `class_mean_pct`, `class_sd_pct`, `z`, `level`, `level_label`, `investigator_trigger`, `reason`, `provenance`) | `movement.lines[i]`, copied |
 | `movement.table[i]`, `movement.strong[i]`, `movement.not_evaluated[i]` | the same lines filtered: atencao or forte (the table, the only place `atencao` is shown), forte (the only fund-level path the text may cite), nao_avaliado (with `reason`) |
-| `provenance[i]` (`id`, `endpoint`, `params`, `source`, `data_date`) | `provenance[i]` (`id` = `p<call_id>`, `tool`, `args`); `source` from the tool, `data_date` from the `sources` that cite the call |
+| `provenance[i]` (`id`, `endpoint`, `source`, `data_date`, `failed`) | `provenance[i]` (`id` = `p<call_id>`, `tool`, `error` is not null); `source` from the tool, `data_date` from the `sources` that cite the call. Since 1.7 the view carries neither `args` nor `error` |
+| `lines[i]` `identification.reason`, `reason_code`, `method = "cnpj_extrato"`; `vencimento`, `taxa_texto`, `n_source_lines` (1.7) | the fixed text of `identification.lines[i].reason_code` (`REASON_TEXT`, never the engine's `reason`), null for an identified line; the statement's facts; the length of `contas` |
+| `sections.<name>.reason`, `reason_codes`; `risk_screens.not_run[i].reason`; `movement.reason`; a failed fee or movement line's `reason` (1.7) | the fixed texts of the codes; a screen that did not run has one fixed text |
+| `lookthrough.shared_exposure[i].same_position` (1.7) | true when every leg is a line of one `identification.same_identity_line_groups` entry: one position, never a finding |
+| `concentration` (`issuer`, `maturity_ladder`, `fgc`, `manager`, `fund_liquidity`) (1.7) | `concentration.*`, copied, line numbers as `L<n>` |
+| `gaps[i]` (`title`, `text`, `line_ids`, `value_brl`, `weight_pct`) (1.7) | "O que não foi possível avaliar", one line per gap, fixed texts only: `identification.unknown_groups` (grouped by reason, with value), `cnpj_extrato_line_nos`, fee lines without a usable fee grouped by `fee_status`, screens that did not run, funds without a movement verdict, the other sections' `reason_codes`, and the view's own fixed notes |
 | `data_dates` | the newest `data_date` per source name |
 
 ## Tools the engine calls

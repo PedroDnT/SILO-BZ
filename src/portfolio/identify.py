@@ -3,8 +3,14 @@
 Input: a masked ``Statement`` and a ``SiloClient``. Output: the
 ``identification`` section and one ``LineId`` per line for the other blocks.
 
-* Funds (``fundo``, ``FIDC``, ``FII``, ``ETF``): one batched ``portfolio_resolve``
-  call (name history + CNPJ + quota tie-break). The quota is sent only for
+* Funds (``fundo``, ``FIDC``, ``FII``, ``ETF``): ``portfolio_resolve`` (name history + CNPJ + quota
+  tie-break), split (engine 1.7): the lines with a CNPJ on the statement in one call, the others in
+  chunks of ``RESOLVE_CHUNK``; a transient failure (timeout, 5xx, network) is retried once with the
+  chunk halved, and a failure costs only its own lines. A line with a CNPJ on the statement that
+  resolve does not return (error or no candidate) is identified by that CNPJ, ``match_kind =
+  "cnpj_extrato"``, name not checked. A line without one that still fails for an infrastructure
+  reason raises ``SiloUnavailable``: no document. An ETF line whose ``codigo`` is a ticker skips
+  resolve and goes the ticker way. The quota is sent only for
   ``fundo`` and ``FIDC``: a listed FII/ETF's market price is not its NAV quota.
 * Tickers (``ação``, and ``FII``/``ETF`` whose ``codigo`` is a ticker): ``lookup``
   (exact id match only) and ``quote_latest`` (a reference quote, never used to
@@ -30,9 +36,12 @@ from typing import Any
 
 from src.portfolio.client import SiloClient
 from src.portfolio.common import (
+    R_TOOL_FAILED,
     STATUS_COMPLETE,
     STATUS_NOT_APPLICABLE,
+    Call,
     Section,
+    SiloUnavailable,
     as_date,
     brl,
     call_tool,
@@ -45,6 +54,8 @@ from src.portfolio.common import (
 from src.portfolio.statement import Position, Statement, codigo_cnpj
 
 FUND_TIPOS = ("fundo", "FIDC", "FII", "ETF")
+RESOLVE_CHUNK = 3  # lines without a CNPJ per portfolio_resolve call: the fuzzy name path is the slow one (57014, 2026-10-04)
+CNPJ_EXTRATO_REASON = "CNPJ do extrato; nome não conferido."
 TICKER_TIPOS = ("ação", "FII", "ETF")
 QUOTA_TIPOS = ("fundo", "FIDC")
 
@@ -92,6 +103,10 @@ UNSUPPORTED_REASON = {
     "CRA": "CRA detido diretamente: identificação por código ainda não implementada nesta versão.",
     "outro": "Tipo 'outro' sem ticker: o SILO não identifica pelo nome nem pelo código do registro.",
 }
+UNSUPPORTED_CODE = {
+    "CDB": "bancario_sem_fonte", "LCI": "bancario_sem_fonte", "LCA": "bancario_sem_fonte",
+    "debênture": "credito_sem_fonte", "CRI": "credito_sem_fonte", "CRA": "credito_sem_fonte", "outro": "outro_sem_ticker",
+}
 CREDIT_TIPOS = ("CRI", "CRA", "CDB", "LCI", "LCA", "debênture", "outro")
 
 
@@ -102,6 +117,7 @@ class LineId:
     position: Position
     status: str = "unknown"  # identified | ambiguous | unknown
     reason: str | None = None
+    reason_code: str | None = None  # engine 1.7: the fixed code of an unidentified line (common.REASON_TEXT)
     kind: str | None = None  # fund | ticker | tesouro
     cnpj: str | None = None
     name: str | None = None
@@ -154,26 +170,18 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
     resolve_out: dict[int, dict[str, Any]] = {}
     ticker_out: dict[int, dict[str, Any]] = {}
 
-    # --- Funds: one batched portfolio_resolve call. -------------------------------
-    fund_lines = [li for li in lines if li.position.tipo in FUND_TIPOS]
-    if fund_lines:
-        args = {
-            "p_names": [li.position.linha_extrato for li in fund_lines],
-            "p_cnpjs": [codigo_cnpj(li.position.codigo) for li in fund_lines],
-            "p_quotas": [
-                float(li.position.preco_unitario)
-                if li.position.tipo in QUOTA_TIPOS and li.position.preco_unitario is not None
-                else None
-                for li in fund_lines
-            ],
-            "p_quota_dates": [li.position.data_posicao.isoformat() for li in fund_lines],
-        }
-        res = call_tool(client, "portfolio_resolve", args, sec.errors)
-        if not res.ok:
-            for li in fund_lines:
-                li.reason = "Resolução de fundos indisponível: portfolio_resolve falhou (erro literal em errors)."
-            sec.degrade("portfolio_resolve falhou; as linhas de fundo ficaram desconhecidas.")
-        else:
+    # --- Funds: portfolio_resolve, split (engine 1.7). ------------------------------
+    # The lines with a CNPJ on the statement go in one call (an exact key, fast); the others, which take the fuzzy
+    # name path, in chunks of RESOLVE_CHUNK, so a slow or failed call costs only its own lines. An ETF line whose
+    # codigo is a ticker skips this call: the ticker path below (lookup, then the ETF registry) identifies it.
+    fund_lines = [li for li in lines if li.position.tipo in FUND_TIPOS and not _etf_by_ticker(li.position)]
+    with_cnpj = [li for li in fund_lines if codigo_cnpj(li.position.codigo)]
+    without = [li for li in fund_lines if not codigo_cnpj(li.position.codigo)]
+    groups = ([with_cnpj] if with_cnpj else []) + [without[i : i + RESOLVE_CHUNK] for i in range(0, len(without), RESOLVE_CHUNK)]
+    infra_failed: list[LineId] = []
+    for group in groups:
+        answered, failed = _resolve(client, sec, group)
+        for grp, res in answered:
             grouped: dict[int, list[dict]] = {}
             for row in res.rows or []:
                 try:
@@ -181,9 +189,26 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
                 except (TypeError, ValueError):
                     continue
                 grouped.setdefault(k, []).append(row)
-            for idx, li in enumerate(fund_lines, start=1):
+            # line_no in the answer is the 1-based index into THIS call's p_names
+            for idx, li in enumerate(grp, start=1):
                 cands = sorted(grouped.get(idx, []), key=lambda r: (r.get("rank") is None, r.get("rank") or 0))
                 resolve_out[li.line_no] = _apply_resolve(li, cands, res.src(li.position.data_posicao))
+        for grp, res in failed:
+            unresolved = 0
+            for li in grp:
+                if codigo_cnpj(li.position.codigo):
+                    resolve_out[li.line_no] = _from_statement_cnpj(li, {"candidates": [], "sources": []})
+                    continue
+                unresolved += 1
+                li.reason = "Resolução de fundos indisponível: portfolio_resolve falhou (erro literal em errors)."
+                li.reason_code = R_TOOL_FAILED
+                if res.transient:
+                    infra_failed.append(li)
+            if unresolved:
+                sec.degrade("portfolio_resolve falhou para parte das linhas de fundo; elas ficaram desconhecidas.", code=R_TOOL_FAILED)
+    if infra_failed:
+        # SILO did not answer even after the retry: a retryable failure, not a data gap. No document is produced.
+        raise SiloUnavailable()
 
     # --- Tickers: lookup + quote_latest (+ company_financials for shares). ---------
     for li in lines:
@@ -196,6 +221,7 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
         if not is_ticker(code):
             if p.tipo == "ação":
                 li.status, li.reason = "unknown", "Ação sem ticker no campo código: o SILO não identifica ações pelo nome."
+                li.reason_code = "acao_sem_ticker"
             continue
         ticker_out[li.line_no] = _identify_ticker(li, code, client, sec, stmt.position_date)
 
@@ -223,6 +249,7 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
                     "Título do Tesouro sem título e vencimento reconhecíveis no campo código "
                     "(formato: 'NTN-B 2035-05-15')."
                 )
+                li.reason_code = "tesouro_sem_vencimento"
                 continue
             fam, mat = parsed
             li.status, li.kind = "identified", "tesouro"
@@ -232,6 +259,7 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
             li.reason = "Identificado por título e vencimento; o SILO não tem série de preços do Tesouro."
         elif p.tipo in UNSUPPORTED_REASON and li.status != "identified":
             li.status, li.reason = "unknown", UNSUPPORTED_REASON[p.tipo]
+            li.reason_code = UNSUPPORTED_CODE[p.tipo]
             if p.tipo in CREDIT_TIPOS and p.codigo:
                 li.reason += f" Código do registro lido do extrato: {p.codigo}."
 
@@ -240,6 +268,10 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
         p = li.position
         if li.status == "unknown" and not li.reason:
             li.reason = "Sem identificação."
+        if li.status == "identified" and li.reason_code != "cnpj_extrato":
+            li.reason_code = None
+        elif li.status != "identified" and not li.reason_code:
+            li.reason_code = "sem_identificacao"
         out_lines.append(
             {
                 "line_no": li.line_no,
@@ -248,6 +280,7 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
                 "codigo": p.codigo,
                 "status": li.status,
                 "reason": li.reason,
+                "reason_code": li.reason_code,
                 "identity": {
                     "kind": li.kind,
                     "cnpj": li.cnpj,
@@ -275,12 +308,106 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
             }
         )
     counts = {s: sum(1 for li in lines if li.status == s) for s in ("identified", "ambiguous", "unknown")}
-    if sec.status == STATUS_COMPLETE and counts["identified"] < len(lines):
-        sec.status = "partial"
-        sec.reason = f"{counts['ambiguous']} linha(s) ambígua(s) e {counts['unknown']} desconhecida(s)."
+    if counts["identified"] < len(lines):
+        if sec.status == STATUS_COMPLETE:
+            sec.status = "partial"
+            sec.reason = f"{counts['ambiguous']} linha(s) ambígua(s) e {counts['unknown']} desconhecida(s)."
+        sec.code("linhas_nao_identificadas")
     if not lines:
         sec.status = STATUS_NOT_APPLICABLE
-    return {**sec.head(), "counts": counts, "lines": out_lines}, lines
+    return {**sec.head(), "counts": counts, "lines": out_lines, "unknown_groups": _unknown_groups(lines),
+            "cnpj_extrato_line_nos": [li.line_no for li in lines if li.reason_code == "cnpj_extrato"],
+            "same_identity_line_groups": _same_identity(lines)}, lines
+
+
+def _same_identity(lines: list[LineId]) -> list[dict[str, Any]]:
+    """Engine 1.7: lines the statement printed apart (different names, no common code) that identify as the same
+    fund or ticker. They are one position held through two lines, not two holdings: the report never calls their
+    overlap diversification or a finding."""
+    by: dict[tuple[str, str], list[int]] = {}
+    for li in lines:
+        if li.status != "identified":
+            continue
+        if li.kind == "fund" and li.cnpj:
+            by.setdefault(("cnpj", li.cnpj), []).append(li.line_no)
+        elif li.kind == "ticker" and li.ticker:
+            by.setdefault(("ticker", li.ticker), []).append(li.line_no)
+    return [{"kind": k[0], "key": k[1], "line_nos": v} for k, v in by.items() if len(v) > 1]
+
+
+def _unknown_groups(lines: list[LineId]) -> list[dict[str, Any]]:
+    """Engine 1.7: the lines that are not identified, grouped by reason code, with their statement value."""
+    total = sum((li.position.valor for li in lines), Decimal("0"))
+    groups: dict[str, list[LineId]] = {}
+    for li in lines:
+        if li.status != "identified":
+            groups.setdefault(li.reason_code or "sem_identificacao", []).append(li)
+    out = []
+    for code, lis in groups.items():
+        v = sum((li.position.valor for li in lis), Decimal("0"))
+        out.append({
+            "reason_code": code,
+            "line_nos": [li.line_no for li in lis],
+            "n_lines": len(lis),
+            "value_brl": brl(v),
+            "portfolio_pct": float(round(v / total * 100, 4)) if total else None,
+        })
+    return sorted(out, key=lambda g: -(g["value_brl"] or 0))
+
+
+def _etf_by_ticker(p: Position) -> bool:
+    return p.tipo == "ETF" and is_ticker((p.codigo or "").strip().upper())
+
+
+def _resolve_args(group: list[LineId]) -> dict[str, Any]:
+    return {
+        "p_names": [li.position.linha_extrato for li in group],
+        "p_cnpjs": [codigo_cnpj(li.position.codigo) for li in group],
+        "p_quotas": [
+            float(li.position.preco_unitario)
+            if li.position.tipo in QUOTA_TIPOS and li.position.preco_unitario is not None
+            else None
+            for li in group
+        ],
+        "p_quota_dates": [li.position.data_posicao.isoformat() for li in group],
+    }
+
+
+def _resolve(client: SiloClient, sec: Section, group: list[LineId]) -> tuple[list[tuple[list[LineId], Call]], list[tuple[list[LineId], Call]]]:
+    """One portfolio_resolve call for ``group``: ``(answered, failed)`` as (lines, call) pairs.
+
+    A transient failure (timeout, 5xx, network) is retried once with the chunk halved (a single line is retried as
+    is); a refusal or any other error is not retried. A failure costs only the lines of the call that failed.
+    """
+    res = call_tool(client, "portfolio_resolve", _resolve_args(group), sec.errors)
+    if res.ok:
+        return [(group, res)], []
+    if not res.transient:
+        return [], [(group, res)]
+    half = len(group) // 2
+    parts = [group[:half], group[half:]] if half else [group]
+    answered: list[tuple[list[LineId], Call]] = []
+    failed: list[tuple[list[LineId], Call]] = []
+    for part in parts:
+        r = call_tool(client, "portfolio_resolve", _resolve_args(part), sec.errors)
+        (answered if r.ok else failed).append((part, r))
+    return answered, failed
+
+
+def _from_statement_cnpj(li: LineId, out: dict[str, Any]) -> dict[str, Any]:
+    """Engine 1.7: the CNPJ printed on the statement is an exact key, so it identifies the fund when
+    portfolio_resolve did not (an error, or no candidate). The name is not checked and not filled in."""
+    given = codigo_cnpj(li.position.codigo)
+    li.status, li.kind, li.cnpj = "identified", "fund", given
+    li.entity_type = {"FIDC": "fidc", "FII": "fii"}.get(li.position.tipo)
+    li.reason, li.reason_code = CNPJ_EXTRATO_REASON, "cnpj_extrato"
+    out["chosen"] = {
+        "rank": None, "cnpj": given, "name": None, "matched_name": None, "matched_period": None,
+        "entity_type": li.entity_type, "match_kind": "cnpj_extrato", "similarity": None, "quota_on_date": None,
+        "quota_rel_diff": None, "ambiguous": False, "reason": CNPJ_EXTRATO_REASON,
+    }
+    out["sources"] = [statement_source(li.line_no, li.position.data_posicao)]
+    return out
 
 
 def _apply_resolve(li: LineId, cands: list[dict], src: dict) -> dict[str, Any]:
@@ -306,8 +433,11 @@ def _apply_resolve(li: LineId, cands: list[dict], src: dict) -> dict[str, Any]:
         "sources": [src],
     }
     if not cands:
+        if codigo_cnpj(li.position.codigo):
+            return _from_statement_cnpj(li, out)
         li.status = "unknown"
         li.reason = "portfolio_resolve não encontrou candidato pelo nome (histórico) nem pelo CNPJ."
+        li.reason_code = "sem_candidato"
         return out
     top = cands[0]
     out["tiebroken_by_quota"] = bool(
@@ -319,6 +449,7 @@ def _apply_resolve(li: LineId, cands: list[dict], src: dict) -> dict[str, Any]:
     if top.get("ambiguous"):
         li.status = "ambiguous"
         li.reason = top.get("reason") or "Mais de um fundo plausível; a cota não desempata."
+        li.reason_code = "ambiguo"
         return out
     if top.get("match_kind") == "etf_ticker":
         # engine 1.5: a line named by an ETF's bare ticker. The ETF's CNPJ is for the fee block only: an ETF files no
@@ -386,8 +517,14 @@ def _identify_etfs(
     if not probe:
         return out
     res = call_tool(client, "portfolio_resolve", {"p_names": [code for _, code in probe]}, sec.errors)
+    if not res.ok and res.transient:
+        res = call_tool(client, "portfolio_resolve", {"p_names": [code for _, code in probe]}, sec.errors)  # one retry
     if not res.ok:
-        sec.degrade("portfolio_resolve falhou para os tickers que podem ser ETF; a taxa desses ETFs ficou desconhecida.")
+        if res.transient and any(li.status != "identified" for li, _ in probe):
+            # a line the ETF registry was the last chance to identify: SILO did not answer, so no document
+            raise SiloUnavailable()
+        sec.degrade("portfolio_resolve falhou para os tickers que podem ser ETF; a taxa desses ETFs ficou desconhecida.",
+                    code=R_TOOL_FAILED)
         return out
     by_line: dict[int, dict] = {}
     for row in res.rows or []:
@@ -414,6 +551,7 @@ def _identify_etfs(
         if li.status != "identified":
             # a fixed income ETF is not in COTAHIST, so lookup does not find its ticker; the ETF registry does
             li.status, li.kind, li.ticker = "identified", "ticker", code
+            li.reason_code = None
             li.name = li.name or row.get("candidate_name")
             li.reason = (f"ETF {code} identificado pelo ticker no registro de ETFs do SILO (cvm_etf_registry); "
                          "lookup não o encontrou (ETFs de renda fixa não estão no COTAHIST).")
@@ -424,15 +562,17 @@ def _identify_ticker(li: LineId, code: str, client: SiloClient, sec: Section, po
     out: dict[str, Any] = {"ticker": code}
     lk = call_tool(client, "lookup", {"p_query": code}, sec.errors)
     if not lk.ok:
-        sec.degrade(f"lookup falhou para {code}.")
+        sec.degrade(f"lookup falhou para {code}.", code="consulta_falhou")
         if li.status != "identified":
             li.status, li.reason = "unknown", "lookup falhou (erro literal em errors)."
+            li.reason_code = R_TOOL_FAILED
         return out
     exact = [r for r in lk.rows or [] if str(r.get("id", "")).upper() == code]
     out["lookup"] = {"rows": exact, "sources": [lk.src()]}
     if not exact:
         if li.status != "identified":
             li.status, li.reason = "unknown", f"Ticker {code} não encontrado no SILO (lookup sem correspondência exata)."
+            li.reason_code = "ticker_nao_encontrado"
         return out
     row = exact[0]
     li.ticker = code
@@ -457,7 +597,7 @@ def _identify_ticker(li: LineId, code: str, client: SiloClient, sec: Section, po
     elif q.ok:
         out["reference_quote"] = None
     else:
-        sec.degrade(f"quote_latest falhou para {code}.")
+        sec.degrade(f"quote_latest falhou para {code}.", code="consulta_falhou")
 
     if li.position.tipo == "ação" or li.asset_class == "equity":
         args = {"p_id": code, "p_from": (pos_date - dt.timedelta(days=548)).isoformat(), "p_to": pos_date.isoformat()}
@@ -476,7 +616,7 @@ def _identify_ticker(li: LineId, code: str, client: SiloClient, sec: Section, po
         elif cf.ok:
             out["issuer"] = None
         else:
-            sec.degrade(f"company_financials falhou para {code}; emissor e setor desconhecidos.")
+            sec.degrade(f"company_financials falhou para {code}; emissor e setor desconhecidos.", code="consulta_falhou")
     return out
 
 

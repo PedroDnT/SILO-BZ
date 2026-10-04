@@ -32,6 +32,7 @@ from src.portfolio.statement import (
     Position,
     Statement,
     StatementError,
+    codigo_cnpj,
 )
 
 
@@ -53,9 +54,72 @@ def _norm(name: str) -> str:
     return re.sub(r"[\s*]+", " ", s).strip().upper()
 
 
+def _identity_key(p: Position) -> tuple | None:
+    """The exact identity of a line from what the statement prints: the CNPJ (punctuation ignored) or the code with
+    its maturity, at one position date. None when the line has no such key (it is never merged by name here)."""
+    if p.tipo == "caixa":
+        return ("caixa", p.data_posicao)
+    cnpj = codigo_cnpj(p.codigo)
+    if cnpj:
+        return ("cnpj", cnpj, p.data_posicao)
+    if p.codigo:
+        if p.tipo == "tesouro" and not re.search(r"\d", p.codigo):
+            return None  # a title with no maturity could be two different bonds
+        return ("c", re.sub(r"\s+", " ", p.codigo.strip().upper()), p.vencimento, p.data_posicao)
+    if p.tipo in FUND_TIPOS_BY_NAME:
+        # a fund with no code: the same printed name, type, date and printed quota is the same fund (a fund has no
+        # maturity or rate that could tell two lines apart); a different or missing quota keeps the lines apart
+        if p.preco_unitario is None or p.preco_implicito:
+            return None
+        return ("n", _norm(p.linha_extrato), p.tipo, p.data_posicao, p.preco_unitario)
+    return None
+
+
+FUND_TIPOS_BY_NAME = ("fundo", "FIDC", "FII", "ETF")
+
+
+def merge_same_identity(stmt: Statement) -> tuple[Statement, int]:
+    """Engine 1.7: the lines of ONE statement with the same identity (same CNPJ, or same code and maturity, same
+    date) become one position; the source lines stay under ``Position.contas`` (``conta_ref`` None: no account is
+    invented). A consolidated statement that lists one asset per account is the case. A fund line with no code is
+    merged only with the same printed name, type, date and printed quota; any other line with no CNPJ or code is
+    never merged (two codeless CDBs of one bank may differ in maturity and rate). Returns the statement and the
+    number of positions that merged two or more lines; the statement is returned unchanged when there are none."""
+    groups: dict[tuple, list[Position]] = {}
+    order: list[tuple] = []
+    for i, p in enumerate(stmt.positions):
+        k = _identity_key(p) or ("solo", i)
+        if k not in groups:
+            groups[k] = []
+            order.append(k)
+        groups[k].append(p)
+    merged = sum(1 for k in order if len(groups[k]) > 1)
+    if not merged:
+        return stmt, 0
+    notes: list[str] = list(stmt.notes)
+    positions: list[Position] = []
+    for k in order:
+        ps = groups[k]
+        if len(ps) == 1:
+            positions.append(replace(ps[0], line_no=len(positions) + 1))
+            continue
+        members = [(None, p) for p in ps]
+        positions.append(_aggregate(len(positions) + 1, members, None, notes))
+    if sum((p.valor for p in positions), Decimal("0")) != stmt.sum_of_lines:  # exact: merging only sums
+        raise ConsolidationError("internal: merged total differs from the sum of the statement's lines")
+    notes.append(
+        f"{merged} ativo(s) presentes em mais de uma linha do extrato (mesmo CNPJ; mesmo código e vencimento; ou, num "
+        "fundo sem código, mesmo nome, tipo e cota) "
+        "foram agregados em uma posição; as linhas de origem ficam em 'contas'."
+    )
+    return replace(stmt, positions=tuple(positions), notes=tuple(dict.fromkeys(notes))), merged
+
+
 def _agg_key(p: Position) -> tuple | None:
     if p.tipo == "caixa":
         return ("caixa", p.data_posicao)
+    if codigo_cnpj(p.codigo):
+        return _identity_key(p)
     if p.codigo:
         if p.tipo == "tesouro" and not re.search(r"\d", p.codigo):
             # a title with no maturity could be two different bonds: never aggregated
@@ -201,13 +265,15 @@ def _all_equal(values: list) -> bool:
     return all(v == values[0] for v in values)
 
 
-def _aggregate(line_no: int, members: list[tuple[int, Position]], titular_refs: list[str], notes: list[str]) -> Position:
+def _aggregate(line_no: int, members: list[tuple[int | None, Position]], titular_refs: list[str] | None,
+               notes: list[str]) -> Position:
+    """``members`` are (account index, position); index None (one statement, no accounts) keeps conta_ref as read."""
     ps = [p for _, p in members]
     first = ps[0]
     contas = tuple(
         ContaLine(
-            conta_ref=p.conta_ref or f"C{i + 1}",
-            titular_ref=titular_refs[i],
+            conta_ref=p.conta_ref if i is None else (p.conta_ref or f"C{i + 1}"),
+            titular_ref=None if i is None or titular_refs is None else titular_refs[i],
             source_row=p.source_row,
             linha_extrato=p.linha_extrato,
             quantidade=p.quantidade,
@@ -222,7 +288,9 @@ def _aggregate(line_no: int, members: list[tuple[int, Position]], titular_refs: 
     qtd = sum(qtys, Decimal("0")) if all(q is not None for q in qtys) else None
     if len(ps) == 1:
         preco, implicit = first.preco_unitario, first.preco_implicito
-    elif first.tipo == "fundo" and qtd:
+    elif first.preco_unitario is not None and not first.preco_implicito and _all_equal([(p.preco_unitario, p.preco_implicito) for p in ps]):
+        preco, implicit = first.preco_unitario, False  # the same printed price on every line: kept as printed
+    elif first.tipo in ("fundo", "FIDC") and qtd:
         preco, implicit = (valor / qtd).quantize(Decimal("0.00000001")), True
     else:
         preco, implicit = None, False

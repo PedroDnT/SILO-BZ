@@ -67,14 +67,37 @@ def utc_now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
-class ToolError(Exception):
-    """A tool call that returned no rows: refusal, HTTP error, network error. ``verbatim`` is the source text."""
+# Infrastructure failures, as opposed to a refusal or a data gap: a statement timeout (57014), a lost or refused
+# connection (08xxx, 57Pxx), insufficient resources (53xxx), PostgREST unable to reach the database (PGRST000-003).
+_TRANSIENT_SQLSTATE = re.compile(r"^(57014|57P\d\d|08\d{3}|53\d{3}|PGRST00[0-3])$")
+_TRANSIENT_TEXT = re.compile(r"PostgREST error HTTP (5\d\d|408|429)\b|^Network error calling|statement timeout")
 
-    def __init__(self, tool: str, verbatim: str, sqlstate: str | None = None):
+
+class ToolError(Exception):
+    """A tool call that returned no rows: refusal, HTTP error, network error. ``verbatim`` is the source text.
+
+    ``transient`` says the failure was the infrastructure's (timeout, 5xx, network), so the same call may answer on
+    a retry; a refusal (22023), an unknown tool or a bad argument is not transient.
+    """
+
+    def __init__(self, tool: str, verbatim: str, sqlstate: str | None = None, *, http_status: int | None = None,
+                 network: bool = False):
         self.tool = tool
         self.verbatim = verbatim
         self.sqlstate = sqlstate if sqlstate is not None else _sqlstate(verbatim)
+        self.http_status = http_status
+        self.network = network
         super().__init__(f"{tool}: {verbatim}")
+
+    @property
+    def transient(self) -> bool:
+        if self.network:
+            return True
+        if self.http_status is not None and (self.http_status >= 500 or self.http_status in (408, 429)):
+            return True
+        if self.sqlstate and _TRANSIENT_SQLSTATE.match(self.sqlstate):
+            return True
+        return bool(_TRANSIENT_TEXT.search(self.verbatim or ""))
 
 
 def _sqlstate(text: str) -> str | None:
@@ -136,8 +159,9 @@ class SiloClient(abc.ABC):
         except (OSError, ValueError) as exc:
             # Network or decoding failure: recorded verbatim and re-raised as a
             # ToolError so the section that asked becomes unknown, never empty.
+            # A network failure (OSError, urllib's timeouts included) is transient.
             entry.error = f"{type(exc).__name__}: {exc}"
-            raise ToolError(tool, entry.error) from exc
+            raise ToolError(tool, entry.error, network=isinstance(exc, OSError)) from exc
         entry.row_count = len(rows)
         return rows
 
@@ -201,7 +225,7 @@ class McpClient(SiloClient):
         }
         status, text = self._transport(self.url, "POST", json.dumps(body).encode("utf-8"), headers, self._timeout)
         if status != 200:
-            raise ToolError(tool, f"MCP HTTP {status}: {text}")
+            raise ToolError(tool, f"MCP HTTP {status}: {text}", http_status=status)
         msg = parse_mcp_message(text)
         if "error" in msg:
             raise ToolError(tool, f"MCP JSON-RPC error: {json.dumps(msg['error'], ensure_ascii=False)}")
@@ -266,7 +290,7 @@ class PostgrestClient(SiloClient):
             headers = {**headers, "Content-Profile": "api", "Content-Type": "application/json"}
             status, text = self._transport(url, "POST", json.dumps(args).encode("utf-8"), headers, self._timeout)
         if status >= 400:
-            raise ToolError(tool, f"PostgREST HTTP {status}: {text}")
+            raise ToolError(tool, f"PostgREST HTTP {status}: {text}", http_status=status)
         return _rows_from_payload(json.loads(text) if text else None)
 
 

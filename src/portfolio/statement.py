@@ -37,6 +37,9 @@ POSITION_COLUMNS = (
     "preco_unitario",
     "valor",
     "data_posicao",
+    # optional (engine 1.7): the maturity and the rate exactly as the statement prints them
+    "vencimento",
+    "taxa",
 )
 REQUIRED_COLUMNS = ("linha_extrato", "tipo", "valor", "data_posicao")
 HOLDER_KEYS = ("titular", "cpf", "conta")
@@ -122,7 +125,7 @@ class Position:
     preco_unitario: Decimal | None
     valor: Decimal
     data_posicao: dt.date
-    # Optional, filled by the PDF reader and by consolidation; the spreadsheet reader leaves them empty.
+    # Optional: the PDF reader fills them, and the spreadsheet reader from its optional columns 'vencimento' and 'taxa'.
     vencimento: dt.date | None = None
     taxa_texto: str | None = None  # the rate exactly as the statement prints it
     estrategia_corretora: str | None = None  # the broker's own labels, never ours
@@ -137,7 +140,7 @@ class Position:
 class ContaLine:
     """One account's share of a consolidated position."""
 
-    conta_ref: str
+    conta_ref: str | None  # None when the lines merged came from one statement (no account is invented)
     titular_ref: str | None
     source_row: int
     linha_extrato: str
@@ -383,6 +386,11 @@ def _parse_body(
         except ValueError:
             data = None
             problems.append("data_posicao is not a date")
+        try:
+            vencimento = parse_date(cell(row, "vencimento"))
+        except ValueError:
+            vencimento = None
+            problems.append("vencimento is not a date")
         if problems:
             unreadable.append(UnreadableRow(source_row, "; ".join(problems)))
             continue
@@ -398,6 +406,8 @@ def _parse_body(
                 preco_unitario=preco,
                 valor=valor,
                 data_posicao=data,
+                vencimento=vencimento,
+                taxa_texto=_text(cell(row, "taxa")),
             )
         )
 

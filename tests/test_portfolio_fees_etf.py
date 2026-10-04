@@ -9,7 +9,8 @@ value with its date, summed apart from the CVM-disclosed fees.
 Offline: the demo statement plus three lines typed ``outro`` with a ticker, as the BTG PDF reader writes them:
 BOVA11 (0.10, in lookup), B5P211 (0.20, a fixed income ETF that lookup does not find because it is not in COTAHIST)
 and POSB11 (0.0 on the site: shown, to check, never summed); and one spreadsheet line typed ``ETF`` and named by its
-bare ticker, IVVB11 (0.23), which the first portfolio_resolve call already matches. The ETF rows are canned in the
+bare ticker, IVVB11 (0.23), which since engine 1.7 skips the fund name path (its codigo is a ticker) and is matched by
+the ETF probe with the other three. The ETF rows are canned in the
 shape of the v56 columns; every number in the assertions comes from them.
 
 Engine 1.6 (catalog v57, owner, 2026-10-03): the same snapshot's cotistas and PL. The canned values are the ones
@@ -111,12 +112,10 @@ def _canned() -> dict:
         *canned["lookup"],
     ]
     canned["quote_latest"] = [{"match": {"p_ticker": t}, "rows": []} for t in ("BOVA11", "POSB11", "IVVB11")] + canned["quote_latest"]
-    # the demo's fund lines plus IVVB11 in the first call; the three outro tickers in the ETF probe
-    first = canned["portfolio_resolve"][0]
-    names = [*first["match"]["p_names"], "IVVB11"]
+    # engine 1.7: an ETF line whose codigo is a ticker skips the fund name path, so IVVB11 (typed ETF) joins the three
+    # outro tickers in the ETF probe, in line order
     canned["portfolio_resolve"] = [
-        {"match": {"p_names": list(ETFS)}, "rows": [_etf_resolve_row(i, t) for i, t in enumerate(ETFS, start=1)]},
-        {"match": {"p_names": names}, "rows": [*first["rows"], _etf_resolve_row(len(names), "IVVB11")]},
+        {"match": {"p_names": list(ALL)}, "rows": [_etf_resolve_row(i, t) for i, t in enumerate(ALL, start=1)]},
         *canned["portfolio_resolve"],
     ]
     return canned

@@ -93,7 +93,8 @@ def test_the_template_writer_writes_forte_and_the_unevaluated_and_never_atencao(
             assert ph.startswith(revisor.MOVEMENT_TEXT_PATHS), ph
         assert not re.search(r"movement\.(table|by_line)", f.text)
     assert any("movement.strong[0]" in f.text for f in texts)
-    assert any("movement.counts.nao_avaliado" in f.text for f in texts)
+    # engine 1.7: a fund not evaluated is a gap, listed by the fixed section, never a finding
+    assert not any("movement.counts.nao_avaliado" in f.text or "not_evaluated" in f.text for f in texts)
     drafted = redator.template_findings(view)["findings"]
     joined = " ".join(f["text"] for f in drafted)
     assert "movement.table" not in joined and "movement.by_line" not in joined
@@ -115,14 +116,15 @@ def test_a_sentence_citing_the_table_or_by_line_is_removed(view):
         assert kept is None and any("só aparece em tabela" in r.reason for r in removals), path
 
 
-def test_a_sentence_citing_strong_is_kept_and_so_is_the_not_evaluated_reason(view):
+def test_a_sentence_citing_strong_is_kept_and_the_not_evaluated_reason_is_not(view):
     ok = F("O fundo {{movement.strong[0].fund_name}} ficou a {{movement.strong[0].z}} desvios padrão da média da classe "
            "{{movement.strong[0].class_as_filed}}, com {{movement.strong[0].n_peers}} fundos em {{movement.month}}.")
     kept, removals = revisor.check_finding(view, ok)
     assert kept is not None and not removals
     ne = F("Movimento incomum não avaliado para {{movement.not_evaluated[0].fund_name}}: {{movement.not_evaluated[0].reason}}.")
-    kept, removals = revisor.check_finding(view, ne)
-    assert kept is not None and not removals
+    # engine 1.7: the Revisor checks against the Redator's view, which has no free-text reason
+    res = revisor.check(view, [ne])
+    assert res.kept == [] and any("sem caminho" in r.reason for r in res.removed)
 
 
 def test_a_movement_sentence_that_says_atencao_is_removed(view):
@@ -186,7 +188,7 @@ def test_the_attention_fund_is_not_named_in_any_movement_finding(view, built):
     assert view["movement"]["table"][0]["level"] == "atencao"
     divs = re.findall(r'<div class="achado">(.*?)</div>', html, re.S)
     movement = [_text(d) for d in divs if "Movimento incomum" in _text(d)]
-    assert len(movement) == 2  # the forte fund and the not-evaluated count
+    assert len(movement) == 1  # the forte fund; the not-evaluated funds are in the fixed gaps section (engine 1.7)
     assert not any(name in m for m in movement)
     assert not any("movement.by_line" in f.text or "movement.table" in f.text for f in narrative.kept)
 

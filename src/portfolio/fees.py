@@ -177,9 +177,9 @@ def compute_fees(
     found, calls = _fetch(client, cnpjs, fee_month, sec.errors)
     failed_calls = [c for c in calls if not c.ok]
     if failed_calls and len(failed_calls) == len(calls):
-        sec.fail("portfolio_fees falhou (erro literal em errors); nenhuma taxa pôde ser calculada.")
+        sec.fail("portfolio_fees falhou (erro literal em errors); nenhuma taxa pôde ser calculada.", code="consulta_falhou")
     elif failed_calls:
-        sec.degrade("portfolio_fees falhou para parte dos fundos (erro literal em errors).")
+        sec.degrade("portfolio_fees falhou para parte dos fundos (erro literal em errors).", code="consulta_falhou")
 
     out_lines = []
     for li in fund_lines:
@@ -193,12 +193,13 @@ def compute_fees(
             "position_value_source": statement_source(li.position.line_no, li.position.data_posicao),
         }
         if entry is None:
-            reason = (
-                "portfolio_fees falhou para este fundo (erro literal em errors da seção)."
+            reason, code = (
+                ("portfolio_fees falhou para este fundo (erro literal em errors da seção).", "consulta_falhou")
                 if failed_calls
-                else "portfolio_fees não devolveu linha para este CNPJ."
+                else ("portfolio_fees não devolveu linha para este CNPJ.", "sem_linha_taxa")
             )
-            out_lines.append({**base, "fee_status": NOT_FOUND, "reason": reason, **_empty_fee()})
+            # engine 1.7: the report prints the code's fixed text (common.REASON_TEXT), never this reason
+            out_lines.append({**base, "fee_status": NOT_FOUND, "reason": reason, "reason_code": code, **_empty_fee()})
             continue
         out_lines.append({**base, **_fee_record(entry["row"], li.position.valor, entry["call"], fee_month)})
 
@@ -207,11 +208,11 @@ def compute_fees(
     unusable = [o for o in out_lines if o.get("needs_manual_check") and not (o.get("headline") or {}).get("counted_as_cost")]
     differ = [o for o in out_lines if o.get("needs_manual_check") and (o.get("headline") or {}).get("counted_as_cost")]
     if unknown and sec.status != "unknown":
-        sec.degrade(f"{len(unknown)} fundo(s) sem taxa divulgada encontrada.")
+        sec.degrade(f"{len(unknown)} fundo(s) sem taxa divulgada encontrada.", code="sem_taxa_divulgada")
     if unusable and sec.status != "unknown":
-        sec.degrade(f"{len(unusable)} fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta.")
+        sec.degrade(f"{len(unusable)} fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta.", code="taxa_a_conferir")
     if differ and sec.status != "unknown":
-        sec.degrade(f"{len(differ)} fundo(s) com a lâmina mais recente que o Extrato como fonte: fontes divergem, a conferir; a taxa da lâmina entra na soma.")
+        sec.degrade(f"{len(differ)} fundo(s) com a lâmina mais recente que o Extrato como fonte: fontes divergem, a conferir; a taxa da lâmina entra na soma.", code="fontes_divergem")
     return {
         **sec.head(),
         "month": fee_month.isoformat(),
@@ -708,7 +709,7 @@ def _underlying(fund_nodes: dict[int, list[dict[str, Any]]], client: SiloClient,
     cnpjs = sorted({str(n["fund_cnpj"]) for _, n in nodes})
     found, calls = _fetch(client, cnpjs, fee_month, sec.errors)
     if any(not c.ok for c in calls):
-        sec.degrade("portfolio_fees falhou para os fundos investidos (taxa dos fundos de baixo desconhecida).")
+        sec.degrade("portfolio_fees falhou para os fundos investidos (taxa dos fundos de baixo desconhecida).", code="consulta_falhou")
     out = []
     for ln, n in nodes:
         entry = found.get(str(n["fund_cnpj"]))

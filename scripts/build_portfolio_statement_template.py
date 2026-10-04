@@ -30,7 +30,7 @@ HOLDER = {
     "conta": "12345-6",
     "corretora": "Corretora Exemplo",
 }
-# (linha_extrato, tipo, codigo, quantidade, preco_unitario)
+# (linha_extrato, tipo, codigo, quantidade, preco_unitario[, vencimento, taxa])
 DEMO_POSITIONS = [
     ("NTN-B 2035", "tesouro", "NTN-B 2035-05-15", "100", "4123.51"),
     ("PETROBRAS PN", "ação", "PETR4", "20000", "49.40"),
@@ -46,6 +46,13 @@ DEMO_POSITIONS = [
         "1.541233",
     ),
     ("HGLG11 CSHG LOGISTICA FII", "FII", "HGLG11", "1200", "146.20"),
+    # direct credit with the optional columns (engine 1.7): fictitious issuers and registry codes
+    ("CDB BANCO EXEMPLO", "CDB", "CDB-26A00001", "1", "180000.00", dt.date(2028, 3, 15), "105,00% do CDI"),
+    ("LCA BANCO EXEMPLO", "LCA", "LCA-26A00002", "1", "120000.00", dt.date(2027, 6, 15), "CDI + 0,50%"),
+    ("CRA AGRO EXEMPLO", "CRA", "CRA-0260000X", "1", "95000.00", dt.date(2031, 10, 15), "IPCA + 8,74%"),
+    ("DEB ENERGIA EXEMPLO", "debênture", "DEB-EXEM12", "1", "60000.00", dt.date(2030, 9, 15), "15,41% a.a."),
+    # the same CDB again, as a consolidated statement lists it once per account: merged into one position
+    ("CDB BANCO EXEMPLO", "CDB", "CDB-26A00001", "1", "90000.00", dt.date(2028, 3, 15), "105,00% do CDI"),
 ]
 
 
@@ -57,7 +64,7 @@ def build(path: Path = DEFAULT_OUT) -> Decimal:
     wb = Workbook()
     ws = wb.active
     ws.title = "extrato"
-    total = sum((_valor(q, p) for _, _, _, q, p in DEMO_POSITIONS), Decimal("0"))
+    total = sum((_valor(row[3], row[4]) for row in DEMO_POSITIONS), Decimal("0"))
     header_rows = [
         ("titular", HOLDER["titular"]),
         ("cpf", HOLDER["cpf"]),
@@ -68,20 +75,22 @@ def build(path: Path = DEFAULT_OUT) -> Decimal:
     for key, value in header_rows:
         ws.append([key, value])
     ws.append([])
-    columns = ["linha_extrato", "tipo", "codigo", "quantidade", "preco_unitario", "valor", "data_posicao"]
+    columns = ["linha_extrato", "tipo", "codigo", "quantidade", "preco_unitario", "valor", "data_posicao", "vencimento", "taxa"]
     ws.append(columns)
     header_row = ws.max_row
     for cell in ws[header_row]:
         cell.font = Font(bold=True)
-    for name, tipo, codigo, qtd, preco in DEMO_POSITIONS:
-        ws.append([name, tipo, codigo, float(qtd), float(preco), float(_valor(qtd, preco)), POSITION_DATE])
+    for name, tipo, codigo, qtd, preco, *opt in DEMO_POSITIONS:
+        vencimento, taxa = (opt + [None, None])[:2]
+        ws.append([name, tipo, codigo, float(qtd), float(preco), float(_valor(qtd, preco)), POSITION_DATE, vencimento, taxa])
     last = ws.max_row
     for row in ws.iter_rows(min_row=header_row + 1, max_row=last):
         row[6].number_format = "yyyy-mm-dd"
+        row[7].number_format = "yyyy-mm-dd"
     dv = DataValidation(type="list", formula1='"' + ",".join(TIPOS) + '"', allow_blank=False)
     ws.add_data_validation(dv)
     dv.add(f"B{header_row + 1}:B{max(last, header_row + 200)}")
-    widths = {"A": 46, "B": 14, "C": 22, "D": 14, "E": 16, "F": 16, "G": 14}
+    widths = {"A": 46, "B": 14, "C": 22, "D": 14, "E": 16, "F": 16, "G": 14, "H": 14, "I": 18}
     for col, w in widths.items():
         ws.column_dimensions[col].width = w
     path.parent.mkdir(parents=True, exist_ok=True)

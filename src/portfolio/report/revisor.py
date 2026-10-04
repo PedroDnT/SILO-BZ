@@ -27,7 +27,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from src.portfolio.report.llm import LLMError, Provider, validate_output
-from src.portfolio.report.redator import Finding
+from src.portfolio.report.redator import Finding, redator_view
 from src.portfolio.report.values import (
     MISSING,
     PLACEHOLDER_RE,
@@ -234,6 +234,9 @@ def check_finding(engine: dict, f: Finding) -> tuple[Finding | None, list[Remova
 
 
 def check(engine: dict, findings: list[Finding]) -> RevisorResult:
+    """Every finding against the Redator's own view (engine 1.7): a placeholder on a reason, an error or a request
+    param does not resolve there, so a sentence that quotes one is removed even though the full view has it."""
+    engine = redator_view(engine)
     result = RevisorResult(kept=[])
     for f in findings:
         kept, removals = check_finding(engine, f)
@@ -269,6 +272,7 @@ def llm_review(engine: dict, result: RevisorResult, provider: Provider) -> Revis
     """Optional tone/consistency pass. Never adds a number; failures keep the deterministic result."""
     if not result.kept:
         return result
+    engine = redator_view(engine)
     payload = {
         "achados": [{"id": f.id, "section": f.section, "title": f.title, "text": f.text} for f in result.kept],
         "json_do_motor": engine,
@@ -279,7 +283,8 @@ def llm_review(engine: dict, result: RevisorResult, provider: Provider) -> Revis
         raw = provider.complete(SYSTEM_PROMPT, json.dumps(payload, ensure_ascii=False, sort_keys=True), VerdictsOutput)
         parsed = validate_output(VerdictsOutput, raw)
     except LLMError as exc:
-        result.notes.append(f"revisão por LLM não executada ({type(exc).__name__}: {exc}); valem as regras determinísticas")
+        # the class name only: the message can quote the model or the provider (notes go to logs and JSON, not the PDF)
+        result.notes.append(f"revisão por LLM não executada ({type(exc).__name__}); valem as regras determinísticas")
         return result
     verdicts = {v.id: v for v in parsed.verdicts if v.id}
     out = RevisorResult(kept=[], removed=list(result.removed), notes=list(result.notes))

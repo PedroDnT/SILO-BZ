@@ -109,9 +109,14 @@ def substitute(engine: dict, text: str) -> str:
     return "".join(out)
 
 
+NARRATIVE_UNAVAILABLE = ("Texto interpretativo indisponível neste relatório; as tabelas e a seção do que não foi possível "
+                         "avaliar seguem completas.")
+
+
 def _findings_html(engine: dict, narrative: Narrative, section: str) -> str:
     if narrative.status != "complete":
-        return f'<p class="indisponivel">Texto interpretativo indisponível: {e(narrative.reason or "não gerado")}.</p>'
+        # a fixed text: narrative.reason may quote the provider's error, and it never reaches the page (engine 1.7)
+        return f'<p class="indisponivel">{e(NARRATIVE_UNAVAILABLE)}</p>' if section == "resumo" else ""
     items = [f for f in narrative.kept if f.section == section]
     if not items:
         return ""
@@ -148,6 +153,17 @@ def _ident_section(engine: dict) -> str:
             note = f"<br><span class=cit>nome antigo: {v(engine, f'{p}.identification.renamed_from')}</span>"
         if status == "unknown" and ident.get("reason"):
             note = f"<br><span class=cit>{v(engine, f'{p}.identification.reason')}</span>"
+        if ident.get("method") == "cnpj_extrato" and ident.get("reason"):
+            note += f'<br><span class="tag unk">{v(engine, f"{p}.identification.reason")}</span>'
+        facts = []
+        if ln.get("vencimento"):
+            facts.append(f"vencimento {v(engine, f'{p}.vencimento')}")
+        if ln.get("taxa_texto"):
+            facts.append(f"taxa {v(engine, f'{p}.taxa_texto')}")
+        if (ln.get("n_source_lines") or 1) > 1:
+            facts.append(f"agrega {v(engine, f'{p}.n_source_lines')} linhas do extrato")
+        if facts:
+            note += f"<br><span class=cit>{' · '.join(facts)}</span>"
         tag = "unk" if status != "identified" else ""
         rows.append([
             v(engine, f"{p}.line_id"),
@@ -357,6 +373,62 @@ def _exposure_section(engine: dict) -> str:
     return "\n".join(out)
 
 
+def _concentration_section(engine: dict) -> str:
+    """Engine 1.7: issuer as printed (direct credit), maturity ladder, the FGC check; all from the statement."""
+    c = engine.get("concentration") or {}
+    out = []
+    iss = c.get("issuer") or {}
+    out.append("<h3>Emissores de crédito direto</h3>")
+    if iss.get("groups"):
+        out.append(f"<p class=cit>{v(engine, 'concentration.issuer.label')}. Base: {v(engine, 'concentration.issuer.basis')}. "
+                   f"Crédito direto na carteira: {v(engine, 'concentration.issuer.direct_credit_value_brl')} "
+                   f"({v(engine, 'concentration.issuer.direct_credit_weight_pct')}).</p>")
+        rows = []
+        for i, _g in enumerate(iss["groups"]):
+            q = f"concentration.issuer.groups[{i}]"
+            rows.append([v(engine, f"{q}.issuer"), e(", ".join(_g.get("tipos") or [])), e(", ".join(_g.get("line_ids") or [])),
+                         v(engine, f"{q}.value_brl"), v(engine, f"{q}.weight_pct"), v(engine, f"{q}.share_of_direct_credit_pct")])
+        out.append(_table([("Emissor (como impresso)", False), ("Tipos", False), ("Linhas", False), ("Valor", True),
+                           ("Peso na carteira", True), ("Peso no crédito direto", True)], rows))
+    else:
+        out.append("<p>Nenhum crédito direto na carteira.</p>")
+    lad = c.get("maturity_ladder") or {}
+    out.append("<h3>Vencimentos</h3>")
+    if lad.get("status") == "complete":
+        out.append(f"<p class=cit>{v(engine, 'concentration.maturity_ladder.basis')}.</p>")
+        rows = [[v(engine, f"concentration.maturity_ladder.buckets[{i}].bucket"),
+                 e(", ".join(b.get("line_ids") or [])) or "—",
+                 v(engine, f"concentration.maturity_ladder.buckets[{i}].value_brl"),
+                 v(engine, f"concentration.maturity_ladder.buckets[{i}].weight_pct")]
+                for i, b in enumerate(lad.get("buckets") or [])]
+        rows.append([v(engine, "concentration.maturity_ladder.no_maturity.bucket"), "—",
+                     v(engine, "concentration.maturity_ladder.no_maturity.value_brl"),
+                     v(engine, "concentration.maturity_ladder.no_maturity.weight_pct")])
+        out.append(_table([("Prazo até o vencimento", False), ("Linhas", False), ("Valor", True), ("Peso", True)], rows))
+    else:
+        out.append("<p>Nenhuma linha com vencimento impresso no extrato.</p>")
+    fgc = c.get("fgc") or {}
+    out.append("<h3>FGC por emissor</h3>")
+    if fgc.get("status") == "complete":
+        out.append(f"<p class=cit>{v(engine, 'concentration.fgc.rule')}. {v(engine, 'concentration.fgc.scope_note')}</p>")
+        rows = []
+        for i, g in enumerate(fgc.get("issuers") or []):
+            q = f"concentration.fgc.issuers[{i}]"
+            flag = (f'<span class="tag unk">acima de {v(engine, "concentration.fgc.limit_brl")} '
+                    f'(excede {v(engine, f"{q}.excess_brl")}); {v(engine, "concentration.fgc.label")}</span>'
+                    if g.get("above_limit") else "dentro do limite")
+            rows.append([v(engine, f"{q}.issuer"), e(", ".join(g.get("tipos") or [])), e(", ".join(g.get("line_ids") or [])),
+                         v(engine, f"{q}.eligible_value_brl"), flag])
+        out.append(_table([("Emissor (como impresso)", False), ("Tipos", False), ("Linhas", False), ("Soma coberta", True),
+                           ("Limite", False)], rows))
+    else:
+        out.append("<p>Nenhum CDB, LCI ou LCA na carteira.</p>")
+    for key, title in (("manager", "Concentração por gestor"), ("fund_liquidity", "Liquidez dos fundos")):
+        if (c.get(key) or {}).get("status") not in (None, "complete"):
+            out.append(f'<p><span class="tag unk">{e(title)}: não avaliada</span> {v(engine, f"concentration.{key}.reason")}.</p>')
+    return "\n".join(out)
+
+
 def _restatements_section(engine: dict) -> str:
     rows = []
     for i, _r in enumerate((engine.get("restatements") or {}).get("items") or []):
@@ -431,31 +503,29 @@ def _risk_section(engine: dict) -> str:
 
 
 def _unknowns_section(engine: dict, narrative: Narrative) -> str:
+    """"O que não foi possível avaliar": deterministic, one short line per gap, from the view's ``gaps`` (engine 1.7).
+
+    Fixed texts only (never an engine reason, an error or a request param); the unidentified lines come grouped
+    by reason, with the group's value. Written without the LLM.
+    """
     items = []
-    for name, sec in sorted((engine.get("sections") or {}).items()):
-        if isinstance(sec, dict) and sec.get("status") not in ("complete", None):
-            affects = sec.get("affects") or []
-            aff = f" Linhas afetadas: {e(', '.join(map(str, affects)))}." if affects else ""
-            items.append(f"<li><strong>{e(name)}</strong> ({e(SECTION_STATUS_LABELS.get(sec['status'], sec['status']))}): "
-                         f"{v(engine, f'sections.{name}.reason')}.{aff}</li>")
-    for i, ln in enumerate(engine.get("lines") or []):
-        ident = ln.get("identification") or {}
-        if ident.get("status") == "unknown":
-            items.append(f"<li><strong>Linha {v(engine, f'lines[{i}].line_id')}</strong> não identificada: "
-                         f"{v(engine, f'lines[{i}].identification.reason')}. Valor: {v(engine, f'lines[{i}].value_brl')}.</li>")
-    for i, b in enumerate((engine.get("fees") or {}).get("by_line") or []):
-        if b.get("label") == "desconhecido" or (b.get("fee_status") and b.get("disclosed_pct_year") is None
-                                                  and b.get("disclosed_min_pct_year") is None):
-            items.append(f"<li><strong>Taxa da linha {v(engine, f'fees.by_line[{i}].line_id')}</strong> "
-                         f"({v(engine, f'fees.by_line[{i}].fee_status') if b.get('fee_status') else 'desconhecida'}): "
-                         f"{v(engine, f'fees.by_line[{i}].reason')}</li>")
-    if "abnormal_movement" not in (engine.get("sections") or {}) and not engine.get("movement"):
-        items.append("<li><strong>abnormal_movement</strong> (não avaliado): regra de movimento anormal ainda não definida.</li>")
-    for i, _n in enumerate((engine.get("risk_screens") or {}).get("not_run") or []):
-        items.append(f"<li><strong>Tela {v(engine, f'risk_screens.not_run[{i}].screen')}</strong>: "
-                     f"{v(engine, f'risk_screens.not_run[{i}].reason')}.</li>")
+    for i, g in enumerate(engine.get("gaps") or []):
+        q = f"gaps[{i}]"
+        tail = ""
+        if g.get("line_ids"):
+            tail += f" Linhas: {e(', '.join(map(str, g['line_ids'])))}."
+        if g.get("value_brl") is not None:
+            tail += f" Valor: {v(engine, f'{q}.value_brl')}"
+            if g.get("weight_pct") is not None:
+                tail += f" ({v(engine, f'{q}.weight_pct')} da carteira)"
+            tail += "."
+        items.append(f"<li><strong>{v(engine, f'{q}.title')}</strong>: {v(engine, f'{q}.text')}.{tail}</li>")
+    if "gaps" not in engine:  # a view built before engine 1.7: the section statuses, as fixed labels only
+        for name, sec in sorted((engine.get("sections") or {}).items()):
+            if isinstance(sec, dict) and sec.get("status") in ("partial", "unknown"):
+                items.append(f"<li><strong>{e(name)}</strong>: {e(SECTION_STATUS_LABELS.get(sec['status'], sec['status']))}.</li>")
     if narrative.status != "complete":
-        items.append(f"<li><strong>Texto interpretativo</strong>: {e(narrative.reason)}.</li>")
+        items.append(f"<li><strong>Texto interpretativo</strong>: {e(NARRATIVE_UNAVAILABLE)}</li>")
     return "<ul>" + "".join(items) + "</ul>" if items else "<p>Nenhuma seção ficou sem avaliação.</p>"
 
 
@@ -482,16 +552,9 @@ def _method_section(engine: dict, narrative: Narrative) -> str:
         f"Modelo: {model}. Provedor: {e(narrative.provider or '—')}. Custo do texto: US$ {narrative.cost_usd:.4f} "
         f"(teto de US$ {narrative.cost_cap_usd:.2f} por relatório).",
     ]
-    out = "<ul>" + "".join(f"<li>{x}</li>" for x in lines) + "</ul>"
-    if narrative.removed or narrative.notes:
-        out += "<h3>Notas do Revisor</h3><ul>"
-        for r in narrative.removed:
-            scope = "achado removido" if r.whole_finding else "frase removida"
-            out += f"<li>{e(r.finding_id)} ({e(scope)}): {e(r.reason.replace('{{', '').replace('}}', ''))}</li>"
-        for n in narrative.notes:
-            out += f"<li>{e(n)}</li>"
-        out += "</ul>"
-    return out
+    # The Revisor's notes (what it removed and why) stay in the Narrative for the logs and the JSON; the client's
+    # PDF does not carry them (engine 1.7).
+    return "<ul>" + "".join(f"<li>{x}</li>" for x in lines) + "</ul>"
 
 
 def _sources(engine: dict) -> str:
@@ -529,6 +592,7 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
         section("Identificação linha a linha", _ident_section(engine) + _findings_html(engine, narrative, "identificacao")),
         section("Custo em taxas", _fees_section(engine) + _findings_html(engine, narrative, "taxas")),
         section("Exposição", _exposure_section(engine) + _findings_html(engine, narrative, "exposicao")),
+        *([section("Concentração e vencimentos", _concentration_section(engine))] if engine.get("concentration") else []),
         section("Reapresentações", _restatements_section(engine) + _findings_html(engine, narrative, "reapresentacoes")),
         section("Sinais de risco", _risk_section(engine) + _findings_html(engine, narrative, "sinais_de_risco")),
         section("O que não foi possível avaliar", _unknowns_section(engine, narrative)),

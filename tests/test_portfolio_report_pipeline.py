@@ -310,16 +310,17 @@ def test_html_shows_labels_unknowns_and_limits(engine):
     for needle in ("estimativa", "sem classificação", "revisado, não avaliado", "Grupo econômico não avaliado",
                    "não é recomendação de investimento", "Não há previsão de retorno",
                    "Movimento anormal de cota ou de patrimônio", "não avaliado",
-                   "não identificada", "dormant"):
+                   "não identificada"):
         assert needle in html_text, needle
 
 
-def test_every_unknown_section_appears_with_its_reason(engine):
+def test_every_unknown_section_appears_with_a_fixed_label(engine):
+    # a view without engine 1.7 "gaps": the section's name and a fixed status label, never its free-text reason
     html_text, _ = _html(engine)
     for name, sec in engine["sections"].items():
-        if sec["status"] != "complete":
-            assert f"<strong>{name}</strong>" in html_text
-            assert sec["reason"].split(":")[0][:25] in html_text
+        if sec["status"] in ("partial", "unknown"):
+            assert f"<strong>{name}</strong>: {render.SECTION_STATUS_LABELS[sec['status']]}." in html_text
+            assert sec["reason"] not in html_text.split("O que não foi possível avaliar")[1].split("Metodologia")[0]
 
 
 def test_footer_lists_sources_with_data_dates(engine):
@@ -356,12 +357,14 @@ def test_unknown_narrative_is_labelled_not_hidden(engine):
         meter = llm.CostMeter()
 
         def complete(self, *a, **k):
-            raise llm.LLMRefusalError("bio")
+            raise llm.LLMRefusalError("SENTINELA-RECUSA")
 
     narrative = build.make_narrative(engine, Refuse())
     html_text = render.render_html(engine, narrative)
     assert narrative.status == "unknown"
-    assert "Texto interpretativo indisponível" in html_text and "LLMRefusalError" in html_text
+    # engine 1.7: a fixed text; the error class and message stay in the narrative (logs, headers), not in the page
+    assert "Texto interpretativo indisponível" in html_text and "LLMRefusalError" not in html_text and "SENTINELA" not in html_text
+    assert narrative.reason_code == "LLMRefusalError"
     assert "R$ 150.000,00" in html_text  # the tables still come from the engine
 
 

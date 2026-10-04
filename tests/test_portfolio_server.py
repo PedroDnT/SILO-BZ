@@ -277,7 +277,19 @@ def test_revisor_removing_everything_is_a_fixed_reason_code(monkeypatch):
     from src.portfolio.report import build, revisor
     from src.portfolio.report.redator import RedatorResult
 
-    monkeypatch.setattr(build.redator, "write", lambda engine, provider: RedatorResult("complete", []))
+    one = build.redator.Finding("f1", "resumo", "t", "x", ["p1"])
+    monkeypatch.setattr(build.redator, "write", lambda engine, provider: RedatorResult("complete", [one]))
     monkeypatch.setattr(revisor, "check", lambda engine, findings: revisor.RevisorResult(kept=[], removed=[], notes=[]))
     n = build.make_narrative({}, SimpleNamespace(name="fake", model="fake", meter=build.llm.CostMeter()), llm_review=False)
     assert n.status == "unknown" and n.reason_code == "revisor_removed_all"
+
+
+def test_zero_findings_drafted_is_a_complete_narrative(monkeypatch):
+    # engine 1.7: a portfolio with nothing to point out is a valid answer, not a failed narrative
+    from src.portfolio.report import build, revisor
+    from src.portfolio.report.redator import RedatorResult
+
+    monkeypatch.setattr(build.redator, "write", lambda engine, provider: RedatorResult("complete", []))
+    monkeypatch.setattr(revisor, "check", lambda engine, findings: revisor.RevisorResult(kept=[], removed=[], notes=[]))
+    n = build.make_narrative({}, SimpleNamespace(name="fake", model="fake", meter=build.llm.CostMeter()), llm_review=False)
+    assert n.status == "complete" and n.reason_code is None and n.kept == []

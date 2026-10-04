@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from src.portfolio.client import FakeClient, McpClient, PostgrestClient, load_fake_rows
+from src.portfolio.common import SiloUnavailable
 from src.portfolio.engine import default_params, dumps, run_engine
 from src.portfolio.statement import StatementError, read_statement
 
@@ -61,7 +62,12 @@ def main(argv: list[str] | None = None) -> int:
         client = FakeClient(load_fake_rows(args.fake_rows), clock=lambda: FAKE_CLOCK)
         clock = lambda: FAKE_CLOCK  # noqa: E731
 
-    doc = run_engine(stmt, client, params, **({"clock": clock} if clock else {}))
+    try:
+        doc = run_engine(stmt, client, params, **({"clock": clock} if clock else {}))
+    except SiloUnavailable:
+        print("erro: o SILO não respondeu (tempo esgotado, 5xx ou rede) mesmo depois de uma nova tentativa; "
+              "nenhum documento foi gerado. Tente de novo em alguns minutos.", file=sys.stderr)
+        return 3
     text = dumps(doc)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")

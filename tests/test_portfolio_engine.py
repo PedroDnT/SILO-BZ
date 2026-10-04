@@ -60,11 +60,14 @@ def test_fixture_regenerates_byte_for_byte(tmp_path):
 def test_top_level_schema_is_stable(doc):
     assert list(doc) == [
         "schema_version", "generated_at_utc", "engine", "statement", "identification", "fees", "look_through",
-        "indexer", "sector", "restatements", "risk_signals", "movement", "assumptions", "section_status", "provenance",
+        "indexer", "sector", "restatements", "risk_signals", "movement", "concentration", "assumptions", "section_status",
+        "provenance",
     ]
-    assert doc["schema_version"] == "1.6"
-    for sec in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals", "movement"):
-        assert {"status", "reason", "errors"} <= set(doc[sec])
+    assert doc["schema_version"] == "1.7"
+    for sec in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals", "movement",
+                "concentration"):
+        assert {"status", "reason", "errors", "reason_codes"} <= set(doc[sec])
+        assert doc["section_status"][sec]["reason_codes"] == doc[sec]["reason_codes"]
 
 
 def test_provenance_lists_every_call_with_count_or_error(doc):
@@ -98,7 +101,13 @@ def test_every_number_source_points_at_a_recorded_call(doc):
 
 def test_identification_demo(doc):
     lines = {ln["line_no"]: ln for ln in doc["identification"]["lines"]}
-    assert all(ln["status"] == "identified" for ln in lines.values())
+    assert all(lines[n]["status"] == "identified" and lines[n]["reason_code"] is None for n in range(1, 9))
+    # the direct credit lines (engine 1.7 demo): not identified, grouped by a fixed reason code with their value
+    assert {n: lines[n]["reason_code"] for n in range(9, 13)} == {
+        9: "bancario_sem_fonte", 10: "bancario_sem_fonte", 11: "credito_sem_fonte", 12: "credito_sem_fonte"}
+    groups = {g["reason_code"]: g for g in doc["identification"]["unknown_groups"]}
+    assert groups["bancario_sem_fonte"]["line_nos"] == [9, 10] and groups["bancario_sem_fonte"]["value_brl"] == 390000.0
+    assert groups["credito_sem_fonte"]["line_nos"] == [11, 12] and groups["credito_sem_fonte"]["value_brl"] == 155000.0
     assert lines[1]["identity"]["tesouro_title"] == "NTN-B" and lines[1]["identity"]["tesouro_maturity"] == "2035-05-15"
     assert lines[1]["valuation"]["basis"] == "statement"
     assert lines[2]["identity"]["issuer_cnpj"] == "33000167000101"
@@ -439,9 +448,22 @@ def test_resolve_refusal_makes_fund_lines_unknown_and_downstream_degrade():
     canned["portfolio_resolve"] = [{"match": {}, "error": REFUSAL}]
     d = run(canned)
     assert d["identification"]["status"] == "partial"
-    assert all(l["status"] == "unknown" for l in d["identification"]["lines"] if l["tipo"] in ("fundo", "FIDC"))
-    assert d["fees"]["status"] == "not_applicable" or d["fees"]["lines"] == [] or d["fees"]["status"] != "complete"
+    by = {l["line_no"]: l for l in d["identification"]["lines"]}
+    # engine 1.7: a refused call is not retried; the lines with no CNPJ on the statement stay unknown...
+    for n in (3, 4, 7):
+        assert by[n]["status"] == "unknown" and by[n]["reason_code"] == "consulta_falhou"
+    # ...and the two with one are identified by it, marked, with the name left unchecked (null)
+    for n, cnpj in ((5, "51488342000133"), (6, "32113885000121")):
+        assert by[n]["status"] == "identified" and by[n]["reason_code"] == "cnpj_extrato"
+        assert by[n]["identity"]["cnpj"] == cnpj and by[n]["identity"]["name"] is None
+        assert by[n]["fund_match"]["chosen"]["match_kind"] == "cnpj_extrato"
+    assert d["identification"]["cnpj_extrato_line_nos"] == [5, 6]
+    # downstream runs for them
+    assert {l["cnpj"] for l in d["fees"]["lines"]} >= {"51488342000133", "32113885000121"}
+    assert any(l["cnpj"] == "32113885000121" for l in d["restatements"]["lines"])
+    assert any(l["cnpj"] == "32113885000121" for l in d["risk_signals"]["lines"])
     assert d["indexer"]["classes"][-1]["indexer_class"] == "sem classificação"
+    assert sum(1 for p in d["provenance"] if p["tool"] == "portfolio_resolve") == 3  # one per call, no retry
 
 
 # ---------------------------------------------------------------------------
