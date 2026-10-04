@@ -272,6 +272,72 @@ class TestIngestEtfMarket:
         (fin,) = audit_log.finished
         assert fin["status"] == "skipped"
 
+    async def test_default_tickers_come_from_the_active_registry(self, audit_log):
+        """No tickers given: the scrape list is the active rows of cvm_etf_registry."""
+        executed = {}
+
+        class _Cursor:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def execute(self, sql):
+                executed["sql"] = sql
+
+            def fetchall(self):
+                return [("BOVA11",), ("IVVB11",)]
+
+        class _Conn:
+            def cursor(self):
+                return _Cursor()
+
+        fetched = {}
+
+        def _fake_fetch(self, tickers):
+            fetched["tickers"] = tickers
+            return [{"ticker": t, "text": SAMPLE_TEXT} for t in tickers]
+
+        with patch.object(m.ApifyETFFetcher, "__init__", return_value=None), \
+             patch.object(m.ApifyETFFetcher, "fetch", _fake_fetch), \
+             patch("src.pipeline.ingest_etf_market.upsert_rows",
+                   side_effect=lambda conn, table, rows, **kw: len(rows)):
+            n = await m.ingest_etf_market(_Conn())
+
+        assert fetched["tickers"] == ["BOVA11", "IVVB11"]
+        assert "cvm_etf_registry" in executed["sql"]
+        assert "is_active" in executed["sql"]
+        assert n == 2
+        (fin,) = audit_log.finished
+        assert (fin["status"], fin["rows"]) == ("ok", 2)
+
+    async def test_records_without_ticker_are_dropped_and_the_rest_land(self, audit_log, caplog):
+        """A record with no ticker is dropped and counted; it never blocks the others."""
+        captured = {}
+
+        def _fake_upsert(conn, table, rows, **kw):
+            if table != "cvm_ingest_log":
+                captured["rows"] = rows
+            return len(rows)
+
+        records = [
+            {"ticker": "bova11", "text": SAMPLE_TEXT},
+            {"text": "no ticker"},
+            {"ticker": "  ", "text": "blank ticker"},
+        ]
+        with patch.object(m.ApifyETFFetcher, "__init__", return_value=None), \
+             patch.object(m.ApifyETFFetcher, "fetch", return_value=records), \
+             patch("src.pipeline.ingest_etf_market.upsert_rows", side_effect=_fake_upsert), \
+             caplog.at_level(logging.WARNING, logger="src.pipeline.ingest_etf_market"):
+            n = await m.ingest_etf_market(object(), tickers=["BOVA11"])
+
+        assert n == 1
+        assert [r["ticker"] for r in captured["rows"]] == ["BOVA11"]
+        assert "dropped 2 scraped records" in caplog.text
+        (fin,) = audit_log.finished
+        assert (fin["status"], fin["rows"]) == ("ok", 1)
+
     async def test_a_failed_audit_write_does_not_mask_the_ingest(self):
         def _fake_upsert(conn, table, rows, **kw):
             if table == "cvm_ingest_log":
