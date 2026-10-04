@@ -10,6 +10,7 @@ stubbed, so the server path is still exercised by the offline suite.
 from __future__ import annotations
 
 import io
+from types import SimpleNamespace
 import logging
 from pathlib import Path
 
@@ -255,3 +256,28 @@ def test_unknown_path_and_method_answer_json(app):
     assert app.get("/nope").status_code == 404
     r = app.get("/diagnose")
     assert r.status_code == 405 and r.json == {"erro": server.MSG[405]}
+
+
+def test_narrative_headers_name_the_reason_and_the_calls_never_free_text():
+    from src.portfolio.report.render import Narrative
+
+    n = Narrative(status="unknown", reason="LLMOutputError: o modelo escreveu MARIA", reason_code="LLMOutputError")
+    n.calls = [{"role": "redator", "model": "gpt-5.1-2025-11-13", "cost_usd": 0.17, "output_tokens": 16000,
+                "reasoning_tokens": 15800, "input_tokens": 9000}]
+    h = server.narrative_headers(n)
+    assert h == {"X-Silo-Narrative-Reason": "LLMOutputError",
+                 "X-Silo-Llm-Calls": "redator:out=16000:reasoning=15800"}
+    assert "MARIA" not in str(h)
+    # A code that is not a bare identifier is dropped, never echoed.
+    assert server.narrative_headers(Narrative(status="unknown", reason_code="x: MARIA")) == {}
+    assert server.narrative_headers(Narrative(status="complete")) == {}
+
+
+def test_revisor_removing_everything_is_a_fixed_reason_code(monkeypatch):
+    from src.portfolio.report import build, revisor
+    from src.portfolio.report.redator import RedatorResult
+
+    monkeypatch.setattr(build.redator, "write", lambda engine, provider: RedatorResult("complete", []))
+    monkeypatch.setattr(revisor, "check", lambda engine, findings: revisor.RevisorResult(kept=[], removed=[], notes=[]))
+    n = build.make_narrative({}, SimpleNamespace(name="fake", model="fake", meter=build.llm.CostMeter()), llm_review=False)
+    assert n.status == "unknown" and n.reason_code == "revisor_removed_all"

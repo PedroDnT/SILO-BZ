@@ -68,6 +68,11 @@ class Narrative:
     removed: list[Removal] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     reason: str | None = None
+    # Why the narrative is unknown, as a bare identifier (an LLMError class name or
+    # "revisor_removed_all"), safe for a response header; ``reason`` may quote the model.
+    reason_code: str | None = None
+    # The CostMeter's calls (role, model, cost, token counts): numbers and fixed names only.
+    calls: list[dict] = field(default_factory=list)
     provider: str = ""
     model: str = ""
     served_by: list[str] = field(default_factory=list)

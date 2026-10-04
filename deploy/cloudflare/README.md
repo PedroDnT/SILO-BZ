@@ -61,8 +61,12 @@ Deployed; `/health`, the page, the 401s and the 404 pass, and the engine reaches
 silo-mcp and api.openai.com through the allow-list. The report was blocked by
 OpenAI's 403 `model_not_found` for `gpt-6-luna` on the key in `OPENAI_API_KEY`
 (every gpt-6 model is refused for that key), so the owner switched the model to
-`gpt-5.1` on 2026-10-04 (`docs/planning/OPEN_ITEMS.md` item 15). The end-to-end
-report and the privacy probe are pending the next deploy.
+`gpt-5.1` on 2026-10-04 (`docs/planning/OPEN_ITEMS.md` item 15). Run 37226627623
+produced a complete report, but the marked second one came back with narrative
+`unknown`, so the run failed before the privacy probe. The response now carries
+`X-Silo-Narrative-Reason` (an error class name or `revisor_removed_all`, never
+the message) and `X-Silo-Llm-Calls` (`role:out=N:reasoning=N` per call), and the
+smoke runs the privacy probe before failing on the marked report.
 
 ## Not covered
 

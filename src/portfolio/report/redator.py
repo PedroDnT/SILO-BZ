@@ -101,6 +101,7 @@ class RedatorResult:
     status: str  # "complete" | "unknown"
     findings: list[Finding]
     reason: str | None = None
+    reason_code: str | None = None  # the LLMError class name only, never its message
 
 
 # The Redator's reply, requested as structured output and validated on return. One finding
@@ -169,7 +170,7 @@ def write(engine: dict, provider: Provider) -> RedatorResult:
         raw = provider.complete(SYSTEM_PROMPT, build_user_message(engine), FindingsOutput)
         return RedatorResult("complete", _coerce_findings(raw))
     except LLMError as exc:
-        return RedatorResult("unknown", [], f"{type(exc).__name__}: {exc}")
+        return RedatorResult("unknown", [], f"{type(exc).__name__}: {exc}", type(exc).__name__)
 
 
 # --- deterministic writer (fake provider, offline sample) -------------------
