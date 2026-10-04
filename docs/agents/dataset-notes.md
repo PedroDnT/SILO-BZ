@@ -64,6 +64,11 @@ backfilled by the next run and there is no backfill mode. A null `results` is re
 persistent one raises. IEEX is held back (an unexplained 1999-03 move). Served by
 `api.index_history`, index codes only; IBOV11 and BOVA11 are not the index.
 
+**FIDC tranche percentages are stored as filed** (migration 70): `cvm_fidc_tranche.vl_rentab_mes`,
+`pr_desemp_esperado` and `pr_desemp_real` are unconstrained `numeric` because CVM files implausible
+magnitudes there (1e14 and more in 2019-08, 2020-01, 2020-07, 2022-04 and 2023-12, #556). Never
+rescale, clip or null them; a reader filters by magnitude in its own query and says so.
+
 **Fixed income ETFs are not in COTAHIST** (migration 57). B3 lists them in segment
 FORWARD, market FIXED INCOME, which the COTAHIST files do not carry, so they have no
 `b3_cotahist` row and no CODBDI. Their prints are `b3_trade_consolidated`, from B3's
