@@ -117,6 +117,52 @@ FROM unnest(ARRAY['REFR', 'ETER', 'SPLT', 'CMPD', 'SPIN', 'SUBS', 'AMBG', 'DUPL'
 INSERT INTO b3_corporate_event_sweep (issuing_company, n_events, proven_at)
 VALUES ('STAL', 0, '2024-08-20 06:00+00');
 
+-- Ticker lineage (#381 follow-up, docs/adr/0002-ticker-activity-and-lineage.md).
+-- A week of March 2024 is its own calendar: no other fixture prints there.
+-- OLDL3 -> NEWL3: same company in the FCA, same class, adjacent, no event at
+-- the seam: spliced. A 10:1 grouping later on the NEW ISIN divides the old
+-- rows too. The four others must not splice:
+--   DIFO3 -> DIFN3  different company CNPJs
+--   CLSO4 -> CLSN3  same company, PN ISIN then ON ISIN (another class)
+--   GAPO3 -> GAPN3  a cash session (2024-03-08) between the two
+--   BNDO3 -> BNDN3  a stock event on the old ISIN goes ex at the seam
+INSERT INTO cia_ticker (cnpj_cia, data_refer, versao, valor_mobiliario, codneg, mercado, dt_fim_neg) VALUES
+    ('99000000000101', '2022-01-01', 1, 'Ações Ordinárias', 'OLDL3', 'Bolsa', NULL),
+    ('99000000000101', '2025-01-01', 1, 'Ações Ordinárias', 'NEWL3', 'Bolsa', NULL),
+    ('99000000000102', '2022-01-01', 1, 'Ações Ordinárias', 'DIFO3', 'Bolsa', NULL),
+    ('99000000000103', '2025-01-01', 1, 'Ações Ordinárias', 'DIFN3', 'Bolsa', NULL),
+    ('99000000000104', '2022-01-01', 1, 'Ações Preferenciais', 'CLSO4', 'Bolsa', NULL),
+    ('99000000000104', '2025-01-01', 1, 'Ações Ordinárias', 'CLSN3', 'Bolsa', NULL),
+    ('99000000000105', '2022-01-01', 1, 'Ações Ordinárias', 'GAPO3', 'Bolsa', NULL),
+    ('99000000000105', '2025-01-01', 1, 'Ações Ordinárias', 'GAPN3', 'Bolsa', NULL),
+    ('99000000000106', '2022-01-01', 1, 'Ações Ordinárias', 'BNDO3', 'Bolsa', NULL),
+    ('99000000000106', '2025-01-01', 1, 'Ações Ordinárias', 'BNDN3', 'Bolsa', NULL);
+INSERT INTO b3_cotahist (codneg, trade_date, tpmerc, codbdi, especi, preco_fechamento, fator_cotacao, isin, raw) VALUES
+    ('OLDL3', '2024-03-04', '010', '02', 'ON', 0.96, 1, 'BROLDLACNOR1', '{}'),
+    ('OLDL3', '2024-03-05', '010', '02', 'ON', 0.97, 1, 'BROLDLACNOR1', '{}'),
+    ('OLDL3', '2024-03-06', '010', '02', 'ON', 0.98, 1, 'BROLDLACNOR1', '{}'),
+    ('OLDL3', '2024-03-07', '010', '02', 'ON', 0.99, 1, 'BROLDLACNOR1', '{}'),
+    ('OLDL3', '2024-03-08', '010', '02', 'ON', 1.00, 1, 'BROLDLACNOR1', '{}'),
+    ('NEWL3', '2024-03-11', '010', '02', 'ON', 1.00, 1, 'BRNEWLACNOR1', '{}'),
+    ('NEWL3', '2024-03-12', '010', '02', 'ON', 1.02, 1, 'BRNEWLACNOR1', '{}'),
+    ('NEWL3', '2024-03-13', '010', '02', 'ON', 1.04, 1, 'BRNEWLACNOR1', '{}'),
+    ('NEWL3', '2024-03-14', '010', '02', 'ON', 10.40, 1, 'BRNEWLACNOR1', '{}'),
+    ('NEWL3', '2024-03-15', '010', '02', 'ON', 10.50, 1, 'BRNEWLACNOR1', '{}'),
+    ('DIFO3', '2024-03-08', '010', '02', 'ON', 5, 1, 'BRDIFOACNOR1', '{}'),
+    ('DIFN3', '2024-03-11', '010', '02', 'ON', 5, 1, 'BRDIFNACNOR1', '{}'),
+    ('CLSO4', '2024-03-08', '010', '02', 'PN', 5, 1, 'BRCLSOACNPR1', '{}'),
+    ('CLSN3', '2024-03-11', '010', '02', 'ON', 5, 1, 'BRCLSNACNOR1', '{}'),
+    ('GAPO3', '2024-03-07', '010', '02', 'ON', 5, 1, 'BRGAPOACNOR1', '{}'),
+    ('GAPN3', '2024-03-11', '010', '02', 'ON', 5, 1, 'BRGAPNACNOR1', '{}'),
+    ('BNDO3', '2024-03-08', '010', '02', 'ON', 5, 1, 'BRBNDOACNOR1', '{}'),
+    ('BNDN3', '2024-03-11', '010', '02', 'ON', 5, 1, 'BRBNDNACNOR1', '{}');
+INSERT INTO b3_corporate_event (issuing_company, isin, event_class, label, last_date_prior, factor, raw) VALUES
+    ('NEWL', 'BRNEWLACNOR1', 'stock', 'GRUPAMENTO',  '2024-03-13', 0.1, '{}'),
+    ('BNDO', 'BRBNDOACNOR1', 'stock', 'INCORPORACAO', '2024-03-08', 1, '{}');
+INSERT INTO b3_corporate_event_sweep (issuing_company, n_events, proven_at)
+SELECT c, 0, '2024-09-02 06:00+00'
+FROM unnest(ARRAY['OLDL', 'NEWL', 'DIFO', 'DIFN', 'CLSO', 'CLSN', 'GAPO', 'GAPN', 'BNDO', 'BNDN']) c;
+
 REFRESH MATERIALIZED VIEW mv_b3_isin_subtype;
 
 DO $$
@@ -211,7 +257,11 @@ INSERT INTO cases VALUES
     ('not a share or unit',   $s$SELECT * FROM api.quote_history('FUND11', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=outside research universe'),
     ('over the page',         $s$SELECT * FROM api.quote_history('LONG3', '2020-01-01', '2024-07-31', NULL, NULL, ARRAY['close'])$s$, NULL),
     ('panel unsupported',     $s$SELECT * FROM api.panel(ARRAY['SPIN3'], NULL, '2024-08-01', '2024-08-30', 'month')$s$, 'reason=adjustment_unavailable'),
-    ('panel explicit fund',   $s$SELECT * FROM api.panel(ARRAY['FUND11'], ARRAY['close_adj'], '2024-08-01', '2024-08-30', 'month')$s$, 'reason=adjustment_unavailable');
+    ('panel explicit fund',   $s$SELECT * FROM api.panel(ARRAY['FUND11'], ARRAY['close_adj'], '2024-08-01', '2024-08-30', 'month')$s$, 'reason=adjustment_unavailable'),
+    ('lineage: another CNPJ', $s$SELECT * FROM api.quote_history('DIFN3', '2024-03-08', '2024-03-15', NULL, NULL, ARRAY['close'])$s$, 'reason=outside_coverage'),
+    ('lineage: another class', $s$SELECT * FROM api.quote_history('CLSN3', '2024-03-08', '2024-03-15', NULL, NULL, ARRAY['close'])$s$, 'reason=outside_coverage'),
+    ('lineage: session gap',  $s$SELECT * FROM api.quote_history('GAPN3', '2024-03-07', '2024-03-15', NULL, NULL, ARRAY['close'])$s$, 'reason=outside_coverage'),
+    ('lineage: seam event',   $s$SELECT * FROM api.quote_history('BNDN3', '2024-03-08', '2024-03-15', NULL, NULL, ARRAY['close'])$s$, 'reason=outside_coverage');
 
 DO $$
 DECLARE
@@ -357,6 +407,58 @@ BEGIN
     ASSERT round(v, 6) = round(12.10 / 9.50 - 1, 6), format('CTRL3 monthly value: %s', v);
 
     RAISE NOTICE 'close_return across share-count events OK';
+END $$;
+
+
+-- A spliced lineage serves the whole history, each row with its own ticker
+-- and ISIN, and close_adj continuous across the seam.
+DO $$
+DECLARE
+    j   jsonb;
+    n   INT;
+    got TEXT;
+BEGIN
+    SELECT count(*), string_agg(q ->> 'ticker' || ' ' || (q ->> 'isin'), ',' ORDER BY q ->> 'trade_date')
+    INTO n, got
+    FROM api.quote_history('NEWL3', '2024-03-04', '2024-03-15', NULL, NULL, ARRAY['close', 'isin', 'close_adj']) q;
+    ASSERT n = 10, format('lineage rows: %s, expected 10', n);
+    ASSERT got LIKE 'OLDL3 BROLDLACNOR1,%NEWL3 BRNEWLACNOR1', format('lineage rows: %s', got);
+
+    -- 1.00 before a later 10:1 grouping on the NEW ISIN is 10.00 adjusted.
+    SELECT q INTO j FROM api.quote_history('NEWL3', '2024-03-08', '2024-03-08', NULL, NULL, ARRAY['close', 'close_adj']) q;
+    ASSERT (j ->> 'ticker') = 'OLDL3' AND (j ->> 'close_adj')::numeric = 10.000000, format('old row: %s', j);
+    SELECT q INTO j FROM api.quote_history('NEWL3', '2024-03-13', '2024-03-13', NULL, NULL, ARRAY['close_adj']) q;
+    ASSERT (j ->> 'close_adj')::numeric = 10.400000, format('new row before the grouping: %s', j);
+    SELECT q INTO j FROM api.quote_history('NEWL3', '2024-03-15', '2024-03-15', NULL, NULL, ARRAY['close_adj']) q;
+    ASSERT (j ->> 'close_adj')::numeric = 10.500000, format('new row after the grouping: %s', j);
+
+    -- p_from NULL starts at the oldest instrument; coverage says so.
+    SELECT q INTO j FROM api.quote_history('NEWL3', NULL, '2024-03-15', NULL, NULL, ARRAY['coverage_start', 'coverage_end']) q
+    ORDER BY q ->> 'trade_date' LIMIT 1;
+    ASSERT (j ->> 'trade_date') = '2024-03-04' AND (j ->> 'coverage_start') = '2024-03-04'
+           AND (j ->> 'coverage_end') = '2024-03-15', format('coverage: %s', j);
+
+    -- The session count runs across the seam (03-08 -> 03-11 is adjacent).
+    SELECT q INTO j FROM api.quote_history('NEWL3', '2024-03-11', '2024-03-11', NULL, NULL, ARRAY['prior_no_trade_sessions']) q;
+    ASSERT (j ->> 'prior_no_trade_sessions')::int = 0, format('seam gap: %s', j);
+
+    -- The total return is not computed before the seam, and says why.
+    SELECT q INTO j FROM api.quote_history('NEWL3', '2024-03-08', '2024-03-08', NULL, NULL, ARRAY['close_total_return_null_reason']) q;
+    ASSERT (j ->> 'close_total_return_null_reason') LIKE 'before an ISIN change%', format('total return: %s', j);
+
+    -- A window inside the current instrument is unchanged: NEWL3 rows only.
+    SELECT count(*) INTO n FROM api.quote_history('NEWL3', '2024-03-11', '2024-03-15', NULL, NULL, ARRAY['close']) q
+    WHERE q ->> 'ticker' = 'NEWL3';
+    ASSERT n = 5, format('current-only window: %s', n);
+
+    -- The old ticker asked directly is its own history, never the successor's.
+    SELECT count(*) INTO n FROM api.quote_history('OLDL3', '2024-03-04', '2024-03-15', NULL, NULL, ARRAY['close']) q;
+    ASSERT n = 5, format('old ticker rows: %s', n);
+
+    SELECT string_agg(l.ticker || ':' || l.isin, ',' ORDER BY l.seq) INTO got FROM api.ticker_lineage('NEWL3') l;
+    ASSERT got = 'OLDL3:BROLDLACNOR1,NEWL3:BRNEWLACNOR1', format('ticker_lineage: %s', got);
+
+    RAISE NOTICE 'ticker lineage OK';
 END $$;
 
 ROLLBACK;

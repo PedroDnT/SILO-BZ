@@ -104,13 +104,15 @@ curl -s -X POST "$SILO_URL/rpc/quote_history" \
   -d '{"p_ticker":"PETR4","p_from":"2026-01-02","p_to":"2026-08-26","p_fields":["close","volume"]}'
 ```
 
+**A ticker's history follows the company across an ISIN change.** When a company changes its trading code or B3 issues a new ISIN (VIIA3 `BRVIIAACNOR7` until 2023-09-19, then BHIA3 `BRBHIAACNOR1` from 2023-09-20), a window that reaches back runs through the older instrument. Each row keeps its own `ticker` and `isin`, `close_adj` stays continuous across the seam, and `close_total_return` is null before it. The splice needs the same company in CVM's FCA, the same share class, adjacent sessions with no overlap, no stock event at the seam and exactly one candidate (`docs/adr/0002-ticker-activity-and-lineage.md`); otherwise the window is refused.
+
 **What it refuses** (`22023`, with `details` starting `reason=`) rather than serve a partial or substituted series:
 
 | reason | when |
 |---|---|
 | `unknown_ticker` | the code never printed on the cash tape (or not on `p_board`) |
 | `outside_coverage` | no session in the window, or the window starts before the instrument's first session (the tape starts 2019-01-02, see `coverage()`) |
-| `isin_change` | the ticker printed under two ISINs in the window; a reused code is a new instrument and is never joined |
+| `isin_change` | the ticker printed under two ISINs in the window that its lineage does not splice; a reused code is a new instrument and is never joined |
 | `ambiguous_session` | two rows on one session; pass `p_board` |
 | `invalid_field` | a name `p_fields` does not know |
 | `adjustment_unavailable` | `close_adj` cannot cover the window: not a share or unit, issuer events not proven swept (or proven before the last session), or a spin-off, merger, capital restitution in shares or any other stock event this version does not adjust; the message names ticker, period and cause |
