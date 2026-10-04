@@ -34,7 +34,13 @@
       "WebFetch",
       "mcp__Parallel_Search__web_fetch",
       "mcp__Parallel_Search__web_search",
-      "mcp__Exa__web_fetch_exa"
+      "mcp__Exa__web_fetch_exa",
+      "Bash(git fetch *)",
+      "Bash(git merge-tree *)",
+      "Bash(git ls-tree *)",
+      "Bash(pg_lsclusters *)",
+      "Bash(getent *)",
+      "mcp__claude-code-remote__list_events"
     ]
   },
   "hooks": {
