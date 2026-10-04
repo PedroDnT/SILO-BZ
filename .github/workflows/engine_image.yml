@@ -4,7 +4,10 @@ name: Engine image
 # slice E step 1) and proves it with the container running: GET /health 200,
 # POST /diagnose 401 without the token and with a wrong one, and the offline
 # server tests run inside the image so the PDF renderer is exercised with the
-# image's own native libraries. Publishes nothing: no registry, no Cloudflare.
+# image's own native libraries, and so are the OCR tests: a synthetic statement
+# PDF whose labels are pixels is read end to end with the image's tesseract
+# (SILO_REQUIRE_OCR=1 turns a skip into a failure). Publishes nothing: no
+# registry, no Cloudflare.
 # Uses no repository secret: the access token is random per run.
 
 on:
@@ -14,6 +17,9 @@ on:
       - src/portfolio/**
       - requirements-report.txt
       - tests/test_portfolio_server.py
+      - tests/test_portfolio_statement_ocr.py
+      - tests/portfolio_ocr_fixtures.py
+      - tests/portfolio_extrato_fixtures.py
       - .github/workflows/engine_image.yml
   workflow_dispatch:
 
@@ -74,8 +80,9 @@ jobs:
           docker rm -f engine
 
       # The FakeClient and the fake LLM provider, with the real WeasyPrint and the
-      # image's libraries. pytest is installed for this step only, never baked in.
-      - name: Server tests inside the image
+      # image's libraries; the OCR path with the image's poppler and tesseract.
+      # pytest is installed for this step only, never baked in.
+      - name: Server and OCR tests inside the image
         run: |
-          docker run --rm -v "$PWD:/repo:ro" -w /repo silo-engine:ci \
-            sh -c 'pip install --user --quiet pytest && python -m pytest -p no:cacheprovider -q -rs tests/test_portfolio_server.py'
+          docker run --rm -e SILO_REQUIRE_OCR=1 -v "$PWD:/repo:ro" -w /repo silo-engine:ci \
+            sh -c 'tesseract --version | head -1 && pip install --user --quiet pytest && python -m pytest -p no:cacheprovider -q -rs --durations=5 tests/test_portfolio_server.py tests/test_portfolio_statement_ocr.py'

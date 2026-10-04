@@ -1,6 +1,10 @@
 """Reader for the BTG "Extrato da Conta Investimento" PDF (text layer, co-branded "One Investimentos | BTG Pactual").
 
-    python -m src.portfolio.statement_pdf_extrato FILE.pdf [FILE2.pdf ...] [--consolidate]
+    python -m src.portfolio.statement_pdf_extrato FILE.pdf [FILE2.pdf ...] [--consolidate] [--mostrar-ativos]
+
+An extrato whose labels are drawn as outlines (its text layer holds only the numbers and the SAC
+footer) is read through ``statement_ocr``: numbers from the text layer, labels from OCR, then this
+same parser in OCR mode (tolerant headings, codes / CNPJs / rates normalised and flagged).
 
 The runner reads either BTG layout: the format is detected by content (``read_any_pdf_bytes``),
 so a "Relatório de Performance" goes to ``statement_pdf`` and an extrato comes here.
@@ -38,6 +42,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Callable
 
+from src.portfolio import statement_ocr as ocr
 from src.portfolio import statement_pdf as sp
 from src.portfolio.mask import Masker, _strip_accents
 from src.portfolio.statement import (
@@ -66,6 +71,8 @@ _NUM = re.compile(r"^-?(\d{1,3}(\.\d{3})+|\d+)(,\d+)?$")
 _PCT = re.compile(r"^-?(\d{1,3}(\.\d{3})+|\d+)(,\d+)?%$")
 _DASHES = {"-", "–", "—"}
 _PERIOD = re.compile(r"per[ií]odo\s+de\s+(\d{2}/\d{2}/\d{2,4})\s+(?:a|à|até)\s+(\d{2}/\d{2}/\d{2,4})", re.I)
+# OCR may drop the one-letter 'a' between the two dates, or misread 'Período'
+_PERIOD_OCR = re.compile(r"per\S{0,2}odo\s+de\s+(\d{2}/\d{2}/\d{2,4})\s+(?:\S{1,3}\s+)?(\d{2}/\d{2}/\d{2,4})", re.I)
 _CNPJ_ANY = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}")
 _TICKER = re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]{4,6}\d{0,2}$")
 _ATIVO_PREFIX = re.compile(r"^([A-Z]{2,5})-(.*)$")
@@ -168,18 +175,90 @@ def _gap_join(toks: list[Tok]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def is_extrato(pages: list[str]) -> bool:
-    """True when the first page is headed 'Extrato da Conta Investimento' (the performance report never is)."""
-    return bool(pages) and EXTRATO_KEY in key(pages[0])
+def _lev(a: str, b: str) -> int:
+    """Edit distance (insert, delete, substitute)."""
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _fuzzy_prefix(k: str, prefix: str) -> int | None:
+    """Length of the start of ``k`` that reads as ``prefix`` with OCR noise (1 edit; 2 from 20 characters), or None."""
+    if k.startswith(prefix):
+        return len(prefix)
+    if len(prefix) < 12:
+        return None
+    allowed = 2 if len(prefix) >= 20 else 1
+    best = None
+    for n in range(len(prefix) - allowed, len(prefix) + allowed + 1):
+        if n <= 0 or n > len(k):
+            continue
+        d = _lev(k[:n], prefix)
+        if d <= allowed and (best is None or d < best[0]):
+            best = (d, n)
+    return best[1] if best else None
+
+
+def _approx_in(needle: str, hay: str, allowed: int = 2) -> bool:
+    """``needle`` occurs in ``hay`` with at most ``allowed`` edits (Sellers' approximate substring match)."""
+    if needle in hay:
+        return True
+    prev = [0] * (len(hay) + 1)
+    for i, c in enumerate(needle, 1):
+        cur = [i] + [0] * len(hay)
+        for j, h in enumerate(hay, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (c != h))
+        prev = cur
+    return min(prev) <= allowed
+
+
+def is_extrato(pages: list[str], tolerant: bool = False) -> bool:
+    """True when the first page is headed 'Extrato da Conta Investimento' (the performance report never is).
+
+    ``tolerant`` (OCR text only) accepts the heading with two OCR errors.
+    """
+    if not pages:
+        return False
+    k = key(pages[0])
+    return EXTRATO_KEY in k or (tolerant and _approx_in(EXTRATO_KEY, k))
+
+
+def _extract(data: bytes) -> tuple[list[str], str, "ocr.OcrResult | None"]:
+    """The pages as layout text: the text layer, or, for the extrato whose labels are outlines, text layer + OCR."""
+    pages, extractor = sp.extract_pages(data)
+    if is_extrato(pages) or not ocr.may_need_ocr(pages):
+        return pages, extractor, None
+    # The SAC footer and no extrato heading in the text layer. Only page 1 is read by OCR first: if it
+    # is not the extrato either, the file goes to the performance reader exactly as before.
+    certain = ocr.needs_ocr(pages)  # nothing but numbers beside the footer
+    if not certain and not ocr.available():
+        return pages, extractor, None
+    res = ocr.ocr_pages(data, first_page_ok=lambda text: is_extrato([text], tolerant=True))
+    if res is None:
+        if certain:
+            raise StatementFormatError(
+                "the PDF's text layer holds only numbers and the SAC footer, and OCR found no 'Extrato da Conta "
+                "Investimento' heading on the first page: nothing was read"
+            )
+        return pages, extractor, None
+    return res.pages, ocr.EXTRACTOR, res
 
 
 def read_any_pdf_bytes(data: bytes):
     """(statement, diagnostics, layout) for either BTG PDF layout, picked by content.
 
     ``layout`` is ``"extrato"`` or ``"performance"``; anything that is not an extrato goes to the
-    performance reader, exactly as before this reader existed.
+    performance reader, exactly as before this reader existed. An extrato whose labels are drawn as
+    outlines (a text layer of numbers and the SAC footer only) is read through OCR (``statement_ocr``).
     """
-    pages, extractor = sp.extract_pages(data)
+    pages, extractor, res = _extract(data)
+    if res is not None:
+        stmt, diag = parse_extrato_pages(pages, extractor, ocr_mode=True, ocr_stats=res.stats)
+        return stmt, diag, "extrato"
     if is_extrato(pages):
         stmt, diag = parse_extrato_pages(pages, extractor)
         return stmt, diag, "extrato"
@@ -188,8 +267,8 @@ def read_any_pdf_bytes(data: bytes):
 
 
 def read_extrato_bytes(data: bytes):
-    pages, extractor = sp.extract_pages(data)
-    return parse_extrato_pages(pages, extractor)
+    pages, extractor, res = _extract(data)
+    return parse_extrato_pages(pages, extractor, ocr_mode=res is not None, ocr_stats=res.stats if res else None)
 
 
 # ---------------------------------------------------------------------------
@@ -200,10 +279,12 @@ def read_extrato_bytes(data: bytes):
 class _Scrubber:
     """The holder's masker plus the address, which ``Masker`` does not know. Transient: never store one."""
 
-    __slots__ = ("_masker", "_patterns")
+    __slots__ = ("_masker", "_patterns", "_name_words")
 
-    def __init__(self, masker: Masker, address_parts: list[str]):
+    def __init__(self, masker: Masker, address_parts: list[str], fuzzy_name: str | None = None):
         self._masker = masker
+        # OCR text only: the holder's name words, to mask a reading one letter off from the cover's
+        self._name_words = [_strip_accents(w).upper() for w in (fuzzy_name or "").split()]
         pats: list[re.Pattern[str]] = []
         for part in sorted({p for p in address_parts if p}, key=len, reverse=True):
             for variant in {part, _strip_accents(part)}:
@@ -218,7 +299,37 @@ class _Scrubber:
     def __call__(self, s: str) -> str:
         for p in self._patterns:
             s = p.sub(TOKEN_ENDERECO, s)
-        return str(self._masker.scrub(s))
+        s = str(self._masker.scrub(s))
+        return self._fuzzy(s) if self._name_words else s
+
+    def _fuzzy(self, s: str) -> str:
+        """Two or more consecutive words that read as consecutive holder-name words, each at most one
+        letter off (exactly, for words under four letters), with at least one long word: '[TITULAR]'."""
+        words = self._name_words
+        toks = list(re.finditer(r"\S+", s))
+        norm = [_strip_accents(m.group()).upper().strip(".,;:") for m in toks]
+
+        def close(a: str, b: str) -> bool:
+            return a == b or (len(b) >= 4 and abs(len(a) - len(b)) <= 1 and _lev(a, b) <= 1)
+
+        spans: list[tuple[int, int]] = []
+        i = 0
+        while i < len(toks):
+            best = 0
+            for j in range(len(words)):
+                k = 0
+                while i + k < len(toks) and j + k < len(words) and close(norm[i + k], words[j + k]):
+                    k += 1
+                if k >= 2 and any(len(words[j + q]) >= 4 for q in range(k)):
+                    best = max(best, k)
+            if best:
+                spans.append((toks[i].start(), toks[i + best - 1].end()))
+                i += best
+            else:
+                i += 1
+        for a, b in reversed(spans):
+            s = s[:a] + "[TITULAR]" + s[b:]
+        return s
 
     @property
     def holder(self):
@@ -228,10 +339,12 @@ class _Scrubber:
 _LABEL_KEYS = ("containvestimento", "cpf", "periodo", "emitidoem", "extratodacontainvestimento", "informacoesdetalhadas")
 
 
-def _cover_scrubber(cover: str) -> tuple[_Scrubber, list[str]]:
+def _cover_scrubber(cover: str, tolerant: bool = False) -> tuple[_Scrubber, list[str]]:
     lines = [ln.strip() for ln in cover.splitlines() if ln.strip()]
     flat = _strip_accents("\n".join(lines))
     head = next((i for i, ln in enumerate(lines) if "informacoesdetalhadassobreinvestimentos" in key(ln)), None)
+    if head is None and tolerant:
+        head = next((i for i, ln in enumerate(lines) if _fuzzy_prefix(key(ln), "informacoesdetalhadassobreinvestimentos")), None)
     if head is None:
         raise StatementFormatError("cover page: no 'Informações detalhadas sobre investimentos' line, so the holder cannot be masked: nothing was read")
     rest = re.split(r"investimentos", _strip_accents(lines[head]), maxsplit=1, flags=re.I)
@@ -248,6 +361,8 @@ def _cover_scrubber(cover: str) -> tuple[_Scrubber, list[str]]:
     conta = m.group(1) if m else None
     m = re.search(r"\bCPF\s*:?\s*(\d{3}\.?\d{3}\.?\d{3}-?\d{2})", flat, re.I)
     cpf = m.group(1) if m else None
+    if cpf and tolerant:
+        cpf = ocr.check_cpf(cpf)  # one OCR-confusable digit repaired by the check digits, so the mask matches
     notes = []
     if not conta:
         notes.append("Capa sem 'Conta investimento': o número da conta não pôde ser mascarado por valor.")
@@ -268,7 +383,7 @@ def _cover_scrubber(cover: str) -> tuple[_Scrubber, list[str]]:
         for cep in re.findall(r"\d{5}-?\d{3}", ln):
             address.append(cep)
     masker = Masker(nome, cpf, conta)
-    return _Scrubber(masker, address), notes
+    return _Scrubber(masker, address, fuzzy_name=nome if tolerant else None), notes
 
 
 # ---------------------------------------------------------------------------
@@ -278,12 +393,40 @@ def _cover_scrubber(cover: str) -> tuple[_Scrubber, list[str]]:
 _TITLE = re.compile(r"^[A-ZÀ-Ý][a-zà-ÿ]")
 
 
-def heading_of(text: str) -> tuple[str, str] | None:
-    """(section kind, argument) when the line is a section heading, else None."""
+HEADING_PREFIXES = (
+    "rendafixaposicaoconsolidadaporemissor",
+    "previdenciaindividualposicao",
+    "fundodeinvestimentoposicao",
+    "posicoesabertasporaliquota",
+    "previdenciainternaposicao",
+    "rendavariavelposicao",
+    "contacorrenteposicao",
+    "sumariodistribuicao",
+    "rendafixaposicao",
+    "distribuicao",
+)
+
+
+def _canonical_key(k: str) -> str:
+    """OCR text only: a heading key whose start reads as a known heading with OCR noise gets that heading's spelling."""
+    for prefix in HEADING_PREFIXES:
+        n = _fuzzy_prefix(k, prefix)
+        if n is not None:
+            return prefix + k[n:]
+    return k
+
+
+def heading_of(text: str, tolerant: bool = False) -> tuple[str, str] | None:
+    """(section kind, argument) when the line is a section heading, else None.
+
+    ``tolerant`` (OCR text only) reads a known heading with one OCR error (two in the long ones).
+    """
     s = text.strip()
     if not _TITLE.match(s):
         return None
     k = key(s)
+    if tolerant:
+        k = _canonical_key(k)
     dashed = re.search(r"\S\s+[-–]\s+[A-Za-zÀ-ÿ]", s) is not None  # ' - <word>', never a missing value
     if k.startswith("sumariodistribuicao"):
         return ("sumario", "")
@@ -327,21 +470,36 @@ def _is_furniture(text: str) -> bool:
     )
 
 
-def _is_col_header(toks: list[Tok]) -> bool:
+def _vocab_word(w: str, tolerant: bool) -> bool:
+    if w in HEADER_VOCAB:
+        return True
+    if not tolerant:
+        return False
+    if w in ("rs", "r"):  # 'R$' read by OCR
+        return True
+    return len(w) >= 5 and any(abs(len(v) - len(w)) <= 1 and _lev(w, v) <= 1 for v in HEADER_VOCAB if len(v) >= 5)
+
+
+def _is_col_header(toks: list[Tok], tolerant: bool = False) -> bool:
     words = [t for t in toks if t.k not in ("D",)]
     if not words:
         return True  # the header's own dates ('31/08/26  31/08/26  30/09/26')
     strong = False
+    good = bad = 0
     for t in words:
         if t.k != "L":
             return False
-        if t.t.isupper() and len(t.t) >= 2 and t.t not in HEADER_UPPER_OK:
-            return False
         w = re.sub(r"[^a-z$]", "", _strip_accents(t.t).lower())
-        if w and w not in HEADER_VOCAB:
+        upper_ok = not (t.t.isupper() and len(t.t) >= 2 and t.t not in HEADER_UPPER_OK and not (tolerant and t.t in ("RS", "R$.")))
+        if upper_ok and (not w or _vocab_word(w, tolerant)):
+            good += 1
+            strong = strong or len(w) >= 4
+        elif not tolerant:
             return False
-        strong = strong or len(w) >= 4
-    return strong
+        else:
+            bad += 1
+    # OCR text: one garbled word among three or more header words still makes a header line
+    return strong and (bad == 0 or (bad == 1 and good >= 3))
 
 
 @dataclass
@@ -382,6 +540,16 @@ class Diagnostics:
     by_group: dict[str, tuple[int, Decimal]] = field(default_factory=dict)
     checks: list[tuple[str, bool, Decimal | None]] = field(default_factory=list)
     unread: list[str] = field(default_factory=list)
+    # lines with money outside every table the reader knows (before any heading, or under an unknown
+    # one): printed when a check fails, by page, line and shape, so an unread heading is findable
+    unattributed: list[str] = field(default_factory=list)
+    ocr: bool = False  # the labels were read by OCR (statement_ocr)
+    ocr_stats: object = None  # statement_ocr.MergeStats, counts only
+    ocr_checks: Counter = field(default_factory=Counter)
+
+
+def _has_money(toks: list[Tok]) -> bool:
+    return any(t.k == "N" and "," in t.t for t in toks)
 
 
 def _blocks(lines: list[Line], diag: Diagnostics) -> list[Block]:
@@ -405,9 +573,14 @@ def _blocks(lines: list[Line], diag: Diagnostics) -> list[Block]:
         if id(ln) in edge and any(t in ln.text for t in MASK_TOKENS):
             diag.masked_lines_skipped += 1
             continue
+        if diag.ocr and id(ln) in edge and ("containvestimento" in key(ln.text) or _approx_in(EXTRATO_KEY, key(ln.text))):
+            # OCR reads the holder in each page header on its own, and one character off would escape the
+            # mask: the header line with the account is furniture whether or not it was masked
+            diag.masked_lines_skipped += 1
+            continue
         if _is_furniture(ln.text):
             continue
-        h = heading_of(ln.text)
+        h = heading_of(ln.text, tolerant=diag.ocr)
         if h is not None:
             hk = key(ln.text)
             just_heading = True
@@ -425,8 +598,11 @@ def _blocks(lines: list[Line], diag: Diagnostics) -> list[Block]:
             continue  # the wrapped tail of a heading ('Portfólio de' / 'fundos')
         just_heading = False
         if cur is None or cur.kind in ("ignore", "ignore_page", "unknown"):
+            if (cur is None or cur.kind == "unknown") and _has_money(ln.toks):
+                where = "before any heading" if cur is None else "under an unknown heading"
+                diag.unattributed.append(f"{ln.coord}: money {where} (shape {shape_of(ln.toks)})")
             continue
-        if _is_col_header(ln.toks):
+        if _is_col_header(ln.toks, tolerant=diag.ocr):
             for t in ln.toks:
                 if key(t.t) == "ativo" and cur.header_ativo_x is None:
                     cur.header_ativo_x = t.x
@@ -456,11 +632,16 @@ class Item:
     emissor: str | None = None
     classe: str | None = None
     estrategia: str | None = None
+    # OCR mode only: whether the code (or the fund's CNPJ) matched its shape or check digits, and what
+    # the normalisation changed; None outside OCR or where there is no code
+    codigo_conferido: bool | None = None
+    ajustes: tuple[str, ...] = ()
 
 
 class _Ctx:
     def __init__(self, diag: Diagnostics):
         self.diag = diag
+        self.ocr = diag.ocr
         self.items: list[Item] = []
         self.unread: list[str] = []
         self.subtotals: list[tuple[str, Decimal, list[Item]]] = []  # check name, printed value, the rows it covers
@@ -649,11 +830,16 @@ def _parse_funds(b: Block, ctx: _Ctx, period_end: dt.date) -> None:
             title = []
             if date_of(t[0].t) != period_end:
                 ctx.diag.fund_ref_date_differs += 1
+            chk = ocr.check_cnpj(cnpj) if ctx.ocr else None
+            if chk is not None:
+                cnpj = chk.value
             it = Item(
                 group="fundos",
                 name=name,
                 tipo=_fund_tipo(name),
                 codigo=cnpj,
+                codigo_conferido=chk.conferido if chk else None,
+                ajustes=chk.ajustes if chk else (),
                 valor=num(t[4].t),
                 quantidade=opt_num(t[2]),
                 preco=opt_num(t[3]),
@@ -823,7 +1009,12 @@ def _parse_rf(b: Block, ctx: _Ctx) -> None:
         if not ativo or ativo.endswith("-"):
             ctx.bad(r.line, "renda fixa row with no complete Ativo code")
             continue
+        chk = None
+        if ctx.ocr:
+            ativo, chk = ocr.normalize_ativo("".join(ativo_parts))
         tipo, codigo = _rf_type(ativo, emissor, kind, r.venc)
+        if ctx.ocr and chk is None:
+            chk = ocr.FieldCheck(codigo or "", tipo == "tesouro" and codigo is not None and ativo.replace("-", "") in TESOURO_ATIVO)
         taxa = " ".join(taxa_parts) or None
         name = f"{emissor} - {ativo}" if emissor else ativo
         it = Item(
@@ -839,6 +1030,8 @@ def _parse_rf(b: Block, ctx: _Ctx) -> None:
             emissor=emissor,
             classe="Renda Fixa",
             estrategia=kind or None,
+            codigo_conferido=chk.conferido if chk else None,
+            ajustes=chk.ajustes if chk else (),
         )
         items.append(it)
         ctx.items.append(it)
@@ -946,11 +1139,14 @@ def _parse_prev(b: Block, ctx: _Ctx, plan_no: int) -> None:
         if not name:
             ctx.bad(ln, "previdência row with no fund name")
             continue
+        chk = ocr.check_cnpj(cnpj_tok.t) if ctx.ocr else None
         it = Item(
             group="prev",
             name=name,
             tipo="fundo",
-            codigo=cnpj_tok.t,
+            codigo=chk.value if chk else cnpj_tok.t,
+            codigo_conferido=chk.conferido if chk else None,
+            ajustes=chk.ajustes if chk else (),
             valor=num(t[-1].t),
             quantidade=opt_num(t[-3]),
             preco=opt_num(t[-2]),
@@ -986,6 +1182,10 @@ def _parse_rv(b: Block, ctx: _Ctx) -> None:
         if (label == "total" or label.startswith("totalem")) and tail and tail[-1].k == "N":
             total = num(tail[-1].t)
             continue
+        if ctx.ocr and t and t[0].k == "L":
+            # OCR mixes the case of look-alike letters ('BOvZ11'); a B3 code is upper case
+            t = [Tok(t[0].x, t[0].t.upper(), "L")] + t[1:]
+            ln = Line(ln.page, ln.no, ln.text, t)
         if len(t) >= 5 and _TICKER.match(t[0].t) and all(x.k in ("N", "-") for x in t[-4:]) and t[-1].k == "N" and t[-4].k == "N":
             entries.append(("d", ln))
         elif any(x.k != "L" for x in t):
@@ -1018,12 +1218,15 @@ def _parse_rv(b: Block, ctx: _Ctx) -> None:
         if not ok:
             continue
         name = sp.join_fragments(parts) or t[0].t
+        chk = ocr.normalize_ticker(t[0].t) if ctx.ocr else None
         try:
             it = Item(
                 group="rv",
                 name=name,
                 tipo=tipo,
-                codigo=t[0].t,
+                codigo=chk.value if chk else t[0].t,
+                codigo_conferido=chk.conferido if chk else None,
+                ajustes=chk.ajustes if chk else (),
                 valor=num(t[-1].t),
                 quantidade=opt_num(t[-4]),
                 preco=opt_num(t[-3]),
@@ -1063,9 +1266,9 @@ def _parse_cc(b: Block, ctx: _Ctx) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _period_end(texts: list[str]) -> dt.date:
+def _period_end(texts: list[str], tolerant: bool = False) -> dt.date:
     for text in texts:
-        m = _PERIOD.search(text)
+        m = _PERIOD.search(text) or (_PERIOD_OCR.search(_strip_accents(text)) if tolerant else None)
         if m:
             try:
                 return date_of(m.group(2))
@@ -1074,15 +1277,18 @@ def _period_end(texts: list[str]) -> dt.date:
     raise StatementFormatError("no period 'Período de DD/MM/YY a DD/MM/YY' found: the position date cannot be set")
 
 
-def parse_extrato_pages(pages: list[str], extractor: str = "text") -> tuple[Statement, Diagnostics]:
-    diag = Diagnostics(extractor=extractor, pages=len(pages))
+def parse_extrato_pages(pages: list[str], extractor: str = "text", ocr_mode: bool = False, ocr_stats=None) -> tuple[Statement, Diagnostics]:
+    """Read the extrato's pages (layout text). ``ocr_mode``: the labels came from OCR (``statement_ocr``):
+    headings are matched with OCR tolerance, and codes, CNPJs and rates are normalised and flagged per position.
+    """
+    diag = Diagnostics(extractor=extractor, pages=len(pages), ocr=ocr_mode, ocr_stats=ocr_stats)
     if not pages or not any(p.strip() for p in pages):
         raise StatementFormatError("the PDF has no text")
-    if not is_extrato(pages):
+    if not is_extrato(pages, tolerant=ocr_mode):
         raise StatementFormatError("not a BTG 'Extrato da Conta Investimento' (no such heading on the first page)")
-    scrub, notes = _cover_scrubber(pages[0])
+    scrub, notes = _cover_scrubber(pages[0], tolerant=ocr_mode)
     broker = "BTG Pactual" if "btgpactual" in key(pages[0]) else None
-    period_end = _period_end([ln for pg in pages for ln in pg.splitlines()])
+    period_end = _period_end([ln for pg in pages for ln in pg.splitlines()], tolerant=ocr_mode)
     rest = pages[1:]
     del pages
     lines = [
@@ -1092,7 +1298,7 @@ def parse_extrato_pages(pages: list[str], extractor: str = "text") -> tuple[Stat
     ]
     del rest
     blocks = _blocks(lines, diag)
-    probe = _Ctx(Diagnostics())
+    probe = _Ctx(Diagnostics(ocr=ocr_mode))
     _run_blocks(blocks, probe, period_end)
     ctx = _Ctx(diag)
     if probe.ev_top and probe.ev_bottom:
@@ -1135,6 +1341,17 @@ def _finish(ctx: "_Ctx", diag: Diagnostics, scrub, notes: list[str], broker, per
     positions: list[Position] = []
     for it in ctx.items:
         n = len(positions) + 1
+        taxa, taxa_ok, ajustes = it.taxa, None, it.ajustes
+        if diag.ocr:
+            tchk = ocr.normalize_taxa(it.taxa)
+            if tchk is not None:
+                taxa, taxa_ok, ajustes = tchk.value, tchk.conferido, ajustes + tchk.ajustes
+            if it.codigo is not None:
+                diag.ocr_checks["código conferido" if it.codigo_conferido else "código não conferido"] += 1
+            if taxa_ok is not None:
+                diag.ocr_checks["taxa conferida" if taxa_ok else "taxa não conferida"] += 1
+            if ajustes:
+                diag.ocr_checks["posições com ajuste de OCR"] += 1
         positions.append(
             Position(
                 line_no=n,
@@ -1147,10 +1364,14 @@ def _finish(ctx: "_Ctx", diag: Diagnostics, scrub, notes: list[str], broker, per
                 valor=it.valor,
                 data_posicao=period_end,
                 vencimento=it.vencimento,
-                taxa_texto=it.taxa,
+                taxa_texto=taxa,
                 estrategia_corretora=it.estrategia,
                 classe_corretora=it.classe,
                 emissor=it.emissor,
+                fonte_texto="ocr" if diag.ocr else None,
+                codigo_conferido=it.codigo_conferido,
+                taxa_conferida=taxa_ok,
+                ajustes_ocr=ajustes,
             )
         )
     for it in ctx.items:
@@ -1183,6 +1404,9 @@ def _finish(ctx: "_Ctx", diag: Diagnostics, scrub, notes: list[str], broker, per
     diag.unread = list(ctx.unread)
     tol = CENT * max(n_rows, 1)
     failures = [f"{name}: gap R$ {gap}" for name, ok, gap in checks if not ok]
+    if failures and diag.unattributed:
+        # numbers no reader took (a heading not found, or not known): where they are, never what they say
+        failures += [f"não atribuída a nenhuma seção: {u}" for u in diag.unattributed]
     if ctx.unread or failures:
         first_fail = next(((n, g) for n, ok, g in checks if not ok), None)
         exc = StatementTotalMismatch(
@@ -1204,6 +1428,11 @@ def _finish(ctx: "_Ctx", diag: Diagnostics, scrub, notes: list[str], broker, per
         )
     if diag.unknown_sections:
         notes.append(f"{len(diag.unknown_sections)} seção(ões) de título desconhecido ignorada(s); o Total do Sumário conferiu.")
+    if diag.ocr:
+        notes.append(
+            "Extrato sem camada de texto nos rótulos: nomes, códigos, CNPJs, emissores e taxas lidos por OCR; "
+            "valores, quantidades e datas lidos da camada de texto do PDF. Somas conferidas."
+        )
     stmt = Statement(
         holder=scrub.holder,
         corretora=broker,
@@ -1258,6 +1487,47 @@ def describe(stmt: Statement, diag: Diagnostics) -> list[str]:
         f"linhas mascaradas ignoradas: {diag.masked_lines_skipped}; texto após totais: {diag.lines_after_total}; "
         f"fundos com data de cota diferente: {diag.fund_ref_date_differs}"
     )
+    out += _describe_ocr(diag)
+    return out
+
+
+def _describe_ocr(diag: Diagnostics) -> list[str]:
+    if not diag.ocr:
+        return []
+    st = diag.ocr_stats
+    words = (
+        f"palavras OCR {st.ocr_words}, da camada de texto {st.pdf_words}; descartadas: sobre a camada de texto "
+        f"{st.dropped_overlap}, numéricas na coluna de um número {st.dropped_numeric}, marcas soltas {st.dropped_marks}"
+        if isinstance(st, ocr.MergeStats) else "contagem de palavras indisponível"
+    )
+    return [
+        f"OCR: rótulos lidos por OCR (tesseract por); números e datas da camada de texto; {words}",
+        "OCR conferência: " + (", ".join(f"{k} {v}" for k, v in sorted(diag.ocr_checks.items())) or "nada a conferir"),
+    ]
+
+
+def describe_assets(stmt: Statement) -> list[str]:
+    """``--mostrar-ativos``: one line per position with the asset as printed (the owner allowed asset names).
+
+    Holder data stays masked: ``linha_extrato`` and ``emissor`` were scrubbed at read time, and the
+    cover, the account, the CPF, the address and the plan certificates are never in a position.
+    """
+    out = []
+    for p in stmt.positions:
+        cnpj = codigo_cnpj(p.codigo)
+        flags = []
+        if p.fonte_texto:
+            flags.append(f"lido por {p.fonte_texto.upper()}")
+        if p.codigo_conferido is not None:
+            flags.append("código conferido" if p.codigo_conferido else "código NÃO conferido")
+        if p.taxa_conferida is not None:
+            flags.append("taxa conferida" if p.taxa_conferida else "taxa NÃO conferida")
+        flags += list(p.ajustes_ocr)
+        out.append(
+            f"  {p.line_no:>3} {p.tipo} | {p.linha_extrato} | codigo {p.codigo or '-'} | cnpj {cnpj or '-'} | "
+            f"vencimento {p.vencimento.isoformat() if p.vencimento else '-'} | taxa {p.taxa_texto or '-'} | "
+            f"valor R$ {sp._fmt(p.valor)}" + (f" | {'; '.join(flags)}" if flags else "")
+        )
     return out
 
 
@@ -1265,6 +1535,8 @@ def _describe_failure(exc: StatementError) -> list[str]:
     out = [f"ERRO: {exc}"]
     diag = getattr(exc, "extrato_diagnostics", None)
     if isinstance(diag, Diagnostics):
+        out += [f"  não atribuída: {u}" for u in diag.unattributed]
+        out += _describe_ocr(diag)
         out.append("seções: " + ", ".join(f"{k} {v}" for k, v in sorted(diag.sections.items()))
                    + (f"; desconhecidas: {', '.join(diag.unknown_sections)}" if diag.unknown_sections else ""))
         out.append(f"linhas não lidas: {len(diag.unread)}")
@@ -1282,6 +1554,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Reads BTG PDFs (extrato or performance report) and prints ONLY masked, aggregate output.")
     ap.add_argument("files", nargs="+", help="BTG 'Extrato da Conta Investimento' or 'Relatório de Performance' PDF(s)")
     ap.add_argument("--consolidate", action="store_true", help="consolidate the statements and describe the consolidated view")
+    ap.add_argument(
+        "--mostrar-ativos",
+        action="store_true",
+        help="also print, per position, type, asset name, code, CNPJ, maturity, rate, value and the OCR flags "
+        "(holder name, CPF, account, address and plan certificate stay masked)",
+    )
     args = ap.parse_args(argv)
     from src.portfolio.consolidate import consolidate, describe_consolidated
 
@@ -1305,6 +1583,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("layout: relatório de performance")
             print("\n".join(sp.describe(stmt, diag)))
+        if args.mostrar_ativos:
+            print("ativos:")
+            print("\n".join(describe_assets(stmt)))
     if args.consolidate and statements and rc == 0:
         print("== consolidação ==")
         try:

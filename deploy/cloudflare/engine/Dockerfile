@@ -11,10 +11,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 
 # WeasyPrint needs pango and harfbuzz-subset (its Debian install list); report.css asks for DejaVu Sans.
-# poppler-utils gives pdftotext, the BTG statement reader's first extractor (pypdf is the fallback).
+# poppler-utils gives pdftotext, the BTG statement reader's first extractor (pypdf is the fallback),
+# and pdftoppm; tesseract-ocr with its Portuguese data reads the extrato whose labels are drawn as
+# outlines (src/portfolio/statement_ocr.py). The build fails if the 'por' language is missing.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-dejavu-core poppler-utils \
-    && rm -rf /var/lib/apt/lists/*
+       tesseract-ocr tesseract-ocr-por \
+    && rm -rf /var/lib/apt/lists/* \
+    && tesseract --list-langs 2>/dev/null | grep -qx por
 
 WORKDIR /app
 COPY deploy/cloudflare/engine/requirements.txt /tmp/requirements.txt
