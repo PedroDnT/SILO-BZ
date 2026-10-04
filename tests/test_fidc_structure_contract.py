@@ -183,14 +183,14 @@ def test_row_cap_refuses_and_does_not_tier():
         assert "p_after" not in body and "p_limit" not in body
 
 
-def test_coverage_reports_both_with_the_2025_limit():
+def test_coverage_reports_both_with_the_2013_start():
     cov = _body("coverage")
     for row, table in (("fidc_tranches", "cvm_fidc_tranche"), ("fidc_aging", "cvm_fidc_aging")):
         assert f"'{row}'::text" in cov, f"coverage lacks the {row} row"
         seg = cov[cov.index(f"SELECT '{row}'::text"):]
         seg = seg[: seg.index("UNION ALL")]
         assert f"FROM public.{table} " in seg
-        assert "2025-01" in seg and "no equivalent member" in seg and "not a gap" in seg
+        assert "from 2013-01" in seg and "HIST archive" in seg and "no equivalent member" not in seg
         assert "public.latest_complete_period('fidc')" in seg
         assert "'fidc'::text" in seg, "landed_at comes from the fidc ingest"
 
@@ -206,7 +206,7 @@ def test_the_catalog_names_both_and_states_the_limit():
         assert fn in cat["limits"]["page"]["functions"]["raise_only"]
         assert f"{fn}_rows" not in cat["limits"]["tiers"]["anon"], "raise-only, not tier-clamped"
     text = " ".join(cat["constraints"])
-    assert "FIDC TRANCHES AND AGING BEGIN IN 2025" in text
+    assert "FIDC TRANCHES AND AGING BEGIN IN 2013-01" in text
     assert "verbatim" in text and "overdue_total" in text and "not a sum of the bands" in text
     embedded = SQL[SQL.index("SELECT $json$") + len("SELECT $json$"):SQL.index("$json$::jsonb")]
     assert json.loads(embedded)["version"] == CATALOG_VERSION

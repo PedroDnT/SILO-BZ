@@ -287,7 +287,7 @@ def _usage(input_tokens=1000, output_tokens=500, cached=0, written=0, reasoning=
 
 
 def _body(text='{"ok": true}', status="completed", incomplete=None, usage=None, refusal=None, phase=None,
-          model="gpt-6-luna-2026-09-01"):
+          model="gpt-5.1-2025-11-13"):
     content = [{"type": "refusal", "refusal": refusal}] if refusal else [
         {"type": "output_text", "text": text, "annotations": []}]
     return {
@@ -345,11 +345,11 @@ def test_openai_defaults_to_the_owners_model_and_medium_reasoning(monkeypatch):
     monkeypatch.delenv("SILO_LLM_EFFORT", raising=False)
     client = FakeOpenAI(_body())
     p = llm.OpenAIProvider(client=client)
-    assert p.model == "gpt-6-luna" == llm.OPENAI_DEFAULT_MODEL and p.effort == "medium"
+    assert p.model == "gpt-5.1" == llm.OPENAI_DEFAULT_MODEL and p.effort == "medium"
     assert p.complete("sys", "user", Ok) == Ok(ok=True)
     kind, kw = client.calls[0]
     assert kind == "parse" and kw["text_format"] is Ok  # native structured output, the Pydantic model
-    assert kw["model"] == "gpt-6-luna" and kw["reasoning"] == {"effort": "medium"}
+    assert kw["model"] == "gpt-5.1" and kw["reasoning"] == {"effort": "medium"}
     assert kw["instructions"] == "sys" and kw["input"] == [{"role": "user", "content": "user"}]
     assert kw["store"] is False and kw["max_output_tokens"] == llm.DEFAULT_MAX_TOKENS
     assert "tools" not in kw and "text" not in kw and "service_tier" not in kw  # no hosted tool, Standard tier
@@ -394,7 +394,7 @@ def test_openai_invalid_payload_is_rejected_by_pydantic_and_still_booked():
     with pytest.raises(llm.LLMValidationError) as exc:
         p.complete("s", "u", Ok)
     assert "ok" in str(exc.value) and "maybe" not in str(exc.value)
-    assert meter.spent_usd == pytest.approx((1000 * 0.10 + 500 * 0.50) / 1e6)
+    assert meter.spent_usd == pytest.approx((1000 * 1.25 + 500 * 10.00) / 1e6)
 
 
 def test_openai_truncation_is_named_not_reported_as_bad_json():
@@ -418,11 +418,12 @@ def test_openai_cost_is_booked_from_usage_with_cache_parts():
     meter = llm.CostMeter()
     usage = _usage(input_tokens=15000, output_tokens=2000, cached=12000, written=3000, reasoning=1500)
     llm.OpenAIProvider(client=FakeOpenAI(_body(usage=usage)), meter=meter).complete("s", "u", Ok)
-    # gpt-6-luna: cached 0.01, cache write 0.125, output 0.50 (reasoning included); no uncached input left
-    assert meter.spent_usd == pytest.approx((12000 * 0.01 + 3000 * 0.125 + 2000 * 0.50) / 1e6)
+    # gpt-5.1, priced as the requested model although the reply names the dated snapshot:
+    # cached 0.125, cache write at the input rate 1.25, output 10.00 (reasoning included)
+    assert meter.spent_usd == pytest.approx((12000 * 0.125 + 3000 * 1.25 + 2000 * 10.00) / 1e6)
     call = meter.calls[0]
     assert call["input_tokens"] == 0 and call["cache_read_tokens"] == 12000 and call["cache_write_tokens"] == 3000
-    assert call["reasoning_tokens"] == 1500 and call["model"] == "gpt-6-luna-2026-09-01"
+    assert call["reasoning_tokens"] == 1500 and call["model"] == "gpt-5.1-2025-11-13"
 
 
 def test_openai_long_context_rate_above_272k_input_tokens():
@@ -438,7 +439,7 @@ def test_openai_missing_usage_books_the_worst_case():
     body["usage"] = None
     meter = llm.CostMeter()
     llm.OpenAIProvider(client=FakeOpenAI(body), meter=meter).complete("s", "u", Ok)
-    assert meter.spent_usd == pytest.approx(llm.tokens_cost_usd("gpt-6-luna", input_tokens=1, output_tokens=16000))
+    assert meter.spent_usd == pytest.approx(llm.tokens_cost_usd("gpt-5.1", input_tokens=1, output_tokens=16000))
 
 
 def test_openai_cap_refuses_before_the_call():
@@ -489,12 +490,12 @@ def test_openai_through_the_real_sdk_over_a_mock_transport(monkeypatch):
     assert out == Ok(ok=True)
     path, body = seen[0]
     assert path == "/v1/responses"
-    assert body["model"] == "gpt-6-luna" and body["reasoning"] == {"effort": "medium"} and body["store"] is False
+    assert body["model"] == "gpt-5.1" and body["reasoning"] == {"effort": "medium"} and body["store"] is False
     fmt = body["text"]["format"]
     assert fmt["type"] == "json_schema" and fmt["strict"] is True and fmt["name"] == "Ok"
     assert llm.flatten_schema(fmt["schema"]) == OK_JSON_SCHEMA
     assert "tools" not in body
-    assert meter.spent_usd == pytest.approx((1000 * 0.10 + 1000 * 0.01 + 300 * 0.50) / 1e6)
+    assert meter.spent_usd == pytest.approx((1000 * 1.25 + 1000 * 0.125 + 300 * 10.00) / 1e6)
 
     seen.clear()
 
@@ -507,7 +508,7 @@ def test_openai_through_the_real_sdk_over_a_mock_transport(monkeypatch):
     meter = llm.CostMeter()
     with pytest.raises(llm.LLMValidationError):
         llm.OpenAIProvider(client=client, meter=meter).complete("sys", "user", Ok)
-    assert meter.spent_usd == pytest.approx((1000 * 0.10 + 500 * 0.50) / 1e6)  # booked from the body
+    assert meter.spent_usd == pytest.approx((1000 * 1.25 + 500 * 10.00) / 1e6)  # booked from the body
 
 
 # --- selection and the fake ---------------------------------------------------------
@@ -521,7 +522,7 @@ def test_provider_selection_by_env(monkeypatch):
     monkeypatch.delenv("SILO_LLM_MODEL", raising=False)
     monkeypatch.setenv("SILO_LLM_PROVIDER", "openai")
     p = llm.get_provider()
-    assert isinstance(p, llm.OpenAIProvider) and p.model == "gpt-6-luna"
+    assert isinstance(p, llm.OpenAIProvider) and p.model == "gpt-5.1"
     monkeypatch.setenv("SILO_LLM_PROVIDER", "nope")
     with pytest.raises(llm.LLMConfigError) as exc:
         llm.get_provider()
