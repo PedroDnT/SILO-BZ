@@ -230,14 +230,21 @@ def is_extrato(pages: list[str], tolerant: bool = False) -> bool:
 def _extract(data: bytes) -> tuple[list[str], str, "ocr.OcrResult | None"]:
     """The pages as layout text: the text layer, or, for the extrato whose labels are outlines, text layer + OCR."""
     pages, extractor = sp.extract_pages(data)
-    if is_extrato(pages) or not ocr.needs_ocr(pages):
+    if is_extrato(pages) or not ocr.may_need_ocr(pages):
         return pages, extractor, None
-    res = ocr.ocr_pages(data)
-    if not is_extrato(res.pages, tolerant=True):
-        raise StatementFormatError(
-            "the PDF's text layer holds only numbers and the SAC footer, and OCR found no 'Extrato da Conta "
-            "Investimento' heading on the first page: nothing was read"
-        )
+    # The SAC footer and no extrato heading in the text layer. Only page 1 is read by OCR first: if it
+    # is not the extrato either, the file goes to the performance reader exactly as before.
+    certain = ocr.needs_ocr(pages)  # nothing but numbers beside the footer
+    if not certain and not ocr.available():
+        return pages, extractor, None
+    res = ocr.ocr_pages(data, first_page_ok=lambda text: is_extrato([text], tolerant=True))
+    if res is None:
+        if certain:
+            raise StatementFormatError(
+                "the PDF's text layer holds only numbers and the SAC footer, and OCR found no 'Extrato da Conta "
+                "Investimento' heading on the first page: nothing was read"
+            )
+        return pages, extractor, None
     return res.pages, ocr.EXTRACTOR, res
 
 
@@ -272,10 +279,12 @@ def read_extrato_bytes(data: bytes):
 class _Scrubber:
     """The holder's masker plus the address, which ``Masker`` does not know. Transient: never store one."""
 
-    __slots__ = ("_masker", "_patterns")
+    __slots__ = ("_masker", "_patterns", "_name_words")
 
-    def __init__(self, masker: Masker, address_parts: list[str]):
+    def __init__(self, masker: Masker, address_parts: list[str], fuzzy_name: str | None = None):
         self._masker = masker
+        # OCR text only: the holder's name words, to mask a reading one letter off from the cover's
+        self._name_words = [_strip_accents(w).upper() for w in (fuzzy_name or "").split()]
         pats: list[re.Pattern[str]] = []
         for part in sorted({p for p in address_parts if p}, key=len, reverse=True):
             for variant in {part, _strip_accents(part)}:
@@ -290,7 +299,37 @@ class _Scrubber:
     def __call__(self, s: str) -> str:
         for p in self._patterns:
             s = p.sub(TOKEN_ENDERECO, s)
-        return str(self._masker.scrub(s))
+        s = str(self._masker.scrub(s))
+        return self._fuzzy(s) if self._name_words else s
+
+    def _fuzzy(self, s: str) -> str:
+        """Two or more consecutive words that read as consecutive holder-name words, each at most one
+        letter off (exactly, for words under four letters), with at least one long word: '[TITULAR]'."""
+        words = self._name_words
+        toks = list(re.finditer(r"\S+", s))
+        norm = [_strip_accents(m.group()).upper().strip(".,;:") for m in toks]
+
+        def close(a: str, b: str) -> bool:
+            return a == b or (len(b) >= 4 and abs(len(a) - len(b)) <= 1 and _lev(a, b) <= 1)
+
+        spans: list[tuple[int, int]] = []
+        i = 0
+        while i < len(toks):
+            best = 0
+            for j in range(len(words)):
+                k = 0
+                while i + k < len(toks) and j + k < len(words) and close(norm[i + k], words[j + k]):
+                    k += 1
+                if k >= 2 and any(len(words[j + q]) >= 4 for q in range(k)):
+                    best = max(best, k)
+            if best:
+                spans.append((toks[i].start(), toks[i + best - 1].end()))
+                i += best
+            else:
+                i += 1
+        for a, b in reversed(spans):
+            s = s[:a] + "[TITULAR]" + s[b:]
+        return s
 
     @property
     def holder(self):
@@ -344,7 +383,7 @@ def _cover_scrubber(cover: str, tolerant: bool = False) -> tuple[_Scrubber, list
         for cep in re.findall(r"\d{5}-?\d{3}", ln):
             address.append(cep)
     masker = Masker(nome, cpf, conta)
-    return _Scrubber(masker, address), notes
+    return _Scrubber(masker, address, fuzzy_name=nome if tolerant else None), notes
 
 
 # ---------------------------------------------------------------------------

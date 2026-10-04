@@ -147,16 +147,19 @@ Ouvidoria footer. The headings, the cover, fund names, CNPJs, Emissor, Ativo cod
 the Sumário labels and the ETF codes are pictures. `src/portfolio/statement_ocr.py` reads such a
 file as a hybrid and hands the same parser layout text:
 
-1. **Detection.** The first page's text layer holds the SAC or Ouvidoria footer, no
-   "Extrato da Conta Investimento", and no other word of two or more letters. Only then is OCR
-   used. A file with a text layer (this extrato's other form, the performance report) takes the
-   path above, unchanged. OCR needs `pdftotext`, `pdftoppm` and `tesseract` with `por`. Without them
-   the read stops with a `StatementFormatError` saying what to install.
+1. **Detection.** The first page's text layer holds the SAC or Ouvidoria footer but no
+   "Extrato da Conta Investimento". Page 1 alone is then read by OCR. If it shows the extrato
+   heading (with two OCR errors at most), the other pages are read too. If not, the file goes to
+   the performance reader exactly as before, and the other pages are never OCR'd. A file whose
+   heading is in its text layer (this extrato's other form, the performance report) never reaches
+   OCR. OCR needs `pdftotext`, `pdftoppm` and `tesseract` with `por`. When page 1 holds nothing but
+   numbers beside the footer and the tools are missing, or OCR finds no heading, the read stops
+   with a `StatementFormatError` saying so.
 2. **Numbers from the text layer.** `pdftotext -bbox` (bytes on STDIN) gives every number with its
    box, in PDF points.
 3. **Labels from OCR.** Each page is rendered with `pdftoppm -r 300 -gray` and the image is piped
-   into `tesseract stdin stdout -l por --psm 4 tsv` (one thread each, pages in parallel up to the
-   CPU count). Word boxes are scaled to points. Nothing touches the disk, and tesseract's stderr is
+   into `tesseract stdin stdout -l por --psm 4 tsv` (one thread each, pages in parallel on the CPUs
+   the process may use, at most 4; `SILO_OCR_WORKERS` overrides). Word boxes are scaled to points. Nothing touches the disk, and tesseract's stderr is
    discarded.
 4. **Merge.** An OCR word that overlaps a text-layer token is dropped, so the text layer always wins
    for numbers. So is a numeric-looking OCR word on a text-layer token's line and column, and so is
@@ -172,7 +175,9 @@ file as a hybrid and hands the same parser layout text:
    column header with one garbled word among three. It reads the period with or without the `a`
    between the dates, upper-cases a B3 code, and drops a page's header line carrying "Conta
    investimento" whether or not its holder name was masked, since one OCR letter off would escape
-   the mask. The word `CNP)` is read as `CNPJ`.
+   the mask. Anywhere else, two or more consecutive words that read as consecutive words of the
+   holder's name, each at most one letter off, become `[TITULAR]` (an exclusive fund's name, for
+   instance). The word `CNP)` is read as `CNPJ`.
 6. **Normalisation, per field, recorded and never invented.** Each position gets
    `fonte_texto = "ocr"`, `codigo_conferido`, `taxa_conferida` and `ajustes_ocr`:
    - **codes:** `CRA` is `CRA` + 2 digits + 6 alphanumerics, `CRI` is 2 digits, a letter and 7

@@ -55,6 +55,16 @@ def _is_footer(line: str) -> bool:
     return "sac0800" in k or "ouvidoria0800" in k
 
 
+def may_need_ocr(pages: list[str]) -> bool:
+    """The first page has the SAC / Ouvidoria footer but no 'Extrato da Conta Investimento' in its text layer.
+
+    The outlined extrato, or perhaps another BTG PDF with that footer: OCR of page 1 decides.
+    """
+    if not pages:
+        return False
+    return "extratodacontainvestimento" not in _key(pages[0]) and any(_is_footer(ln) for ln in pages[0].splitlines())
+
+
 def needs_ocr(pages: list[str]) -> bool:
     """True when the first page's text layer is only the SAC / Ouvidoria footer plus numbers.
 
@@ -377,8 +387,29 @@ class OcrResult:
     n_pages: int
 
 
-def ocr_pages(data: bytes, dpi: int = DPI, workers: int | None = None) -> OcrResult:
-    """Every page as layout text: text-layer numbers merged with OCR labels. Pages run in parallel."""
+MAX_WORKERS = 4  # each tesseract at 300 dpi holds about 100 MB; the server runs several requests at once
+
+
+def _workers(n_pages: int, workers: int | None) -> int:
+    if workers is None:
+        env = os.environ.get("SILO_OCR_WORKERS", "")
+        if env.isdigit() and int(env) > 0:
+            workers = int(env)
+        else:
+            try:
+                cpus = len(os.sched_getaffinity(0))  # the CPUs this process may use, not the host's
+            except (AttributeError, OSError):
+                cpus = os.cpu_count() or 1
+            workers = min(cpus, MAX_WORKERS)
+    return max(1, min(n_pages, workers))
+
+
+def ocr_pages(data: bytes, dpi: int = DPI, workers: int | None = None, first_page_ok=None) -> OcrResult | None:
+    """Every page as layout text: text-layer numbers merged with OCR labels. Pages run in parallel.
+
+    ``first_page_ok``: a test on page 1's merged text. Page 1 is read first; when the test fails,
+    no other page is read and None is returned (the file is not the outlined extrato after all).
+    """
     if not available():
         raise StatementFormatError(
             "this extrato has no text layer for its labels and needs OCR: install poppler-utils, tesseract-ocr and tesseract-ocr-por"
@@ -387,14 +418,14 @@ def ocr_pages(data: bytes, dpi: int = DPI, workers: int | None = None) -> OcrRes
     if not layer:
         raise StatementFormatError("pdftotext found no page in the file")
     n = len(layer)
-    workers = max(1, min(n, workers or os.cpu_count() or 1))
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        ocr = list(ex.map(lambda i: ocr_page(data, i + 1, dpi), range(n)))
     stats = MergeStats()
-    pages = []
-    for pw, ow in zip(layer, ocr):
-        # the text layer's own word boxes are font boxes; the OCR's are ink boxes. Both are in points.
-        pages.append("\n".join(merge_page(pw.words, ow, stats)))
+    # the text layer's own word boxes are font boxes; the OCR's are ink boxes. Both are in points.
+    first = "\n".join(merge_page(layer[0].words, ocr_page(data, 1, dpi), stats))
+    if first_page_ok is not None and not first_page_ok(first):
+        return None
+    with ThreadPoolExecutor(max_workers=_workers(n - 1, workers)) as ex:
+        rest = list(ex.map(lambda i: ocr_page(data, i + 1, dpi), range(1, n)))
+    pages = [first] + ["\n".join(merge_page(pw.words, ow, stats)) for pw, ow in zip(layer[1:], rest)]
     return OcrResult(pages, stats, n)
 
 
@@ -584,6 +615,8 @@ def normalize_taxa(s: str | None) -> FieldCheck | None:
         else:
             if dec is not None and len(dec) != 2:
                 ok = False
+            if dec is not None and "." in m.group(0):
+                aj.append(f"taxa: {m.group(0)} -> {m.group(0).replace('.', ',')} (vírgula decimal)")
             pieces.append(m.group(0).replace(".", ",") if dec is not None else m.group(0))
         last = m.end()
     pieces.append(t[last:])

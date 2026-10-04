@@ -61,9 +61,41 @@ def test_detection_takes_only_the_outlined_extrato():
     assert ocr.needs_ocr(outlined_text_layer())
     assert not ocr.needs_ocr(extrato_pages())  # the extrato with a text layer
     assert not ocr.needs_ocr(variant_a_pages())  # the performance report
-    assert not ocr.needs_ocr(["Relatório de Performance\n" + FOOTER])  # words beside the footer
-    assert not ocr.needs_ocr(["01/09/26 30/09/26"])  # no footer: not a BTG page we know
-    assert not ocr.needs_ocr([])
+    assert not ocr.needs_ocr(["Relatório de Performance\n" + FOOTER])  # words beside the footer: not certain
+    assert ocr.may_need_ocr(["Relatório de Performance\n" + FOOTER])  # ... but OCR of page 1 decides
+    assert not ocr.may_need_ocr(extrato_pages()) and not ocr.may_need_ocr(variant_a_pages())
+    assert not ocr.needs_ocr(["01/09/26 30/09/26"]) and not ocr.may_need_ocr(["01/09/26 30/09/26"])  # no footer
+    assert not ocr.needs_ocr([]) and not ocr.may_need_ocr([])
+
+
+def test_footer_without_extrato_heading_reads_page_one_only_and_falls_back(monkeypatch):
+    """A text-layer PDF with the SAC footer and no extrato heading: page 1 is OCR'd, and if it is not the
+    extrato either, the file goes to the performance reader as before; the other pages are never OCR'd."""
+    perf = variant_a_pages()
+    perf[0] = perf[0] + "\n" + FOOTER
+    monkeypatch.setattr(sp, "extract_pages", lambda data: (perf, "poppler"))
+    monkeypatch.setattr(ocr, "available", lambda: True)
+    monkeypatch.setattr(ocr, "text_layer", lambda data: [ocr.PageWords(842, 595, []) for _ in perf])
+    seen = []
+
+    def fake_ocr_page(data, page_no, dpi=300):
+        seen.append(page_no)
+        return [W(30, 40, 200, 47, "Relatório"), W(210, 40, 330, 47, "de"), W(340, 40, 440, 47, "Performance")]
+
+    monkeypatch.setattr(ocr, "ocr_page", fake_ocr_page)
+    st, diag, layout = read_any_pdf_bytes(b"%PDF-perf-with-footer")
+    assert layout == "performance" and seen == [1]
+    # without OCR tools the same file is still read from its text layer
+    monkeypatch.setattr(ocr, "available", lambda: False)
+    assert read_any_pdf_bytes(b"%PDF-perf-with-footer")[2] == "performance"
+
+
+def test_workers_are_bounded(monkeypatch):
+    monkeypatch.delenv("SILO_OCR_WORKERS", raising=False)
+    assert 1 <= ocr._workers(50, None) <= ocr.MAX_WORKERS
+    assert ocr._workers(1, None) == 1 and ocr._workers(0, None) == 1
+    monkeypatch.setenv("SILO_OCR_WORKERS", "2")
+    assert ocr._workers(50, None) == 2
 
 
 def test_ocr_needed_but_tools_missing_is_a_clear_format_error(monkeypatch):
@@ -273,6 +305,7 @@ def test_cpf_repair_for_the_mask():
         ("lPCA+8,74%", "IPCA + 8,74%", True, True),
         ("CDI + 180%", "CDI + 1,80%", True, True),
         ("112,00% do CDI", "112,00% do CDI", True, False),
+        ("IPCA + 8.74%", "IPCA + 8,74%", True, True),
         ("1,8% a.a.", "1,8% a.a.", False, False),  # one decimal: ambiguous, kept and flagged
         ("CDI + 1,80% ¢", "CDI + 1,80% ¢", False, False),
     ],
@@ -354,6 +387,19 @@ def test_holder_header_misread_by_one_letter_is_furniture_in_ocr_mode():
     blob = repr(st) + str(st.notes)
     no_originals(blob)
     assert misread not in blob and diag.masked_lines_skipped >= 8
+
+
+def test_holder_name_misread_inside_a_fund_name_is_masked_in_ocr_mode():
+    pages = extrato_pages("top")
+    misread = "JOANA FlCTICIA DE SOUZA"
+    pages[3] = pages[3].replace("FUNDO GAMA RENDA IMOBILIARIA FII", f"FUNDO {misread} EXCLUSIVO FII")
+    st, _ = parse_extrato_pages(pages, ocr.EXTRACTOR, ocr_mode=True)
+    blob = repr(st)
+    no_originals(blob)
+    assert "FlCTICIA" not in blob and "FUNDO [TITULAR] EXCLUSIVO FII" in blob
+    # the text path is unchanged: it masks exact readings only
+    st_text, _ = parse_extrato_pages(pages)
+    assert "FlCTICIA" in repr(st_text)
 
 
 def test_consolidation_keeps_the_ocr_flags():
