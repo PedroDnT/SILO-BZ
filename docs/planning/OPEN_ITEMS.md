@@ -502,6 +502,11 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   etfsbrasil.com.br fee (`etf_site_*`), summed apart in the engine. Live after an analytical apply and a
   `deploy_mcp.yml` dispatch. Open: the ETF fee is a third-party scrape that self-skips without `APIFY_TOKEN`;
   a CVM-filed ETF fee source (the regulamento) is not ingested.
+- **Catalog v57, engine 1.6** (branch `feat/etf-cotistas-pl`, owner's decision of 2026-10-03): each ETF line
+  also shows the site's cotistas and PL from the fee's snapshot (`etf_site_nr_cotistas`, `etf_site_pl`),
+  credited to etfsbrasil.com.br with the date, never summed. Live after an analytical apply and a
+  `deploy_mcp.yml` dispatch. Open: CVM has no 2026 daily report row for any registry ETF, so the same
+  `APIFY_TOKEN` dependency applies.
 - **CVM 175 levels** (#543, branch `claude/cvm175-levels-543`, migration 67):
   `cvm_registro_fundo` / `_classe` / `_subclasse` let a class reach its fund by
   `ID_Registro_Fundo` and a subclass its class by `ID_Registro_Classe`. Empty until
