@@ -309,8 +309,10 @@ def heading_of(text: str) -> tuple[str, str] | None:
     if dashed and k.startswith(("fundodeinvestimento", "rendafixa", "previdencia", "rendavariavel", "contacorrente")):
         return ("ignore", "")
     if dashed and "cnpj" not in k and len(s) <= 80 and len(s.split(" - ")[0].split()) <= 4:
-        segs = [key(p)[:40] for p in s.split(" - ")[:2]]
-        return ("unknown", "/".join(segs))
+        segs = s.split(" - ")
+        verb = key(segs[1])
+        verb = verb if verb in ("posicao", "detalhamento", "movimentacao", "rentabilidade", "plano") else "?"
+        return ("unknown", f"{key(segs[0])[:30]}/{verb}")  # never the rest: it can name an asset
     return None
 
 

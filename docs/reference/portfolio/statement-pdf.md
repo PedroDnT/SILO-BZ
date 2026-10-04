@@ -106,7 +106,7 @@ The format is picked by content, per file: a first page with "Extrato da Conta I
 to this reader, anything else to the performance reader (`read_any_pdf_bytes`). The server's
 `POST /diagnose` uses the same detection, and accepts several multipart `file` parts (one statement
 per account, 10 MB in all), consolidated before the engine runs. The runner prints, per file, the
-sections found (and the first two segments of any unknown heading), positions by type, every sum
+sections found (and, for an unknown heading, its first segment and whether the second is `posição`, `detalhamento` and the like, never the rest), positions by type, every sum
 check with its gap, the coverage of `codigo`, CNPJ, `vencimento`, `taxa_texto`, `emissor` and
 `quantidade`, how wrapped lines were attached (and how many were ambiguous) and the rows not read
 by page, line and shape (`L` text, `D` date, `N` number, `P` percent, `C` CNPJ, `-` missing). A
