@@ -83,9 +83,10 @@ jobs:
         run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep -i healthcontainer || true
 
       # Status codes, sizes and timings only. The end-to-end POST is retried only
-      # while the Worker itself says the Container is not up yet (503 from the
-      # Worker, before any engine work), never after the engine answered, so
-      # each report is paid for once.
+      # while no engine work was done: the Worker itself says the Container is
+      # not up yet (503 from the Worker), or an instance still runs the previous
+      # image during the rollout (an answer that is neither JSON nor a PDF).
+      # Never after the engine answered, so each report is paid for once.
       - name: Verify the live Worker and engine end to end
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
@@ -137,7 +138,7 @@ jobs:
           report() {
             label="$1"; shift
             start=$(date +%s)
-            for attempt in $(seq 1 30); do
+            for attempt in $(seq 1 40); do
               t0=$(date +%s)
               rm -f "$tmp/h" "$tmp/out"
               c=$(curl -s -D "$tmp/h" -o "$tmp/out" -w '%{http_code}' --max-time 900 \
@@ -146,6 +147,15 @@ jobs:
               origin=$(hdr x-silo-origin "$tmp/h")
               echo "$label (attempt $attempt): $c from ${origin:-?} in $((t1 - t0))s, $(cat "$tmp/out" 2>/dev/null | wc -c) bytes"
               if [ "$c" = 503 ] && [ "$origin" = worker ]; then sleep 20; continue; fi
+              # The rollout does not wait for instances: until it lands, a new
+              # instance can still run the previous image (busybox httpd answered
+              # 501 text/html on run 37221129945). The engine server always answers
+              # JSON or a PDF, so anything else did no engine work and cost nothing.
+              ct=$(hdr content-type "$tmp/h")
+              case "$ct" in
+                application/json*|application/pdf*) ;;
+                *) echo "  not the engine server yet (content type ${ct:-none}); waiting for the rollout"; sleep 30; continue ;;
+              esac
               break
             done
             echo "$label: answered after $(( $(date +%s) - start ))s since the first attempt; the answering request took $((t1 - t0))s"
