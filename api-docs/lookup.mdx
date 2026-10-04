@@ -44,7 +44,7 @@ api.lookup(p_query TEXT)
 | `name` | Nullable for funds whose registry name we do not hold. |
 | `isin` | Tickers only; null for funds and companies. |
 | `cnpj` | **Always null on ticker rows** — again, no invented ticker-to-issuer match. |
-| `tickers` | A listed company's active B3 codes, from CVM's **published** FCA valores-mobiliários filing — never name-matched. `cia` rows only; null when the company has no active published listing. |
+| `tickers` | A listed company's active B3 codes, from CVM's **published** FCA valores-mobiliários filing — never name-matched. Active means listed in the company's newest FCA with no end date **and** traded on the B3 cash market on at least 5 sessions in the last 30 days, so a thinly traded code is left out. `cia` rows only; null when the company has no active published listing. |
 
 ### Example
 
