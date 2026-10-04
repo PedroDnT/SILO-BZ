@@ -263,7 +263,7 @@ def _scrape_and_upsert(conn, tickers: Optional[List[str]] = None) -> int:
 async def _run() -> int:
     logging.basicConfig(level=logging.INFO)
     conn = get_pg_client()
-    return ingest_etf_market(conn)
+    return await ingest_etf_market(conn)
 
 
 if __name__ == "__main__":

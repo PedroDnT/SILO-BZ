@@ -706,8 +706,13 @@ before changing rule 4.
    `cvm_pipeline.py`).
 9. **Smaller findings:** ~~nine `tests/conftest.py` fixtures with no users~~
    (re-checked 2026-10-04: twelve, removed by owner's OK on
-   `claude/remove-unused-conftest-fixtures`). Still open: no pipeline-level test
-   for `ingest_etf_market.py`. (ANBIMA's log columns are now tested through
-   `daily_update`.)
+   `claude/remove-unused-conftest-fixtures`). ~~No pipeline-level test for
+   `ingest_etf_market.py`~~: stale, `TestIngestEtfMarket` has covered the
+   scrape, skip, error and audit paths since 2026-10-02; the default
+   registry-ticker path and the dropped-record count got tests on
+   `claude/etf-market-pipeline-test`, which also fixed (owner's OK) `_run()`
+   returning `ingest_etf_market(conn)` unawaited, so
+   `python -m src.pipeline.ingest_etf_market` scraped nothing. (ANBIMA's log
+   columns are now tested through `daily_update`.)
 10. **Stale remote branch `claude/audit-row-gaps`** (merged as #495, with later
     commits lost; the follow-up went out as #496). Delete only if the owner says so.
