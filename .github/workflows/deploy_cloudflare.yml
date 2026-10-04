@@ -1,15 +1,18 @@
-name: Deploy Cloudflare health
+name: Deploy Cloudflare demo
 
-# First safe Cloudflare deploy for the portfolio-diagnosis demo (map #510,
-# issue #519): deploys deploy/cloudflare/ — a Worker that answers GET /health
-# itself and GET /container/health by starting a health-only Container — then
-# proves both from the public *.workers.dev address. No engine, no upload, no
-# LLM key: the only runtime secret copied into the Worker is DEMO_ACCESS_TOKEN.
-# Manual on purpose, like deploy_mcp.yml: a merge deploys nothing.
+# The portfolio-diagnosis demo on Cloudflare (map #510, slice E step 2):
+# deploys deploy/cloudflare/ (a Worker serving the upload page and POST
+# /diagnose, and the engine Container built from deploy/cloudflare/engine/),
+# then proves it end to end from the public *.workers.dev address with the
+# synthetic statement template (docs/reference/portfolio/statement-template.xlsx,
+# fictitious holder; never a real statement). Manual on purpose, like
+# deploy_mcp.yml: a merge deploys nothing.
 #
 # Needs the repository secrets CLOUDFLARE_API_TOKEN (account-owned, "Edit
-# Cloudflare Workers"), CLOUDFLARE_ACCOUNT_ID and DEMO_ACCESS_TOKEN, and the
-# account on Workers Paid. Prints status codes only, never a secret.
+# Cloudflare Workers"), CLOUDFLARE_ACCOUNT_ID, DEMO_ACCESS_TOKEN and
+# OPENAI_API_KEY, and the account on Workers Paid. The last two are copied into
+# the Worker as secrets. Prints status codes, sizes, timings and the engine's
+# cost header only: never a secret, never the PDF.
 
 on:
   workflow_dispatch:
@@ -23,9 +26,9 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy and verify silo-demo-health
+    name: Deploy and verify the demo Worker and engine
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -33,11 +36,14 @@ jobs:
       WRANGLER_SEND_METRICS: "false"
     steps:
       - name: Refuse without the secrets
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           missing=""
           [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
           [ -n "$DEMO_ACCESS_TOKEN" ] || missing="$missing DEMO_ACCESS_TOKEN"
+          [ -n "$OPENAI_API_KEY" ] || missing="$missing OPENAI_API_KEY"
           if [ -n "$missing" ]; then
             echo "::error::Set the repository secret(s):$missing (issue #519)."
             exit 1
@@ -57,20 +63,30 @@ jobs:
         working-directory: deploy/cloudflare
         run: npm ci --no-audit --no-fund
 
+      # The LLM key lives in this step's env only, so the smoke step never holds it.
+      # Immediate rollout: no request may reach an instance of the previous image.
       - name: Deploy
         id: deploy
         uses: cloudflare/wrangler-action@v4
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: deploy/cloudflare
-          command: deploy
+          command: deploy --containers-rollout=immediate
           secrets: |
             DEMO_ACCESS_TOKEN
+            OPENAI_API_KEY
 
-      # Status codes only. /health is the Worker alone; /container/health
-      # starts the Container, so it is retried through the cold start.
-      - name: Verify the live Worker and Container
+      - name: Image size
+        run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep -i healthcontainer || true
+
+      # Status codes, sizes and timings only. The end-to-end POST is retried only
+      # while the Worker itself says the Container is not up yet (503 from the
+      # Worker, before any engine work), never after the engine answered, so
+      # each report is paid for once.
+      - name: Verify the live Worker and engine end to end
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
         run: |
@@ -81,7 +97,10 @@ jobs:
             exit 1
           fi
           echo "Worker address: $base"
+          tmp="$RUNNER_TEMP/smoke"
+          mkdir -p "$tmp"
           code() { curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$@" || true; }
+          f=docs/reference/portfolio/statement-template.xlsx
 
           ok=""
           for attempt in $(seq 1 12); do
@@ -92,30 +111,83 @@ jobs:
           done
           [ -n "$ok" ] || { echo "::error::/health never answered 200"; exit 1; }
 
-          c=$(code "$base/container/health")
-          echo "GET /container/health without the token: $c"
-          case "$c" in 401|403) ;; *) echo "::error::expected 401 or 403 without the token"; exit 1 ;; esac
+          c=$(curl -s -o "$tmp/page" -w '%{http_code} %{content_type}' --max-time 60 "$base/" || true)
+          echo "GET / (upload page): $c, $(wc -c < "$tmp/page") bytes"
+          case "$c" in "200 text/html"*) ;; *) echo "::error::expected the upload page"; exit 1 ;; esac
 
-          c=$(code -H "x-demo-token: wrong" "$base/container/health")
-          echo "GET /container/health with a wrong token: $c"
-          case "$c" in 401|403) ;; *) echo "::error::expected 401 or 403 with a wrong token"; exit 1 ;; esac
+          c=$(code -X POST --data-binary "@$f" "$base/diagnose")
+          echo "POST /diagnose without the token: $c"
+          [ "$c" = 401 ] || { echo "::error::expected 401 without the token"; exit 1; }
+
+          c=$(code -X POST -H "x-demo-token: wrong" --data-binary "@$f" "$base/diagnose")
+          echo "POST /diagnose with a wrong token: $c"
+          [ "$c" = 401 ] || { echo "::error::expected 401 with a wrong token"; exit 1; }
+
+          c=$(code -X POST -H "Authorization: Bearer wrong" --data-binary "@$f" "$base/diagnose")
+          echo "POST /diagnose with a wrong bearer token: $c"
+          [ "$c" = 401 ] || { echo "::error::expected 401 with a wrong bearer token"; exit 1; }
 
           c=$(code "$base/anything-else")
           echo "GET /anything-else: $c"
           [ "$c" = 404 ] || { echo "::error::expected 404 for an unknown path"; exit 1; }
 
-          start=$(date +%s)
-          ok=""
-          for attempt in $(seq 1 40); do
-            c=$(code -H "x-demo-token: $DEMO_ACCESS_TOKEN" "$base/container/health")
-            elapsed=$(( $(date +%s) - start ))
-            echo "GET /container/health with the token (attempt $attempt, ${elapsed}s): $c"
-            if [ "$c" = 200 ]; then ok=1; break; fi
-            sleep 10
-          done
-          [ -n "$ok" ] || { echo "::error::the Container never answered 200 within the retry window"; exit 1; }
-          echo "Container answered 200 after ${elapsed}s (first request after this deploy)."
+          hdr() { grep -i "^$1:" "$2" | tail -n 1 | cut -d: -f2- | tr -d '\r' | sed 's/^ *//' || true; }
 
-          c=$(code -H "x-demo-token: $DEMO_ACCESS_TOKEN" "$base/container/health")
-          echo "GET /container/health with the token, warm: $c"
-          [ "$c" = 200 ] || { echo "::error::the warm request did not answer 200"; exit 1; }
+          # One report. $1 label, then curl arguments for the body.
+          report() {
+            label="$1"; shift
+            start=$(date +%s)
+            for attempt in $(seq 1 30); do
+              t0=$(date +%s)
+              rm -f "$tmp/h" "$tmp/out"
+              c=$(curl -s -D "$tmp/h" -o "$tmp/out" -w '%{http_code}' --max-time 900 \
+                    -H "x-demo-token: $DEMO_ACCESS_TOKEN" "$@" "$base/diagnose" || true)
+              t1=$(date +%s)
+              origin=$(hdr x-silo-origin "$tmp/h")
+              echo "$label (attempt $attempt): $c from ${origin:-?} in $((t1 - t0))s, $(cat "$tmp/out" 2>/dev/null | wc -c) bytes"
+              if [ "$c" = 503 ] && [ "$origin" = worker ]; then sleep 20; continue; fi
+              break
+            done
+            echo "$label: answered after $(( $(date +%s) - start ))s since the first attempt; the answering request took $((t1 - t0))s"
+            echo "  engine stage=$(hdr x-silo-stage "$tmp/h") narrative=$(hdr x-silo-narrative "$tmp/h") provider=$(hdr x-silo-provider "$tmp/h") cost_usd=$(hdr x-silo-cost-usd "$tmp/h") engine_s=$(hdr x-silo-seconds "$tmp/h")"
+            [ "$c" = 200 ] || { echo "::error::$label: expected 200, got $c"; return 1; }
+            case "$(hdr content-type "$tmp/h")" in application/pdf*) ;; *) echo "::error::$label: not application/pdf"; return 1 ;; esac
+            [ "$(head -c 5 "$tmp/out" 2>/dev/null)" = "%PDF-" ] || { echo "::error::$label: the body does not start with %PDF-"; return 1; }
+            [ "$(hdr x-silo-provider "$tmp/h")" = openai ] || { echo "::error::$label: the report did not run on openai"; return 1; }
+            [ "$(hdr x-silo-narrative "$tmp/h")" = complete ] || { echo "::error::$label: the narrative is not complete (LLM egress, key or cost cap)"; return 1; }
+            rm -f "$tmp/out"
+          }
+
+          # Cold: the first engine request after this deploy.
+          report "POST /diagnose, first after deploy (raw body)" -X POST --data-binary "@$f"
+
+          # Privacy probe: the same synthetic statement with a marker in the holder
+          # name and the upload filename, sent while wrangler tail listens. Only
+          # the number of tail lines that carry the marker is printed.
+          marker="SILO-PRIVACY-PROBE-$(openssl rand -hex 6)"
+          python3 -m venv "$tmp/venv" && "$tmp/venv/bin/pip" install --quiet openpyxl
+          "$tmp/venv/bin/python" - "$f" "$tmp/$marker.xlsx" "$marker" <<'PY'
+          import sys
+          from openpyxl import load_workbook
+          src, dst, marker = sys.argv[1:]
+          wb = load_workbook(src)
+          for row in wb.worksheets[0].iter_rows():
+              if row[0].value == "titular":
+                  row[1].value = f"MARIA {marker}"
+          wb.save(dst)
+          PY
+          (cd deploy/cloudflare && timeout 900 npx wrangler tail silo-demo-health --format json > "$tmp/tail.json" 2> "$tmp/tail.err") &
+          tail_pid=$!
+          sleep 15
+
+          # Second request: a new Durable Object and a new instance (one per upload),
+          # with the image already on Cloudflare.
+          report "POST /diagnose, second (multipart, marked)" -X POST -F "file=@$tmp/$marker.xlsx"
+
+          sleep 15
+          pkill -f "wrangler tail" 2>/dev/null || true
+          kill "$tail_pid" 2>/dev/null || true
+          wait "$tail_pid" 2>/dev/null || true
+          echo "wrangler tail: $(wc -l < "$tmp/tail.json") lines captured, $(grep -c "$marker" "$tmp/tail.json" || true) carry the marker"
+          if grep -q "$marker" "$tmp/tail.json"; then echo "::error::the privacy marker reached the Worker's tail"; exit 1; fi
+          rm -rf "$tmp"

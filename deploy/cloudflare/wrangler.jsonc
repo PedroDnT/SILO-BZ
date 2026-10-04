@@ -1,13 +1,16 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
-	// First safe Cloudflare deploy for map #510 (issue #519): a Worker and a
-	// health-only Container. No engine, no upload, no LLM key.
+	// The portfolio-diagnosis demo (map #510, slice E step 2): a Worker serving
+	// the upload page and POST /diagnose, and the engine Container. The name is
+	// the first deploy's (#519), so the URL and the Container application carry over.
 	"name": "silo-demo-health",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-10-01",
 	"workers_dev": true,
 	"preview_urls": false,
 	// #519: invocation logs off (they carry the request URL and headers' metadata).
+	// Container stdout still reaches Workers Logs: the engine logs status, sizes,
+	// timings and cost only (src/portfolio/server.py).
 	"observability": {
 		"enabled": true,
 		"logs": {
@@ -15,18 +18,33 @@
 			"invocation_logs": false
 		}
 	},
+	// Not secrets. The LLM defaults of src/portfolio/report/llm.py, set
+	// explicitly; the US$1.00 cost cap is in the code (COST_CAP_USD).
+	// EGRESS "allowlist" limits the Container to silo-mcp and api.openai.com
+	// (src/index.ts); "open" turns its internet on.
+	"vars": {
+		"SILO_LLM_PROVIDER": "openai",
+		"SILO_LLM_MODEL": "gpt-6-luna",
+		"SILO_LLM_EFFORT": "medium",
+		"EGRESS": "allowlist"
+	},
 	"containers": [
 		{
 			"class_name": "HealthContainer",
-			"image": "./container/Dockerfile",
-			"instance_type": "lite",
-			"max_instances": 1
+			// Built from the repository root: Dockerfile.dockerignore next to the
+			// Dockerfile whitelists src/portfolio and the requirements.
+			"image": "./engine/Dockerfile",
+			"image_build_context": "../..",
+			// 1/2 vCPU, 4 GiB: WeasyPrint is unproven in 1 GiB (#519).
+			"instance_type": "standard-1",
+			// One instance per upload, stopped after the answer: at most 3 reports at once.
+			"max_instances": 3
 		}
 	],
 	"durable_objects": {
 		"bindings": [
 			{
-				"name": "HEALTH_CONTAINER",
+				"name": "ENGINE",
 				"class_name": "HealthContainer"
 			}
 		]

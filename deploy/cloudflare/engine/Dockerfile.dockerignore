@@ -1,6 +1,7 @@
 # Build context is the repository root; send only what the image copies.
 *
 !deploy/cloudflare/engine/requirements.txt
+!deploy/cloudflare/engine/start.sh
 !src/__init__.py
 !src/portfolio/**
 **/__pycache__

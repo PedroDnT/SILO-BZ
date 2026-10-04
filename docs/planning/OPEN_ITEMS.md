@@ -460,8 +460,10 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   Container for the Python engine, no Pages. The first safe deploy, a
   health-only Worker and Container (`deploy/cloudflare/`,
   `deploy_cloudflare.yml`), went green on 2026-10-03. The engine image
-  (`deploy/cloudflare/engine/`, built and smoked by `engine_image.yml`, not
-  deployed) is step 1 of slice E; wiring it to the Worker is next.
+  (`deploy/cloudflare/engine/`, built and smoked by `engine_image.yml`) is
+  step 1 of slice E; step 2 (branch `demo/engine-cloudflare`) runs it as the
+  Worker's Container behind `POST /diagnose` and an upload page, with egress
+  allow-listed to silo-mcp and api.openai.com, proven by an end-to-end deploy.
 - Engine in Python `src/portfolio/`, set-based `api` functions in
   `31_api_portfolio.sql`, Supabase reached through the read-only `silo-mcp`.
 - Sunday scope: spreadsheet input, blocks 1, 3, 10, 11, 14 (screens), 4, 2, PDF.

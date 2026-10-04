@@ -22,6 +22,7 @@ RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
 COPY src/__init__.py src/__init__.py
 COPY src/portfolio src/portfolio
+COPY deploy/cloudflare/engine/start.sh /app/start.sh
 
 # Fails the build if the renderer cannot load its native libraries.
 RUN python -c "from weasyprint import HTML; HTML(string='<p>ação</p>').write_pdf()" \
@@ -29,4 +30,5 @@ RUN python -c "from weasyprint import HTML; HTML(string='<p>ação</p>').write_p
 
 USER engine
 EXPOSE 8080
-CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT} --workers 1 --threads 4 --timeout 600 --graceful-timeout 30 --access-logfile - 'src.portfolio.server:wsgi()'"]
+# start.sh: gunicorn, 1 worker x 4 threads, 600 s timeout; trusts the Cloudflare egress CA when asked.
+CMD ["sh", "/app/start.sh"]
