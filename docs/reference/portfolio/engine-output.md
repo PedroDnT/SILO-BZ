@@ -164,7 +164,7 @@ lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titu
   `vencimento`, `taxa_texto` (the rate exactly as printed), `estrategia_corretora` and
   `classe_corretora` (the broker's own labels), `conta_ref`, `contas[]` (the per-account lines of
   a consolidated position: `conta_ref`, `titular_ref`, `valor_brl`, ...), `source`. The valuation
-  of a line is always the statement's. Added within 1.7 for the BTG extrato read by OCR
+  of a line is always the statement's. Added within 1.8 for the BTG extrato read by OCR
   (`statement_ocr`, its labels drawn as outlines): `fonte_texto` (`"ocr"` when the name, code,
   emissor and rate were read by OCR; the numbers still come from the PDF's text layer; null
   otherwise), `codigo_conferido` (the code matched its shape, or the CNPJ its check digits; null
