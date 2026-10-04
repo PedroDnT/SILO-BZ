@@ -302,27 +302,29 @@ def test_panel_metrics_come_from_catalog():
         assert spec["asset_class"]
 
 
-def test_close_return_catalog_says_null_on_a_share_count_event():
-    """A split must not read as a return (#396, catalog v50): close_return stays
-    the raw-close return but is NULL where a split, grouping or bonus lies
-    between the two prints. The catalog must say that, and must not claim the
-    old behaviour (a split reporting as a jump)."""
+def test_close_return_catalog_says_adjusted_across_a_share_count_event():
+    """A split must not read as a return (#396): since catalog v58 close_return
+    divides the previous close by the event's share ratio. The catalog must say
+    that, give the owner's 1:4 example, keep the NULL cases, and not claim the
+    v50 behaviour (NULL across every event) or the old one (a jump)."""
     from serve.catalog import CONSTRAINTS, CATALOG_VERSION, METRICS
 
-    assert CATALOG_VERSION >= 50
+    assert CATALOG_VERSION >= 58
     meaning = METRICS["close_return"]["meaning"].lower()
-    constraint = next(c for c in CONSTRAINTS if c.startswith("close_return is the return"))
+    constraint = next(c for c in CONSTRAINTS if c.startswith("close_return is adjusted"))
     for text in (meaning, constraint.lower()):
-        assert "null" in text
         for label in ("desdobramento", "grupamento", "bonificacao"):
             assert label in text
-        assert "not an adjusted return" in text
+        assert "1 + factor/100" in text and "factor for grupamento" in text
+        assert "+4%" in text
+        assert "unreadable" in text and "null" in text
         assert "not a total return" in text
-    assert "unadjusted" in constraint.lower()  # the closes it divides stay raw
     joined = " ".join(CONSTRAINTS).lower()
+    assert "not an adjusted return" not in meaning
+    assert "the return across the event is missing" not in joined
     assert "appear as spurious jumps" not in meaning
     assert "close_return is unadjusted: a 2:1 split reports roughly -50%" not in joined
-    assert "between the two prints (#396)" in joined  # the daily-guard constraint names it
+    assert "adjust the previous close by the event's share ratio (#396)" in joined
 
 
 def test_b3_catalog_divides_cash_instruments_by_published_type():

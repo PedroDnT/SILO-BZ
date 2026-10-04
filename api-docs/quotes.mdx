@@ -21,7 +21,7 @@ The grain is **`(ticker, trade_date, board, term_days)`**. A ticker can print on
 <Warning>
   **`close` is the price of `quotation_factor` units, not always one.** `close_unit` = `close / quotation_factor` is served for you. The factor is 1 for almost everything (13 tickers on the whole 2019–2026 tape carry another value), but a paper quoted per lot reads 1000× its unit price in `close`.
 
-  **Neither is corporate-action adjusted.** `close_unit` divides by a published field; it does not account for splits, groupings or bonuses. A split still appears as a jump in the price. `close_return` is computed on raw `close` and is null across a factor change and across a split, grouping or bonus between the two prints.
+  **Neither is corporate-action adjusted.** `close_unit` divides by a published field; it does not account for splits, groupings or bonuses. A split still appears as a jump in the price. `panel`'s `close_return` is null across a factor change and, across a split, grouping or bonus between the two prints, divides the previous close by the event's share ratio.
 </Warning>
 
 ### `GET /quotes`

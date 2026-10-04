@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "57";
+export const CONTRACT_VERSION = "58";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -2996,7 +2996,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "panel": {
     "kind": "rpc",
     "path": "/rpc/panel",
-    "description": "Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. p_metrics NULL = each family's default: close_adj for shares and units, close for other tickers, options and termo, nav for funds. close_adj is quote_history's adjusted close (splits, groupings, bonus shares; anchored to the latest session) and a window it cannot adjust REFUSES 22023 naming ticker, period and cause; close stays raw. Quotes follow the instrument across boards. close_return is p_t/p_{t-1}-1 from the raw closes, cash tickers only. It is NULL across calendar gaps, across a quotation-factor change and across a split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) between the two prints, so a share-count change never reads as a return; it is not an adjusted return and not a total return (close_adj holds the adjusted level). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, 'date|id|metric|asset_class' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.",
+    "description": "Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. p_metrics NULL = each family's default: close_adj for shares and units, close for other tickers, options and termo, nav for funds. close_adj is quote_history's adjusted close (splits, groupings, bonus shares; anchored to the latest session) and a window it cannot adjust REFUSES 22023 naming ticker, period and cause; close stays raw. Quotes follow the instrument across boards. close_return is p_t/p_{t-1}-1, cash tickers only, with the previous close divided by the share ratio of any split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) between the two prints, so a share-count change never reads as a return (a 1:4 split from 100.00 to 26.00 is +4%). It is NULL across calendar gaps, across a quotation-factor change and across an event whose factor is unreadable or published twice with two factors; it is a price return, not a total return (close_adj holds the adjusted level). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, 'date|id|metric|asset_class' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.",
     "inputSchema": {
       "type": "object",
       "properties": {

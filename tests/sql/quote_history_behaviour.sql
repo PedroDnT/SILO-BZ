@@ -87,14 +87,19 @@ INSERT INTO b3_cotahist (codneg, trade_date, tpmerc, codbdi, especi, preco_fecha
     ('CTRL3', '2024-04-30', '010', '02', 'ON', 12.10, 1, 'BRCTRLACNOR1', '{}'),
     ('CTRL3', '2024-05-31', '010', '02', 'ON', 12.60, 1, 'BRCTRLACNOR1', '{}'),
     ('NULF3', '2024-04-15', '010', '02', 'ON', 10.00, 1, 'BRNULFACNOR1', '{}'),
-    ('NULF3', '2024-04-16', '010', '02', 'ON',  5.00, 1, 'BRNULFACNOR1', '{}');
+    ('NULF3', '2024-04-16', '010', '02', 'ON',  5.00, 1, 'BRNULFACNOR1', '{}'),
+    -- QUAD3: the owner's example (2026-10-04), 100.00 the day before a 1:4
+    -- split, 26.00 on the split day: +4%, not -74%.
+    ('QUAD3', '2024-04-15', '010', '02', 'ON', 100.00, 1, 'BRQUADACNOR1', '{}'),
+    ('QUAD3', '2024-04-16', '010', '02', 'ON',  26.00, 1, 'BRQUADACNOR1', '{}');
 
 INSERT INTO b3_corporate_event (issuing_company, isin, event_class, label, last_date_prior, factor, raw) VALUES
     ('BBAS', 'BRBBASACNOR3', 'stock', 'DESDOBRAMENTO', '2024-04-15', 100, '{}'),
     ('MGLU', 'BRMGLUACNOR3', 'stock', 'GRUPAMENTO',    '2024-05-23', 0.1, '{}'),
     ('CTRL', 'BRCTRLACNOR1', 'cash',  'DIVIDENDO',     '2024-04-12', NULL, '{}'),
     ('CTRL', 'BRCTRLACNOR1', 'stock', 'DESDOBRAMENTO', '2020-01-10', 100, '{}'),
-    ('NULF', 'BRNULFACNOR1', 'stock', 'DESDOBRAMENTO', '2024-04-15', NULL, '{}');
+    ('NULF', 'BRNULFACNOR1', 'stock', 'DESDOBRAMENTO', '2024-04-15', NULL, '{}'),
+    ('QUAD', 'BRQUADACNOR1', 'stock', 'DESDOBRAMENTO', '2024-04-15', 300, '{}');
 
 INSERT INTO b3_corporate_event (issuing_company, isin, event_class, label, last_date_prior, factor, raw) VALUES
     ('SPLT', 'BRSPLTACNOR1', 'stock', 'DESDOBRAMENTO', '2024-08-07', 100, '{}'),
@@ -257,40 +262,70 @@ BEGIN
     RAISE NOTICE 'close_total_return OK';
 END $$;
 
--- close_return across a share-count event is NULL (#396, step 1): a split, a
--- grouping or a bonus changes the share count, not the value, so it must not
--- be served as a return. The panel emits no row where the return is NULL, so
--- "NULL" reads as "no close_return row for that session".
+-- close_return across a share-count event is ADJUSTED (#396 step 2, owner
+-- decision 2026-10-04): the previous close is divided by the event's share
+-- ratio (1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for
+-- GRUPAMENTO) and the return is close / adjusted previous close - 1. An
+-- unreadable or ambiguous factor still nulls it. The panel emits no row where
+-- the return is NULL, so "NULL" reads as "no close_return row for that session".
 DO $$
 DECLARE
     d DATE[];
     v NUMERIC;
 BEGIN
-    -- BBAS3, daily: the first ex session (04-16, 56.46 -> 27.91, -50.57% raw)
-    -- is NULL; the cum-date session before it and the session after it are not.
+    -- The owner's example: 100.00 the day before a 1:4 split is 25.00 adjusted,
+    -- so a 26.00 close is +4%.
+    SELECT value INTO v
+    FROM api.panel(ARRAY['QUAD3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day')
+    WHERE date = '2024-04-16';
+    ASSERT round(v, 6) = 0.04, format('QUAD3 split-day return: %s, expected 0.04', v);
+
+    -- BBAS3, daily: the first ex session (04-16, 56.46 -> 27.91) is the
+    -- adjusted -1.13%, not the raw -50.57%; the sessions around it are plain.
     SELECT array_agg(date ORDER BY date) INTO d
     FROM api.panel(ARRAY['BBAS3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day');
-    ASSERT d = ARRAY['2024-04-12', '2024-04-15', '2024-04-17']::date[],
+    ASSERT d = ARRAY['2024-04-12', '2024-04-15', '2024-04-16', '2024-04-17']::date[],
         format('BBAS3 daily close_return dates: %s', d);
+    SELECT value INTO v
+    FROM api.panel(ARRAY['BBAS3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day')
+    WHERE date = '2024-04-16';
+    ASSERT round(v, 6) = round(27.91 / (56.46 / 2) - 1, 6), format('BBAS3 ex session: %s', v);
     SELECT value INTO v
     FROM api.panel(ARRAY['BBAS3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day')
     WHERE date = '2024-04-17';
     ASSERT round(v, 6) = round(28.05 / 27.91 - 1, 6), format('BBAS3 after the event: %s', v);
 
     -- BBAS3, monthly: the split sits mid-April, between the March and April
-    -- month-end prints, so April is NULL; May compares two post-event prints.
+    -- month-end prints, so April's previous close (March) is halved.
     SELECT array_agg(date ORDER BY date) INTO d
     FROM api.panel(ARRAY['BBAS3'], ARRAY['close_return'], '2024-03-01', '2024-05-31', 'month');
-    ASSERT d = ARRAY['2024-05-01']::date[], format('BBAS3 monthly close_return dates: %s', d);
+    ASSERT d = ARRAY['2024-04-01', '2024-05-01']::date[], format('BBAS3 monthly close_return dates: %s', d);
+    SELECT value INTO v
+    FROM api.panel(ARRAY['BBAS3'], ARRAY['close_return'], '2024-03-01', '2024-05-31', 'month')
+    WHERE date = '2024-04-01';
+    ASSERT round(v, 6) = round(28.40 / (55.00 / 2) - 1, 6), format('BBAS3 April: %s', v);
 
-    -- MGLU3 grouping (last cum date 05-23, first ex session 05-24): daily
-    -- NULL on 05-24 only; monthly NULL for May (April print to May print).
+    -- MGLU3 grouping 10:1 (factor 0.1, last cum date 05-23): the previous
+    -- close 1.32 becomes 13.20, so 05-24's 13.15 is -0.38%; monthly May
+    -- compares 13.50 with April's 1.40 grouped to 14.00.
     SELECT array_agg(date ORDER BY date) INTO d
     FROM api.panel(ARRAY['MGLU3'], ARRAY['close_return'], '2024-05-20', '2024-05-28', 'day');
-    ASSERT d = ARRAY['2024-05-23', '2024-05-27']::date[], format('MGLU3 daily close_return dates: %s', d);
-    SELECT count(*) INTO v
-    FROM api.panel(ARRAY['MGLU3'], ARRAY['close_return'], '2024-04-01', '2024-05-31', 'month');
-    ASSERT v = 0, format('MGLU3 monthly close_return rows: %s, expected none', v);
+    ASSERT d = ARRAY['2024-05-23', '2024-05-24', '2024-05-27']::date[], format('MGLU3 daily close_return dates: %s', d);
+    SELECT value INTO v
+    FROM api.panel(ARRAY['MGLU3'], ARRAY['close_return'], '2024-05-20', '2024-05-28', 'day')
+    WHERE date = '2024-05-24';
+    ASSERT round(v, 6) = round(13.15 / (1.32 / 0.1) - 1, 6), format('MGLU3 ex session: %s', v);
+    SELECT value INTO v
+    FROM api.panel(ARRAY['MGLU3'], ARRAY['close_return'], '2024-04-01', '2024-05-31', 'month')
+    WHERE date = '2024-05-01';
+    ASSERT round(v, 6) = round(13.50 / (1.40 / 0.1) - 1, 6), format('MGLU3 May: %s', v);
+
+    -- CMPD3: a 10:1 grouping and a 10% bonus on one cum date multiply
+    -- (0.1 x 1.1 = 0.11): 1.10 becomes 10.00, so the 10.00 close is 0%.
+    SELECT value INTO v
+    FROM api.panel(ARRAY['CMPD3'], ARRAY['close_return'], '2024-08-01', '2024-08-30', 'day')
+    WHERE date = '2024-08-16';
+    ASSERT round(v, 6) = 0, format('CMPD3 compound event: %s', v);
 
     -- A share-count event whose factor B3 published unreadable is still a
     -- share-count event: NULL, not a guess.
@@ -298,8 +333,14 @@ BEGIN
     FROM api.panel(ARRAY['NULF3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day');
     ASSERT v = 0, format('NULF3 close_return rows: %s, expected none', v);
 
+    -- One label on one date published with two factors: NULL on the ex
+    -- session only; the sessions around it are plain.
+    SELECT array_agg(date ORDER BY date) INTO d
+    FROM api.panel(ARRAY['AMBG3'], ARRAY['close_return'], '2024-08-05', '2024-08-09', 'day');
+    ASSERT d = ARRAY['2024-08-06', '2024-08-08', '2024-08-09']::date[], format('AMBG3 daily close_return dates: %s', d);
+
     -- A normal ticker is unchanged: a cash distribution and a split years
-    -- before the window null nothing, daily or monthly.
+    -- before the window adjust nothing, daily or monthly.
     SELECT array_agg(date ORDER BY date) INTO d
     FROM api.panel(ARRAY['CTRL3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day');
     ASSERT d = ARRAY['2024-04-12', '2024-04-15', '2024-04-16']::date[], format('CTRL3 daily close_return dates: %s', d);
