@@ -31,6 +31,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 from collections.abc import Callable
@@ -83,6 +84,11 @@ def _error(status: int, stage: str | None = None, exc: BaseException | None = No
         code = getattr(exc, "status_code", None)
         if isinstance(code, int):
             resp.headers["X-Silo-Error-Status"] = str(code)
+        # The provider's machine-readable error code (for example
+        # "unsupported_country_region_territory"): an identifier, never free text.
+        api_code = getattr(exc, "code", None)
+        if isinstance(api_code, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", api_code):
+            resp.headers["X-Silo-Error-Code"] = api_code
     return resp, status
 
 

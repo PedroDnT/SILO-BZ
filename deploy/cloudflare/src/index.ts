@@ -45,6 +45,7 @@ const PASS_HEADERS = [
 	"x-silo-stage",
 	"x-silo-error",
 	"x-silo-error-status",
+	"x-silo-error-code",
 	"x-silo-engine-rev",
 ];
 
