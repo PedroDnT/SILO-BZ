@@ -63,7 +63,11 @@
             "line_no": 1
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 2,
@@ -90,7 +94,11 @@
             "line_no": 2
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 3,
@@ -117,7 +125,11 @@
             "line_no": 3
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 4,
@@ -144,7 +156,11 @@
             "line_no": 4
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 5,
@@ -171,7 +187,11 @@
             "line_no": 5
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 6,
@@ -198,7 +218,11 @@
             "line_no": 6
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 7,
@@ -225,7 +249,11 @@
             "line_no": 7
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 8,
@@ -252,7 +280,11 @@
             "line_no": 8
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 9,
@@ -300,7 +332,11 @@
             "line_no": 9
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 10,
@@ -327,7 +363,11 @@
             "line_no": 10
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 11,
@@ -354,7 +394,11 @@
             "line_no": 11
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       },
       {
         "line_no": 12,
@@ -381,7 +425,11 @@
             "line_no": 12
           },
           "data_date": "2026-09-30"
-        }
+        },
+        "fonte_texto": null,
+        "codigo_conferido": null,
+        "taxa_conferida": null,
+        "ajustes_ocr": []
       }
     ],
     "consolidated": false,

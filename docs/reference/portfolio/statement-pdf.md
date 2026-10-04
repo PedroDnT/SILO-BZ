@@ -99,7 +99,7 @@ tested only on synthetic pages** (`tests/portfolio_extrato_fixtures.py`, also ro
 real PDF and both extractors). The runner says what it gets right on a real file:
 
 ```
-python -m src.portfolio.statement_pdf_extrato FILE.pdf [FILE2.pdf ...] [--consolidate]
+python -m src.portfolio.statement_pdf_extrato FILE.pdf [FILE2.pdf ...] [--consolidate] [--mostrar-ativos]
 ```
 
 The format is picked by content, per file: a first page with "Extrato da Conta Investimento" goes
@@ -138,3 +138,81 @@ each Sumário class against the positions of its sections; the positions against
 on a continuation page, Sumário rows for classes not listed here (COE, derivatives), the spelling of
 other renda variável and renda fixa kinds, and how the Emissor wraps (`ARTESANA` / `L` is joined as
 `ARTESANA L`).
+
+## The extrato with no text layer for its labels: the OCR path
+
+Some of the owner's extratos draw every label as vector outlines: `pdftotext` returns only the
+numbers (dates, quantities, prices, money and percents, in a monospace font) and the SAC /
+Ouvidoria footer. The headings, the cover, fund names, CNPJs, Emissor, Ativo codes, the rate text,
+the Sumário labels and the ETF codes are pictures. `src/portfolio/statement_ocr.py` reads such a
+file as a hybrid and hands the same parser layout text:
+
+1. **Detection.** The first page's text layer holds the SAC or Ouvidoria footer, no
+   "Extrato da Conta Investimento", and no other word of two or more letters. Only then is OCR
+   used. A file with a text layer (this extrato's other form, the performance report) takes the
+   path above, unchanged. OCR needs `pdftotext`, `pdftoppm` and `tesseract` with `por`. Without them
+   the read stops with a `StatementFormatError` saying what to install.
+2. **Numbers from the text layer.** `pdftotext -bbox` (bytes on STDIN) gives every number with its
+   box, in PDF points.
+3. **Labels from OCR.** Each page is rendered with `pdftoppm -r 300 -gray` and the image is piped
+   into `tesseract stdin stdout -l por --psm 4 tsv` (one thread each, pages in parallel up to the
+   CPU count). Word boxes are scaled to points. Nothing touches the disk, and tesseract's stderr is
+   discarded.
+4. **Merge.** An OCR word that overlaps a text-layer token is dropped, so the text layer always wins
+   for numbers. So is a numeric-looking OCR word on a text-layer token's line and column, and so is
+   a stray mark (`|`, quotes, specks). OCR words of one tesseract line with a word space between
+   them form a phrase with single spaces. A wider gap keeps two spaces, which the parser reads as a
+   column gap. Tokens join a line when their vertical centres are within 0.3 of the font size, so
+   the wrapped cells of a centred row, half a pitch away, stay separate lines. x is mapped to
+   character columns on the finer of the monospace advance and a narrow OCR character width. The
+   text-layer tokens keep their columns, and a proportional label never overruns the next one.
+5. **The same parser, in OCR mode** (`parse_extrato_pages(..., ocr_mode=True)`). It matches the
+   known headings with one OCR error (two in the long ones), the cover's
+   "Informações detalhadas" line and "Extrato da Conta Investimento" the same way, and accepts a
+   column header with one garbled word among three. It reads the period with or without the `a`
+   between the dates, upper-cases a B3 code, and drops a page's header line carrying "Conta
+   investimento" whether or not its holder name was masked, since one OCR letter off would escape
+   the mask. The word `CNP)` is read as `CNPJ`.
+6. **Normalisation, per field, recorded and never invented.** Each position gets
+   `fonte_texto = "ocr"`, `codigo_conferido`, `taxa_conferida` and `ajustes_ocr`:
+   - **codes:** `CRA` is `CRA` + 2 digits + 6 alphanumerics, `CRI` is 2 digits, a letter and 7
+     digits, `DEB` is 4 letters + 2 digits, and a B3 ticker is 4 letters + 1 or 2 digits.
+     `O`/`0`, `I`/`l`/`1`, `S`/`5` and `B`/`8` are swapped only at a position whose class the
+     shape fixes. A code with no known shape (`CDB`, `LCA`, `LCI`, `CDCA`), or one that still does
+     not match its shape, is kept as read with `codigo_conferido = false`;
+   - **CNPJ** (funds and previdência): letters inside a CNPJ-shaped word become digits. If the check
+     digits fail, single substitutions from a short confusion set (0/8, 3/8, 5/6, 6/8, 1/7) are
+     tried, and the result is accepted only when exactly one is valid (noted in `ajustes_ocr`).
+     Otherwise the CNPJ is kept and unverified. The cover CPF is repaired the same way, only so the
+     masker hides its exact digits;
+   - **rate text:** `aa.` becomes `a.a.`, `CDl` becomes `CDI`, `lPCA` becomes `IPCA` and `+` gets
+     its spaces. A percent with no comma and three or more digits gets its comma back before the
+     last two, because BTG prints every rate with two decimals (`1716%` becomes `17,16%`). Anything
+     else (one decimal, a stray character) is kept as read with `taxa_conferida = false`. The rate
+     only feeds the indexer class (CDI / IPCA / a.a.).
+7. **Sum checks unchanged and decisive.** If OCR misses a heading, its numbers belong to no table.
+   The Sumário check then fails, and the failure lists every line with money that no section took,
+   `pN:lM (shape ...)`, never its text.
+
+The runner prints, for an OCR read, the word counts (OCR, text layer, dropped as duplicates, dropped
+as numeric, stray marks) and the verified and unverified counts. `--mostrar-ativos` prints one line
+per position: type, the asset as printed, `codigo`, CNPJ, `vencimento`, `taxa`, `valor` and the
+flags (`lido por OCR`, `código conferido` / `NÃO conferido`, the adjustments). The owner allowed
+asset names. Holder data stays masked, since the cover is read only to build the masker and then
+discarded. The ten synthetic pages take about 3 s on four cores; a real page took about 2 s when measured on the owner's files. The
+engine image installs `tesseract-ocr` and `tesseract-ocr-por`, and `engine_image.yml` reads a
+synthetic image-only statement inside it with `SILO_REQUIRE_OCR=1`.
+
+**Tested on synthetic files only** (`tests/portfolio_ocr_fixtures.py`: the invented pages above,
+numbers as Courier text and every label rasterised). **Not verified on the real file:**
+
+- the y tolerance on the real line pitch;
+- whether the real missing-value `-` is text or outline. Tesseract drops many lone dashes, which
+  would break the nine-column fund row and the six trailing values of a renda fixa row; the
+  runner's shapes would show it;
+- the phrase gap against the real column gaps;
+- how often tesseract doubles a round glyph (`CRA0O250005M`: kept and unverified).
+
+Matching the codes against SILO (`cvm_securit_serie.codigo_cetip`, the CDA `cd_ativo`) is the next
+step.
+

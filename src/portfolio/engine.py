@@ -167,6 +167,10 @@ def _position_dict(p: Position, total: Decimal) -> dict[str, Any]:
             for c in p.contas
         ],
         "source": statement_source(p.line_no, p.data_posicao),
+        "fonte_texto": p.fonte_texto,
+        "codigo_conferido": p.codigo_conferido,
+        "taxa_conferida": p.taxa_conferida,
+        "ajustes_ocr": list(p.ajustes_ocr),
     }
 
 

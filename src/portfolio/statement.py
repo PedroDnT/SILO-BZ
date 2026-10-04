@@ -134,6 +134,14 @@ class Position:
     preco_implicito: bool = False  # preco_unitario was derived as valor / quantidade
     contas: tuple["ContaLine", ...] = ()  # per-account lines of a consolidated position
     emissor: str | None = None  # the issuer as the statement prints it (BTG extrato), for issuer concentration
+    # BTG extrato read by OCR (statement_ocr): "ocr" when the name, code, emissor and rate were read by
+    # OCR (the numbers still come from the PDF's text layer); whether the code / CNPJ matched its shape
+    # or check digits, and the rate its pattern; what the deterministic normalisation changed. None and
+    # () for every statement read from a text layer or a spreadsheet.
+    fonte_texto: str | None = None
+    codigo_conferido: bool | None = None
+    taxa_conferida: bool | None = None
+    ajustes_ocr: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -156,7 +156,14 @@ lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titu
   `vencimento`, `taxa_texto` (the rate exactly as printed), `estrategia_corretora` and
   `classe_corretora` (the broker's own labels), `conta_ref`, `contas[]` (the per-account lines of
   a consolidated position: `conta_ref`, `titular_ref`, `valor_brl`, ...), `source`. The valuation
-  of a line is always the statement's.
+  of a line is always the statement's. Added within 1.7 for the BTG extrato read by OCR
+  (`statement_ocr`, its labels drawn as outlines): `fonte_texto` (`"ocr"` when the name, code,
+  emissor and rate were read by OCR; the numbers still come from the PDF's text layer; null
+  otherwise), `codigo_conferido` (the code matched its shape, or the CNPJ its check digits; null
+  outside OCR or with no code), `taxa_conferida` (the rate text matched its pattern; null outside
+  OCR or with no rate) and `ajustes_ocr[]` (what the deterministic normalisation changed, as
+  `"código: CRAO260025T lido como CRA0260025T pelo formato CRA"`; empty otherwise). A report can
+  say "lido por OCR" and "a conferir" from these.
 - `consolidated` / `accounts[]`: true when several statements were consolidated; `accounts[]` is
   the per-account view (`conta_ref`, `titular_ref`, `n_lines`, `stated_total_brl`,
   `sum_of_lines_brl`, `position_date`, `source_format`, `positions[]`). `positions[]` above is the

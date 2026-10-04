@@ -315,7 +315,17 @@ def _aggregate(line_no: int, members: list[tuple[int | None, Position]], titular
         preco_implicito=implicit,
         contas=contas,
         emissor=first.emissor if _all_equal([p.emissor for p in ps]) else None,
+        fonte_texto="ocr" if any(p.fonte_texto == "ocr" for p in ps) else first.fonte_texto,
+        codigo_conferido=_all_checked([p.codigo_conferido for p in ps]),
+        taxa_conferida=_all_checked([p.taxa_conferida for p in ps]) if taxa is not None else None,
+        ajustes_ocr=tuple(dict.fromkeys(a for p in ps for a in p.ajustes_ocr)),
     )
+
+
+def _all_checked(flags: list[bool | None]) -> bool | None:
+    """OCR checks of merged lines: verified only if every line that was checked is, None if none was."""
+    seen = [f for f in flags if f is not None]
+    return all(seen) if seen else None
 
 
 def describe_consolidated(c: ConsolidatedPortfolio) -> list[str]:
