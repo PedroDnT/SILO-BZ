@@ -522,6 +522,13 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   credited to etfsbrasil.com.br with the date, never summed. Live after an analytical apply and a
   `deploy_mcp.yml` dispatch. Open: CVM has no 2026 daily report row for any registry ETF, so the same
   `APIFY_TOKEN` dependency applies.
+- **Engine 1.7** (branch `fix/portfolio-diagnosis-usefulness`, owner's approval of 2026-10-04, after a real
+  41-line statement lost 52% of its value to one `portfolio_resolve` timeout): resolve is split and retried, a
+  statement CNPJ identifies its fund when resolve does not, an infrastructure failure answers 503 instead of a
+  PDF, the spreadsheet takes `vencimento` and `taxa`, repeated assets merge, the gaps section is fixed text, and
+  the report gains issuer, maturity and FGC tables. Open: CRA/CRI/debenture identification by code (next PR);
+  concentration by manager and fund liquidity need an `api` path for the manager's CNPJ and the lâmina's
+  `qt_dia_pagto_resgate`, which no function serves today.
 - **CVM 175 levels** (#543, branch `claude/cvm175-levels-543`, migration 67):
   `cvm_registro_fundo` / `_classe` / `_subclasse` let a class reach its fund by
   `ID_Registro_Fundo` and a subclass its class by `ID_Registro_Classe`. Empty until

@@ -14,7 +14,9 @@ Errors are JSON `{"erro": "<mensagem em português>"}` with a fixed message per
 status: 400 empty upload, 401 missing or wrong token, 413 over 10 MB, 415 neither
 xlsx nor PDF, 422 statement unreadable or not reconciling, 502 the report writer
 failed (for example no LLM key), 503 `DEMO_ACCESS_TOKEN` unset (every `/diagnose`
-is refused), 500 anything else. An error names the step that refused in
+is refused), 503 with `Retry-After` and `X-Silo-Error: silo_unavailable` when SILO
+did not answer while the lines were identified (a timeout, 5xx or network error
+still failing after the engine's one retry; no PDF, retry later), 500 anything else. An error names the step that refused in
 `X-Silo-Stage` (`auth`, `upload`, `read`, `engine`, `report`, `pdf`).
 
 ## Build and run locally

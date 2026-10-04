@@ -49,3 +49,7 @@ direct,tipo,caixa,caixa (conta corrente),"Linha Conta corrente impressa no extra
 "statement_taxa","regex","^ipca \+","inflação (IPCA)","Taxa impressa no extrato"
 "statement_taxa","regex","^igp-?m \+","inflação (IGP-M)","Taxa impressa no extrato"
 "statement_taxa","regex","^\d+(,\d+)?% a\.?a\.?$","pré-fixado","Taxa impressa no extrato"
+"statement_taxa","regex","^cdi$","pós-fixado (CDI)","taxa do extrato: CDI puro"
+"statement_taxa","regex","^cdi\+","pós-fixado (CDI)","taxa do extrato: CDI + spread, sem espaço"
+"statement_taxa","regex","^\d+(,\d+)?% cdi$","pós-fixado (CDI)","taxa do extrato: percentual do CDI, sem 'do'"
+"statement_taxa","regex","^ipca\+","inflação (IPCA)","taxa do extrato: IPCA + spread, sem espaço"

@@ -18,6 +18,11 @@ carry status, timings, sizes and exception type names only, never the file, its
 name, the holder, the CPF or the account, and an error answer is a fixed
 Portuguese message with no stack trace and nothing of the request echoed.
 
+A SILO that does not answer while the statement's lines are identified (a timeout,
+a 5xx or a network error, still failing after the engine's one retry) is a
+retryable failure, not a data gap: ``/diagnose`` answers 503 with ``Retry-After``
+and ``X-Silo-Error: silo_unavailable`` and produces no PDF.
+
 Data: SILO is read through the public read-only ``silo-mcp`` (``SILO_ENGINE_CLIENT``
 ``mcp``, the default, or ``postgrest``). There is deliberately no fake SILO
 client here: canned rows on a real statement would be fabricated numbers. The
@@ -41,6 +46,7 @@ from flask import Flask, Response, jsonify, request
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from src.portfolio.client import McpClient, PostgrestClient, SiloClient
+from src.portfolio.common import SiloUnavailable
 from src.portfolio.engine import default_params, dumps, run_engine
 from src.portfolio.report import adapt, build, llm, redator
 from src.portfolio.report.render import html_to_pdf
@@ -64,11 +70,23 @@ MSG = {
     502: "O relatório não pôde ser redigido agora. Tente de novo mais tarde.",
     503: "Serviço não configurado.",
 }
+# 503 for a SILO that did not answer (engine 1.7): retryable, and distinct from the unconfigured service.
+MSG_UNAVAILABLE = "Os dados públicos do SILO não responderam agora. Nenhum relatório foi gerado; tente de novo em alguns minutos."
+RETRY_AFTER_S = 120
 
 
 class _Refusal(Exception):
     def __init__(self, status: int):
         self.status = status
+
+
+def _unavailable(stage: str) -> tuple[Response, int]:
+    """503 with ``Retry-After`` and a fixed ``X-Silo-Error`` code: SILO timed out or failed after the retry."""
+    resp = jsonify({"erro": MSG_UNAVAILABLE})
+    resp.headers["X-Silo-Stage"] = stage
+    resp.headers["X-Silo-Error"] = SiloUnavailable.code
+    resp.headers["Retry-After"] = str(RETRY_AFTER_S)
+    return resp, 503
 
 
 def _error(status: int, stage: str | None = None, exc: BaseException | None = None) -> tuple[Response, int]:
@@ -270,6 +288,11 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
         except _Refusal as r:
             log.info("diagnose %d stage=%s format=%s in_bytes=%d total_s=%.1f", r.status, stage, fmt, size, time.monotonic() - t0)
             return _error(r.status, stage)
+        except SiloUnavailable:
+            # Identification could not finish because SILO did not answer: no PDF, the caller retries later.
+            log.warning("diagnose 503 stage=%s format=%s in_bytes=%d error=%s total_s=%.1f",
+                        stage, fmt, size, SiloUnavailable.code, time.monotonic() - t0)
+            return _unavailable(stage)
         except RequestEntityTooLarge:
             log.info("diagnose 413 stage=%s total_s=%.1f", stage, time.monotonic() - t0)
             return _error(413, stage)

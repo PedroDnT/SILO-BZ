@@ -18,6 +18,8 @@ from typing import Any
 
 from src.portfolio.client import SiloClient, utc_now
 from src.portfolio.common import add_months, brl, iso, month_start, statement_source
+from src.portfolio.concentration import compute_concentration
+from src.portfolio.consolidate import merge_same_identity
 from src.portfolio.fees import compute_fees
 from src.portfolio.identify import LineId, identify
 from src.portfolio.indexer import compute_indexer
@@ -30,7 +32,7 @@ from src.portfolio.statement import Position, Statement
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.6"
+SCHEMA_VERSION = "1.7"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -105,6 +107,14 @@ ASSUMPTIONS = [
     {
         "id": "economic_group",
         "text": "Grupo econômico não é avaliado; a sobreposição de emissor usa raiz de CNPJ e código de emissor da B3.",
+    },
+    {
+        "id": "concentration",
+        "text": (
+            "Concentração e vencimentos (esquema 1.7) somam só valores do extrato. O emissor é o nome impresso na linha, "
+            "sem o tipo e o código do registro; não é grupo econômico. O teste do FGC soma CDB, LCI e LCA por emissor "
+            "impresso e fica a conferir: o limite é por CPF e instituição, e o extrato pode ter mais de um titular."
+        ),
     },
     {
         "id": "abnormal_movement",
@@ -200,7 +210,9 @@ def run_engine(
     clock=utc_now,
 ) -> dict[str, Any]:
     params = params or default_params(stmt.position_date)
-    log.info("engine start: %d lines, client=%s", len(stmt.positions), client.kind)
+    n_read = len(stmt.positions)
+    stmt, n_merged = merge_same_identity(stmt)  # engine 1.7: one asset listed on several lines is one position
+    log.info("engine start: %d lines (%d read), client=%s", len(stmt.positions), n_read, client.kind)
 
     ident, lines = identify(stmt, client)
     look, exposures = compute_lookthrough(lines, client, params.cda_month, params.max_depth)
@@ -218,12 +230,13 @@ def run_engine(
     )
     signals = compute_signals(lines, client)
     movement = compute_movement(lines, client, params.movement_month)
+    concentration = compute_concentration(lines, stmt.position_date)
 
     doc = {
         "schema_version": SCHEMA_VERSION,
         "generated_at_utc": clock().astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "engine": {"version": ENGINE_VERSION, "client": client.kind, "params": params.as_dict()},
-        "statement": statement_section(stmt),
+        "statement": {**statement_section(stmt), "n_lines_read": n_read, "n_positions_merged": n_merged},
         "identification": ident,
         "fees": fees,
         "look_through": look,
@@ -232,9 +245,10 @@ def run_engine(
         "restatements": restatements,
         "risk_signals": signals,
         "movement": movement,
+        "concentration": concentration,
         "assumptions": ASSUMPTIONS,
         "section_status": {
-            k: {"status": v["status"], "reason": v["reason"]}
+            k: {"status": v["status"], "reason": v["reason"], "reason_codes": list(v.get("reason_codes") or [])}
             for k, v in (
                 ("identification", ident),
                 ("fees", fees),
@@ -244,6 +258,7 @@ def run_engine(
                 ("restatements", restatements),
                 ("risk_signals", signals),
                 ("movement", movement),
+                ("concentration", concentration),
             )
         },
         "provenance": [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance],

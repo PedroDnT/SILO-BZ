@@ -28,7 +28,7 @@ from src.portfolio.identify import LineId
 from src.portfolio.lookthrough import Exposure
 
 RULES_PATH = Path(__file__).parent / "rules" / "indexer_rules.csv"
-INDEXER_RULES_VERSION = "2026-10-03.1"
+INDEXER_RULES_VERSION = "2026-10-04.1"
 NULL_TOKEN = "NULL"
 
 
@@ -179,6 +179,7 @@ def compute_indexer(
         "status": "complete",
         "reason": None,
         "errors": [],
+        "reason_codes": [],
         "rules_version": INDEXER_RULES_VERSION,
         "rules_sha256": rules_sha256(),
         "rules_file": "src/portfolio/rules/indexer_rules.csv",

@@ -221,15 +221,15 @@ def compute_lookthrough(
         sec.status = STATUS_NOT_APPLICABLE
         sec.reason = "Nenhum fundo identificado para abrir."
     elif refused == len(roots):
-        sec.fail("portfolio_lookthrough falhou para todos os fundos (erros literais em errors).")
+        sec.fail("portfolio_lookthrough falhou para todos os fundos (erros literais em errors).", code="consulta_falhou")
     elif refused:
-        sec.degrade(f"portfolio_lookthrough falhou para {refused} de {len(roots)} fundos; essas linhas ficaram sem look-through.")
+        sec.degrade(f"portfolio_lookthrough falhou para {refused} de {len(roots)} fundos; essas linhas ficaram sem look-through.", code="consulta_falhou")
     empty = [o for o in out_lines if o["status"] == "no_holdings"]
     if empty and sec.status == "complete":
-        sec.degrade(f"{len(empty)} fundo(s) sem carteira na CDA do mês.")
+        sec.degrade(f"{len(empty)} fundo(s) sem carteira na CDA do mês.", code="sem_carteira_cda")
     partial_lines = [o for o in out_lines if o["status"] == "partial"]
     if partial_lines and sec.status == "complete":
-        sec.degrade(f"{len(partial_lines)} fundo(s) com linhas sem peso.")
+        sec.degrade(f"{len(partial_lines)} fundo(s) com linhas sem peso.", code="linhas_sem_peso")
 
     shared = shared_exposure(lines, exposures, fund_nodes)
     section = {

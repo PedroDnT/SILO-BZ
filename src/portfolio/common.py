@@ -22,6 +22,52 @@ STATUS_NOT_APPLICABLE = "not_applicable"
 
 UNCLASSIFIED = "sem classificação"
 
+# Reason codes (engine 1.7). A section or a line that could not be evaluated carries one of these codes beside its
+# free-text reason; the report prints only the fixed Portuguese text of the code (``REASON_TEXT``), never the engine's
+# reason, which may name a tool or quote an error.
+R_TOOL_FAILED = "consulta_falhou"
+REASON_TEXT = {
+    R_TOOL_FAILED: "uma consulta ao SILO falhou ou foi recusada; a parte afetada ficou sem avaliação",
+    "linhas_nao_identificadas": "há linhas do extrato não identificadas (lista abaixo)",
+    "sem_fundos": "nenhum fundo identificado na carteira",
+    "sem_taxa_divulgada": "fundo(s) sem taxa de administração divulgada encontrada",
+    "taxa_a_conferir": "taxa informada a conferir (0 ou acima de 5% a.a.), fora das somas",
+    "fontes_divergem": "lâmina mais recente que o Extrato: fontes divergem, a conferir",
+    "sem_carteira_cda": "fundo(s) sem carteira na CDA do mês",
+    "linhas_sem_peso": "fundo(s) com linhas da CDA sem peso",
+    "resposta_inconsistente": "resposta do SILO inconsistente para alguma linha; a linha não foi avaliada",
+    "fundos_nao_avaliados": "fundo(s) não avaliados contra a classe",
+    "limite_diffs": "diferenças de reapresentação buscadas só para os documentos mais recentes",
+    "limite_tickers": "setor consultado só para os maiores tickers dentro dos fundos",
+    "sem_credito_direto": "nenhum crédito direto na carteira",
+    "sem_vencimento": "nenhuma linha com vencimento impresso no extrato",
+    "sem_fonte_api": "o SILO ainda não serve esse dado por uma API pública",
+    "gestor_sem_api": "concentração por gestor não avaliada: o SILO ainda não serve o CNPJ do gestor por uma API pública",
+    "liquidez_sem_api": "liquidez dos fundos (prazo de resgate da lâmina) não avaliada: o SILO ainda não a serve por uma API pública",
+    "sem_linha_taxa": "o SILO não devolveu linha de taxa para este fundo",
+    "sem_linha_movimento": "o SILO não devolveu comparação com a classe para este fundo",
+    # identification, per line
+    "cnpj_extrato": "CNPJ do extrato; nome não conferido",
+    "sem_candidato": "nome e CNPJ sem correspondência nos dados do SILO",
+    "ambiguo": "mais de um fundo plausível; a cota não desempatou",
+    "credito_sem_fonte": "crédito direto (CRA, CRI, debênture): identificação por código ainda não implementada",
+    "bancario_sem_fonte": "CDB, LCI ou LCA: o SILO não tem fonte para títulos de emissão bancária",
+    "outro_sem_ticker": "tipo 'outro' sem ticker: o SILO não identifica pelo nome",
+    "acao_sem_ticker": "ação sem ticker no campo código",
+    "ticker_nao_encontrado": "ticker não encontrado nos dados do SILO",
+    "tesouro_sem_vencimento": "título do Tesouro sem título e vencimento reconhecíveis",
+    "sem_identificacao": "sem identificação",
+}
+
+
+class SiloUnavailable(Exception):
+    """SILO did not answer (timeout, 5xx, network) even after the retry: a retryable failure, not a data gap.
+
+    Carries no request text: the server answers 503 with a fixed code and the CLI exits non-zero.
+    """
+
+    code = "silo_unavailable"
+
 
 def dec(value: Any) -> Decimal | None:
     if value is None or value == "":
@@ -100,6 +146,7 @@ class Call:
     call_id: int | None
     rows: list[dict] | None
     error: str | None
+    transient: bool = False  # the failure was the infrastructure's (timeout, 5xx, network): a retry may answer
 
     @property
     def ok(self) -> bool:
@@ -115,8 +162,9 @@ def call_tool(client: SiloClient, tool: str, args: dict, errors: list[dict]) -> 
         rows = client.call(tool, args)
         return Call(tool, args, client.last_call_id, rows, None)
     except ToolError as exc:
-        errors.append({"call_id": client.last_call_id, "tool": tool, "args": args, "error": exc.verbatim})
-        return Call(tool, args, client.last_call_id, None, exc.verbatim)
+        errors.append({"call_id": client.last_call_id, "tool": tool, "args": args, "error": exc.verbatim,
+                       "transient": exc.transient})
+        return Call(tool, args, client.last_call_id, None, exc.verbatim, exc.transient)
 
 
 @dataclass
@@ -126,19 +174,26 @@ class Section:
     status: str = STATUS_COMPLETE
     reason: str | None = None
     errors: list[dict] = field(default_factory=list)
+    reason_codes: list[str] = field(default_factory=list)
 
     def head(self) -> dict[str, Any]:
-        return {"status": self.status, "reason": self.reason, "errors": self.errors}
+        return {"status": self.status, "reason": self.reason, "errors": self.errors, "reason_codes": self.reason_codes}
 
-    def degrade(self, reason: str) -> None:
-        """Mark partial (unless already unknown) and append the reason."""
+    def code(self, code: str | None) -> None:
+        if code and code not in self.reason_codes:
+            self.reason_codes.append(code)
+
+    def degrade(self, reason: str, code: str | None = None) -> None:
+        """Mark partial (unless already unknown) and append the reason (and its code, engine 1.7)."""
         if self.status in (STATUS_COMPLETE, STATUS_NOT_APPLICABLE):
             self.status = STATUS_PARTIAL
         self.reason = reason if not self.reason else f"{self.reason} {reason}"
+        self.code(code)
 
-    def fail(self, reason: str) -> None:
+    def fail(self, reason: str, code: str | None = None) -> None:
         self.status = STATUS_UNKNOWN
         self.reason = reason
+        self.code(code)
 
 
 # B3's root is four letters OR digits (B3SA3, and ETFs such as B5P211, 5PRE11 and TD3511: 8 of the 187 tickers in

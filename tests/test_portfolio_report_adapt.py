@@ -45,7 +45,9 @@ def test_the_view_has_every_key_the_report_was_built_on(view):
     assert set(prov["lookthrough"]["shared_exposure"][0]) - {"name"} <= set(view["lookthrough"]["shared_exposure"][0])
     assert set(prov["restatements"]["items"][0]) <= set(view["restatements"]["items"][0])
     assert set(prov["sections"]) - {"ntnb_price"} <= set(view["sections"])
-    assert set(prov["provenance"][0]) <= set(view["provenance"][0])
+    # engine 1.7: the request params and error text stay in the engine JSON, never in the report's view
+    assert set(prov["provenance"][0]) - {"params", "error"} <= set(view["provenance"][0])
+    assert not {"params", "error", "args"} & set(view["provenance"][0])
 
 
 def test_numbers_are_copied_not_computed(engine, view):

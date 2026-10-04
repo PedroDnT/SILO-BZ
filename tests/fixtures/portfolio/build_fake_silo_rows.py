@@ -109,7 +109,7 @@ def rr(line_no, cnpj, cname, matched, period, kind, sim, rank, qod, qdiff, amb, 
                 ambiguous=amb, reason=reason)
 
 
-canned["portfolio_resolve"] = [dict(match={"p_names": fund_names}, rows=[
+resolve_rows = [
     rr(1, "08935128000159", FUNDS["08935128000159"]["name"], FUNDS["08935128000159"]["name"], "2026-05-01", "name_history", 0.62, 1, 176.38, 0.0002, False,
        "Nome abreviado no extrato; a cota na data confirma."),
     rr(2, "50088190000119", FUNDS["50088190000119"]["name"], FUNDS["50088190000119"]["name"], "2026-05-01", "name_history", 0.74, 1, 1.542011, 0.0, False,
@@ -124,7 +124,16 @@ canned["portfolio_resolve"] = [dict(match={"p_names": fund_names}, rows=[
        "O nome do extrato é um nome antigo do fundo."),
     rr(6, "11728688000147", "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO", "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO", "2026-05-01", "name_history", 0.55, 1, None, None, False,
        "Nome abreviado; candidato único.", etype="fii"),
-])]
+]
+
+# engine 1.7 splits portfolio_resolve: the lines with a CNPJ in one call, the others in chunks of 3. Each call's
+# answer numbers its lines 1..n in ITS p_names, so the rows above (numbered in fund_names) are renumbered per call.
+RESOLVE_CALLS = [[3, 4], [1, 2, 5], [6]]  # fund_names positions: CNPJ lines (XP LIQUIDEZ, MN I), then chunks of 3
+canned["portfolio_resolve"] = [
+    dict(match={"p_names": [fund_names[i - 1] for i in call]},
+         rows=[dict(r, line_no=call.index(r["line_no"]) + 1) for r in resolve_rows if r["line_no"] in call])
+    for call in RESOLVE_CALLS
+]
 
 canned["lookup"] = [
     dict(match={"p_query": "PETR4"}, rows=[dict(id="PETR4", id_type="ticker", asset_class="equity", name="PETROBRAS", isin="BRPETRACNPR6", cnpj=None, tickers=None)]),

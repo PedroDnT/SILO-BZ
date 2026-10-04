@@ -139,7 +139,7 @@ def compute_sector(
                 "parte do fundo que a CDA ingerida não explica", [])
 
     if skipped:
-        sec.degrade(f"{len(skipped)} ticker(s) dentro de fundos não tiveram o setor consultado (limite de {top_tickers}).")
+        sec.degrade(f"{len(skipped)} ticker(s) dentro de fundos não tiveram o setor consultado (limite de {top_tickers}).", code="limite_tickers")
     by_sector.setdefault((UNCLASSIFIED, "-"), Decimal("0"))
     ordered = sorted(by_sector.items(), key=lambda kv: (kv[0][0] == UNCLASSIFIED, -kv[1]))
     return {
@@ -180,7 +180,7 @@ def _query_ticker_sector(client: SiloClient, ticker: str, pos_date: dt.date, sec
     args = {"p_id": ticker, "p_from": (pos_date - dt.timedelta(days=548)).isoformat(), "p_to": pos_date.isoformat()}
     cf = call_tool(client, "company_financials", args, sec.errors)
     if not cf.ok:
-        sec.degrade(f"company_financials falhou para {ticker}.")
+        sec.degrade(f"company_financials falhou para {ticker}.", code="consulta_falhou")
         return {"sector": None, "taxonomy": None, "failed": True, "reason": "company_financials falhou", "sources": []}
     if not cf.rows:
         return {"sector": None, "taxonomy": None, "reason": f"{ticker} sem demonstrações na CVM", "sources": [cf.src()]}
@@ -196,7 +196,7 @@ def _b3_sector(client: SiloClient, ticker: str, sec: Section) -> dict[str, Any] 
     args = {"filters": {"ticker": f"eq.{ticker}"}, "select": "ticker,trade_date,sector", "order": "trade_date.desc", "limit": 1}
     r = call_tool(client, "short_interest", args, sec.errors)
     if not r.ok:
-        sec.degrade(f"short_interest (setor B3) falhou para {ticker}.")
+        sec.degrade(f"short_interest (setor B3) falhou para {ticker}.", code="consulta_falhou")
         return None
     if r.rows and r.rows[0].get("sector"):
         return {"sector": r.rows[0]["sector"], "taxonomy": "B3 (short_interest.sector)", "sources": [r.src(r.rows[0].get("trade_date"))]}
@@ -213,7 +213,7 @@ def _fidc_sector(li: LineId, client: SiloClient, pos_date: dt.date, sec: Section
     }
     r = call_tool(client, "fidc_portfolio", args, sec.errors)
     if not r.ok:
-        sec.degrade(f"fidc_portfolio falhou para a linha {li.line_no}.")
+        sec.degrade(f"fidc_portfolio falhou para a linha {li.line_no}.", code="consulta_falhou")
         add(li.line_no, "direto", li.cnpj, None, None, p.valor, "fidc_portfolio falhou (erro literal em errors)", [])
         return
     if not r.rows:

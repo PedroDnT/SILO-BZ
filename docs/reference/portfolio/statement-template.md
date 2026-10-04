@@ -28,6 +28,8 @@ position.
 | `quantidade`, `preco_unitario` | no       | for a fund, `preco_unitario` is the quota the statement prints: it is the resolver's tie-break between a feeder and its master             |
 | `valor`                        | yes      | the position's value (R$). The engine never revalues it                                                                                    |
 | `data_posicao`                 | yes      | `YYYY-MM-DD` or `DD/MM/YYYY`, or a date cell                                                                                               |
+| `vencimento`                   | no       | the maturity as printed, same formats as `data_posicao`; feeds the maturity ladder. A value that is not a date makes the row unreadable     |
+| `taxa`                         | no       | the rate exactly as printed (`CDI + 1,80%`, `105,00% do CDI`, `IPCA + 8,74%`, `15,41% a.a.`), kept as text; read only by the indexer rules |
 
 Numbers are numeric cells, or text as `1.234,56` or `1234.56`.
 
@@ -40,3 +42,15 @@ No row is dropped silently. A file that is not the template (no header row, no t
 missing required column, no rows) raises `StatementFormatError`.
 
 Rows with different `data_posicao` are accepted; the report date is the latest and a note says so.
+
+## Optional columns and repeated assets (engine 1.7)
+
+`vencimento` and `taxa` may be left out, or left blank on any row. For direct credit (CRA, CRI, CDB, LCI, LCA,
+debênture) the printed rate is classified by the versioned rules of `src/portfolio/rules/indexer_rules.csv`
+(`statement_taxa`): `CDI + x%`, `x% do CDI` and `CDI` are post-fixed CDI, `IPCA + x%` is inflation, a bare `x% a.a.`
+is pre-fixed; any other text stays "sem classificação". The indexer is never read from the name.
+
+A consolidated statement may list one asset once per account. The engine merges, before identifying anything, the
+rows with the same CNPJ, or the same `codigo` and `vencimento`, or (a fund with no `codigo`) the same name, type and
+printed quota, at the same `data_posicao`; the position keeps its source rows. Other rows with no `codigo` are never
+merged. The demo has the same CDB twice (rows 9 and 13), merged into one position.

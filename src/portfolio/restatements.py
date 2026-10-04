@@ -83,14 +83,14 @@ def compute_restatements(
                 entry["diff_note"] = (
                     f"Diff não buscado: limite de {max_diff_docs} documentos por fundo (os mais recentes foram buscados)."
                 )
-                sec.degrade(f"fundo da linha {li.line_no}: diff buscado só para {max_diff_docs} documentos.")
+                sec.degrade(f"fundo da linha {li.line_no}: diff buscado só para {max_diff_docs} documentos.", code="limite_diffs")
             else:
                 n_diff_calls += 1
                 dargs = {"p_cnpj": li.cnpj, "p_fnet_id": d.get("fnet_id")}
                 dr = call_tool(client, "fund_restatement_diff", dargs, sec.errors)
                 if not dr.ok:
                     entry["diff_note"] = "fund_restatement_diff falhou (erro literal em errors da seção)."
-                    sec.degrade(f"diff do documento {d.get('fnet_id')} falhou.")
+                    sec.degrade(f"diff do documento {d.get('fnet_id')} falhou.", code="consulta_falhou")
                 else:
                     entry["leaves"] = [_leaf(x) for x in dr.rows or []]
                     entry["n_leaves"] = len(entry["leaves"])
@@ -108,9 +108,9 @@ def compute_restatements(
             }
         )
     if failed == len(targets):
-        sec.fail("fund_restatements falhou para todos os fundos.")
+        sec.fail("fund_restatements falhou para todos os fundos.", code="consulta_falhou")
     elif failed:
-        sec.degrade(f"fund_restatements falhou para {failed} fundo(s).")
+        sec.degrade(f"fund_restatements falhou para {failed} fundo(s).", code="consulta_falhou")
     return {
         **sec.head(),
         "window": {"from": p_from, "to": p_to},

@@ -40,7 +40,9 @@ def make_narrative(engine: dict, provider: llm.Provider, llm_review: bool = True
         if llm_review and provider.name != "fake":
             result = revisor.llm_review(engine, result, provider)
         narrative.kept, narrative.removed, narrative.notes = result.kept, result.removed, result.notes
-        if not result.kept:
+        # zero findings drafted is a valid answer (engine 1.7): the report stands on its tables and fixed sections.
+        # Only a draft whose every finding the Revisor removed is a failed narrative.
+        if drafted.findings and not result.kept:
             narrative.status = "unknown"
             narrative.reason = "o Revisor removeu todos os achados"
             narrative.reason_code = "revisor_removed_all"

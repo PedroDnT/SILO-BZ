@@ -71,7 +71,8 @@ def compute_signals(lines: list[LineId], client: SiloClient) -> dict[str, Any]:
         r = call_tool(client, tool, args, sec.errors)
         entry: dict[str, Any] = {"screen": label, "tool": tool, "args": args}
         if not r.ok:
-            entry.update(status="unknown", reason="screen recusado ou falhou (erro literal em errors)", n_rows=None)
+            entry.update(status="unknown", reason="screen recusado ou falhou (erro literal em errors)", reason_code="consulta_falhou",
+                         n_rows=None)
             failed.append(label)
         else:
             entry.update(status="complete", reason=None, n_rows=len(r.rows or []))
@@ -91,7 +92,7 @@ def compute_signals(lines: list[LineId], client: SiloClient) -> dict[str, Any]:
         screens.append({"screen": tool, "tool": tool, "args": None, "status": "not_applicable", "reason": why, "n_rows": None})
 
     if failed:
-        sec.degrade(f"{len(failed)} screen(s) falharam e ficaram desconhecidos: {', '.join(failed)}.")
+        sec.degrade(f"{len(failed)} screen(s) falharam e ficaram desconhecidos: {', '.join(failed)}.", code="consulta_falhou")
     out_lines = []
     for li in funds:
         h = hits[li.cnpj]

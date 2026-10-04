@@ -70,6 +70,30 @@ def _walk(doc: Any, path: str = "") -> Any:
     yield path, doc
 
 
+# Engine 1.7: what the Redator (and the Revisor's checks) may see. Keys are deleted, never list items, so every
+# path that survives is the same path in the full view the renderer fills from. Free-text reasons, request params,
+# endpoints and error text are dropped (a reason can quote a tool or an error; the report says what could not be
+# evaluated in a fixed section written without the model); section status codes stay.
+REDATOR_DROP_KEYS = frozenset({"reason", "error", "errors", "params", "args", "endpoint", "failed", "not_run", "gaps"})
+
+
+def redator_view(engine: dict) -> dict:
+    """The view with only portfolio facts and status codes: the Redator's input and the Revisor's check basis."""
+
+    def strip(x: Any) -> Any:
+        if isinstance(x, dict):
+            return {k: strip(v) for k, v in x.items() if k not in REDATOR_DROP_KEYS}
+        if isinstance(x, list):
+            return [strip(v) for v in x]
+        return x
+
+    out = strip(engine)
+    if isinstance(engine.get("sections"), dict):
+        out["sections"] = {k: {kk: v[kk] for kk in ("status", "reason_codes") if kk in v}
+                           for k, v in engine["sections"].items() if isinstance(v, dict)}
+    return out
+
+
 def assert_masked(engine: dict) -> None:
     """Raise ``UnmaskedInputError`` (naming paths, never values) if unmasked."""
     bad: list[str] = []
@@ -127,9 +151,9 @@ SYSTEM_PROMPT = """Você é o Redator do SILO, um diagnóstico independente de c
 Regra zero: todo número vem do JSON. Você nunca escreve um algarismo. Cada valor, percentual, data, contagem, CNPJ ou nome que contenha algarismo entra como marcador ligado a um caminho do JSON, no formato {{caminho}}, por exemplo {{fees.total_estimated_brl_year}} ou {{lines[3].fund_name}}. O renderizador substitui o marcador pelo valor do JSON já formatado (R$, %, datas), então não escreva "R$", "%" nem unidades ao lado do marcador. Uma frase com algarismo fora de marcador é apagada pelo Revisor. Um marcador cujo caminho não existe ou é nulo também apaga a frase.
 
 O que escrever, nesta ordem de importância:
-1. identificacao: a carteira identificada fundo a fundo; linhas ambíguas e como foram desempatadas; fundos que mudaram de nome; linhas não identificadas e o motivo.
+1. identificacao: a carteira identificada fundo a fundo; linhas ambíguas e como foram desempatadas; fundos que mudaram de nome.
 2. taxas: a taxa de administração DIVULGADA de cada fundo (fees.by_line[i].disclosed_pct_year, com a origem e a data em disclosed_origin_label e disclosed_as_of); a estimativa do balancete só como comparação, sempre dita "estimativa, não divulgada" e nunca somada nem apresentada como a taxa; sem taxa divulgada, diga "taxa divulgada não encontrada"; um 0 informado é "0 informado; a conferir" (filed_zero_label) e um valor acima de 5% a.a. é "valor informado acima de 5% a.a.; a conferir" (implausible_label, o valor informado fica em implausible_raw): nunca diga que estão errados, pois podem estar corretos, nunca os use como custo, some ou compare, e mostre o valor informado; taxa defasada (disclosed_stale) é dita defasada; é taxa da classe quando disclosed_scope_label diz; taxa de performance e demais termos como o JSON traz, sem interpretar; a taxa do master de um FIC nunca se soma à do FIC (fees.underlying é "não somada"); o total de despesas declarado (expense_ratio_pct) é outra coisa e nunca se soma; quando o Extrato informa 0 ou acima de 5% a.a., a taxa da outra fonte aparece ao lado (lamina_beside_label com lamina_beside_pct_year e lamina_beside_as_of, "lâmina informa X; a conferir"; ou, quando a lâmina é mais recente e vira a taxa mostrada, lamina_newer_label, com o Extrato ao lado em extrato_beside_value e extrato_beside_as_of): no primeiro caso nenhuma das duas é somada, comparada ou dita certa; no segundo a taxa da lâmina é somada e comparada como qualquer taxa divulgada (disclosed_brl_year), a linha continua a conferir (sources_differ_label, "fontes divergem") e o valor do Extrato ao lado nunca é somado; scale_flag_label ("possível erro de escala no Extrato") é só um sinal, nunca uma correção. ETFs também têm taxa: quando etf_site_label está presente, a taxa da linha é a informada pelo site etfsbrasil.com.br (fonte de terceiros, não documento da CVM), com a data em disclosed_as_of; diga sempre que é do site, nunca "divulgada pela CVM"; ela é somada à parte (fees.total_etf_site_brl_year, e fees.total_fee_brl_year com as divulgadas); um 0 ou valor acima de 5% a.a. do site (etf_site_check_label, etf_site_raw) fica a conferir e não é somado. O número de cotistas (etf_site_nr_cotistas) e o PL (etf_site_pl_brl) do ETF vêm do mesmo site, na mesma coleta (etf_site_as_of, etf_facts_label): cite-os só por marcador, diga a fonte e a data, e nunca os some, nunca os use como base de taxa nem os chame de dado da CVM.
-3. exposicao: onde a carteira se sobrepõe e o que está por baixo (look-through, exposição compartilhada, indexador, setor). Mostre "sem classificação" quando houver.
+3. exposicao: onde a carteira se sobrepõe e o que está por baixo (look-through, exposição compartilhada, indexador, setor). Mostre "sem classificação" quando houver. Concentração (concentration): por emissor de crédito direto como impresso no extrato (concentration.issuer.groups[i]), sempre com o rótulo concentration.issuer.label, porque é o nome impresso e não grupo econômico; escada de vencimentos (concentration.maturity_ladder.buckets[i]); e o teste do FGC (concentration.fgc.issuers[i] com above_limit verdadeiro), sempre dito "a conferir" com concentration.fgc.label e a regra em concentration.fgc.rule, nunca como perda ou risco certo.
 4. achados: o que ninguém pegaria à mão (fundo renomeado, reapresentação, sinal de risco, linha ambígua, dois fundos com a mesma carteira por baixo).
 5. reapresentacoes: cada reapresentação, com o texto de avaliação que o JSON traz ("revisado, não avaliado"); não julgue materialidade.
 6. sinais_de_risco: telas de risco com ocorrência e telas que não puderam rodar.
@@ -139,13 +163,16 @@ O que escrever, nesta ordem de importância:
 Regras:
 - citations lista os ids de provenance (campo "id" em provenance) que sustentam o achado; pelo menos um, só ids que existem.
 - Não recomende comprar, vender ou manter. Não faça previsão de retorno. Não avalie grupo econômico.
-- Não invente fatos fora do JSON. Se uma seção está como unknown, diga que não foi possível avaliar e cite o motivo do JSON por marcador.
+- Não invente fatos fora do JSON.
+- Achados são sobre a carteira, nunca sobre o funcionamento do SILO. Não escreva sobre consultas que falharam, seções não avaliadas (sections.*.status), linhas não identificadas, telas que não rodaram, taxas não encontradas ou dados ausentes: o relatório tem uma seção fixa, escrita sem você, para isso.
+- O mesmo ativo em mais de uma linha do extrato (ou em mais de uma conta) já foi agregado pelo motor em uma posição: isso não é achado. Uma exposição compartilhada com same_position verdadeiro é o mesmo fundo ou ticker em duas linhas, não diversificação nem sobreposição: não escreva achado sobre ela.
+- Nenhum achado é uma resposta válida: se a carteira não tem nada a apontar numa seção, não escreva nada nela; se não tem nada em nenhuma, devolva findings vazio.
 - Tom sóbrio, frases curtas, sem adjetivos de alarme.
 - id: f1, f2, f3... na ordem em que escrever."""
 
 
 def build_user_message(engine: dict) -> str:
-    payload = json.dumps(engine, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    payload = json.dumps(redator_view(engine), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return (
         "JSON do motor (mascarado; os números do relatório vêm só daqui):\n"
         f"{payload}\n\nEscreva os achados no formato pedido."
@@ -202,9 +229,7 @@ def template_findings(engine: dict) -> dict:
     if pf:
         add("identificacao", "Carteira identificada fundo a fundo",
             "A carteira soma {{portfolio.total_brl}} em {{portfolio.n_lines}} linhas. "
-            "Linhas identificadas nos dados públicos: {{portfolio.n_identified}}. "
-            "Linhas com ambiguidade desempatada: {{portfolio.n_ambiguous}}. "
-            "Linhas sem identificação: {{portfolio.n_unknown}}.", line_prov)
+            "Linhas identificadas nos dados públicos: {{portfolio.n_identified}}.", line_prov)
     for i, ln in enumerate(lines):
         ident = ln.get("identification") or {}
         p = f"lines[{i}]"
@@ -232,11 +257,6 @@ def template_findings(engine: dict) -> dict:
             add("achados", "Nome abreviado com dois fundos possíveis",
                 f"A linha {{{{{p}.instrument}}}} podia ser o fundo investidor ou o master. "
                 "Só a cota separa os dois.", ln.get("provenance"))
-        if ident.get("status") == "unknown":
-            add("identificacao", "Linha não identificada",
-                f"A linha {{{{{p}.instrument}}}}, de {{{{{p}.value_brl}}}}, não foi identificada: "
-                f"{{{{{p}.identification.reason}}}}. Ela fica fora da análise de taxas e de exposição.",
-                ln.get("provenance"))
 
     # taxas
     fees = engine.get("fees") or {}
@@ -315,9 +335,6 @@ def template_findings(engine: dict) -> dict:
                 add("taxas", "Valor informado acima do limite, a conferir",
                     f"Na linha {{{{{q}.line_id}}}} a fonte informou {{{{{q}.implausible_raw}}}}: {{{{{q}.implausible_label}}}}. "
                     "O valor pode estar correto e não entra em nenhuma conta." + beside, b.get("provenance"))
-            else:
-                add("taxas", "Taxa divulgada não encontrada",
-                    f"A linha {{{{{q}.line_id}}}}: {{{{{q}.fee_status}}}}. {{{{{q}.reason}}}}", _ids(b.get("provenance"), fee_prov))
             if b.get("etf_facts_label"):
                 # engine 1.6: the ETF's cotistas and PL from the same etfsbrasil.com.br snapshot, descriptive, never summed
                 facts = [f"cotistas: {{{{{q}.etf_site_nr_cotistas}}}}" if b.get("etf_site_nr_cotistas") is not None else None,
@@ -350,11 +367,6 @@ def template_findings(engine: dict) -> dict:
             if b.get("estimated_pct_year_high") is not None:
                 txt += f" Conforme o mês de referência, a estimativa chega a {{{{{q}.estimated_pct_year_high}}}}."
             add("taxas", "Maior custo estimado", txt, b.get("provenance"))
-        for i, b in enumerate(by_line):
-            if b.get("label") == "desconhecido":
-                add("taxas", "Taxa não estimada",
-                    f"A taxa da linha {{{{fees.by_line[{i}].line_id}}}} não foi estimada: {{{{fees.by_line[{i}].reason}}}}.",
-                    _ids(b.get("provenance"), fee_prov))
 
     # exposicao
     lt = engine.get("lookthrough") or {}
@@ -366,7 +378,7 @@ def template_findings(engine: dict) -> dict:
         for j, _leg in enumerate(s.get("legs") or []):
             txt += f" Pela linha {{{{{q}.legs[{j}].line_id}}}} ({{{{{q}.legs[{j}].via}}}}): {{{{{q}.legs[{j}].value_brl}}}}."
         add("exposicao", "Exposição compartilhada", txt, s.get("provenance"))
-        if s.get("level") == "fundo":
+        if s.get("level") == "fundo" and not s.get("same_position"):
             add("achados", "Duas linhas, uma carteira por baixo",
                 f"Duas linhas do extrato investem no mesmo fundo, {name}. "
                 "Elas parecem diversificação, mas por baixo são a mesma carteira.", s.get("provenance"))
@@ -391,6 +403,20 @@ def template_findings(engine: dict) -> dict:
         if unc is not None:
             txt += f" Sem classificação de setor: {{{{sector.buckets[{unc}].weight_pct}}}}."
         add("exposicao", "Setor", txt, sc.get("provenance"))
+    # concentração (engine 1.7): statement figures only, so the citation is the line's own provenance
+    cc = engine.get("concentration") or {}
+    groups = (cc.get("issuer") or {}).get("groups") or []
+    if groups:
+        add("exposicao", "Concentração por emissor de crédito direto",
+            "O maior emissor de crédito direto, {{concentration.issuer.groups[0].issuer}}, soma "
+            "{{concentration.issuer.groups[0].value_brl}}, {{concentration.issuer.groups[0].weight_pct}} da carteira "
+            "({{concentration.issuer.label}}).", line_prov)
+    for i, g in enumerate((cc.get("fgc") or {}).get("issuers") or []):
+        if g.get("above_limit"):
+            q = f"concentration.fgc.issuers[{i}]"
+            add("achados", "Acima do limite do FGC por emissor, a conferir",
+                f"Os títulos cobertos pelo FGC de {{{{{q}.issuer}}}} somam {{{{{q}.eligible_value_brl}}}}, acima de "
+                f"{{{{concentration.fgc.limit_brl}}}} por {{{{{q}.excess_brl}}}}: {{{{concentration.fgc.label}}}}.", line_prov)
 
     # reapresentacoes
     rs = engine.get("restatements") or {}
@@ -421,10 +447,6 @@ def template_findings(engine: dict) -> dict:
             add("sinais_de_risco", "Telas sem ocorrência",
                 "Telas de risco executadas sobre os fundos da carteira: {{risk_screens.screens_run}}. Nenhuma marcou um fundo da carteira.",
                 rk.get("provenance"))
-        for i, _n in enumerate(rk.get("not_run") or []):
-            add("sinais_de_risco", "Tela que não rodou",
-                f"A tela {{{{risk_screens.not_run[{i}].screen}}}} não rodou: {{{{risk_screens.not_run[{i}].reason}}}}.",
-                rk.get("provenance"))
 
     # movimento incomum: only the strong level goes in the text; atencao stays in the table
     mv = engine.get("movement") or {}
@@ -438,11 +460,6 @@ def template_findings(engine: dict) -> dict:
                 "além do limite forte. É um sinal estatístico sobre um mês passado, não uma previsão nem uma recomendação.",
                 s.get("provenance"))
         ne = mv.get("not_evaluated") or []
-        if ne:
-            add("sinais_de_risco", "Movimento incomum não avaliado",
-                "Movimento incomum: {{movement.counts.nao_avaliado}} fundo(s) da carteira não foram avaliados contra a classe "
-                "em {{movement.month}}; o motivo de cada um está na seção de sinais de risco.",
-                _ids(*[n.get("provenance") for n in ne]))
         if not (mv.get("strong") or []) and (mv.get("counts") or {}).get("funds") and not ne:
             add("sinais_de_risco", "Movimento incomum sem ocorrência forte",
                 "Em {{movement.month}}, nenhum fundo da carteira ficou além do limite forte de movimento contra a sua classe. "

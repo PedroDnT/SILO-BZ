@@ -124,7 +124,7 @@ def _not_applicable(lines: list[LineId], fund_ids: set[int]) -> list[dict[str, A
     return out
 
 
-def _unknown_line(li: LineId, month: dt.date, reason: str) -> dict[str, Any]:
+def _unknown_line(li: LineId, month: dt.date, reason: str, code: str) -> dict[str, Any]:
     return {
         "line_no": li.line_no,
         "cnpj": li.cnpj,
@@ -149,6 +149,7 @@ def _unknown_line(li: LineId, month: dt.date, reason: str) -> dict[str, Any]:
         "in_table": False,
         "in_text": False,
         "reason": reason,
+        "reason_code": code,  # engine 1.7: the report prints the code's fixed text, never this reason
         "sources": [],
     }
 
@@ -157,10 +158,12 @@ def _line(li: LineId, row: dict[str, Any], call: Any, month: dt.date, sec: Secti
     z = dec(row.get("z"))
     level = str(row.get("level") or NOT_EVALUATED)
     reason = row.get("reason")
+    code = None  # a reason SILO returned with a verdict is data (the class and its peers), shown as served
     if level not in LEVEL_LABELS:
+        code = "resposta_inconsistente"
         level, reason = NOT_EVALUATED, f"nível desconhecido devolvido pelo SILO ({row.get('level')!r}); não usado."
         z = None
-        sec.degrade(f"linha {li.line_no}: nível desconhecido devolvido por portfolio_movement.")
+        sec.degrade(f"linha {li.line_no}: nível desconhecido devolvido por portfolio_movement.", code="resposta_inconsistente")
     elif level != NOT_EVALUATED:
         # The server decided the level on the unrounded z. A level its own z contradicts is not shown as a finding.
         if z is None or level not in _implied_levels(z):
@@ -168,8 +171,9 @@ def _line(li: LineId, row: dict[str, Any], call: Any, month: dt.date, sec: Secti
                 f"o SILO devolveu o nível {level!r} com z {None if z is None else str(z)}, que a regra de 2 e 3 desvios "
                 "não confirma; linha não avaliada."
             )
+            code = "resposta_inconsistente"
             level, z = NOT_EVALUATED, None
-            sec.degrade(f"linha {li.line_no}: nível devolvido por portfolio_movement contradiz o seu z.")
+            sec.degrade(f"linha {li.line_no}: nível devolvido por portfolio_movement contradiz o seu z.", code="resposta_inconsistente")
     return {
         "line_no": li.line_no,
         "cnpj": li.cnpj,
@@ -195,6 +199,7 @@ def _line(li: LineId, row: dict[str, Any], call: Any, month: dt.date, sec: Secti
         "in_table": level in (ATENCAO, FORTE),
         "in_text": level == FORTE,
         "reason": reason,
+        "reason_code": code,
         "sources": [call.src(_month_end(month))],
     }
 
@@ -234,27 +239,28 @@ def compute_movement(lines: list[LineId], client: SiloClient, month: dt.date) ->
                 found[str(r.get("cnpj"))] = (r, res)
     failed = [c for c in calls if not c.ok]
     if failed and len(failed) == len(calls):
-        sec.fail("portfolio_movement falhou (erro literal em errors); nenhum fundo pôde ser comparado com a classe.")
+        sec.fail("portfolio_movement falhou (erro literal em errors); nenhum fundo pôde ser comparado com a classe.", code="consulta_falhou")
     elif failed:
-        sec.degrade("portfolio_movement falhou para parte dos fundos (erro literal em errors).")
+        sec.degrade("portfolio_movement falhou para parte dos fundos (erro literal em errors).", code="consulta_falhou")
 
     out_lines: list[dict[str, Any]] = []
     for li in funds:
         hit = found.get(li.cnpj or "")
         if hit is None:
-            reason = (
-                "portfolio_movement falhou para este fundo (erro literal em errors da seção)."
+            reason, code = (
+                ("consulta ao SILO falhou para este fundo.", "consulta_falhou")
                 if failed
-                else "portfolio_movement não devolveu linha para este CNPJ."
+                else ("portfolio_movement não devolveu linha para este CNPJ.", "sem_linha_movimento")
             )
-            out_lines.append(_unknown_line(li, month, reason))
+            out_lines.append(_unknown_line(li, month, reason, code))
             continue
         out_lines.append(_line(li, hit[0], hit[1], month, sec))
 
     counts = _counts(out_lines)
     if sec.status != "unknown" and counts[NOT_EVALUATED]:
         sec.degrade(
-            f"{counts[NOT_EVALUATED]} de {len(out_lines)} fundo(s) não avaliados contra a classe (o motivo de cada um está na seção de sinais de risco)."
+            f"{counts[NOT_EVALUATED]} de {len(out_lines)} fundo(s) não avaliados contra a classe (o motivo de cada um está na seção de sinais de risco).",
+            code="fundos_nao_avaliados",
         )
     return {
         **sec.head(),
