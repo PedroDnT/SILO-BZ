@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.7)
+# Portfolio engine output (schema 1.8)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,14 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.8 (owner's brief of 2026-10-04: charts, a clear fee total and the main risks). Keys were added, none renamed,
+retyped or removed. **New section `allocation`** and **new section `risks`** (below), placed after `concentration`
+and in `section_status`. `fees.summary` (below), and `fees.totals.adm_disclosed_range_low_portfolio_pct` /
+`adm_disclosed_range_high_portfolio_pct`. `concentration.maturity_ladder.by_year[]` (`year` as a string, so it never
+prints as a number; `value_brl`, `portfolio_pct`, `n_lines`, `line_nos`): the ladder's lines by calendar year of
+maturity. Assumption id `risks`. `REASON_TEXT` codes `sem_emissor_impresso`, `riscos_nao_avaliados`,
+`sem_carteira_dos_fundos`, `sem_taxa_em_reais`.
 
 1.7 (owner, 2026-10-04: a real 41-line statement came out with half its value unidentified after one timeout).
 Keys were added, none renamed, retyped or removed. **Identification:** `portfolio_resolve` is split (the lines with a
@@ -125,7 +133,7 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
 
 `schema_version`, `generated_at_utc`, `engine` (`version`, `client`, `params`), `statement`,
 `identification`, `fees`, `look_through`, `indexer`, `sector`, `restatements`, `risk_signals`, `movement`,
-`concentration` (1.7), `assumptions`, `section_status`, `provenance`.
+`concentration` (1.7), `allocation` and `risks` (1.8), `assumptions`, `section_status`, `provenance`.
 
 - `engine.params`: `cda_month` (default: position month - 4), `fee_month` (default: position
   month - 1), `movement_month` (default: the position month when the position date is a month-end, else the
@@ -134,7 +142,7 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
   `coverage()`-driven default exists.
 - `assumptions[]`: `{id, text}`, each a reading the engine could not verify (`fee_units`,
   `weight_in_root`, `position_date`, `valuation`, `direct_tesouro`, `economic_group`,
-  `abnormal_movement`, `movement_class`). The report states the ones that touch what it says.
+  `abnormal_movement`, `movement_class`, `risks` (1.8)). The report states the ones that touch what it says.
 - `section_status`: `{section: {status, reason, reason_codes}}`, for a cover-page summary.
 - `provenance[]`: every tool call in order: `call_id`, `id` (`p<call_id>`), `tool`, `args`,
   `requested_at_utc`, `row_count` (null on error), `error` (verbatim, null on success). No trimming;
@@ -284,6 +292,19 @@ line with no usable fee: none, a filed 0, above 5, or an ETF site value to check
 `fund_value_with_etf_site_fee_brl`, `fund_value_with_etf_site_fee_to_check_brl`, `known_fee_incl_etf_site_fund_value_pct`). Assumption: the rates are percent a year (`fee_units`; CVM's XML
 specification says so for the Extrato).
 
+`summary` (1.8), "Quanto a carteira paga em taxas": the totals above, their coverage and what is left out. `title`,
+`basis`, `n_fund_lines`, `fund_value_brl`, `fund_value_portfolio_pct`; `adm_disclosed_fixed_per_year_brl` and
+`adm_disclosed_fixed_portfolio_pct` (null when no line has a fixed fee, so a 0 never reads as "no cost"); the range
+low and high in R$ and as `_portfolio_pct` (null without a range line); `adm_etf_site_per_year_brl`,
+`adm_etf_site_portfolio_pct` and `etf_site_label` (the third-party ETF fee, its own sum, never "divulgada"; the
+summary carries no total that adds it to the disclosed fees); `coverage_fixed_fund_value_pct`,
+`coverage_range_fund_value_pct`, `coverage_etf_site_fund_value_pct`, `coverage_without_fee_fund_value_pct` (shares
+of the fund value, not fee rates); `estimate_adm_per_year_brl`, `estimate_adm_portfolio_pct` and `estimate_label`
+(apart, never added to a disclosed fee); `not_included[]` (`id`, `text`, `line_nos`, `value_brl`): `performance`
+(variable, shown per fund as filed, never summed), `carregamento_pgbl` (not public), `spread_credito_direto` (the
+direct-credit lines and their value), `sem_taxa` (lines with no usable fee and their value), and
+`fundos_investidos` when `underlying` is not empty (Res. CVM 175, art. 98).
+
 ## `look_through`
 
 `cda_month`, `max_depth`, `lines[]`, `shared_exposure`. From `portfolio_lookthrough`, one call per
@@ -400,6 +421,45 @@ rules about where a level may appear, and checks the served level against the se
   fund's manager CNPJ or the lâmina's `qt_dia_pagto_resgate` (checked 2026-10-04), and the engine reads SILO through
   the public API only, so neither is computed.
 
+## `allocation`
+
+1.8. The portfolio by asset class, from the type the statement prints for each line (`tipo`); an `outro` ticker
+takes the class SILO's `lookup` gave it (`ação`, `cota de fundo listada`), never one read from the name; direct credit
+is `crédito privado direto` (the `concentration.issuer` rule). `source = "statement"`, `basis`, `portfolio_value_brl`,
+`classes[]` (`asset_class`, `value_brl`, `portfolio_pct`, `n_lines`, `line_nos`), largest first, with `sem
+classificação` always last, even at zero; `sum_check_brl` (0 within a cent).
+
+## `risks`
+
+1.8, "Principais riscos". Built last, from the other sections: every value is a field of another section
+(`source_path`) or a sum of statement values, every severity comes from the fixed thresholds in
+`src/portfolio/risks.py` (`THRESHOLDS`, also in the section and printed in the report's methodology), every
+explanation is a fixed text. `title`, `note` (no forecast, no recommendation), `severity_rule`, `thresholds`,
+`counts` (`atencao`, `moderado`, `baixo`, `nao_avaliado`, `nao_se_aplica`), `rows[]`. A row: `id`, `risk`, `status`
+(`avaliado` | `nao_avaliado` | `nao_se_aplica`, with `status_label`), `unit` (`pct` | `count`) and the value in
+`value_pct` or `value_count`, `subject`, `source_path`, `severity` (`atencao` | `moderado` | `baixo`, strictly above
+the threshold) and `severity_label`, `thresholds`, `explanation`, `reason_code` and `reason` (the fixed text, for a
+row not evaluated or not applicable), `line_nos`, `sources`, `text_allowed`, and where it applies
+`value_brl_detail` (+ `_label`), `check_label`, `parts`, `assessment`, `table_only`. No row is ever dropped.
+
+| `id` | Value | atenção above | moderado above |
+| --- | --- | --- | --- |
+| `concentracao_emissor` | largest direct-credit issuer as printed, % of the portfolio | 10% | 5% |
+| `concentracao_fundo` | largest fund position, % of the portfolio | 25% | 15% |
+| `credito_privado` | direct credit, % of the portfolio | 30% | 15% |
+| `credito_sem_fgc` | direct credit the FGC does not cover (CRI, CRA, debêntures, CDCA, and CDB/LCI/LCA above R$ 250 mil per printed issuer), % of the portfolio, "a conferir" | 20% | 10% |
+| `fgc_acima_limite` | printed issuers above R$ 250 mil, a count | 0 | — |
+| `vencimentos` | the year with most value maturing, % of the portfolio | 40% | 20% |
+| `indexador` | largest indexer group (inflação, pré-fixado, pós-fixado, renda variável, câmbio), % of the portfolio, every group in `parts`; a fact, no forecast | 80% | 60% |
+| `reapresentacoes` | restatements of the portfolio's FIDC and FII in the window, a count | — | 0 |
+| `movimento_anormal` | funds at the strong level, a count; atenção with one, moderado with only attention-level funds | 0 | — |
+| `liquidez` | always `nao_avaliado` (`liquidez_sem_api`): no `api` function serves the lâmina's redemption terms | — | — |
+
+Rows are ordered evaluated first (atenção, moderado, baixo), then not evaluated, then not applicable. The movement
+row keeps the owner's rule that the attention level is a table row: its count of such funds is under `table_only`,
+and `text_allowed` is false when only that count sets the severity. The section is `partial`
+(`riscos_nao_avaliados`) while any row is not evaluated.
+
 ## The report's view (mapping)
 
 `src/portfolio/report/adapt.py` is this table as code: `python -m src.portfolio.report.build engine.json` maps an
@@ -442,6 +502,12 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `lookthrough.shared_exposure[i].same_position` (1.7) | true when every leg is a line of one `identification.same_identity_line_groups` entry: one position, never a finding |
 | `concentration` (`issuer`, `maturity_ladder`, `fgc`, `manager`, `fund_liquidity`) (1.7) | `concentration.*`, copied, line numbers as `L<n>` |
 | `gaps[i]` (`title`, `text`, `line_ids`, `value_brl`, `weight_pct`) (1.7) | "O que não foi possível avaliar", one line per gap, fixed texts only: `identification.unknown_groups` (grouped by reason, with value), `cnpj_extrato_line_nos`, fee lines without a usable fee grouped by `fee_status`, screens that did not run, funds without a movement verdict, the other sections' `reason_codes`, and the view's own fixed notes |
+| `fees.summary` (1.8) | `fees.summary`, copied; `not_included[i].line_ids` as `L<n>` |
+| `allocation` (`status`, `basis`, `buckets[i]` `asset_class`, `value_brl`, `weight_pct`, `line_ids`) (1.8) | `allocation.classes[i]` (`portfolio_pct`) |
+| `concentration.maturity_ladder.by_year[i]` (`year`, `value_brl`, `weight_pct`, `line_ids`) (1.8) | `concentration.maturity_ladder.by_year[i]` |
+| `risks` (`status`, `title`, `note`, `severity_rule`, `thresholds`, `counts`, `rows[i]`) (1.8) | `risks.*`; a row without `sources`, `line_nos` (as `line_ids`) and with `reason` only when not evaluated; `provenance` from its `sources` |
+| `lookthrough.tree[i]` (`line_id`, `name`, `value_brl`, `weight_pct`, `n_exposures`, `children[j]` `name`, `value_brl`, `weight_pct`) (1.8) | the five largest funds of `look_through.lines` with an opened portfolio and, under each, its three largest positive `exposures` (`exposure_brl`, `portfolio_pct`): the diagram's selection, never a new figure |
+| `gaps[i]` from the charts and risks (1.8) | every risk row `nao_avaliado` and every chart not drawn (`sem_vencimento`, `sem_credito_direto`, `sem_carteira_dos_fundos`, `sem_taxa_em_reais`), fixed texts |
 | `data_dates` | the newest `data_date` per source name |
 
 ## Tools the engine calls

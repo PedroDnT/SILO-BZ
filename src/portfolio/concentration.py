@@ -169,6 +169,7 @@ def _issuer(lines: list[LineId], total: Decimal) -> dict[str, Any]:
 
 def _ladder(lines: list[LineId], total: Decimal, position_date: dt.date) -> dict[str, Any]:
     acc: dict[str, list[LineId]] = {label: [] for label, _ in LADDER}
+    by_year: dict[int, list[LineId]] = {}
     none: list[LineId] = []
     for li in lines:
         m = _maturity(li)
@@ -176,6 +177,7 @@ def _ladder(lines: list[LineId], total: Decimal, position_date: dt.date) -> dict
             none.append(li)
         else:
             acc[_bucket((m - position_date).days)].append(li)
+            by_year.setdefault(m.year, []).append(li)
 
     def row(label: str, lis: list[LineId]) -> dict[str, Any]:
         v = sum((li.position.valor for li in lis), Decimal("0"))
@@ -193,6 +195,9 @@ def _ladder(lines: list[LineId], total: Decimal, position_date: dt.date) -> dict
         "position_date": position_date.isoformat(),
         "buckets": buckets,
         "no_maturity": row(NO_MATURITY, none),
+        # engine 1.8: the same lines by calendar year of maturity; the year is a string so it never prints as a number
+        "by_year": [{"year": str(y), **{k: v for k, v in row(str(y), by_year[y]).items() if k != "bucket"}}
+                    for y in sorted(by_year)],
         "sum_check_brl": brl(check),
     }
 

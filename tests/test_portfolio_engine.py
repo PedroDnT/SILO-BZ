@@ -60,12 +60,12 @@ def test_fixture_regenerates_byte_for_byte(tmp_path):
 def test_top_level_schema_is_stable(doc):
     assert list(doc) == [
         "schema_version", "generated_at_utc", "engine", "statement", "identification", "fees", "look_through",
-        "indexer", "sector", "restatements", "risk_signals", "movement", "concentration", "assumptions", "section_status",
-        "provenance",
+        "indexer", "sector", "restatements", "risk_signals", "movement", "concentration", "allocation", "risks", "assumptions",
+        "section_status", "provenance",
     ]
-    assert doc["schema_version"] == "1.7"
+    assert doc["schema_version"] == "1.8"
     for sec in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals", "movement",
-                "concentration"):
+                "concentration", "allocation", "risks"):
         assert {"status", "reason", "errors", "reason_codes"} <= set(doc[sec])
         assert doc["section_status"][sec]["reason_codes"] == doc[sec]["reason_codes"]
 
