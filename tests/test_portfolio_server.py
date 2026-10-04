@@ -67,6 +67,24 @@ def test_health(app):
     assert r.status_code == 200 and r.data == b"ok\n"
 
 
+def test_every_answer_carries_the_engine_revision(app):
+    rev = server.engine_rev()
+    assert len(rev) == 12 and int(rev, 16) >= 0
+    assert app.get("/health").headers["X-Silo-Engine-Rev"] == rev
+    assert app.post("/diagnose", data=b"x").headers["X-Silo-Engine-Rev"] == rev
+
+
+def test_engine_rev_ignores_bytecode_and_follows_content(tmp_path):
+    (tmp_path / "a.py").write_text("x = 1\n")
+    (tmp_path / "__pycache__").mkdir()
+    (tmp_path / "__pycache__" / "a.cpython-312.pyc").write_bytes(b"junk")
+    first = server.engine_rev(tmp_path)
+    (tmp_path / "__pycache__" / "a.cpython-312.pyc").write_bytes(b"other")
+    assert server.engine_rev(tmp_path) == first
+    (tmp_path / "a.py").write_text("x = 2\n")
+    assert server.engine_rev(tmp_path) != first
+
+
 def test_health_answers_without_the_token_configured(monkeypatch):
     monkeypatch.delenv(server.TOKEN_ENV, raising=False)
     r = server.create_app(client_factory=_client).test_client().get("/health")

@@ -26,6 +26,7 @@ LLM provider is ``SILO_LLM_PROVIDER`` (``fake`` needs no key).
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
@@ -141,10 +142,33 @@ def _upload() -> bytes:
     return data
 
 
+def engine_rev(root: Path | None = None) -> str:
+    """A content hash of ``src/portfolio`` (every file but bytecode), 12 hex digits.
+
+    The image carries the same files as the checkout (Dockerfile.dockerignore), so
+    a deploy smoke can compute it from the repository and wait until a Cloudflare
+    instance answers with it: a rollout does not wait for instances to change image.
+    """
+    base = root or Path(__file__).resolve().parent
+    h = hashlib.sha256()
+    for f in sorted(p for p in base.rglob("*") if p.is_file()):
+        rel = f.relative_to(base).as_posix()
+        if "__pycache__" in rel.split("/") or rel.endswith(".pyc"):
+            continue
+        h.update(rel.encode() + b"\0" + f.read_bytes() + b"\0")
+    return h.hexdigest()[:12]
+
+
 def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     app.logger.disabled = True  # Flask's own handler would log tracebacks; this module logs instead
+    rev = engine_rev()
+
+    @app.after_request
+    def stamp(resp: Response) -> Response:
+        resp.headers["X-Silo-Engine-Rev"] = rev
+        return resp
 
     @app.get("/health")
     def health():
