@@ -168,16 +168,14 @@ created none. So a documentation change to `dashboard/pages/` is live on GitHub
 immediately and on the public site the next morning, unless someone dispatches
 `daily_ingest` with `rebuild_dashboard=true`.
 
-## 7. The docs site is on Mintlify's generated subdomain
+## 7. ~~The docs site is on Mintlify's generated subdomain~~ (superseded)
 
-**Blocked 2026-09-25:** DNS record plus Mintlify plan; account action, no repo change.
+**Superseded 2026-10-03 (`docs/scalar-rewrite`):** documentation rewritten from
+scratch on Scalar. Mintlify is no longer the docs host. The `api-docs/` directory
+and `docs.json` remain in the repo but are no longer the source; `scalar/` and
+`scalar.config.json` are. Scalar syncs from GitHub on merge.
 
-`octo-98895abd.mintlify.site` works and is linked correctly from everywhere. But
-a hex-string hostname reads as provisional to a first-time visitor, which is the
-wrong signal for the one surface a stranger is most likely to open.
-
-A custom domain needs a DNS record and a Mintlify plan that allows one — an
-account change, not a repo change, so it cannot be done from here.
+~~**Blocked 2026-09-25:** DNS record plus Mintlify plan; account action, no repo change.~~
 
 ## 8. Production deployments stopped taking the public hostnames
 
