@@ -109,7 +109,7 @@ pytest tests/ -v                   # all offline (DB and HTTP mocked)
 - **Rules and commands:** `AGENTS.md` is the source of truth; `CLAUDE.md` only adds Claude Code's hooks.
 - **Schema changes:** edit `src/store/schema.sql` and add a new `src/store/migrations/NNN_*.sql`; never edit a historical migration.
 - **New dataset or API endpoint:** the steps are in `AGENTS.md` ("Adding a dataset", "Adding an API endpoint").
-- **Every branch carries its own docs:** add its row to [docs/planning/CHANGELOG.md](docs/planning/CHANGELOG.md), keep every existing row word for word, and update this README, the planning index and `OPEN_ITEMS.md` where the branch made them stale.
+- **Every branch carries its own docs:** add its changelog row as a file in [docs/planning/changelog.d/](docs/planning/changelog.d/) (folded into [CHANGELOG.md](docs/planning/CHANGELOG.md) by `scripts/roll_changelog.py`), keep every existing row word for word, and update this README, the planning index and `OPEN_ITEMS.md` where the branch made them stale.
 
 ## What is intentionally not here
 

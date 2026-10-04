@@ -69,7 +69,7 @@
           },
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in */docs/planning/CHANGELOG.md|docs/planning/CHANGELOG.md|*/docs/archive/changelog/*|docs/archive/changelog/*) ;; *.md|*.json|*.yaml|*.yml) command -v prettier >/dev/null && prettier --write --log-level silent \"$f\";; esac; } 2>/dev/null || true",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in */docs/planning/CHANGELOG.md|docs/planning/CHANGELOG.md|*/docs/archive/changelog/*|docs/archive/changelog/*|*/docs/planning/changelog.d/*|docs/planning/changelog.d/*) ;; *.md|*.json|*.yaml|*.yml) command -v prettier >/dev/null && prettier --write --log-level silent \"$f\";; esac; } 2>/dev/null || true",
             "timeout": 30,
             "statusMessage": "prettier…"
           }

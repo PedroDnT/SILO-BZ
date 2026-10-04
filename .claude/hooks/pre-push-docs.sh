@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # PreToolUse on Bash `git push` (.claude/settings.json). Every branch carries
 # its own docs, so planning and the README are current the moment it merges:
-#   1. one row in docs/planning/CHANGELOG.md, required on every push until the
-#      branch has it (or a `No-changelog: <reason>` commit trailer);
-#   2. no row that main already had goes missing from that file, on every push
-#      (or a `Changelog-removes: <reason>` commit trailer);
+#   1. one changelog row, as its own file under docs/planning/changelog.d/,
+#      required on every push until the branch has it (or a `No-changelog:
+#      <reason>` commit trailer);
+#   2. no row that main already had goes missing from the fragments, the table
+#      or its archive, on every push (or a `Changelog-removes: <reason>` trailer);
 #   3. a staleness check of README.md and the planning docs, asked once per
 #      branch, unless the branch already edits README.md;
 #   4. a change to the files one of the four docs/architecture/ pages describes
@@ -51,11 +52,16 @@ add() {
 
 # A trailer counts only on this branch's own commits, the ones origin/main does
 # not have: in a criss-cross history `$base..HEAD` also holds main commits.
-if ! grep -qx 'docs/planning/CHANGELOG.md' <<<"$changed" &&
+# A fragment under docs/planning/changelog.d/ is the row: one file per branch, so
+# two open branches never edit the same lines (GitHub ignores merge=union, #587).
+# Editing CHANGELOG.md itself still counts, for the branch that folds the
+# fragments in (scripts/roll_changelog.py).
+fragment="docs/planning/changelog.d/$(date -u +%Y-%m-%d)_${branch//\//-}.md"
+if ! grep -qE '^docs/planning/(CHANGELOG\.md|changelog\.d/.+\.md)$' <<<"$changed" &&
   ! git log --format=%B origin/main..HEAD | grep -qiE '^No-changelog:[[:space:]]*[^[:space:]]'; then
-  add "No CHANGELOG row. \`$branch\` changes $(grep -c . <<<"$changed") file(s) against origin/main, and every merged branch adds one row to docs/planning/CHANGELOG.md. Insert it as the first row under the table header (newest first):
+  add "No CHANGELOG row. \`$branch\` changes $(grep -c . <<<"$changed") file(s) against origin/main, and every merged branch adds one changelog row, in a file of its own. Create $fragment holding just the row, no header:
 | $(date -u +%Y-%m-%d) | $branch | **<what changed, in one bold sentence>.** <why, and what a reader needs to know> |
-Escape any | inside the prose as \\|, and never run a formatter over that file (tests/test_changelog_integrity.py guards it). Commit, then push again. If your instructions forbid editing CHANGELOG.md (the Scout's do), put a \`No-changelog: <reason>\` trailer in one of this branch's commit messages instead."
+Do not edit docs/planning/CHANGELOG.md itself: scripts/roll_changelog.py folds the fragments into it. Escape any | inside the prose as \\|, and never run a formatter over the file (tests/test_changelog_integrity.py guards it). Commit, then push again. If your instructions forbid adding a changelog row (the Scout's do), put a \`No-changelog: <reason>\` trailer in one of this branch's commit messages instead."
 fi
 
 # A row main had at the merge base that HEAD no longer has, word for word, was
@@ -67,10 +73,11 @@ fi
 # the branch while the branch merged an older main) there are two, and
 # `git merge-base` names only one. .github/workflows/test.yml repeats this for
 # pull requests, which also covers merges made outside Claude Code.
-# Every row the live file and the frozen archive files (docs/archive/changelog/,
-# filled by scripts/roll_changelog.py) hold: a row rolled between them is not dropped.
+# Every row the fragments (docs/planning/changelog.d/), the live file and the frozen
+# archive files (docs/archive/changelog/) hold: scripts/roll_changelog.py folds and
+# rolls rows between them, and a row moved between them is not dropped.
 rows() {
-  git ls-tree -r --name-only "$1" -- docs/planning/CHANGELOG.md docs/archive/changelog 2>/dev/null |
+  git ls-tree -r --name-only "$1" -- docs/planning/changelog.d docs/planning/CHANGELOG.md docs/archive/changelog 2>/dev/null |
     while IFS= read -r f; do git show "$1:$f"; done | grep '^| 20'
 }
 bases=$(git merge-base --all HEAD origin/main)

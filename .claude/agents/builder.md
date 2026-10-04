@@ -116,9 +116,9 @@ ON_ERROR_STOP=1` on an ephemeral Postgres) and idempotent
   real files you downloaded, covering each header variant, the key, the
   validator drops, and idempotence (upsert twice, same rows).
 - Docs in the same PR: `docs/reference/DATA_INVENTORY.md` for a dataset; for an
-  endpoint, the doc set listed under shape 2. One row at the **top** of
-  `docs/planning/CHANGELOG.md`'s table (insert the line; never run a
-  formatter over that file).
+  endpoint, the doc set listed under shape 2. One changelog row as its own
+  file, `docs/planning/changelog.d/<date>_<branch with / as ->.md`, holding just
+  the row (never edit `CHANGELOG.md`'s table; never run a formatter over either).
 - Run `python3 -m pytest tests/ -q`. It must be green before you push. If a
   local Postgres is available, also replay the migration on it.
 

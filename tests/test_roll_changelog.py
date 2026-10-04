@@ -101,3 +101,65 @@ def test_it_refuses_a_table_that_holds_anything_but_rows(tree):
     live.write_text(live.read_text(encoding="utf-8") + "\nstray prose\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="not a row"):
         roll_changelog.roll(live, archive, keep=4)
+
+
+# Since #587 each branch adds its row as docs/planning/changelog.d/<date>_<branch>.md,
+# and the roll folds those rows into the table first: unchanged, at their date's place.
+
+def fragments_dir(live: Path) -> Path:
+    return live.parent / "changelog.d"
+
+
+def write_fragment(live: Path, name: str, *rows: str) -> Path:
+    path = fragments_dir(live) / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(rows), encoding="utf-8")
+    return path
+
+
+def test_fold_moves_fragment_rows_into_the_table_unchanged_and_deletes_them(tree):
+    live, _, rows = tree
+    newest = "| 2026-09-02 | claude/new | **Newest.** Why, with \\| escaped. |\n"
+    middle = "| 2026-08-27 | claude/mid | **Between two days.** Why. |\n"
+    a = write_fragment(live, "2026-09-02_claude-new.md", newest)
+    b = write_fragment(live, "2026-08-27_claude-mid.md", middle)
+    assert roll_changelog.fold(live, fragments_dir(live)) == 2
+    folded = table_rows(live)
+    assert sorted(folded) == sorted(rows + [newest, middle])
+    assert folded[0] == newest
+    dates = [r.split("|")[1].strip() for r in folded]
+    assert dates == sorted(dates, reverse=True)
+    assert not a.exists() and not b.exists()
+
+
+def test_fold_puts_a_fragment_above_its_own_dates_existing_rows(tree):
+    live, _, rows = tree
+    same_day = f"| {rows[0].split('|')[1].strip()} | claude/same | **Same day.** Why. |\n"
+    write_fragment(live, "2026-08-30_claude-same.md", same_day)
+    roll_changelog.fold(live, fragments_dir(live))
+    assert table_rows(live)[0] == same_day
+
+
+def test_fold_with_no_fragments_changes_nothing(tree):
+    live, _, _ = tree
+    before = live.read_bytes()
+    assert roll_changelog.fold(live, fragments_dir(live)) == 0
+    assert live.read_bytes() == before
+
+
+def test_fold_dry_run_writes_nothing(tree):
+    live, _, _ = tree
+    frag = write_fragment(live, "2026-09-02_claude-new.md", "| 2026-09-02 | claude/new | **N.** W. |\n")
+    before = live.read_bytes()
+    assert roll_changelog.fold(live, fragments_dir(live), dry_run=True) == 1
+    assert live.read_bytes() == before and frag.exists()
+
+
+@pytest.mark.parametrize("text", ["", "| Date | Branch | Change |\n", "prose\n| 2026-09-02 | b | **x.** y |\n"])
+def test_fold_refuses_a_fragment_that_holds_anything_but_rows(tree, text):
+    live, _, _ = tree
+    write_fragment(live, "2026-09-02_claude-bad.md", text)
+    before = live.read_bytes()
+    with pytest.raises(SystemExit, match="rows only"):
+        roll_changelog.fold(live, fragments_dir(live))
+    assert live.read_bytes() == before

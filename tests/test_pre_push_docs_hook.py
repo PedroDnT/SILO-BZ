@@ -435,7 +435,8 @@ def test_the_prettier_hook_leaves_the_changelog_alone(tmp_path):
     fake.write_text(f'#!/usr/bin/env bash\necho "$@" >> "{calls}"\n', encoding="utf-8")
     fake.chmod(0o755)
     env = {**ENV, "PATH": f"{fake.parent}{os.pathsep}{ENV['PATH']}"}
-    for path in ("/repo/docs/planning/CHANGELOG.md", "/repo/README.md"):
+    for path in ("/repo/docs/planning/CHANGELOG.md",
+                 "/repo/docs/planning/changelog.d/2026-10-04_claude-x.md", "/repo/README.md"):
         subprocess.run(["bash", "-c", command], env=env, check=True, text=True,
                        input=json.dumps({"tool_input": {"file_path": path}}))
     formatted = calls.read_text(encoding="utf-8").splitlines()
@@ -616,3 +617,59 @@ def test_ci_fails_when_an_archived_row_is_deleted(repo, tmp_path_factory):
     result = run_ci_step(repo, tmp_path_factory.mktemp("runner"))
     assert result.returncode == 1, result.stdout + result.stderr
     assert THEIRS[1] in result.stdout
+
+
+# Since #587 a branch's row is its own file under docs/planning/changelog.d/, so
+# two open branches never edit the same lines; scripts/roll_changelog.py folds the
+# fragments into CHANGELOG.md. The hook and the CI step read the fragments with
+# the table and its archive, as one changelog.
+FRAGMENT = f"docs/planning/changelog.d/2026-09-26_{BRANCH.replace('/', '-')}.md"
+OWN_ROW = f"| 2026-09-26 | {BRANCH} | **A change.** Why it matters. |\n"
+
+
+def test_a_fragment_is_the_branchs_changelog_row(repo):
+    commit(repo, {"src/app.py": "x = 2\n"})
+    reason = denied(run_hook(repo))
+    assert "No CHANGELOG row" in reason and "docs/planning/changelog.d/" in reason
+    assert f"_{BRANCH.replace('/', '-')}.md" in reason
+    commit(repo, {FRAGMENT: OWN_ROW, **README})
+    assert run_hook(repo) is None
+
+
+def test_rows_folded_from_fragments_into_the_table_are_not_dropped(repo):
+    start_from_main_with(repo, {f"docs/planning/changelog.d/2026-09-26_claude-other.md":
+                                "".join(f"{row}\n" for row in THEIRS)})
+    git(repo, "rm", "-q", "docs/planning/changelog.d/2026-09-26_claude-other.md")
+    commit(repo, {"docs/planning/CHANGELOG.md": archived(*THEIRS), FRAGMENT: OWN_ROW, **README})
+    assert run_hook(repo) is None
+
+
+def test_a_fragment_main_had_that_is_deleted_is_held(repo):
+    other = "docs/planning/changelog.d/2026-09-26_claude-other.md"
+    start_from_main_with(repo, {other: "".join(f"{row}\n" for row in THEIRS)})
+    git(repo, "rm", "-q", other)
+    commit(repo, {FRAGMENT: OWN_ROW, **README})
+    reason = denied(run_hook(repo))
+    assert "CHANGELOG rows dropped" in reason and all(row in reason for row in THEIRS)
+
+
+def test_ci_reads_the_fragments_too(repo, tmp_path_factory):
+    other = "docs/planning/changelog.d/2026-09-26_claude-other.md"
+    start_from_main_with(repo, {other: "".join(f"{row}\n" for row in THEIRS)})
+    git(repo, "rm", "-q", other)
+    commit(repo, {FRAGMENT: OWN_ROW})
+    result = run_ci_step(repo, tmp_path_factory.mktemp("runner"))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert all(row in result.stdout for row in THEIRS)
+
+
+def test_two_branches_fragments_merge_without_a_conflict(repo):
+    """The point of #587: two open branches each add a row, and neither merge conflicts."""
+    git(repo, "checkout", "-q", "-b", "claude/second", "main")
+    commit(repo, {"docs/planning/changelog.d/2026-09-26_claude-second.md":
+                  "| 2026-09-26 | claude/second | **Another change.** Why. |\n"})
+    git(repo, "checkout", "-q", BRANCH)
+    commit(repo, {FRAGMENT: OWN_ROW})
+    git(repo, "-c", "merge.conflictstyle=merge", "merge", "-q", "--no-edit", "claude/second")
+    assert (repo / FRAGMENT).exists()
+    assert (repo / "docs/planning/changelog.d/2026-09-26_claude-second.md").exists()
