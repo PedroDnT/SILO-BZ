@@ -9,7 +9,7 @@ icon: "flask"
 A backtest needs five things: a universe that includes the names that died, prices you can take returns from, fundamentals as they were known on the day, a benchmark, and macro. Each has a call. Each also has one way to produce a plausible wrong answer, and this page names it.
 
 <Warning>
-  **Two calls look interchangeable and are not.** `panel`'s `close_return` and `quote_history`'s raw `close` are **unadjusted**: `close` reads a 2:1 split as a −50% move, and `close_return` leaves the split session out (absent, not computed) instead of adjusting it. Take returns from `quote_history`'s `close_adj` (its default field) or `close_total_return`. And `IBOV11` is not the index: use `index_history`.
+  **Two calls look interchangeable and are not.** `quote_history`'s raw `close` is **unadjusted**: it reads a 2:1 split as a −50% move. `panel`'s `close_return` adjusts the previous close across a split, grouping or bonus, but it is a price return, not a total return. Take returns from `quote_history`'s `close_adj` (its default field) or `close_total_return`. And `IBOV11` is not the index: use `index_history`.
 </Warning>
 
 ### 1. The universe: `research_universe`
@@ -61,7 +61,7 @@ rows = silo.quote_history_all(
 )
 ```
 
-**The series follows the ISIN across boards** (62 share and unit tickers changed board since 2019, and a default that followed only the latest board used to drop the earlier sessions of ETER3 without a word). It refuses what it cannot serve whole, each with a `reason=`: `unknown_ticker`, `outside_coverage`, `isin_change` (a reused receipt code is a new instrument and is never joined), `ambiguous_session`, `invalid_field` and `adjustment_unavailable`. **The tape starts on 2019-01-02**, and a window that starts before an instrument's first session is `outside_coverage`, even when it would hold no rows. Inside the coverage a missing session is a session with no trade (COTAHIST lists only papers that traded); `prior_no_trade_sessions` counts them.
+**The series follows the ISIN across boards** (62 share and unit tickers changed board since 2019, and a default that followed only the latest board used to drop the earlier sessions of ETER3 without a word). It refuses what it cannot serve whole, each with a `reason=`: `unknown_ticker`, `outside_coverage`, `isin_change` (two ISINs the ticker's lineage does not splice; a reused receipt code is a new instrument and is never joined), `ambiguous_session`, `invalid_field` and `adjustment_unavailable`. **The tape starts on 2019-01-02**, and a window that starts before an instrument's first session is `outside_coverage`, even when it would hold no rows. Inside the coverage a missing session is a session with no trade (COTAHIST lists only papers that traded); `prior_no_trade_sessions` counts them.
 
 #### Many tickers: `prices`
 
