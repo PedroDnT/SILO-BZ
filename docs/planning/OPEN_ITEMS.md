@@ -417,11 +417,11 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 
 ### Wave 3
 
-| #   | Item                                                                                                      |
-| --- | --------------------------------------------------------------------------------------------------------- |
-| 3a  | B2, the read-only MCP over schema `api`: **deployed 2026-09-25** (49 tools)                               |
-| 3b  | B3 remainder: `company_events`, `macro_series`, `ptax`; CRI/CRA last, because it needs a third kind of id |
-| 3c  | B5, Sheets and Excel recipes: `api-docs/spreadsheets.mdx`, shipped with 1d                                |
+| #   | Item                                                                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 3a  | B2, the read-only MCP over schema `api`: **deployed 2026-09-25** (49 tools)                                                                                              |
+| 3b  | ~~B3 remainder: `company_events`, `macro_series`, `ptax`~~; **done 2026-09-25** (catalog v38, `26_api_events_macro.sql`); CRI/CRA still parked: needs a third kind of id |
+| 3c  | B5, Sheets and Excel recipes: `api-docs/spreadsheets.mdx`, shipped with 1d                                                                                               |
 
 ### Wave 4: later, in order
 
