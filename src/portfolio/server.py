@@ -69,12 +69,19 @@ class _Refusal(Exception):
         self.status = status
 
 
-def _error(status: int, stage: str | None = None) -> tuple[Response, int]:
+def _error(status: int, stage: str | None = None, exc: BaseException | None = None) -> tuple[Response, int]:
     resp = jsonify({"erro": MSG[status]})
     if stage:
         # Which step refused, so a deploy smoke can tell an egress or key failure
         # (stage engine or report) from a bad upload without reading the logs.
         resp.headers["X-Silo-Stage"] = stage
+    if exc is not None:
+        # The exception's type name (as the log line has it) and, for an HTTP
+        # client error, its status code. Never its message: it can carry amounts.
+        resp.headers["X-Silo-Error"] = type(exc).__name__
+        code = getattr(exc, "status_code", None)
+        if isinstance(code, int):
+            resp.headers["X-Silo-Error-Status"] = str(code)
     return resp, status
 
 
@@ -210,7 +217,7 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
             return _error(413, stage)
         except Exception as exc:  # noqa: BLE001 - no traceback in logs or answers: messages can carry amounts
             log.error("diagnose 500 stage=%s format=%s in_bytes=%d error=%s", stage, fmt, size, type(exc).__name__)
-            return _error(500, stage)
+            return _error(500, stage, exc)
 
     @app.errorhandler(HTTPException)
     def http_error(exc: HTTPException):

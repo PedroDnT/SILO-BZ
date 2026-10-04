@@ -159,7 +159,7 @@ jobs:
               break
             done
             echo "$label: answered after $(( $(date +%s) - start ))s since the first attempt; the answering request took $((t1 - t0))s"
-            echo "  engine stage=$(hdr x-silo-stage "$tmp/h") narrative=$(hdr x-silo-narrative "$tmp/h") provider=$(hdr x-silo-provider "$tmp/h") cost_usd=$(hdr x-silo-cost-usd "$tmp/h") engine_s=$(hdr x-silo-seconds "$tmp/h")"
+            echo "  engine stage=$(hdr x-silo-stage "$tmp/h") error=$(hdr x-silo-error "$tmp/h") error_status=$(hdr x-silo-error-status "$tmp/h") narrative=$(hdr x-silo-narrative "$tmp/h") provider=$(hdr x-silo-provider "$tmp/h") cost_usd=$(hdr x-silo-cost-usd "$tmp/h") engine_s=$(hdr x-silo-seconds "$tmp/h")"
             [ "$c" = 200 ] || { echo "::error::$label: expected 200, got $c"; return 1; }
             case "$(hdr content-type "$tmp/h")" in application/pdf*) ;; *) echo "::error::$label: not application/pdf"; return 1 ;; esac
             [ "$(head -c 5 "$tmp/out" 2>/dev/null)" = "%PDF-" ] || { echo "::error::$label: the body does not start with %PDF-"; return 1; }

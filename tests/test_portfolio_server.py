@@ -151,6 +151,8 @@ def test_engine_failure_is_a_fixed_500_with_no_traceback(monkeypatch, caplog, ca
     r = c.post("/diagnose", data=TEMPLATE.read_bytes(), headers=_auth())
     assert r.status_code == 500 and r.json == {"erro": server.MSG[500]}
     assert r.headers["X-Silo-Stage"] == "engine"
+    assert r.headers["X-Silo-Error"] == "RuntimeError" and "X-Silo-Error-Status" not in r.headers
+    assert "MARIA" not in str(r.headers)
     assert "Traceback" not in caplog.text
     _assert_no_private(caplog, capfd)
 

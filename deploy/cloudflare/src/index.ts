@@ -43,6 +43,8 @@ const PASS_HEADERS = [
 	"x-silo-cost-usd",
 	"x-silo-seconds",
 	"x-silo-stage",
+	"x-silo-error",
+	"x-silo-error-status",
 ];
 
 // The class keeps the name of the first deploy (#519) so the Durable Object
