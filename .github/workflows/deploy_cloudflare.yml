@@ -159,7 +159,7 @@ jobs:
               break
             done
             echo "$label: answered after $(( $(date +%s) - start ))s since the first attempt; the answering request took $((t1 - t0))s"
-            echo "  engine stage=$(hdr x-silo-stage "$tmp/h") error=$(hdr x-silo-error "$tmp/h") error_status=$(hdr x-silo-error-status "$tmp/h") narrative=$(hdr x-silo-narrative "$tmp/h") provider=$(hdr x-silo-provider "$tmp/h") cost_usd=$(hdr x-silo-cost-usd "$tmp/h") engine_s=$(hdr x-silo-seconds "$tmp/h")"
+            echo "  engine rev=$(hdr x-silo-engine-rev "$tmp/h") stage=$(hdr x-silo-stage "$tmp/h") error=$(hdr x-silo-error "$tmp/h") error_status=$(hdr x-silo-error-status "$tmp/h") narrative=$(hdr x-silo-narrative "$tmp/h") provider=$(hdr x-silo-provider "$tmp/h") cost_usd=$(hdr x-silo-cost-usd "$tmp/h") engine_s=$(hdr x-silo-seconds "$tmp/h")"
             [ "$c" = 200 ] || { echo "::error::$label: expected 200, got $c"; return 1; }
             case "$(hdr content-type "$tmp/h")" in application/pdf*) ;; *) echo "::error::$label: not application/pdf"; return 1 ;; esac
             [ "$(head -c 5 "$tmp/out" 2>/dev/null)" = "%PDF-" ] || { echo "::error::$label: the body does not start with %PDF-"; return 1; }
@@ -168,8 +168,37 @@ jobs:
             rm -f "$tmp/out"
           }
 
-          # Cold: the first engine request after this deploy.
-          report "POST /diagnose, first after deploy (raw body)" -X POST --data-binary "@$f"
+          # Wait for the rollout: a deploy does not wait for instances to change
+          # image. Each probe is a cheap 415 (no engine or LLM work) on a fresh
+          # instance; the engine stamps every answer with a content hash of
+          # src/portfolio (engine_rev in src/portfolio/server.py, repeated here).
+          want=$(python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          base = Path("src/portfolio")
+          h = hashlib.sha256()
+          for f in sorted(p for p in base.rglob("*") if p.is_file()):
+              rel = f.relative_to(base).as_posix()
+              if "__pycache__" in rel.split("/") or rel.endswith(".pyc"):
+                  continue
+              h.update(rel.encode() + b"\0" + f.read_bytes() + b"\0")
+          print(h.hexdigest()[:12])
+          PY
+          )
+          echo "engine revision of this commit: $want"
+          ok=""
+          for attempt in $(seq 1 30); do
+            t0=$(date +%s)
+            c=$(curl -s -D "$tmp/h" -o /dev/null -w '%{http_code}' --max-time 300 \
+                  -H "x-demo-token: $DEMO_ACCESS_TOKEN" --data-binary "not a statement" "$base/diagnose" || true)
+            got=$(hdr x-silo-engine-rev "$tmp/h")
+            echo "rollout probe (attempt $attempt): $c, engine revision ${got:-none}, $(( $(date +%s) - t0 ))s (new instance, cold start)"
+            if [ "$c" = 415 ] && [ "$got" = "$want" ]; then ok=1; break; fi
+            sleep 30
+          done
+          [ -n "$ok" ] || { echo "::error::no instance answered with this commit's engine revision"; exit 1; }
+
+          report "POST /diagnose, first report (raw body)" -X POST --data-binary "@$f"
 
           # Privacy probe: the same synthetic statement with a marker in the holder
           # name and the upload filename, sent while wrangler tail listens. Only
