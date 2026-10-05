@@ -331,10 +331,10 @@ canned["fund_restatement_diff"] = [
 canned["screen_zombie_growth"] = [dict(match={}, rows=[dict(cnpj="00000000000191", fund_name="FUNDO ESTRANHO A", period="2026-08-01", nav_mm=12.5, delinquency_pct=31.2, screen="zombie_growth", params={"p_min_delinq_pct": 5, "p_min_aum": 1000000})])]
 canned["screen_captive_vehicles"] = [dict(match={}, rows=[dict(cnpj="00000000000272", fund_name="FUNDO ESTRANHO B", latest_period="2026-08-01", max_nav_mm=80.0, min_quotaholders=1, screen="captive_vehicles", params={"p_lookback_months": 3})])]
 canned["screen_evergreen_aging"] = [dict(match={}, rows=[])]
-canned["screen_delinquency_drivers"] = [dict(match={}, rows=[
+canned["screen_delinquency_drivers"] = [dict(match={"p_driver": "value_up_rate_masked"}, rows=[]), dict(match={"p_driver": "consistent_worsening"}, rows=[
     dict(cnpj="32113885000121", fund_name="MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS", status="complete", window_from="2025-09-01", window_to="2026-08-01", n_months=12, months_missing=0,
          first_month="2025-09-01", last_month="2026-08-01", delinquency_start=0.0, delinquency_end=255281411.73, delta_brl=255281411.73, nav_start=506043487.89, nav_end=96794048.98,
-         delta_nav=-409249438.91, rate_start=0.0, rate_end=263.7, delta_pp=263.7, stopped_reporting=False, driver="delinquency_up", screen="delinquency_drivers", params={"p_months": 12})])]
+         delta_nav=-409249438.91, rate_start=0.0, rate_end=263.7, delta_pp=263.7, stopped_reporting=False, driver="consistent_worsening", screen="delinquency_drivers", params={"p_months": 12, "p_driver": "consistent_worsening"})])]
 canned["screen_restatements"] = [dict(match={}, rows=[
     dict(cnpj="32113885000121", tipo_fundo="FIDC", fund_name="MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS", window_from="2025-09-01", window_to="2026-08-01", documents=12,
          restatements=3, restatements_re=3, restatements_rc=0, restatement_pct=25.0, last_restated_at="2026-08-21 13:04:00", screen="restatements", params={"p_months": 12, "p_min_restatements": 3, "p_min_rate_pct": 20})])]

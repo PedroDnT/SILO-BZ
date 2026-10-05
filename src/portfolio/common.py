@@ -34,6 +34,7 @@ REASON_TEXT = {
     "taxa_a_conferir": "taxa informada a conferir (0 ou acima de 5% a.a.), fora das somas",
     "fontes_divergem": "lâmina mais recente que o Extrato: fontes divergem, a conferir",
     "sem_carteira_cda": "fundo(s) sem carteira na CDA do mês",
+    "profundidade_reduzida": "fundo(s) de fundos aberto(s) com profundidade menor (resposta acima de 1000 linhas)",
     "linhas_sem_peso": "fundo(s) com linhas da CDA sem peso",
     "resposta_inconsistente": "resposta do SILO inconsistente para alguma linha; a linha não foi avaliada",
     "fundos_nao_avaliados": "fundo(s) não avaliados contra a classe",

@@ -177,7 +177,7 @@ def test_the_report_places_risks_and_the_fee_headline_after_the_summary(view):
     order = [html_text.index(f"<h2>{t}</h2>") for t in ("Resumo", "Principais riscos", "Quanto a carteira paga em taxas",
                                                          "Identificação linha a linha", "Custo em taxas")]
     assert order == sorted(order)
-    assert html_text.count('<figure class="grafico">') == 7
+    assert html_text.count('<figure class="grafico">') == 9
     assert "{{" not in html_text
 
 

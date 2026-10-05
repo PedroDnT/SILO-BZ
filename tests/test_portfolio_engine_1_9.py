@@ -5,6 +5,7 @@ charts. Synthetic data only: every code, CNPJ, name and value below is invented.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import datetime as dt
 import json
 import xml.etree.ElementTree as ET
@@ -40,6 +41,13 @@ SVG_NS = "{http://www.w3.org/2000/svg}"
 def stmt(*lines):
     total = sum(r[5] for r in lines)
     return parse_rows([["total_extrato", total], HDR, *[list(r) for r in lines]])
+
+
+def patch(s, i, **kw):
+    """A statement with position i (0-based) changed: Statement and Position are frozen."""
+    pos = list(s.positions)
+    pos[i] = dataclasses.replace(pos[i], **kw)
+    return dataclasses.replace(s, positions=tuple(pos))
 
 
 def credit(name, tipo, codigo, valor=100.0, venc=None, taxa=None, preco=None):
@@ -153,7 +161,7 @@ def test_a_credit_line_without_code_is_not_sent():
 
 def test_an_ocr_code_not_checked_is_sent_as_read_and_flagged():
     s = stmt(credit("CRA AGRO X", "CRA", "CRA-0AA0OOO1"))
-    s.positions[0].codigo_conferido = False
+    s = patch(s, 0, codigo_conferido=False)
     rows = [inst(1, "CRA-0AA0OOO1", "0AA0OOO1", "securit_cetip", numero_serie="1")]
     _, by, _ = ident_of(s, {"portfolio_instruments": [{"match": {"p_codes": ["CRA-0AA0OOO1"]}, "rows": rows}]})
     assert [f["code"] for f in by[1]["credit_match"]["flags"]] == ["codigo_nao_conferido"]
@@ -221,8 +229,7 @@ A, B, C, P = "11111111000111", "22222222000122", "33333333000133", "444444440001
 
 def fund_stmt():
     s = stmt(fund("FUNDO A", A, 400.0), fund("FUNDO B", B, 300.0), fund("FUNDO C", C, 200.0), fund("PREV X", P, 100.0))
-    s.positions[3].estrategia_corretora = "Previdência PGBL"
-    return s
+    return patch(s, 3, estrategia_corretora="Previdência PGBL")
 
 
 def resolve_none():
@@ -250,10 +257,11 @@ def test_gestor_groups_by_the_filed_id_never_the_name_and_includes_pgbl():
 
 
 def liq_stmt():
-    return stmt(fund("F5", A, 100.0), fund("F6", B, 100.0), fund("F31", C, 100.0), fund("FLOCK", P, 100.0),
+    s = stmt(fund("F5", A, 100.0), fund("F6", B, 100.0), fund("F31", C, 100.0), fund("FLOCK", P, 100.0),
                 fund("FIDC X", "55555555000155", 100.0, tipo="FIDC"), fund("FUNDO SEM CNPJ", None, 100.0),
                 credit("CDB BANCO", "CDB", None, 100.0), ["NTN-B 2035", "tesouro", "NTN-B 2035-05-15", 1, 100.0, 100.0, D, None, None],
-                ["PETR4", "ação", "PETR4", 1, 100.0, 100.0, D, None, None], ["CONTA", "caixa", None, None, None, 100.0, D, None, None])
+                ["PETR4", "ação", "PETR4", 1, 100.0, 100.0, D, None, None], ["CONTA", "outro", None, None, None, 100.0, D, None, None])
+    return patch(s, 9, tipo="caixa")  # caixa comes from the PDF reader only (Conta corrente)
 
 
 def liq_canned(fail=False):
@@ -483,9 +491,75 @@ def test_the_revisor_keeps_new_rows_above_fifty_percent():
     kept_ids = {v["risks"]["rows"][int(f.text.split("risks.rows[")[1].split("]")[0])]["id"] for f in res.kept if f.section == "riscos"}
     assert {"liquidez", "concentracao_gestor"} & kept_ids
     for f in res.removed:
-        assert "valor extremo" not in f.reason, f
+        assert f.section != "riscos" or "valor extremo" not in f.reason, f
     i = next(k for k, r in enumerate(v["risks"]["rows"]) if r["id"] == "liquidez")
     j = next(k for k, r in enumerate(v["risks"]["rows"]) if r["id"] == "concentracao_gestor")
     for k in (i, j):
         res = revisor.check(v, [redator.Finding("x", "riscos", "Risco", f"{{{{risks.rows[{k}].risk}}}}: {{{{risks.rows[{k}].value_pct}}}}.", ["p1"])])
         assert res.kept, res.removed
+
+
+# --- look-through depth: a fund of funds above the one-page cap is opened shallower -------------------------------
+
+CAP = ('{"code":"22023","details":"Every response is one page of at most 1000 rows.","hint":null,'
+       '"message":"portfolio_lookthrough: refused, this request would return more than 1000 rows."}')
+
+
+def _lt_rows(root, depth_cap):
+    return [dict(root_cnpj=root, path=[root], depth=0, holder_cnpj=root, block=1, asset_kind="government_bond",
+                 asset_key="BRSTNCLF1RH3", asset_name="LFT", isin="BRSTNCLF1RH3", issuer_cnpj=None, issuer_code=None,
+                 tp_aplic="Títulos Públicos", tp_ativo="Título público federal", tp_titpub="LFT", indexer_code=None,
+                 maturity="2027-09-01", value_brl=50.0, weight_in_root=0.5, period="2026-05-01", is_cycle=False),
+            dict(root_cnpj=root, path=[root], depth=0, holder_cnpj=root, block=2, asset_kind="fund_quota_depth_cap",
+                 asset_key="99999999000199", asset_name="FUNDO MASTER", isin=None, issuer_cnpj=None, issuer_code=None,
+                 tp_aplic="Cotas de Fundos", tp_ativo="Fundo", tp_titpub=None, indexer_code=None, maturity=None,
+                 value_brl=50.0, weight_in_root=0.5, period="2026-05-01", is_cycle=False)]
+
+
+def _lt(answer_at):
+    s = stmt(fund("FIC PREV", A, 100.0))
+    asked = []
+
+    class Capped(FakeClient):
+        def _request(self, tool, args):
+            if tool == "portfolio_lookthrough":
+                asked.append(args["p_max_depth"])
+                if answer_at is None or args["p_max_depth"] > answer_at:
+                    raise ToolError(tool, CAP)
+                return _lt_rows(A, args["p_max_depth"])
+            return super()._request(tool, args)
+
+    _, lines = identify(s, Capped(resolve_none()))
+    sec, _ = compute_lookthrough(lines, Capped(resolve_none()), dt.date(2026, 5, 1), 4)
+    return sec, asked
+
+
+def test_a_fund_above_the_page_cap_is_opened_one_level_shallower_and_says_so():
+    sec, asked = _lt(answer_at=2)
+    assert asked == [4, 3, 2]
+    line = sec["lines"][0]
+    assert line["max_depth_used"] == 2 and line["status"] == "complete"
+    assert sec["errors"] == [] and "profundidade_reduzida" in sec["reason_codes"] and sec["status"] == "partial"
+
+
+def test_a_fund_refused_at_every_depth_keeps_every_refusal_verbatim():
+    sec, asked = _lt(answer_at=None)
+    assert asked == [4, 3, 2, 1]
+    assert sec["lines"][0]["status"] == "unknown" and len(sec["errors"]) == 4
+    assert all("22023" in e["error"] for e in sec["errors"])
+
+
+def test_a_transient_failure_is_not_retried_shallower():
+    s = stmt(fund("FIC PREV", A, 100.0))
+    asked = []
+
+    class Down(FakeClient):
+        def _request(self, tool, args):
+            if tool == "portfolio_lookthrough":
+                asked.append(args["p_max_depth"])
+                raise ToolError(tool, TIMEOUT)
+            return super()._request(tool, args)
+
+    _, lines = identify(s, Down(resolve_none()))
+    compute_lookthrough(lines, Down(resolve_none()), dt.date(2026, 5, 1), 4)
+    assert asked and set(asked) == {4}

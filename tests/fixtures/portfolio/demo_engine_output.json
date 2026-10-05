@@ -4621,6 +4621,7 @@
         "n_rows": 8,
         "n_cycle_rows_skipped": 0,
         "max_depth_seen": 0,
+        "max_depth_used": 4,
         "explained_weight": 0.9032402,
         "unexplained_weight": 0.0967598,
         "unexplained_note": "Parte do valor do fundo que nenhum bloco da CDA ingerido explica (caixa, derivativos, blocos 3, 5, 7 e 8 não ingeridos; negativo = passivos e derivativos somados). Não preenchida.",
@@ -4947,6 +4948,7 @@
         "n_rows": 34,
         "n_cycle_rows_skipped": 0,
         "max_depth_seen": 3,
+        "max_depth_used": 4,
         "explained_weight": 1.00356737,
         "unexplained_weight": -0.00356737,
         "unexplained_note": "Parte do valor do fundo que nenhum bloco da CDA ingerido explica (caixa, derivativos, blocos 3, 5, 7 e 8 não ingeridos; negativo = passivos e derivativos somados). Não preenchida.",
@@ -6190,6 +6192,7 @@
         "n_rows": 34,
         "n_cycle_rows_skipped": 0,
         "max_depth_seen": 3,
+        "max_depth_used": 4,
         "explained_weight": 1.00356388,
         "unexplained_weight": -0.00356388,
         "unexplained_note": "Parte do valor do fundo que nenhum bloco da CDA ingerido explica (caixa, derivativos, blocos 3, 5, 7 e 8 não ingeridos; negativo = passivos e derivativos somados). Não preenchida.",
@@ -7455,6 +7458,7 @@
         "n_rows": 6,
         "n_cycle_rows_skipped": 0,
         "max_depth_seen": 1,
+        "max_depth_used": 4,
         "explained_weight": 0.99695046,
         "unexplained_weight": 0.00304954,
         "unexplained_note": "Parte do valor do fundo que nenhum bloco da CDA ingerido explica (caixa, derivativos, blocos 3, 5, 7 e 8 não ingeridos; negativo = passivos e derivativos somados). Não preenchida.",
@@ -13941,14 +13945,6 @@
         "n_rows": 0
       },
       {
-        "screen": "screen_delinquency_drivers",
-        "tool": "screen_delinquency_drivers",
-        "args": {},
-        "status": "complete",
-        "reason": null,
-        "n_rows": 1
-      },
-      {
         "screen": "screen_restatements",
         "tool": "screen_restatements",
         "args": {},
@@ -13968,6 +13964,26 @@
         "screen": "screen_silent_filers",
         "tool": "screen_silent_filers",
         "args": {},
+        "status": "complete",
+        "reason": null,
+        "n_rows": 0
+      },
+      {
+        "screen": "screen_delinquency_drivers[consistent_worsening]",
+        "tool": "screen_delinquency_drivers",
+        "args": {
+          "p_driver": "consistent_worsening"
+        },
+        "status": "complete",
+        "reason": null,
+        "n_rows": 1
+      },
+      {
+        "screen": "screen_delinquency_drivers[value_up_rate_masked]",
+        "tool": "screen_delinquency_drivers",
+        "args": {
+          "p_driver": "value_up_rate_masked"
+        },
         "status": "complete",
         "reason": null,
         "n_rows": 0
@@ -14044,45 +14060,6 @@
         "n_signals": 2,
         "signals": [
           {
-            "screen": "screen_delinquency_drivers",
-            "tool": "screen_delinquency_drivers",
-            "row": {
-              "cnpj": "32113885000121",
-              "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
-              "status": "complete",
-              "window_from": "2025-09-01",
-              "window_to": "2026-08-01",
-              "n_months": 12,
-              "months_missing": 0,
-              "first_month": "2025-09-01",
-              "last_month": "2026-08-01",
-              "delinquency_start": 0.0,
-              "delinquency_end": 255281411.73,
-              "delta_brl": 255281411.73,
-              "nav_start": 506043487.89,
-              "nav_end": 96794048.98,
-              "delta_nav": -409249438.91,
-              "rate_start": 0.0,
-              "rate_end": 263.7,
-              "delta_pp": 263.7,
-              "stopped_reporting": false,
-              "driver": "delinquency_up",
-              "screen": "delinquency_drivers",
-              "params": {
-                "p_months": 12
-              }
-            },
-            "note": "Sinal, não veredito: o fundo cruzou um limiar declarado em informes públicos.",
-            "sources": [
-              {
-                "tool": "screen_delinquency_drivers",
-                "call_id": 34,
-                "args": {},
-                "data_date": null
-              }
-            ]
-          },
-          {
             "screen": "screen_restatements",
             "tool": "screen_restatements",
             "row": {
@@ -14108,8 +14085,50 @@
             "sources": [
               {
                 "tool": "screen_restatements",
-                "call_id": 35,
+                "call_id": 34,
                 "args": {},
+                "data_date": null
+              }
+            ]
+          },
+          {
+            "screen": "screen_delinquency_drivers[consistent_worsening]",
+            "tool": "screen_delinquency_drivers",
+            "row": {
+              "cnpj": "32113885000121",
+              "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+              "status": "complete",
+              "window_from": "2025-09-01",
+              "window_to": "2026-08-01",
+              "n_months": 12,
+              "months_missing": 0,
+              "first_month": "2025-09-01",
+              "last_month": "2026-08-01",
+              "delinquency_start": 0.0,
+              "delinquency_end": 255281411.73,
+              "delta_brl": 255281411.73,
+              "nav_start": 506043487.89,
+              "nav_end": 96794048.98,
+              "delta_nav": -409249438.91,
+              "rate_start": 0.0,
+              "rate_end": 263.7,
+              "delta_pp": 263.7,
+              "stopped_reporting": false,
+              "driver": "consistent_worsening",
+              "screen": "delinquency_drivers",
+              "params": {
+                "p_months": 12,
+                "p_driver": "consistent_worsening"
+              }
+            },
+            "note": "Sinal, não veredito: o fundo cruzou um limiar declarado em informes públicos.",
+            "sources": [
+              {
+                "tool": "screen_delinquency_drivers",
+                "call_id": 37,
+                "args": {
+                  "p_driver": "consistent_worsening"
+                },
                 "data_date": null
               }
             ]
@@ -14204,7 +14223,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 40,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14255,7 +14274,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 40,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14306,7 +14325,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 40,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14357,7 +14376,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 40,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14408,7 +14427,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 40,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14459,7 +14478,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 40,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -15576,7 +15595,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 40,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -15592,7 +15611,7 @@
           },
           {
             "tool": "portfolio_movement",
-            "call_id": 40,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -15608,7 +15627,7 @@
           },
           {
             "tool": "portfolio_movement",
-            "call_id": 40,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -16931,7 +16950,7 @@
     },
     {
       "call_id": 34,
-      "tool": "screen_delinquency_drivers",
+      "tool": "screen_restatements",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 1,
@@ -16940,16 +16959,16 @@
     },
     {
       "call_id": 35,
-      "tool": "screen_restatements",
+      "tool": "screen_late_filers",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
+      "row_count": 0,
       "error": null,
       "id": "p35"
     },
     {
       "call_id": 36,
-      "tool": "screen_late_filers",
+      "tool": "screen_silent_filers",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 0,
@@ -16958,22 +16977,23 @@
     },
     {
       "call_id": 37,
-      "tool": "screen_silent_filers",
-      "args": {},
+      "tool": "screen_delinquency_drivers",
+      "args": {
+        "p_driver": "consistent_worsening"
+      },
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 0,
+      "row_count": 1,
       "error": null,
       "id": "p37"
     },
     {
       "call_id": 38,
-      "tool": "screen_dormant_funds",
+      "tool": "screen_delinquency_drivers",
       "args": {
-        "p_lookback_months": 3,
-        "p_dormancy": "empty_shell"
+        "p_driver": "value_up_rate_masked"
       },
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
+      "row_count": 0,
       "error": null,
       "id": "p38"
     },
@@ -16982,7 +17002,7 @@
       "tool": "screen_dormant_funds",
       "args": {
         "p_lookback_months": 3,
-        "p_min_nav": 1000000000
+        "p_dormancy": "empty_shell"
       },
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 1,
@@ -16991,6 +17011,18 @@
     },
     {
       "call_id": 40,
+      "tool": "screen_dormant_funds",
+      "args": {
+        "p_lookback_months": 3,
+        "p_min_nav": 1000000000
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 1,
+      "error": null,
+      "id": "p40"
+    },
+    {
+      "call_id": 41,
       "tool": "portfolio_movement",
       "args": {
         "p_cnpjs": [
@@ -17006,7 +17038,7 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 6,
       "error": null,
-      "id": "p40"
+      "id": "p41"
     }
   ]
 }

@@ -3470,7 +3470,15 @@
  ],
  "screen_delinquency_drivers": [
   {
-   "match": {},
+   "match": {
+    "p_driver": "value_up_rate_masked"
+   },
+   "rows": []
+  },
+  {
+   "match": {
+    "p_driver": "consistent_worsening"
+   },
    "rows": [
     {
      "cnpj": "32113885000121",
@@ -3492,10 +3500,11 @@
      "rate_end": 263.7,
      "delta_pp": 263.7,
      "stopped_reporting": false,
-     "driver": "delinquency_up",
+     "driver": "consistent_worsening",
      "screen": "delinquency_drivers",
      "params": {
-      "p_months": 12
+      "p_months": 12,
+      "p_driver": "consistent_worsening"
      }
     }
    ]

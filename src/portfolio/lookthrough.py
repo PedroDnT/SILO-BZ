@@ -36,6 +36,7 @@ from typing import Any
 from src.portfolio.client import SiloClient
 from src.portfolio.common import (
     STATUS_NOT_APPLICABLE,
+    Call,
     Section,
     as_date,
     b3_issuer_code,
@@ -128,13 +129,15 @@ def compute_lookthrough(
 
     roots = [li for li in lines if li.kind == "fund" and li.cnpj and li.position.tipo in LOOKTHROUGH_TIPOS]
     refused = 0
+    depth_reduced: list[int] = []
 
     for li in lines:
         exposures[li.line_no] = _direct_exposures(li)
 
     for li in roots:
-        args = {"p_cnpjs": [li.cnpj], "p_month": cda_month.isoformat(), "p_max_depth": max_depth}
-        res = call_tool(client, "portfolio_lookthrough", args, sec.errors)
+        res, depth_used = _lookthrough_call(client, li.cnpj, cda_month, max_depth, sec.errors)
+        if depth_used < max_depth:
+            depth_reduced.append(li.line_no)
         if not res.ok:
             refused += 1
             out_lines.append(
@@ -205,6 +208,7 @@ def compute_lookthrough(
                 "n_rows": len(all_rows),
                 "n_cycle_rows_skipped": len(cycles),
                 "max_depth_seen": max((int(r.get("depth") or 0) for r in rows), default=0),
+                "max_depth_used": depth_used,
                 "explained_weight": ratio(weight_sum),
                 "unexplained_weight": ratio(Decimal(1) - weight_sum),
                 "unexplained_note": (
@@ -224,6 +228,12 @@ def compute_lookthrough(
         sec.fail("portfolio_lookthrough falhou para todos os fundos (erros literais em errors).", code="consulta_falhou")
     elif refused:
         sec.degrade(f"portfolio_lookthrough falhou para {refused} de {len(roots)} fundos; essas linhas ficaram sem look-through.", code="consulta_falhou")
+    if depth_reduced and sec.status == "complete":
+        sec.degrade(
+            f"{len(depth_reduced)} fundo(s) aberto(s) com profundidade menor que {max_depth}: a resposta passava de "
+            "1000 linhas (22023); os fundos abaixo do limite ficam como limite de profundidade.",
+            code="profundidade_reduzida",
+        )
     empty = [o for o in out_lines if o["status"] == "no_holdings"]
     if empty and sec.status == "complete":
         sec.degrade(f"{len(empty)} fundo(s) sem carteira na CDA do mês.", code="sem_carteira_cda")
@@ -240,6 +250,26 @@ def compute_lookthrough(
         "shared_exposure": shared,
     }
     return section, exposures
+
+
+_ROW_CAP = re.compile(r"more than 1000 rows|22023")
+
+
+def _lookthrough_call(client: SiloClient, cnpj: str, cda_month: dt.date, max_depth: int, errors: list[dict]) -> tuple[Call, int]:
+    """One fund's look-through. A fund of funds can pass the API's one-page cap (22023, more than 1000 rows) at the
+    requested depth: retry one level shallower, down to 1, and say which depth answered. A refusal followed by an
+    answer is not an error of the section; when no depth answers, every refusal goes to ``errors``."""
+    depth = max_depth
+    tried: list[dict] = []
+    while True:
+        args = {"p_cnpjs": [cnpj], "p_month": cda_month.isoformat(), "p_max_depth": depth}
+        res = call_tool(client, "portfolio_lookthrough", args, tried)
+        if res.ok or depth <= 1 or res.transient or not _ROW_CAP.search(res.error or ""):
+            break
+        depth -= 1
+    if not res.ok:
+        errors.extend(tried)
+    return res, depth
 
 
 def add_portfolio_shares(section: dict[str, Any], exposures: dict[int, list[Exposure]], total: Decimal, top_n: int = 10) -> None:
