@@ -205,6 +205,32 @@ finish() {
 
 TOTAL_STAGES=4
 
+# try_login URL: a login attempt. On failure it shows the first line of the
+# Postgres message and the usual cause, so a failed connection is not a guessing
+# game. libpq's connection errors do not carry the password; the one message that
+# quotes a piece of the URL (a bad percent-encoding) is replaced, since that piece
+# may be part of it.
+try_login() {
+  local url="$1" err
+  if err=$(psql "$url" -X -At -v ON_ERROR_STOP=1 -c "select 1" 2>&1 >/dev/null); then return 0; fi
+  err=$(printf '%s' "$err" | head -n1 | cut -c1-220)
+  case "$err" in
+    *"invalid percent"*) err="invalid percent-encoded token in the URL (not shown: it may be part of the password)" ;;
+  esac
+  note "Postgres said: $err"
+  case "$err" in
+    *"password authentication failed"*)
+      say "Cause: wrong password, or one with @ / : # ? that is not percent-encoded in the URL." ;;
+    *"Tenant or user not found"*)
+      say "Cause: the user must be postgres.<project-ref>, and the host the one in Supabase → Connect → Session pooler." ;;
+    *"translate host name"*|*"Name or service not known"*)
+      say "Cause: the host in the URL is mistyped (or there is no network)." ;;
+    *"invalid"*URI*|*"invalid percent"*)
+      say "Cause: the URL is malformed: no quotes or spaces, special characters percent-encoded." ;;
+  esac
+  return 1
+}
+
 banner "SILO-BZ: rotate the database password"
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
@@ -242,17 +268,29 @@ ask_secret NEW_DB_PASSWORD "Paste the new database password (hidden):"
 # The password goes in through the environment, never through argv.
 with_password() {  # with_password URL
   URL="$1" PW="$NEW_DB_PASSWORD" python3 - <<'PY'
-import os, urllib.parse as u
-p = u.urlsplit(os.environ["URL"])
-if not p.hostname or not p.username:
+import os, re, urllib.parse as u
+# The old URL is only read for its user, scheme and host: the old password in it
+# is being replaced, so it may hold characters that break a strict URL parse
+# (a "/", "?" or "#" that was never percent-encoded) and is never parsed.
+url = os.environ["URL"].strip()
+if len(url) >= 2 and url[0] == url[-1] and url[0] in "'\"":
+    url = url[1:-1].strip()
+m = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*)://(.*)$", url, re.S)
+if not m or m.group(1) not in ("postgres", "postgresql"):
+    raise SystemExit("the URL in .env does not start with postgresql:// (quotes and spaces are fine)")
+if "@" not in m.group(2):
+    raise SystemExit("the URL in .env has no user@host part")
+userinfo, hostpart = m.group(2).rsplit("@", 1)  # the host part has no "@"
+user = userinfo.split(":", 1)[0]
+tail = u.urlsplit("//" + hostpart)
+if not user or not tail.hostname:
     raise SystemExit("the URL in .env has no user or host")
-host = p.hostname + (f":{p.port}" if p.port else "")
-print(u.urlunsplit((p.scheme, f"{p.username}:{u.quote(os.environ['PW'], safe='')}@{host}",
-                    p.path, p.query, p.fragment)))
+query = f"?{tail.query}" if tail.query else ""
+print(f"{m.group(1)}://{user}:{u.quote(os.environ['PW'], safe='')}@{tail.netloc}{tail.path}{query}")
 PY
 }
 NEW_POOLER=$(with_password "$OLD_POOLER") || { warn "could not rebuild the pooler URL"; exit 1; }
-if psql "$NEW_POOLER" -X -At -v ON_ERROR_STOP=1 -c "select current_user" >/dev/null 2>&1; then
+if try_login "$NEW_POOLER"; then
   say "The new password logs in through the session pooler."
 else
   warn "the new password did NOT log in through the pooler."
