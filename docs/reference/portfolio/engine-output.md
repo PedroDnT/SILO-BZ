@@ -30,7 +30,12 @@ gains `data_aplicacao` (the spreadsheet's new optional column, null when not pri
 `common.REASON_TEXT`: `imposto_sem_regra`, `imposto_linhas_sem_regra`, `data_aplicacao_nao_informada`,
 `aliquota_depende_de_condicao`, `mais_de_uma_regra`, `ganho_12m_indisponivel`, `aplicacao_dentro_da_janela`,
 `ganho_12m_nao_positivo`, `previdencia_sem_estimativa`, `isento_sem_imposto`. The block makes no tool call, so no
-call id moves. The report does not show it yet.
+call id moves. The report shows it in "Taxa e imposto por posição" (`redator-revisor.md`). Also in 1.11 (catalog v66, #609): each
+`fees.comparison.lines[]` row gains `n_fund_peers`, `n_etf_peers`, `n_etf_excluded`, `etf_peer_tickers`,
+`etf_peer_fee_oldest`, `etf_peer_fee_newest` and `etf_peer_fee_source`, copied as `portfolio_fee_peers` serves them
+(null when the row was not served), and `fees.comparison.basis` says ETFs on an index mapped to the class enter as peers
+and in the statistics with the third-party site's fee, counted apart in `n_etf_peers`. The equivalente de mercado (#609: an ETF of the same objective with its
+12- and 6-month return against the class distribution) is not computed by the engine yet.
 
 1.10 (owner's resolution of #610, 2026-10-05; inputs `docs/reference/research/portfolio-return-coverage.md`
 (#606) and `quota-net-of-fees.md` (#631)). Keys were added, none renamed, retyped or removed: a new top-level
@@ -39,7 +44,7 @@ New reason codes in `common.REASON_TEXT`: `linhas_sem_retorno`, `cdi_indisponive
 `retorno_credito_sem_serie`, `retorno_caixa`, `retorno_fidc_sem_classe`, `retorno_fip_sem_serie`,
 `retorno_sem_ticker`, `retorno_sem_regra`, `retorno_linha_nao_identificada`, `etf_rf_sem_api`,
 `serie_incompleta`, `retorno_total_nulo`, `sem_taxa_utilizavel`, `taxa_nao_aplicavel`. The block runs after
-every other one, so the call ids of the earlier sections do not move. The report does not show it yet.
+every other one, so the call ids of the earlier sections do not move. The report shows it in "Retorno por posição".
 
 Additive extension of 1.9 (2026-10-05, catalog v63): `fees.comparison` is an independently
 statused peer comparison, with `as_of`, `basis`, per-position `lines` and statement/API
@@ -712,6 +717,10 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `liquidity` (1.9) (`buckets[i]` with `weight_pct`, `line_ids`)                                                                                                                                                                                                                                                                   | `liquidity`, copied, line numbers as `L<n>`                                                                                                                                                                                                                                                                                                            |
 | `concentration.manager` (1.9) (`groups[i]`, `fund_value_weight_pct`)                                                                                                                                                                                                                                                             | `concentration.manager`                                                                                                                                                                                                                                                                                                                                |
 | `lines[i].badges[]` (1.9) (`code`, `label`: `ocr`, `codigo_nao_conferido`, `taxa_nao_conferida`, `vencimento_diverge`)                                                                                                                                                                                                           | the statement's `fonte_texto`, `codigo_conferido`, `taxa_conferida` and `credit_match.flags`                                                                                                                                                                                                                                                           |
+| `returns` (1.10) (`windows[i]`, `coverage[i]` with `id`, `cdi`, `lines[i]`: `line_id`, `basis_label`, `fee`, `windows[j]`) | `returns.*`, copied; `windows` and `coverage` become lists in the engine's window order (`12m`, `6m`), because a placeholder key must start with a letter; every `reason` is the fixed text of its code (`cdi_reason`, `fee_reason` for the window's other codes); no total, mean or ranking is added, and "% do CDI" is not shown (the engine has none) |
+| `tax` (1.11) (`labels`, `rules_files`, `not_covered`, `person`, `lines[i]`: `line_id`, `fee`, `holding`, `tax`, `pension`, `optimization`, `iof`, `a_conferir`) | `tax.*`, copied without `rule_source`, `sources` and the `date_missing` template; `tax.act` from `rule_source.act`; every `reason` the fixed text of its code; `person.flags[i].line_ids` as `L<n>` |
+| `gaps[i]` from returns and tax (1.10, 1.11) | the lines with no return (`returns.lines[i].reason_code`) and the `sem_regra` tax lines, grouped by code, with their line ids and no value |
+| `fees.comparison.by_line[i]` `n_fund_peers`, `n_etf_peers`, `n_etf_excluded`, `etf_peer_*` (1.11) | the same keys of `fees.comparison.lines[i]` |
 | `data_dates`                                                                                                                                                                                                                                                                                                                     | the newest `data_date` per source name                                                                                                                                                                                                                                                                                                                 |
 
 ## Tools the engine calls

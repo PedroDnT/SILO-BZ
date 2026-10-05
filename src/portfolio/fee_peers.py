@@ -32,9 +32,14 @@ BASIS = (
     "fundos e escopo do documento (fundo FI ou classe FIF). Ao menos trinta taxas utilizáveis, positivas e até cinco "
     "por cento ao ano, com documento de até trinta e seis meses. Universo ativo: cota em um dos três meses de "
     "referência. Inclui o próprio fundo quando elegível. Documentos mais recentes disponíveis, não um histórico. "
-    "Performance, despesa total e ETFs não entram. Percentil por posição média dos empates; diferença em pontos "
+    "Performance e despesa total não entram. ETFs de índice ligado à classe na lista revisada entram como pares e nas "
+    "estatísticas, com a taxa do site etfsbrasil.com.br (fonte de terceiros), e são contados à parte. Percentil por posição média dos empates; diferença em pontos "
     "percentuais para a mediana. Não mede qualidade, economia realizável ou recomendação de troca."
 )
+# catalog v66 (#609): the peer group split by kind, copied as served. An ETF peer's fee is the third-party site's
+# (etf_peer_fee_source), never a CVM-disclosed fee; n_peers = n_fund_peers + n_etf_peers.
+ETF_PEER_KEYS = ("n_fund_peers", "n_etf_peers", "n_etf_excluded", "etf_peer_tickers", "etf_peer_fee_oldest",
+                 "etf_peer_fee_newest", "etf_peer_fee_source")
 STATS = ("p25_pct_year", "median_pct_year", "p75_pct_year", "percentile_pct", "difference_pp")
 
 
@@ -80,7 +85,7 @@ def compute_fee_peers(lines: list[LineId], fees: dict, client: SiloClient, as_of
             row, call = found[li.cnpj]
             rec.update({k: row.get(k) for k in ("classe_anbima", "fundo_cotas", "tp_fundo_classe", "fee_as_of",
                                               "comparison_as_of", "activity_from", "activity_to", "n_peers", "n_excluded",
-                                              "peer_fee_oldest", "peer_fee_newest")})
+                                              "peer_fee_oldest", "peer_fee_newest", *ETF_PEER_KEYS)})
             rec["sources"].append(call.src(row.get("fee_as_of")))
             h = (fee_by.get(li.line_no) or {}).get("headline") or {}
             own = dec(row.get("taxa_adm"))

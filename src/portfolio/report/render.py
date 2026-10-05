@@ -369,11 +369,317 @@ def _fee_comparison_html(engine: dict) -> str:
                        ("Diferença", True), ("Percentil", True)],
                       [[v(engine, q + '.own_fee_pct_year'), v(engine, q + '.median_pct_year'),
                         v(engine, q + '.p25_pct_year') + " / " + v(engine, q + '.p75_pct_year'),
-                        v(engine, q + '.difference_pp') + " p.p.", v(engine, q + '.percentile_pct')]])
+                        v(engine, q + '.difference_pp'), v(engine, q + '.percentile_pct')]])
         out += ("<p>Pares utilizáveis: " + v(engine, q + '.n_peers') + "; excluídos: " + v(engine, q + '.n_excluded')
                 + ". Datas dos pares: " + v(engine, q + '.peer_fee_oldest') + " a "
                 + v(engine, q + '.peer_fee_newest') + ".</p>")
+        out += _etf_peers_html(engine, q, row)
     return out
+
+
+ETF_PEERS_LABEL = "informativo, não é recomendação"
+ETF_PEERS_IN_STATS = ("a mediana, os quartis e o percentil acima incluem esses ETFs, com a taxa de um site de terceiros "
+                      "(não é documento da CVM)")
+
+
+def _etf_peers_html(engine: dict, q: str, row: dict) -> str:
+    """Catalog v66 (#609): the peer group split into funds and ETFs, as the API serves it. Only when the engine carries
+    the split; an ETF peer's fee is the third-party site's (``etf_peer_fee_source``), never a CVM-disclosed fee."""
+    if row.get("n_etf_peers") is None:
+        return ""
+    out = (f"<p>Dos pares: <span class=v>{v(engine, q + '.n_fund_peers')}</span> fundos e "
+           f"<span class=v>{v(engine, q + '.n_etf_peers')}</span> ETFs")
+    if row.get("n_etf_excluded"):
+        out += f" (ETFs sem taxa utilizável, fora: {v(engine, q + '.n_etf_excluded')})"
+    out += f'. <span class="tag est">{e(ETF_PEERS_LABEL)}</span>'
+    if row.get("n_etf_peers"):
+        out += f'<br><span class="tag unk">{e(ETF_PEERS_IN_STATS)}</span>'
+        if row.get("etf_peer_tickers"):
+            out += f"<br><span class=cit>ETFs: {e(', '.join(str(t) for t in row['etf_peer_tickers']))}</span>"
+        if row.get("etf_peer_fee_source"):
+            out += f"<br><span class=cit>taxa dos ETFs: {v(engine, q + '.etf_peer_fee_source')}"
+            if row.get("etf_peer_fee_oldest"):
+                out += f", coletas de {v(engine, q + '.etf_peer_fee_oldest')} a {v(engine, q + '.etf_peer_fee_newest')}"
+            out += "</span>"
+    return out + "</p>"
+
+
+WINDOW_LABEL = {"12m": "12 meses", "6m": "6 meses"}
+
+
+def _returns_section(engine: dict) -> str:
+    """Engine 1.10: the return per position over 12 and 6 months, beside the CDI of the same dates. One row per line
+    and window; a line not evaluated says why with the fixed text of its code. No portfolio total, mean or ranking:
+    a negative fee per point is shown as computed and marked as never aggregated."""
+    r = engine.get("returns") or {}
+    b = "returns"
+    out = [f"<p class=cit>{v(engine, f'{b}.note')}</p>",
+           f"<p class=cit>{v(engine, f'{b}.definition')}</p>"]
+    cov = []
+    for i, c in enumerate(r.get("coverage") or []):
+        cov.append(f"{e(WINDOW_LABEL.get(c.get('id'), c.get('id')))}: {v(engine, f'{b}.coverage[{i}].n_evaluated')} linhas, "
+                   f"{v(engine, f'{b}.coverage[{i}].evaluated_value_brl')} "
+                   f"({v(engine, f'{b}.coverage[{i}].coverage_portfolio_value_pct')} da carteira)")
+    if cov:
+        out.append(f"<p>Linhas com retorno avaliado: {'; '.join(cov)}. A cobertura é parte do valor do extrato, não um retorno.</p>")
+    cdi = r.get("cdi") or {}
+    if cdi.get("status") == "ok":
+        out.append(f"<p class=cit>CDI: série SGS {v(engine, f'{b}.cdi.sgs_code')} do Banco Central, "
+                   f"{v(engine, f'{b}.cdi.first_date')} a {v(engine, f'{b}.cdi.last_date')}; {v(engine, f'{b}.cdi.convention')}.</p>")
+    elif cdi.get("reason"):
+        out.append(f'<p><span class="tag unk">CDI não disponível</span> {v(engine, f"{b}.cdi.reason")}.</p>')
+    rows = []
+    for i, ln in enumerate(r.get("lines") or []):
+        q = f"{b}.lines[{i}]"
+        asset = f"{v(engine, f'{q}.line_id')} {v(engine, f'{q}.instrument')}"
+        if ln.get("status") != "avaliado":
+            rows.append([asset, "—", f'<span class="tag unk">{v(engine, f"{q}.status_label")}</span><br>'
+                                     f"<span class=cit>{v(engine, f'{q}.reason')}</span>", "—", "—", "—", "—", "—"])
+            continue
+        asset += f"<br><span class=cit>{v(engine, f'{q}.basis_label')}</span>"
+        if ln.get("without_distributions"):
+            asset += '<br><span class="tag unk">sem proventos</span>'
+        for j, w in enumerate(ln.get("windows") or []):
+            wq = f"{q}.windows[{j}]"
+            label = e(WINDOW_LABEL.get(w.get("id"), w.get("id")))
+            label += f"<br><span class=cit>{v(engine, f'{wq}.base_month')} a {v(engine, f'{wq}.end_month')}</span>"
+            label += "".join(f"<br><span class=cit>{v(engine, f'{wq}.notes[{k}]')}</span>" for k in range(len(w.get("notes") or [])))
+            if w.get("status") != "avaliado":
+                rows.append([asset if j == 0 else "", label, f'<span class="tag unk">{v(engine, f"{wq}.status_label")}</span>'
+                             f"<br><span class=cit>{v(engine, f'{wq}.reason')}</span>", "—", "—", "—", "—", "—"])
+                continue
+            net = f"<span class=v>{v(engine, f'{wq}.net_return_pct')}</span>"
+            if w.get("gross_return_est_pct") is not None:
+                net += (f"<br><span class=cit>bruto: {v(engine, f'{wq}.gross_return_est_pct')} "
+                        f'</span><span class="tag est">{v(engine, f"{wq}.gross_label")}</span>')
+            if w.get("cdi_pct") is not None:
+                cdi_cell = (f"{v(engine, f'{wq}.cdi_pct')}<br><span class=cit>{v(engine, f'{wq}.cdi_base_date')} a "
+                            f"{v(engine, f'{wq}.cdi_end_date')}</span>")
+                vs = v(engine, f"{wq}.net_minus_cdi_pp")
+            else:
+                cdi_cell = f"<span class=cit>{v(engine, f'{wq}.cdi_reason')}</span>" if w.get("cdi_reason") else "—"
+                vs = "—"
+            vol = "—"
+            if w.get("volatility_annual_pct") is not None:
+                vol = f"{v(engine, f'{wq}.volatility_annual_pct')}<br><span class=cit>{v(engine, f'{wq}.volatility_note')}</span>"
+            dd = v(engine, f"{wq}.max_drawdown_pct")
+            if w.get("max_drawdown_peak_month"):
+                dd += (f"<br><span class=cit>{v(engine, f'{wq}.max_drawdown_peak_month')} a "
+                       f"{v(engine, f'{wq}.max_drawdown_trough_month')}</span>")
+            rows.append([asset if j == 0 else "", label, net, cdi_cell, vs, vol, dd, _fee_drag_html(engine, wq, w)])
+    out.append(_table([("Linha e base", False), ("Janela", False), ("Retorno líquido", True), ("CDI nas mesmas datas", True),
+                       ("Líquido menos CDI", True), ("Volatilidade anualizada", True), ("Queda máxima", True),
+                       ("Taxa por ponto e perda de Sharpe", False)], rows))
+    notes = [v(engine, f"{b}.gross_note"), v(engine, f"{b}.sharpe_drag_note"), v(engine, f"{b}.drawdown_note")]
+    fpp = next((f"{b}.lines[{i}].windows[{j}].fee_per_point_note" for i, ln in enumerate(r.get("lines") or [])
+                for j, w in enumerate(ln.get("windows") or []) if w.get("fee_per_point_note")), None)
+    if fpp:
+        notes.append("taxa por ponto: " + v(engine, fpp))
+    line_notes = []
+    for i, ln in enumerate(r.get("lines") or []):
+        for k, n in enumerate(ln.get("notes") or []):
+            if n not in [x[0] for x in line_notes]:
+                line_notes.append((n, f"{b}.lines[{i}].notes[{k}]"))
+    notes += [v(engine, path) for n, path in line_notes if n != r.get("performance_note")]
+    if any(ln.get("performance_fee_filed") for ln in r.get("lines") or []):
+        notes.append(v(engine, f"{b}.performance_note"))
+    out.append("<ul>" + "".join(f"<li class=cit>{n}</li>" for n in notes if n and n != "—") + "</ul>")
+    if r.get("status") in ("partial", "unknown") and r.get("reason"):
+        out.append(f'<p><span class="tag unk">{e(SECTION_STATUS_LABELS.get(r["status"], r["status"]))}</span> {v(engine, f"{b}.reason")}.</p>')
+    return "\n".join(out)
+
+
+def _fee_drag_html(engine: dict, wq: str, w: dict) -> str:
+    """The fee per point of gross return and the Sharpe the fee takes, each with the engine's own note; a value outside
+    every aggregate (gross at or below zero) is marked so."""
+    parts = []
+    if w.get("fee_per_point") is not None:
+        t = f"taxa por ponto: <span class=v>{v(engine, f'{wq}.fee_per_point')}</span>"
+        if w.get("fee_pct_period") is not None:
+            t += f" (taxa do período {v(engine, f'{wq}.fee_pct_period')})"
+        if w.get("fee_per_point_excluded_from_aggregates"):
+            t += ' <span class="tag unk">fora de qualquer média ou ranking</span>'
+        parts.append(t)
+    elif w.get("fee_reason"):
+        parts.append(f"<span class=cit>{v(engine, f'{wq}.fee_reason')}</span>")
+    if w.get("sharpe_drag") is not None:
+        parts.append(f"perda de Sharpe: <span class=v>{v(engine, f'{wq}.sharpe_drag')}</span>")
+    elif w.get("sharpe_drag_note") and w.get("fee_status") == "ok":
+        parts.append(f"<span class=cit>perda de Sharpe: {v(engine, f'{wq}.sharpe_drag_note')}</span>")
+    return "<br>".join(parts) or "—"
+
+
+TAX_STATUS_PLAIN = ("isento", "aliquota_hoje")  # a rate in force without a condition: no "a conferir" tag
+
+
+def _tax_fee_html(engine: dict, q: str, f: dict) -> str:
+    """The fee paid in R$ a year, as the fee block's headline: an estimate, a range, or the fee block's own label."""
+    st = f.get("status")
+    if st == "estimada":
+        out = (f"<span class=v>{v(engine, f'{q}.fee.per_year_brl')}</span> por ano<br>"
+               f"<span class=cit>{v(engine, f'{q}.fee.rate_pct_year')} a.a.</span>")
+    elif st == "faixa":
+        out = (f"<span class=v>{v(engine, f'{q}.fee.per_year_min_brl')}</span> a "
+               f"<span class=v>{v(engine, f'{q}.fee.per_year_max_brl')}</span> por ano<br>"
+               f"<span class=cit>{v(engine, f'{q}.fee.rate_min_pct_year')} a {v(engine, f'{q}.fee.rate_max_pct_year')} a.a.</span>")
+    else:
+        return f"<span class=cit>{v(engine, f'{q}.fee.fee_status')}</span>" if f.get("fee_status") else "—"
+    out += f' <span class="tag est">{v(engine, f"{q}.fee.label")}</span>'
+    if f.get("third_party"):
+        out += f"<br><span class=cit>{v(engine, f'{q}.fee.third_party_label')}</span>"
+    if (f.get("loading") or {}).get("text"):
+        out += f"<br><span class=cit>{v(engine, f'{q}.fee.loading.text')}</span>"
+    return out
+
+
+def _tax_rate_html(engine: dict, q: str, t: dict) -> str:
+    """The rate in force with its article, "isento" with its article, the bracket, or why there is no rule."""
+    st = t.get("status")
+    tag = f'<span class="tag {"" if st in TAX_STATUS_PLAIN else "unk"}">{v(engine, f"{q}.tax.status_label")}</span>'
+    if st == "sem_regra":
+        return f"{tag}<br><span class=cit>{v(engine, f'{q}.tax.reason')}</span>"
+    if st == "previdencia":
+        return f"{tag}<br><span class=cit>dois regimes, ver Previdência abaixo</span>"
+    out = ""
+    if t.get("rate_text"):
+        out = f"<span class=v>{v(engine, f'{q}.tax.rate_text')}</span>"
+        if t.get("instrument_label"):
+            out += f" <span class=cit>({v(engine, f'{q}.tax.instrument_label')})</span>"
+        if t.get("article"):
+            out += f"<br><span class=cit>{v(engine, f'{q}.tax.article')}</span>"
+    if t.get("bracket"):
+        out += ("<br>" if out else "") + f"<span class=cit>{v(engine, f'{q}.tax.bracket.text')}</span>"
+        if not t.get("rate_text"):
+            arts = [f"{v(engine, f'{q}.tax.candidates[{j}].label')}: {v(engine, f'{q}.tax.candidates[{j}].article')}"
+                    for j, c in enumerate(t.get("candidates") or []) if c.get("article")]
+            if arts:
+                out += f"<br><span class=cit>{'; '.join(arts)}</span>"
+    if st in TAX_STATUS_PLAIN:
+        return out
+    return f"{out}<br>{tag}" if out else tag
+
+
+def _tax_brl_html(engine: dict, q: str, t: dict) -> str:
+    """The tax in R$ only when the engine computed it (an estimate); otherwise the bracket or the fixed reason."""
+    est = t.get("estimate") or {}
+    if t.get("status") == "sem_regra":
+        return "—"  # the rate column already says why
+    if est.get("tax_brl") is not None:
+        return (f"<span class=v>{v(engine, f'{q}.tax.estimate.tax_brl')}</span> "
+                f'<span class="tag est">{v(engine, f"{q}.tax.estimate.label")}</span>'
+                f"<br><span class=cit>{v(engine, f'{q}.tax.estimate.rate_pct')} sobre o ganho de 12 meses de "
+                f"{v(engine, f'{q}.tax.estimate.gain_12m_brl')} (retorno de {v(engine, f'{q}.tax.estimate.net_return_12m_pct')})</span>")
+    if t.get("bracket") and est.get("reason_code") != "isento_sem_imposto":
+        return f"<span class=cit>sem valor em R$: {v(engine, f'{q}.tax.bracket.text')}</span>"
+    if est.get("reason"):
+        return f"<span class=cit>{v(engine, f'{q}.tax.estimate.reason')}</span>"
+    return "—"
+
+
+def _tax_section(engine: dict) -> str:
+    """Engine 1.11: fee paid and tax per position. No portfolio total of tax; the pension regimes side by side, neither
+    picked; the optimization facts labelled "informativo; não é recomendação"; IOF only when the engine has it."""
+    tx = engine.get("tax") or {}
+    b = "tax"
+    out = [f"<p class=cit>{v(engine, f'{b}.note')}</p>"]
+    rows = []
+    for i, ln in enumerate(tx.get("lines") or []):
+        q = f"{b}.lines[{i}]"
+        h = ln.get("holding") or {}
+        hold = (f"aplicação em {v(engine, f'{q}.holding.data_aplicacao')} ({v(engine, f'{q}.holding.days_held')} dias)"
+                if h.get("data_aplicacao") else v(engine, f"{q}.holding.text"))
+        check = "<br>".join(f"<span class=cit>{v(engine, f'{q}.a_conferir[{j}].text')}</span>"
+                            for j in range(len(ln.get("a_conferir") or [])))
+        if check:
+            check = f'<span class="tag unk">{v(engine, f"{q}.a_conferir[0].label")}</span><br>{check}'
+        rows.append([f"{v(engine, f'{q}.line_id')} {v(engine, f'{q}.instrument')}<br><span class=cit>{hold}</span>",
+                     _tax_fee_html(engine, q, ln.get("fee") or {}), _tax_rate_html(engine, q, ln.get("tax") or {}),
+                     _tax_brl_html(engine, q, ln.get("tax") or {}), check or "—"])
+    out.append(_table([("Linha", False), ("Taxa paga", False), ("Imposto: alíquota em vigor", False),
+                       ("Imposto em R$", False), ("A conferir", False)], rows))
+    out.append(_pension_html(engine))
+    out.append(_tax_info_html(engine))
+    iof = [(i, ln) for i, ln in enumerate(tx.get("lines") or []) if ln.get("iof")]
+    if iof:
+        items = []
+        for i, ln in iof:
+            q = f"{b}.lines[{i}].iof"
+            t = f"{v(engine, f'{b}.lines[{i}].line_id')}: {v(engine, f'{q}.text')}"
+            if ln["iof"].get("rate_pct") is not None:
+                t += f" (alíquota {v(engine, f'{q}.rate_pct')})"
+            if ln["iof"].get("article"):
+                t += f" <span class=cit>{v(engine, f'{q}.article')}</span>"
+            items.append(f"<li>{t}</li>")
+        out.append("<h3>IOF</h3><ul>" + "".join(items) + "</ul>")
+    person = tx.get("person") or {}
+    items = []
+    for j, f in enumerate(person.get("flags") or []):
+        if not f.get("flagged"):
+            continue
+        q = f"{b}.person.flags[{j}]"
+        items.append(f"<li>{v(engine, f'{q}.text')}. Linhas: {e(', '.join(f.get('line_ids') or []))}. "
+                     f"<span class=cit>{v(engine, f'{q}.article')}; não calculado</span></li>")
+    if person.get("minimum_tax"):
+        q = f"{b}.person.minimum_tax"
+        items.append(f"<li>Tributação mínima: {v(engine, f'{q}.text')}. <span class=cit>{v(engine, f'{q}.article')}</span></li>")
+    if items:
+        out.append("<h3>Na pessoa física (sinalizado, sem valor)</h3><ul>" + "".join(items) + "</ul>")
+    nc = tx.get("not_covered") or []
+    if nc:
+        out.append("<p class=cit>Sem regra de imposto: " + " ".join(v(engine, f"{b}.not_covered[{j}].text") for j in range(len(nc))) + "</p>")
+    if tx.get("status") in ("partial", "unknown") and tx.get("reason"):
+        out.append(f'<p><span class="tag unk">{e(SECTION_STATUS_LABELS.get(tx["status"], tx["status"]))}</span> {v(engine, f"{b}.reason")}.</p>')
+    return "\n".join(out)
+
+
+def _pension_html(engine: dict) -> str:
+    """PGBL and VGBL lines: the regressive and the progressive regime in two columns, neither picked (#613)."""
+    lines = [(i, ln) for i, ln in enumerate((engine.get("tax") or {}).get("lines") or []) if ln.get("pension")]
+    if not lines:
+        return ""
+    out = ["<h3>Previdência (PGBL e VGBL): os dois regimes, nenhum indicado</h3>"]
+    for i, ln in lines:
+        q = f"tax.lines[{i}].pension"
+        pe = ln["pension"]
+        plan = v(engine, f"{q}.plan") if pe.get("plan") else "plano não impresso no extrato"
+        head = f"<p>{v(engine, f'tax.lines[{i}].line_id')} {v(engine, f'tax.lines[{i}].instrument')}: {plan}"
+        if pe.get("base"):
+            head += f"; imposto sobre {v(engine, f'{q}.base')}"
+        head += f". Regime: {v(engine, f'{q}.regime_label')}.</p>"
+        reg = pe.get("regressive") or {}
+        table = "<br>".join(_bracket_years(engine, f"{q}.regressive.table[{j}]", row)
+                            for j, row in enumerate(reg.get("table") or []))
+        left = f"{v(engine, f'{q}.regressive.text')}<br><span class=cit>{table}</span><br><span class=cit>{v(engine, f'{q}.regressive.article')}</span>"
+        right = (f"{v(engine, f'{q}.progressive.text')}<br><span class=cit>{v(engine, f'{q}.progressive.article')}</span>")
+        out.append(head + _table([("Regime regressivo", False), ("Regime progressivo", False)], [[left, right]]))
+        out.append(f"<p class=cit>{v(engine, f'{q}.base_text')} {v(engine, f'{q}.irrevocable_text')}</p>")
+    return "\n".join(out)
+
+
+def _bracket_years(engine: dict, q: str, row: dict) -> str:
+    """One row of the regressive table: "até 2 anos", "acima de 2 até 4 anos", "acima de 10 anos" (open ends as filed)."""
+    lo, hi = row.get("over_years"), row.get("up_to_years")
+    if not lo:
+        span = f"até {v(engine, f'{q}.up_to_years')} anos"
+    elif hi is None:
+        span = f"acima de {v(engine, f'{q}.over_years')} anos"
+    else:
+        span = f"acima de {v(engine, f'{q}.over_years')} até {v(engine, f'{q}.up_to_years')} anos"
+    return f"{span}: {v(engine, f'{q}.rate_pct')}"
+
+
+def _tax_info_html(engine: dict) -> str:
+    """The optimization facts of each line (next bracket, gross-up equivalence, come-cotas), each labelled
+    "informativo; não é recomendação"."""
+    items = []
+    for i, ln in enumerate((engine.get("tax") or {}).get("lines") or []):
+        for j, _o in enumerate(ln.get("optimization") or []):
+            q = f"tax.lines[{i}].optimization[{j}]"
+            items.append(f"<li>{v(engine, f'tax.lines[{i}].line_id')}: {v(engine, f'{q}.text')} "
+                         f'<span class="tag est">{v(engine, f"{q}.label")}</span></li>')
+    if not items:
+        return ""
+    return "<h3>Fatos de imposto por posição (informativo; não é recomendação)</h3><ul>" + "".join(items) + "</ul>"
 
 
 def _bucket_table(engine: dict, base: str, label_key: str, label: str) -> str:
@@ -835,6 +1141,7 @@ def _method_section(engine: dict, narrative: Narrative) -> str:
         "Classificações por indexador e setor seguem regras versionadas; o que não tem regra aparece como \"sem classificação\".",
         *_v19_method(engine),
         *_risk_method(engine),
+        *_returns_tax_method(engine),
         "Os gráficos são desenhados a partir dos mesmos campos das tabelas ao lado, que continuam sendo o registro preciso; "
         "um gráfico sem dado não é desenhado, e a seção do que não foi possível avaliar diz por quê.",
         f"Modelo: {model}. Provedor: {e(narrative.provider or '—')}. Custo do texto: US$ {narrative.cost_usd:.4f} "
@@ -860,6 +1167,24 @@ def _v19_method(engine: dict) -> list[str]:
                    "A concentração agrupa pelo identificador da gestora, nunca pelo nome. O prazo de pagamento do resgate é "
                    "lido como arquivado (D+N), sem converter dias úteis e corridos; carência acima de zero é lock-up; um "
                    "prazo não informado é \"fundo sem prazo de resgate informado\", nunca zero.")
+    return out
+
+
+def _returns_tax_method(engine: dict) -> list[str]:
+    """Engines 1.10 and 1.11: how the returns and the tax are read (the engine's own texts, and the rule files)."""
+    out = []
+    if engine.get("returns"):
+        out.append(f"Retorno por posição: {v(engine, 'returns.definition')} Sem retorno da carteira inteira, sem média e sem "
+                   "ranking; \"% do CDI\" não é mostrado: o motor compara com o CDI em pontos percentuais.")
+    tx = engine.get("tax") or {}
+    if tx:
+        files = "; ".join(
+            f"{v(engine, f'tax.rules_files[{i}].instrument')} versão {v(engine, f'tax.rules_files[{i}].version')}"
+            + (" (não verificado em parte)" if f.get("not_verified") else "")
+            for i, f in enumerate(tx.get("rules_files") or []))
+        out.append(f"Imposto: regras versionadas por tipo de instrumento, transcritas de {v(engine, 'tax.rules_note')}"
+                   + (f" ({files})" if files else "") + ". O valor em R$ só aparece quando o motor o calculou, rotulado "
+                   "estimativa; sem data de aplicação no extrato fica a faixa de alíquotas. Nenhum total de imposto da carteira.")
     return out
 
 
@@ -918,6 +1243,10 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
         section("Exposição", _exposure_section(engine) + _findings_html(engine, narrative, "exposicao")),
         *([section("Concentração e vencimentos", _concentration_section(engine))] if engine.get("concentration") else []),
         *([section("Liquidez", _liquidity_section(engine))] if engine.get("liquidity") else []),
+        *([section("Retorno por posição", _returns_section(engine) + _findings_html(engine, narrative, "retornos"))]
+          if engine.get("returns") else []),
+        *([section("Taxa e imposto por posição", _tax_section(engine) + _findings_html(engine, narrative, "impostos"))]
+          if engine.get("tax") else []),
         section("Reapresentações", _restatements_section(engine) + _findings_html(engine, narrative, "reapresentacoes")),
         section("Sinais de risco", _risk_section(engine) + _findings_html(engine, narrative, "sinais_de_risco")),
         section("O que não foi possível avaliar", _unknowns_section(engine, narrative)),
