@@ -252,7 +252,8 @@ def test_demo_concentration_fgc_and_ladder(demo):
     lad = c["maturity_ladder"]
     assert abs(lad["sum_check_brl"]) < 0.01
     assert {b["bucket"]: b["line_nos"] for b in lad["buckets"]}["de 5 a 10 anos"] == [1, 11]
-    assert c["manager"]["reason_code"] == "gestor_sem_api" and c["fund_liquidity"]["reason_code"] == "liquidez_sem_api"
+    # engine 1.9: the manager and the liquidity are evaluated from portfolio_fund_terms
+    assert c["manager"]["status"] == "complete" and c["fund_liquidity"]["section"] == "liquidity"
 
 
 # --- 2e, 4a, 4b, 4d: nothing of the pipeline's text reaches the Redator or the page ------------------------------------

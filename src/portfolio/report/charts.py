@@ -43,9 +43,10 @@ LABEL_W = 210
 VALUE_W = 150
 RADIUS = 4
 
-FUND_ASSET_TYPES = ("fundo", "fidc", "fii", "etf", "cota_listada")
+FUND_ASSET_TYPES = ("fundo", "fidc", "fii", "fip", "etf", "cota_listada")
 TOP_ISSUERS = 8
 TOP_FUNDS = 8
+TOP_MANAGERS = 8
 
 
 def _num(view: dict, path: str) -> float | None:
@@ -319,3 +320,37 @@ def fee_chart(view: dict) -> str:
         note += (" Barras contornadas: taxa de ETF do site etfsbrasil.com.br (terceiros), somada à parte e fora da soma "
                  "divulgada.")
     return figure(svg, "Taxa de administração por fundo, em R$ por ano (valor da posição x taxa)", note)
+
+
+# --- f. manager and liquidity (engine 1.9) -----------------------------------------------------------------------------
+
+
+def manager_chart(view: dict) -> str:
+    """Fund value by manager (``concentration.manager.groups``: grouped by the filed ``gestor_id``), the name shown."""
+    groups = resolve(view, "concentration.manager.groups")
+    if not isinstance(groups, list) or not groups:
+        return ""
+    base = "concentration.manager.groups"
+    rows = [{"label": g.get("gestor_name") or g.get("gestor_id"), "value_path": f"{base}[{i}].weight_pct",
+             "text_paths": [f"{base}[{i}].value_brl", f"{base}[{i}].weight_pct"]}
+            for i, g in enumerate(groups[:TOP_MANAGERS])]
+    svg = hbars(view, rows, "Concentração por gestora, valor e % da carteira")
+    return figure(svg, "Concentração por gestora (valor e % da carteira)",
+                  "Agrupado pelo identificador da gestora arquivado na CVM, nunca pelo nome.")
+
+
+def liquidity_chart(view: dict) -> str:
+    """The liquidity ladder (``liquidity.buckets``) in the engine's order; "sem classificação" a gray bar of its own."""
+    buckets = resolve(view, "liquidity.buckets")
+    if not isinstance(buckets, list) or not buckets:
+        return ""
+    rows = []
+    for i, b in enumerate(buckets):
+        q = f"liquidity.buckets[{i}]"
+        if not (is_number(b.get("value_brl")) and b["value_brl"] > 0):
+            continue  # an empty bucket stays in the table only
+        rows.append({"label": b.get("bucket"), "value_path": f"{q}.weight_pct", "text_paths": [f"{q}.value_brl", f"{q}.weight_pct"],
+                     "style": "unclassified" if b.get("bucket_id") == "sem_classificacao" else "series"})
+    svg = hbars(view, rows, "Escada de liquidez, valor e % da carteira")
+    return figure(svg, "Escada de liquidez: prazo para resgatar ou vender (valor e % da carteira)",
+                  "Prazos de resgate como arquivados; dias úteis e corridos não convertidos. Cinza: sem classificação.")

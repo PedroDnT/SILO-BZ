@@ -11,9 +11,10 @@ an estimate:
 * ``fgc``: the FGC-covered types the statement can name (CDB, LCI, LCA) summed per issuer as printed, flagged
   above R$ 250 mil. LF, CRA, CRI, debêntures and fund quotas are not covered. A check to make by hand: the
   limit is per CPF and institution (conglomerate), and a consolidated statement may hold more than one holder.
-* ``manager`` (concentration by fund manager) and ``fund_liquidity`` (lâmina redemption terms): not evaluated.
-  No ``api`` function or view serves the manager's CNPJ or ``qt_dia_pagto_resgate`` (checked 2026-10-04), and
-  this engine reads SILO only through the public API.
+* ``manager`` (engine 1.9): the value of the fund lines grouped by the manager CVM files for each fund
+  (``portfolio_fund_terms`` ``gestor_id``, the filed value, never the name), with the name shown. A fund with no
+  manager filed is listed apart and never forms a group. ``fund_liquidity`` points at the ``liquidity`` section.
+  Without the terms (a 1.8 caller) both stay ``unknown`` as before.
 """
 
 from __future__ import annotations
@@ -24,7 +25,9 @@ import unicodedata
 from decimal import Decimal
 from typing import Any
 
-from src.portfolio.common import STATUS_COMPLETE, STATUS_NOT_APPLICABLE, STATUS_UNKNOWN, Section, brl, pct
+from collections import Counter
+
+from src.portfolio.common import STATUS_COMPLETE, STATUS_NOT_APPLICABLE, STATUS_PARTIAL, STATUS_UNKNOWN, Section, brl, pct
 from src.portfolio.identify import LineId, parse_tesouro
 
 DIRECT_CREDIT_TIPOS = ("CRA", "CRI", "debênture", "CDB", "LCI", "LCA")
@@ -112,16 +115,27 @@ def _bucket(days: int) -> str:
     return LADDER[-1][0]
 
 
-def compute_concentration(lines: list[LineId], position_date: dt.date) -> dict[str, Any]:
+def compute_concentration(lines: list[LineId], position_date: dt.date, terms: Any = None,
+                          liquidity_section: dict[str, Any] | None = None) -> dict[str, Any]:
     sec = Section()
     total = sum((li.position.valor for li in lines), Decimal("0"))
     issuer = _issuer(lines, total)
     ladder = _ladder(lines, total, position_date)
     fgc = _fgc(lines)
-    manager = {"status": STATUS_UNKNOWN, "reason_code": "gestor_sem_api", "reason": MANAGER_REASON}
-    liquidity = {"status": STATUS_UNKNOWN, "reason_code": "liquidez_sem_api", "reason": LIQUIDITY_REASON}
-    sec.degrade(MANAGER_REASON, code="gestor_sem_api")
-    sec.degrade(LIQUIDITY_REASON, code="liquidez_sem_api")
+    if terms is None:  # a caller without fund terms (engine 1.8): neither is evaluated
+        manager = {"status": STATUS_UNKNOWN, "reason_code": "gestor_sem_api", "reason": MANAGER_REASON}
+        liquidity = {"status": STATUS_UNKNOWN, "reason_code": "liquidez_sem_api", "reason": LIQUIDITY_REASON}
+        sec.degrade(MANAGER_REASON, code="gestor_sem_api")
+        sec.degrade(LIQUIDITY_REASON, code="liquidez_sem_api")
+    else:
+        manager = _manager(lines, total, terms)
+        sec.errors.extend(terms.errors)
+        if manager["status"] in (STATUS_PARTIAL, STATUS_UNKNOWN):
+            sec.degrade(manager["reason"], code=manager["reason_code"])
+        ls = liquidity_section or {}
+        codes = ls.get("reason_codes") or []
+        liquidity = {"status": ls.get("status"), "reason_code": codes[0] if codes else None,
+                     "reason": "Liquidez dos fundos: seção liquidity (prazo de resgate como arquivado).", "section": "liquidity"}
     return {
         **sec.head(),
         "source": "statement",
@@ -232,3 +246,80 @@ def _fgc(lines: list[LineId]) -> dict[str, Any]:
     issuers.sort(key=lambda g: -(g["eligible_value_brl"] or 0))
     return {**base, "status": STATUS_COMPLETE, "reason_code": None, "issuers": issuers,
             "n_above_limit": sum(1 for g in issuers if g["above_limit"]), "not_printed_line_nos": not_printed}
+
+
+MANAGER_LABEL = "gestora como arquivada na CVM; agrupada pelo identificador arquivado (gestor_id), nunca pelo nome"
+MANAGER_BASIS = (
+    "valor do extrato das linhas de fundo com CNPJ, somado por gestor_id de portfolio_fund_terms (Extrato da CVM ou "
+    "lâmina); fundo sem gestor informado fica à parte"
+)
+MANAGER_NO_GESTOR = "Fundo(s) sem gestor informado nos dados do SILO: fora dos grupos."
+MANAGER_FAILED = "portfolio_fund_terms falhou: concentração por gestor não avaliada (erro literal em errors)."
+
+
+def _manager(lines: list[LineId], total: Decimal, terms: Any) -> dict[str, Any]:
+    """Engine 1.9: fund value by the manager CVM files (``gestor_id``), PGBL/VGBL funds included."""
+    funds = [li for li in lines if li.kind == "fund" and li.cnpj]
+    base = {"label": MANAGER_LABEL, "basis": MANAGER_BASIS}
+    if not funds:
+        return {**base, "status": STATUS_NOT_APPLICABLE, "reason_code": "sem_fundos", "reason": "Nenhum fundo com CNPJ.",
+                "groups": [], "fund_value_brl": 0.0, "fund_value_portfolio_pct": pct(Decimal("0"), total) if total else None,
+                "without_gestor_line_nos": [], "without_gestor_value_brl": 0.0, "unanswered_line_nos": []}
+    fund_total = sum((li.position.valor for li in funds), Decimal("0"))
+    groups: dict[str, list[LineId]] = {}
+    names: dict[str, list[str]] = {}
+    without: list[LineId] = []
+    unanswered: list[LineId] = []
+    for li in funds:
+        if li.line_no in terms.failed or li.line_no not in terms.rows:
+            unanswered.append(li)
+            continue
+        t = terms.rows[li.line_no]
+        gid = t.get("gestor_id")
+        if gid is None or str(gid).strip() == "":
+            without.append(li)
+            continue
+        key = str(gid).strip()
+        groups.setdefault(key, []).append(li)
+        if t.get("gestor_name"):
+            names.setdefault(key, []).append(str(t["gestor_name"]))
+    out = []
+    for gid, lis in groups.items():
+        v = sum((li.position.valor for li in lis), Decimal("0"))
+        filed = names.get(gid) or []
+        out.append({
+            "gestor_id": gid,
+            # the most frequent name filed under this id (the first on a tie); every spelling is kept
+            "gestor_name": Counter(filed).most_common(1)[0][0] if filed else None,
+            "names_as_filed": sorted(set(filed)),
+            "line_nos": [li.line_no for li in lis],
+            "n_lines": len(lis),
+            "value_brl": brl(v),
+            "portfolio_pct": pct(v, total),
+            "fund_value_pct": pct(v, fund_total),
+            "sources": _unique([s for li in lis for s in (terms.rows[li.line_no].get("sources") or [])])[:4],
+        })
+    out.sort(key=lambda g: (-(g["value_brl"] or 0), g["gestor_id"]))
+    wv = sum((li.position.valor for li in without), Decimal("0"))
+    if unanswered and len(unanswered) == len(funds):
+        status, code, reason = STATUS_UNKNOWN, "consulta_falhou", MANAGER_FAILED
+    elif unanswered:
+        status, code, reason = STATUS_PARTIAL, "consulta_falhou", MANAGER_FAILED
+    elif without and not out:
+        status, code, reason = STATUS_PARTIAL, "sem_gestor", MANAGER_NO_GESTOR
+    elif without:
+        status, code, reason = STATUS_PARTIAL, "gestor_nao_informado", MANAGER_NO_GESTOR
+    else:
+        status, code, reason = STATUS_COMPLETE, None, None
+    return {**base, "status": status, "reason_code": code, "reason": reason, "groups": out,
+            "fund_value_brl": brl(fund_total), "fund_value_portfolio_pct": pct(fund_total, total) if total else None,
+            "without_gestor_line_nos": [li.line_no for li in without], "without_gestor_value_brl": brl(wv),
+            "unanswered_line_nos": [li.line_no for li in unanswered]}
+
+
+def _unique(sources: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    for x in sources:
+        if x not in out:
+            out.append(x)
+    return out

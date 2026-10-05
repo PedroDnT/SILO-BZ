@@ -3584,5 +3584,173 @@
     }
    ]
   }
+ ],
+ "portfolio_instruments": [
+  {
+   "match": {
+    "p_codes": [
+     "CRA-0260000X",
+     "DEB-EXEM12"
+    ]
+   },
+   "rows": [
+    {
+     "line_no": 1,
+     "input_code": "CRA-0260000X",
+     "code": "0260000X",
+     "match_kind": "securit_cetip",
+     "instrument_type": "cra_mensal",
+     "cnpj_securit": "90000000000500",
+     "numero_serie": "1",
+     "classe": "Sênior",
+     "data_vencimento": "2032-04-15",
+     "situacao": "Adimplente",
+     "taxa_juros": "IPCA+ 8,7400% a.a",
+     "classificacao_risco_atual": "brAA (sf)",
+     "valor_total_integralizado": 250000000.0,
+     "data_referencia": "2026-08-31",
+     "cd_isin": null,
+     "issuer_code": null,
+     "n_fundos": null,
+     "preco_marcacao_fundos": null,
+     "cda_period": null,
+     "reason": "exact CETIP code in cvm_securit_serie (synthetic)"
+    },
+    {
+     "line_no": 2,
+     "input_code": "DEB-EXEM12",
+     "code": "EXEM12",
+     "match_kind": "cda_ticker",
+     "instrument_type": "debenture",
+     "cnpj_securit": null,
+     "numero_serie": null,
+     "classe": null,
+     "data_vencimento": null,
+     "situacao": null,
+     "taxa_juros": null,
+     "classificacao_risco_atual": null,
+     "valor_total_integralizado": null,
+     "data_referencia": null,
+     "cd_isin": "BRENEVDBS0Z1",
+     "issuer_code": "ENEV",
+     "n_fundos": 14,
+     "preco_marcacao_fundos": 53571.43,
+     "cda_period": "2026-05-01",
+     "reason": "cd_ativo in CDA block 4, funds' weighted mark (synthetic)"
+    }
+   ]
+  }
+ ],
+ "portfolio_fund_terms": [
+  {
+   "match": {
+    "p_cnpjs": [
+     "08935128000159",
+     "50088190000119",
+     "51488342000133",
+     "32113885000121",
+     "42592315000115",
+     "11728688000147"
+    ]
+   },
+   "rows": [
+    {
+     "line_no": 1,
+     "input_cnpj": "08935128000159",
+     "cnpj": "08935128000159",
+     "gestor_id": "90000000000101",
+     "gestor_name": "GESTORA EXEMPLO ALFA",
+     "admin_cnpj": "90000000000900",
+     "admin_name": "ADMINISTRADORA EXEMPLO",
+     "terms_source": "extrato",
+     "terms_dt_comptc": "2026-07-31",
+     "qt_dia_conversao_cota": 30,
+     "qt_dia_pagto_resgate": 32,
+     "tp_dia_pagto_resgate": "DIAS ÚTEIS",
+     "qt_dia_resgate_cotas": 0,
+     "reason": null
+    },
+    {
+     "line_no": 2,
+     "input_cnpj": "50088190000119",
+     "cnpj": "50088190000119",
+     "gestor_id": "90000000000202",
+     "gestor_name": "GESTORA EXEMPLO BETA",
+     "admin_cnpj": "90000000000900",
+     "admin_name": "ADMINISTRADORA EXEMPLO",
+     "terms_source": "extrato",
+     "terms_dt_comptc": "2026-06-30",
+     "qt_dia_conversao_cota": 0,
+     "qt_dia_pagto_resgate": 1,
+     "tp_dia_pagto_resgate": "DIAS ÚTEIS",
+     "qt_dia_resgate_cotas": 0,
+     "reason": null
+    },
+    {
+     "line_no": 3,
+     "input_cnpj": "51488342000133",
+     "cnpj": "51488342000133",
+     "gestor_id": "90000000000202",
+     "gestor_name": "GESTORA EXEMPLO BETA",
+     "admin_cnpj": "90000000000900",
+     "admin_name": "ADMINISTRADORA EXEMPLO",
+     "terms_source": "extrato",
+     "terms_dt_comptc": "2026-06-30",
+     "qt_dia_conversao_cota": 0,
+     "qt_dia_pagto_resgate": 0,
+     "tp_dia_pagto_resgate": "DIAS ÚTEIS",
+     "qt_dia_resgate_cotas": 0,
+     "reason": null
+    },
+    {
+     "line_no": 4,
+     "input_cnpj": "32113885000121",
+     "cnpj": "32113885000121",
+     "gestor_id": "90000000000303",
+     "gestor_name": "GESTORA EXEMPLO GAMA",
+     "admin_cnpj": "90000000000900",
+     "admin_name": "ADMINISTRADORA EXEMPLO",
+     "terms_source": null,
+     "terms_dt_comptc": null,
+     "qt_dia_conversao_cota": null,
+     "qt_dia_pagto_resgate": null,
+     "tp_dia_pagto_resgate": null,
+     "qt_dia_resgate_cotas": null,
+     "reason": "no redemption terms in the Extrato or the lâmina: NULL is not filed, never zero (closed-end funds file none)"
+    },
+    {
+     "line_no": 5,
+     "input_cnpj": "42592315000115",
+     "cnpj": "42592315000115",
+     "gestor_id": "90000000000404",
+     "gestor_name": "GESTORA EXEMPLO DELTA",
+     "admin_cnpj": "90000000000900",
+     "admin_name": "ADMINISTRADORA EXEMPLO",
+     "terms_source": "lamina",
+     "terms_dt_comptc": "2024-03-31",
+     "qt_dia_conversao_cota": 0,
+     "qt_dia_pagto_resgate": 0,
+     "tp_dia_pagto_resgate": "DIAS CORRIDOS",
+     "qt_dia_resgate_cotas": null,
+     "reason": null
+    },
+    {
+     "line_no": 6,
+     "input_cnpj": "11728688000147",
+     "cnpj": "11728688000147",
+     "gestor_id": "90000000000505",
+     "gestor_name": "GESTORA EXEMPLO EPSILON",
+     "admin_cnpj": "90000000000900",
+     "admin_name": "ADMINISTRADORA EXEMPLO",
+     "terms_source": null,
+     "terms_dt_comptc": null,
+     "qt_dia_conversao_cota": null,
+     "qt_dia_pagto_resgate": null,
+     "tp_dia_pagto_resgate": null,
+     "qt_dia_resgate_cotas": null,
+     "reason": "no redemption terms in the Extrato or the lâmina: NULL is not filed, never zero (closed-end funds file none)"
+    }
+   ]
+  }
  ]
 }

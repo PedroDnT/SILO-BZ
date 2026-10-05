@@ -60,12 +60,12 @@ def test_fixture_regenerates_byte_for_byte(tmp_path):
 def test_top_level_schema_is_stable(doc):
     assert list(doc) == [
         "schema_version", "generated_at_utc", "engine", "statement", "identification", "fees", "look_through",
-        "indexer", "sector", "restatements", "risk_signals", "movement", "concentration", "allocation", "risks", "assumptions",
-        "section_status", "provenance",
+        "indexer", "sector", "restatements", "risk_signals", "movement", "concentration", "allocation", "liquidity", "risks",
+        "assumptions", "section_status", "provenance",
     ]
-    assert doc["schema_version"] == "1.8"
+    assert doc["schema_version"] == "1.9"
     for sec in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals", "movement",
-                "concentration", "allocation", "risks"):
+                "concentration", "allocation", "liquidity", "risks"):
         assert {"status", "reason", "errors", "reason_codes"} <= set(doc[sec])
         assert doc["section_status"][sec]["reason_codes"] == doc[sec]["reason_codes"]
 
@@ -102,12 +102,14 @@ def test_every_number_source_points_at_a_recorded_call(doc):
 def test_identification_demo(doc):
     lines = {ln["line_no"]: ln for ln in doc["identification"]["lines"]}
     assert all(lines[n]["status"] == "identified" and lines[n]["reason_code"] is None for n in range(1, 9))
-    # the direct credit lines (engine 1.7 demo): not identified, grouped by a fixed reason code with their value
-    assert {n: lines[n]["reason_code"] for n in range(9, 13)} == {
-        9: "bancario_sem_fonte", 10: "bancario_sem_fonte", 11: "credito_sem_fonte", 12: "credito_sem_fonte"}
+    # the bank-issued credit lines: not identified, grouped by a fixed reason code with their value
+    assert {n: lines[n]["reason_code"] for n in range(9, 11)} == {9: "bancario_sem_fonte", 10: "bancario_sem_fonte"}
     groups = {g["reason_code"]: g for g in doc["identification"]["unknown_groups"]}
     assert groups["bancario_sem_fonte"]["line_nos"] == [9, 10] and groups["bancario_sem_fonte"]["value_brl"] == 390000.0
-    assert groups["credito_sem_fonte"]["line_nos"] == [11, 12] and groups["credito_sem_fonte"]["value_brl"] == 155000.0
+    # engine 1.9: the CRA and the debênture are identified by their registry code
+    assert all(lines[n]["status"] == "identified" and lines[n]["identity"]["kind"] == "credito" for n in (11, 12))
+    assert lines[11]["credit_match"]["match_kind"] == "securit_cetip" and lines[12]["credit_match"]["match_kind"] == "cda_ticker"
+    assert "credito_sem_fonte" not in groups
     assert lines[1]["identity"]["tesouro_title"] == "NTN-B" and lines[1]["identity"]["tesouro_maturity"] == "2035-05-15"
     assert lines[1]["valuation"]["basis"] == "statement"
     assert lines[2]["identity"]["issuer_cnpj"] == "33000167000101"

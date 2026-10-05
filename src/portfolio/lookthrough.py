@@ -49,7 +49,7 @@ from src.portfolio.common import (
 )
 from src.portfolio.identify import LineId
 
-LOOKTHROUGH_TIPOS = ("fundo", "FIDC", "FII", "ETF")
+LOOKTHROUGH_TIPOS = ("fundo", "FIDC", "FII", "ETF", "FIP")
 ECONOMIC_GROUP_NOTE = (
     "Grupo econômico NÃO avaliado: o SILO compara emissor por raiz de CNPJ (8 dígitos) e por código de "
     "emissor da B3, não por controle societário."
@@ -350,12 +350,17 @@ def _direct_exposures(li: LineId) -> list[Exposure]:
                 period=p.data_posicao.isoformat(), sources=src,
             )
         ]
-    if li.kind is None and p.taxa_texto and p.tipo in ("CRI", "CRA", "CDB", "LCI", "LCA", "debênture", "outro"):
-        # a direct credit line: not identified in SILO, but the statement prints its rate and maturity
+    credit_tipo = p.tipo in ("CRI", "CRA", "CDB", "LCI", "LCA", "debênture", "outro")
+    if credit_tipo and (li.kind == "credito" or (li.kind is None and p.taxa_texto)):
+        # a direct credit line: identified by its registry code (engine 1.9) or not, the statement prints its rate and
+        # maturity. An identified debênture carries its ISIN and B3 issuer code, so the issuer-code overlap check finds
+        # the same issuer held inside the funds; a CRA or CRI keeps none (its ISIN code is the securitizadora's).
+        deb = li.kind == "credito" and p.tipo == "debênture"
         return [
             Exposure(
                 line_no=li.line_no, via="direto", depth=0, block=None, asset_kind="credito_direto", asset_key=p.codigo,
-                asset_name=p.linha_extrato, isin=None, issuer_cnpj=None, issuer_code=None, tp_aplic=None, tp_ativo=None,
+                asset_name=p.linha_extrato, isin=li.isin if deb else None, issuer_cnpj=None,
+                issuer_code=(li.issuer_code or b3_issuer_code(li.isin)) if deb else None, tp_aplic=None, tp_ativo=None,
                 tp_titpub=None, indexer_code=None, maturity=p.vencimento.isoformat() if p.vencimento else None,
                 weight=Decimal(1), value_brl=p.valor, period=p.data_posicao.isoformat(), sources=src, taxa_texto=p.taxa_texto,
             )

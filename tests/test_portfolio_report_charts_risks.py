@@ -365,7 +365,7 @@ def test_missing_inputs_are_not_evaluated_and_absent_ones_do_not_apply():
 
 
 def test_the_demo_engine_carries_the_risks_and_the_report_view_copies_them(engine, view):
-    assert engine["schema_version"] == "1.8"
+    assert engine["schema_version"] == "1.9"
     rows = engine["risks"]["rows"]
     assert {r["id"] for r in rows} == set(R.THRESHOLDS)
     sev = [R.SEVERITY_RANK.get(r["severity"] or "", 3) for r in rows if r["status"] == "avaliado"]

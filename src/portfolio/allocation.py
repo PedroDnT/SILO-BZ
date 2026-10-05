@@ -26,6 +26,7 @@ CLASS_BY_TIPO = {
     "fundo": "fundo",
     "FIDC": "FIDC",
     "FII": "FII",
+    "FIP": "FIP",
     "ETF": "ETF",
     "caixa": "conta corrente",
 }
