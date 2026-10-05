@@ -120,7 +120,7 @@ master is unlisted and run by a related manager, which the open data does not st
 
 ## Portfolio diagnosis research (map #510, 2026-10-05)
 
-Five notes answer the research tickets of the diagnosis map:
+Six notes answer the research tickets of the diagnosis map:
 
 - [`credit-issue-documents.md`](credit-issue-documents.md) (#604): where an agent
   reads the official CRA, CRI and debenture documents (CVM RAD, B3 Fundos.NET
@@ -130,6 +130,12 @@ Five notes answer the research tickets of the diagnosis map:
   report shows them.
 - [`fee-peer-coverage.md`](fee-peer-coverage.md) (#608): how many funds have a
   comparable fee within their ANBIMA class as filed in the Extrato.
+- [`quota-net-of-fees.md`](quota-net-of-fees.md) (#610): whether the Informe
+  Diário quota (`VL_QUOTA`, `api.fund_nav`) is net of the administration,
+  management, performance and other fund expenses, quoted from Resolução CVM
+  175 (Parte Geral Art. 117 § 2, Anexo I Art. 28, Anexo V Art. 7) and
+  ICVM 555 Art. 85 § 3. Fees are accrued every business day as a class expense,
+  so the quota is net of them; ETFs may not charge a performance fee.
 - [`tax-rules-by-instrument.md`](tax-rules-by-instrument.md) (#611): IR and IOF
   per instrument for an individual on 2026-09-30, from primary sources, and a
   draft YAML rule file per instrument; its 2026-10-05 addendum closes ADC 96,
