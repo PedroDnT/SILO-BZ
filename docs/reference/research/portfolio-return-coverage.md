@@ -288,6 +288,9 @@ suggested):
 - `api.fund_nav`'s comment says `period` "is CVM's filed month-END date", but
   FI rows come back on the first of the month (2026-09-01), while FIDC rows come
   on the month-end (2026-08-31). The comment or the FI arm is wrong.
+  Resolved 2026-10-05 (catalog v63): the comment was wrong. Each family keeps
+  its own convention (fi, fii and fiagro the first of the month, fidc the
+  month-end, fip 31 December), and the comment now says so.
 - MN I FIDC's tranche quota repeats unchanged for up to three months and its
   subordinated quota is −169,212.51; a filing-quality flag for the FIDC block,
   not a return, is where it belongs.

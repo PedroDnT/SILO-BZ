@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "62";
+export const CONTRACT_VERSION = "63";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -2350,7 +2350,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "fund_nav": {
     "kind": "rpc",
     "path": "/rpc/fund_nav",
-    "description": "Monthly NAV/flows series for one CNPJ, oldest first. Default window (p_to NULL) ends at the family's latest COMPLETE period per mv_period_completeness; an explicit p_to serves the window verbatim, partial months included. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's period as 'YYYY-MM-DD'. PAGING REQUIRES p_entity_type — one CNPJ can file under two families in the same month (385 do), so a bare period is unique only within one family; whole-result mode serves both and labels each row. period is CVM's filed month-END date; the trailing period_month is the same month as api.panel keys it (first of month). Columns are per family (fact_fund_monthly arms): fi files quota, quotaholders, inflows, redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield, assets; fip files nav only — a null outside that list is not applicable, not missing (catalog().applicability). fidc delinquency is filed from 2013-01, null for a fund with no tab VI row before 2020-11 and on every row from 2020-11 (regime break; catalog().regime_breaks).",
+    "description": "Monthly NAV/flows series for one CNPJ, oldest first. Default window (p_to NULL) ends at the family's latest COMPLETE period per mv_period_completeness; an explicit p_to serves the window verbatim, partial months included. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's period as 'YYYY-MM-DD'. PAGING REQUIRES p_entity_type — one CNPJ can file under two families in the same month (385 do), so a bare period is unique only within one family; whole-result mode serves both and labels each row. period keeps each family's own date convention: fi, fii and fiagro rows are dated the FIRST of the month (an fi row carries the last daily report filed in that month, so 2026-09-01 holds September's closing NAV), fidc rows the month-END (2026-08-31), fip rows 31 December of the year; the trailing period_month is the same month as api.panel keys it (first of month), equal to period for fi, fii and fiagro. Columns are per family (fact_fund_monthly arms): fi files quota, quotaholders, inflows, redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield, assets; fip files nav only — a null outside that list is not applicable, not missing (catalog().applicability). fidc delinquency is filed from 2013-01, null for a fund with no tab VI row before 2020-11 and on every row from 2020-11 (regime break; catalog().regime_breaks).",
     "inputSchema": {
       "type": "object",
       "properties": {

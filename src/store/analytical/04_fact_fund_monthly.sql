@@ -4,7 +4,8 @@
 -- One row per (cnpj, period, entity_type) across all five fund types.
 --
 -- Unified column set:
---   period         DATE    — first day of month
+--   period         DATE    — fi/fii/fiagro first day of month, fidc month-end,
+--                            fip Dec-31 (each family's raw convention)
 --   entity_type    TEXT    — fi | fidc | fiagro | fii | fip
 --   vl_patrim_liq  NUMERIC — net asset value (end of month for FI, monthly snap for others)
 --   vl_quota       NUMERIC — unit quota value (FI only)

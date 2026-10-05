@@ -528,7 +528,12 @@ __all__ = [
 # one page; capped count forty-nine -> fifty-one. Migration 73 indexes
 # cvm_securit_serie (codigo_cetip, data_referencia DESC). No existing signature
 # or column changes.
-CATALOG_VERSION = 62
+# v63: api.fund_nav's description said period is CVM's filed month-END date for
+# every family. Only fidc rows are (fi, fii and fiagro are dated the first of
+# the month, fip 31 December), measured live on 2026-10-05 (research #606). The
+# description now states each family's convention. No data, signature or column
+# change.
+CATALOG_VERSION = 63
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
