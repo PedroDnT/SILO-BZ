@@ -33,7 +33,7 @@ change.
   `.claude/`, `CLAUDE.md` and the root `AGENTS.md` are out of bounds.
 
 - **Scope stays with Pedro.** The Builder works only on issues Pedro labelled
-  `agent-ok`. The Scout and the Sentinel have a fixed scope written in their
+  `ready-for-agent` (the triage label, `docs/agents/triage-labels.md`; `agent-ok` until 2026-10-05). The Scout and the Sentinel have a fixed scope written in their
   prompt files, which change only through a PR Pedro merges (§3b).
 
 ## 2. Roster
@@ -43,7 +43,7 @@ Three to start.
 | Agent        | Cadence                                         | Reads                                                                                                                                         | Output                                                                                                                                                                      | Permissions                                                                         |
 | ------------ | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | **Scout**    | weekly                                          | Tomé (`agentetome.com/api/stats`, `/como-funciona`), CNN Money, the competitor list in COMPETITIVE_GAPS §2                                    | one draft PR updating COMPETITIVE_GAPS §2 (landscape) and §3 (matrix); every new Y cell carries a URL, unknown stays `?`                                                    | web read; edits `docs/planning/COMPETITIVE_GAPS.md` only                            |
-| **Builder**  | weekly, one item per run                        | open GitHub issues labelled `agent-ok`, oldest first                                                                                          | one draft PR: a dataset through the root `AGENTS.md` "Adding a dataset" six steps, or one new `api.*` endpoint in the `19_api_contract.sql` pattern, with code and offline tests | repo read and write on its own branch; no schema apply, no deploy, no DB credential |
+| **Builder**  | weekly, one item per run                        | open GitHub issues labelled `ready-for-agent`, oldest first                                                                                   | one draft PR: a dataset through the root `AGENTS.md` "Adding a dataset" six steps, or one new `api.*` endpoint in the `19_api_contract.sql` pattern, with code and offline tests | repo read and write on its own branch; no schema apply, no deploy, no DB credential |
 | **Sentinel** | daily, after the 06:00 UTC ingest and its gates | `api.coverage()`, `cvm_ingest_log`, and source drift: new FNET document types or categories, changed CVM CSV headers against our `FIELD_MAP`s | one issue, never code                                                                                                                                                       | read-only                                                                           |
 
 **Later:** a question-queue agent, once the API or an MCP (B2) logs the calls
@@ -137,7 +137,7 @@ prompt change can be measured by the outputs before and after its SHA.
 | Rule                                      | Effect                                                                                                                                 |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | At most **3 open agent PRs**, all agents  | a run that finds 3 open `agent:*` PRs is a no-op                                                                                       |
-| **One item per run**                      | the Builder takes one `agent-ok` issue; the Scout one update; the Sentinel one issue, or a comment on its open one for the same source |
+| **One item per run**                      | the Builder takes one `ready-for-agent` issue; the Scout one update; the Sentinel one issue, or a comment on its open one for the same source |
 | **A red CI is fixed or the PR is closed** | never bypassed: no skipped tests, no `--no-verify`, no weakened assertion                                                              |
 
 ### e. Retirement
@@ -225,7 +225,7 @@ not hold and the prompts were written (§6).
 | This design                        | approved by Pedro                                                                                                                                           |
 | Smallest test (§5)                 | **passed** 2026-09-24: PR #291, 0 human-edited lines, green first CI                                                                                        |
 | Prompt files `.claude/agents/*.md` | **written** 2026-09-25: `scout.md`, `builder.md`, `sentinel.md`                                                                                             |
-| Labels `agent-ok`, `agent:<name>`  | not created; the owner creates them (each prompt no-ops while its label is missing)                                                                         |
+| Labels `ready-for-agent`, `agent:<name>` | `ready-for-agent` exists (triage); the three `agent:<name>` are created by `scripts/setup_agents_wizard.sh` (each prompt no-ops while its label is missing) |
 | Routines                           | none; every routine id above is TBD, filled by the owner's session after merge                                                                              |
 | Sentinel's read-only DB credential | script ready (`docs/reference/security/sentinel_readonly_role.sql`), run by the owner by hand; until `SENTINEL_DATABASE_URL` is set, the Sentinel runs in public mode |
 

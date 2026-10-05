@@ -378,7 +378,7 @@ The inputs added to `backfill.yml` stay, so the loads are repeatable:
 informe `tab_X_7` (AGENTS.md §5) passed: PR #291 merged on 2026-09-24 with 0
 human-edited lines after the agent's commit and a green first CI. The prompt
 files `.claude/agents/scout.md`, `builder.md` and `sentinel.md` exist
-(2026-09-25). Still the owner's: create the `agent-ok` / `agent:<name>`
+(2026-09-25). Still the owner's: create the `agent:<name>`
 labels, schedule the routines one at a time and fill in their ids in the
 AGENTS.md §3a registry, and (optionally) run
 `docs/reference/security/sentinel_readonly_role.sql` so the Sentinel can read

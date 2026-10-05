@@ -228,15 +228,15 @@ pause
 # ── 2 ─────────────────────────────────────────────────────────────────────
 stage "GitHub labels"
 say "Each agent prompt stops at once while its label is missing (AGENTS.md §6)."
+say "The Builder takes issues labelled ready-for-agent (triage), which already exists."
 create_label() {
   gh label create "$1" -R "$REPO" --color "$2" --description "$3" --force >/dev/null
   printf '  %s✓ label%s %s\n' "$GREEN" "$RESET" "$1"
 }
-create_label "agent-ok"       "0E8A16" "Pedro: the Builder agent may take this issue (docs/planning/AGENTS.md)"
 create_label "agent:builder"  "5319E7" "Opened by the Builder agent (.claude/agents/builder.md)"
 create_label "agent:sentinel" "5319E7" "Opened by the Sentinel agent (.claude/agents/sentinel.md)"
 create_label "agent:scout"    "5319E7" "Opened by the Scout agent (.claude/agents/scout.md)"
-note "You apply agent-ok to an issue; the agents never do."
+note "You apply ready-for-agent to an issue; the agents never do."
 pause
 
 # ── 3 ─────────────────────────────────────────────────────────────────────

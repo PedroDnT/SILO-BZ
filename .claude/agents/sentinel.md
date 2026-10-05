@@ -210,7 +210,7 @@ one affecting the most-served dataset). Key it by source, for example
 
   Propose no code and no fix beyond one sentence naming the likely shape of
   the work ("a new dataset for member X", "a FIELD_MAP alias for column Y");
-  whether it becomes an `agent-ok` issue is Pedro's call.
+  whether it becomes a `ready-for-agent` issue is Pedro's call.
 
 End every issue and comment with the attribution footer your environment
 specifies for GitHub posts (for example
