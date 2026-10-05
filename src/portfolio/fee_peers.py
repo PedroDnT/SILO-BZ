@@ -1,11 +1,10 @@
 """Dated administration-fee peers, never a saving estimate or recommendation."""
 from __future__ import annotations
 
+import calendar
 import datetime as dt
 from decimal import Decimal
 from typing import Any
-
-from dateutil.relativedelta import relativedelta
 
 from src.portfolio.client import SiloClient
 from src.portfolio.common import Section, as_date, brl, call_tool, dec, pct, ratio, statement_source
@@ -42,6 +41,9 @@ STATS = ("p25_pct_year", "median_pct_year", "p75_pct_year", "percentile_pct", "d
 def compute_fee_peers(lines: list[LineId], fees: dict, client: SiloClient, as_of: dt.date,
                       portfolio_total: Decimal) -> dict[str, Any]:
     sec = Section()
+    oldest_year = as_of.year - 3
+    oldest_fee_date = dt.date(oldest_year, as_of.month,
+                              min(as_of.day, calendar.monthrange(oldest_year, as_of.month)[1]))
     funds = [li for li in lines if li.position.tipo in FEE_TIPOS]
     eligible = [li for li in funds if li.position.tipo == "fundo" and li.status == "identified" and li.cnpj
                 and li.entity_type in (None, "fi")]
@@ -92,7 +94,7 @@ def compute_fee_peers(lines: list[LineId], fees: dict, client: SiloClient, as_of
                   or not 0 <= values[3] <= 100 or row.get("comparison_as_of") != as_of.isoformat()
                   or not row.get("classe_anbima") or row.get("fundo_cotas") not in ("S", "N")
                   or row.get("tp_fundo_classe") not in ("FI", "CLASSES - FIF")
-                  or fee_date is None or not as_of - relativedelta(months=36) <= fee_date <= as_of):
+                  or fee_date is None or not oldest_fee_date <= fee_date <= as_of):
                 why = "resposta_inconsistente"
             elif (h.get("origin") != "extrato" or h.get("kind") != "fixa" or h.get("stale")
                   or h.get("as_of") != row.get("fee_as_of") or dec(h.get("rate_pct_year")) != own):

@@ -132,3 +132,13 @@ def test_report_and_redator_get_the_same_statistics_and_only_fixed_gap_text():
     # Both a real numeric placeholder and a recorded source are required.
     result = revisor.check(view, [f])
     assert result.kept
+
+
+@pytest.mark.parametrize("fee_date,expected", [("2025-02-28", "compared"), ("2025-02-27", "not_compared")])
+def test_fee_age_limit_clamps_the_leap_day_like_postgres(fee_date, expected):
+    lines, fees = inputs()
+    fees["lines"][0]["headline"]["as_of"] = fee_date
+    r = row(fee_as_of=fee_date, comparison_as_of="2028-02-29", peer_fee_oldest="2025-02-28")
+    client = FakeClient({"portfolio_fee_peers": [{"match": {}, "rows": [r]}]})
+    sec = compute_fee_peers(lines, fees, client, dt.date(2028, 2, 29), Decimal(100))
+    assert sec["lines"][0]["status"] == expected
