@@ -9,5 +9,7 @@ openai==3.24.0
 pydantic==2.13.4
 weasyprint==70.0
 pypdf>=4.0
+# The tax rules (src/portfolio/rules/tax/*.yaml, engine 1.11); same floor as requirements.txt.
+PyYAML>=6.0
 # CA roots for start.sh's SSL_CERT_FILE bundle (urllib and the LLM SDKs read it).
 certifi>=2024.2.2
