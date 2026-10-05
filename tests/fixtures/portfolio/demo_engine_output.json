@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.11",
+  "schema_version": "1.12",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -2108,7 +2108,34 @@
         "extrato_beside": null,
         "scale_flag": null,
         "etf_site": null,
-        "findings": []
+        "findings": [],
+        "benchmark_as_filed": {
+          "extrato": "Ibovespa",
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": "2026-07-31",
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": 0,
+          "lamina_as_of": "2026-06-30",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 4,
@@ -2251,7 +2278,34 @@
         "extrato_beside": null,
         "scale_flag": null,
         "etf_site": null,
-        "findings": []
+        "findings": [],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": null,
+          "lamina": "CDI",
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": 1,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 5,
@@ -2500,7 +2554,34 @@
               }
             ]
           }
-        ]
+        ],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": "2026-06-30",
+          "lamina": "CDI252",
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": 1,
+          "lamina_as_of": "2026-03-31",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 6,
@@ -2535,7 +2616,8 @@
         "extrato_beside": null,
         "scale_flag": null,
         "etf_site": null,
-        "findings": []
+        "findings": [],
+        "benchmark_as_filed": null
       },
       {
         "line_no": 7,
@@ -2729,7 +2811,34 @@
               }
             ]
           }
-        ]
+        ],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": null,
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 8,
@@ -2764,7 +2873,8 @@
         "extrato_beside": null,
         "scale_flag": null,
         "etf_site": null,
-        "findings": []
+        "findings": [],
+        "benchmark_as_filed": null
       }
     ],
     "underlying": [
@@ -2927,7 +3037,32 @@
               }
             ]
           }
-        ]
+        ],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": null,
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 4,
@@ -3084,7 +3219,32 @@
         "extrato_beside": null,
         "scale_flag": null,
         "etf_site": null,
-        "findings": []
+        "findings": [],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": "2024-02-29",
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 4,
@@ -3244,7 +3404,32 @@
               }
             ]
           }
-        ]
+        ],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": "2025-12-31",
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 4,
@@ -3400,7 +3585,32 @@
         "extrato_beside": null,
         "scale_flag": null,
         "etf_site": null,
-        "findings": []
+        "findings": [],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": "2024-02-29",
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 4,
@@ -3559,7 +3769,32 @@
               }
             ]
           }
-        ]
+        ],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": "2025-12-31",
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 5,
@@ -3720,7 +3955,32 @@
               }
             ]
           }
-        ]
+        ],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": null,
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 5,
@@ -3877,7 +4137,32 @@
         "extrato_beside": null,
         "scale_flag": null,
         "etf_site": null,
-        "findings": []
+        "findings": [],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": "2024-02-29",
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 5,
@@ -4037,7 +4322,32 @@
               }
             ]
           }
-        ]
+        ],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": "2025-12-31",
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 5,
@@ -4193,7 +4503,32 @@
         "extrato_beside": null,
         "scale_flag": null,
         "etf_site": null,
-        "findings": []
+        "findings": [],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": "2024-02-29",
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 5,
@@ -4352,7 +4687,32 @@
               }
             ]
           }
-        ]
+        ],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": "2025-12-31",
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       },
       {
         "line_no": 7,
@@ -4512,7 +4872,32 @@
               }
             ]
           }
-        ]
+        ],
+        "benchmark_as_filed": {
+          "extrato": null,
+          "extrato_field": "PARAM_TAXA_PERFM",
+          "extrato_as_of": null,
+          "lamina": null,
+          "lamina_field": "INDICE_REFER",
+          "lamina_n": null,
+          "lamina_as_of": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 18,
+              "args": {
+                "p_cnpjs": [
+                  "35377390000106",
+                  "37525998000158",
+                  "46133770000103",
+                  "54891935000134"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        }
       }
     ],
     "totals": {
@@ -4549,6 +4934,7 @@
       "errors": [],
       "reason_codes": [
         "sem_extrato_comparavel",
+        "taxa_nao_utilizavel",
         "tipo_fora_comparacao"
       ],
       "as_of": "2026-10-03",
@@ -4674,8 +5060,8 @@
           "fund_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
           "position_value_brl": 902591.9,
           "status": "not_compared",
-          "reason_code": "sem_extrato_comparavel",
-          "reason": "sem Extrato CVM para comparar",
+          "reason_code": "taxa_nao_utilizavel",
+          "reason": "taxa ausente, zero, negativa ou acima de cinco por cento ao ano; a conferir",
           "sources": [
             {
               "tool": "statement",
@@ -4697,7 +5083,7 @@
                 ],
                 "p_as_of": "2026-10-03"
               },
-              "data_date": null
+              "data_date": "2026-06-30"
             }
           ],
           "p25_pct_year": null,
@@ -4706,24 +5092,27 @@
           "percentile_pct": null,
           "difference_pp": null,
           "own_fee_pct_year": null,
-          "classe_anbima": null,
-          "fundo_cotas": null,
-          "tp_fundo_classe": null,
-          "fee_as_of": null,
-          "comparison_as_of": null,
-          "activity_from": null,
-          "activity_to": null,
-          "n_peers": 0,
-          "n_excluded": 0,
-          "peer_fee_oldest": null,
-          "peer_fee_newest": null,
-          "n_fund_peers": null,
-          "n_etf_peers": null,
-          "n_etf_excluded": null,
-          "etf_peer_tickers": null,
-          "etf_peer_fee_oldest": null,
-          "etf_peer_fee_newest": null,
-          "etf_peer_fee_source": null
+          "classe_anbima": "RENDA FIXA SIMPLES",
+          "fundo_cotas": "S",
+          "tp_fundo_classe": "CLASSES - FIF",
+          "fee_as_of": "2026-06-30",
+          "comparison_as_of": "2026-10-03",
+          "activity_from": "2026-08-01",
+          "activity_to": "2026-10-01",
+          "n_peers": 122,
+          "n_excluded": 9,
+          "peer_fee_oldest": "2023-11-30",
+          "peer_fee_newest": "2026-09-30",
+          "n_fund_peers": 120,
+          "n_etf_peers": 2,
+          "n_etf_excluded": 0,
+          "etf_peer_tickers": [
+            "EXLF11",
+            "EXTS11"
+          ],
+          "etf_peer_fee_oldest": "2026-10-01",
+          "etf_peer_fee_newest": "2026-10-01",
+          "etf_peer_fee_source": "third-party site (etfsbrasil, etf_market_snapshot.taxa_adm_pct), not a CVM filing"
         },
         {
           "line_no": 6,
@@ -16697,6 +17086,7 @@
     "sharpe_drag_note": "quanto de Sharpe a taxa come: Sharpe bruto menos Sharpe líquido = taxa anual dividida pela volatilidade anualizada",
     "drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
     "performance_note": "o retorno líquido já desconta a performance provisionada; a taxa por ponto mostrada considera só a administração",
+    "pct_of_cdi_note": "% do CDI = retorno líquido dividido pelo CDI das mesmas datas, vezes 100; só para fundo cujo índice de referência arquivado (Extrato ou lâmina) é CDI ou DI, e só com CDI do período acima de zero",
     "note": "Fato por ativo sobre um período passado: sem limiar, sem total da carteira e sem ranking; não é previsão nem recomendação.",
     "cdi": {
       "series": "CDI",
@@ -16738,6 +17128,7 @@
         "reason_code": "retorno_tesouro_sem_serie",
         "reason": "título do Tesouro: o SILO não tem série de preços",
         "fee": null,
+        "benchmark": null,
         "performance_fee_filed": false,
         "notes": [],
         "month_ends": [],
@@ -16761,6 +17152,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -16799,6 +17193,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -16852,6 +17249,18 @@
           "kind": null,
           "origin": null,
           "as_of": null,
+          "sources": []
+        },
+        "benchmark": {
+          "cdi_like": false,
+          "reason_code": "pct_cdi_so_fundos",
+          "extrato": null,
+          "lamina": null,
+          "lamina_n": null,
+          "extrato_as_of": null,
+          "lamina_as_of": null,
+          "matched": [],
+          "rule_version": null,
           "sources": []
         },
         "performance_fee_filed": false,
@@ -16958,6 +17367,9 @@
             "cdi_n_rates": 261,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": 11.5815,
+            "cdi_like": false,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": "pct_cdi_so_fundos",
             "volatility_annual_pct": 12.090569,
             "volatility_note": "12 observações; estimativa ruidosa",
             "max_drawdown_pct": -4.0,
@@ -17021,6 +17433,9 @@
             "cdi_n_rates": 131,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": 5.359303,
+            "cdi_like": false,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": "pct_cdi_so_fundos",
             "volatility_annual_pct": 12.393548,
             "volatility_note": "6 observações; muito ruidosa",
             "max_drawdown_pct": -4.0,
@@ -17116,6 +17531,35 @@
           "fee_status": "divulgada",
           "origin": "extrato",
           "as_of": "2026-07-31",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "benchmark": {
+          "cdi_like": false,
+          "reason_code": "referencia_nao_cdi",
+          "extrato": "Ibovespa",
+          "lamina": null,
+          "lamina_n": 0,
+          "extrato_as_of": "2026-07-31",
+          "lamina_as_of": "2026-06-30",
+          "matched": [],
+          "rule_version": 1,
           "sources": [
             {
               "tool": "portfolio_fees",
@@ -17241,6 +17685,9 @@
             "cdi_n_rates": 261,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": -6.637802,
+            "cdi_like": false,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": "referencia_nao_cdi",
             "volatility_annual_pct": 10.269106,
             "volatility_note": "12 observações; estimativa ruidosa",
             "max_drawdown_pct": -7.829824,
@@ -17316,6 +17763,9 @@
             "cdi_n_rates": 131,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": -13.833968,
+            "cdi_like": false,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": "referencia_nao_cdi",
             "volatility_annual_pct": 8.024961,
             "volatility_note": "6 observações; muito ruidosa",
             "max_drawdown_pct": -7.829824,
@@ -17419,6 +17869,37 @@
           "fee_status": "faixa divulgada",
           "origin": "lamina",
           "as_of": "2026-07-31",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "benchmark": {
+          "cdi_like": true,
+          "reason_code": null,
+          "extrato": null,
+          "lamina": "CDI",
+          "lamina_n": 1,
+          "extrato_as_of": null,
+          "lamina_as_of": null,
+          "matched": [
+            "lamina:CDI"
+          ],
+          "rule_version": 1,
           "sources": [
             {
               "tool": "portfolio_fees",
@@ -17543,6 +18024,9 @@
             "cdi_n_rates": 261,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": -0.425745,
+            "cdi_like": true,
+            "pct_of_cdi": 97.0476,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": 0.055514,
             "volatility_note": "12 observações; estimativa ruidosa",
             "max_drawdown_pct": 0.0,
@@ -17580,6 +18064,22 @@
                   "p_to": "2026-09-30"
                 },
                 "data_date": "2026-09-30"
+              },
+              {
+                "tool": "portfolio_fees",
+                "call_id": 17,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "11728688000147",
+                    "32113885000121",
+                    "42592315000115",
+                    "50088190000119",
+                    "51488342000133"
+                  ],
+                  "p_month": "2026-08-01"
+                },
+                "data_date": "2026-08-31"
               }
             ]
           },
@@ -17602,6 +18102,9 @@
             "cdi_n_rates": 131,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": -0.123233,
+            "cdi_like": true,
+            "pct_of_cdi": 98.2159,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": 0.048989,
             "volatility_note": "6 observações; muito ruidosa",
             "max_drawdown_pct": 0.0,
@@ -17641,6 +18144,22 @@
                   "p_to": "2026-09-30"
                 },
                 "data_date": "2026-09-30"
+              },
+              {
+                "tool": "portfolio_fees",
+                "call_id": 17,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "11728688000147",
+                    "32113885000121",
+                    "42592315000115",
+                    "50088190000119",
+                    "51488342000133"
+                  ],
+                  "p_month": "2026-08-01"
+                },
+                "data_date": "2026-08-31"
               }
             ]
           }
@@ -17689,6 +18208,37 @@
           "fee_status": "0 informado; a conferir",
           "origin": "extrato",
           "as_of": "2026-06-30",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "benchmark": {
+          "cdi_like": true,
+          "reason_code": null,
+          "extrato": null,
+          "lamina": "CDI252",
+          "lamina_n": 1,
+          "extrato_as_of": "2026-06-30",
+          "lamina_as_of": "2026-03-31",
+          "matched": [
+            "lamina:CDI252"
+          ],
+          "rule_version": 1,
           "sources": [
             {
               "tool": "portfolio_fees",
@@ -17813,6 +18363,9 @@
             "cdi_n_rates": 261,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": -0.696068,
+            "cdi_like": true,
+            "pct_of_cdi": 95.1731,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": 0.055514,
             "volatility_note": "12 observações; estimativa ruidosa",
             "max_drawdown_pct": 0.0,
@@ -17850,6 +18403,22 @@
                   "p_to": "2026-09-30"
                 },
                 "data_date": "2026-09-30"
+              },
+              {
+                "tool": "portfolio_fees",
+                "call_id": 17,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "11728688000147",
+                    "32113885000121",
+                    "42592315000115",
+                    "50088190000119",
+                    "51488342000133"
+                  ],
+                  "p_month": "2026-08-01"
+                },
+                "data_date": "2026-08-31"
               }
             ]
           },
@@ -17872,6 +18441,9 @@
             "cdi_n_rates": 131,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": -0.249917,
+            "cdi_like": true,
+            "pct_of_cdi": 96.3819,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": 0.04899,
             "volatility_note": "6 observações; muito ruidosa",
             "max_drawdown_pct": 0.0,
@@ -17911,6 +18483,22 @@
                   "p_to": "2026-09-30"
                 },
                 "data_date": "2026-09-30"
+              },
+              {
+                "tool": "portfolio_fees",
+                "call_id": 17,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "11728688000147",
+                    "32113885000121",
+                    "42592315000115",
+                    "50088190000119",
+                    "51488342000133"
+                  ],
+                  "p_month": "2026-08-01"
+                },
+                "data_date": "2026-08-31"
               }
             ]
           }
@@ -17952,6 +18540,7 @@
         "reason_code": "retorno_fidc_sem_classe",
         "reason": "FIDC: o extrato não diz qual classe ou série de cotas a linha detém",
         "fee": null,
+        "benchmark": null,
         "performance_fee_filed": false,
         "notes": [],
         "month_ends": [],
@@ -17975,6 +18564,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -18013,6 +18605,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -18067,6 +18662,35 @@
           "fee_status": "divulgada",
           "origin": "lamina",
           "as_of": "2024-03-31",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "benchmark": {
+          "cdi_like": false,
+          "reason_code": "referencia_nao_informada",
+          "extrato": null,
+          "lamina": null,
+          "lamina_n": null,
+          "extrato_as_of": null,
+          "lamina_as_of": null,
+          "matched": [],
+          "rule_version": 1,
           "sources": [
             {
               "tool": "portfolio_fees",
@@ -18191,6 +18815,9 @@
             "cdi_n_rates": 261,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": -3.444203,
+            "cdi_like": false,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": "referencia_nao_informada",
             "volatility_annual_pct": 0.056889,
             "volatility_note": "12 observações; estimativa ruidosa",
             "max_drawdown_pct": 0.0,
@@ -18266,6 +18893,9 @@
             "cdi_n_rates": 131,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": -1.541224,
+            "cdi_like": false,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": "referencia_nao_informada",
             "volatility_annual_pct": 0.04775,
             "volatility_note": "6 observações; muito ruidosa",
             "max_drawdown_pct": 0.0,
@@ -18369,6 +18999,18 @@
           "fee_status": "taxa divulgada não encontrada",
           "origin": null,
           "as_of": null,
+          "sources": []
+        },
+        "benchmark": {
+          "cdi_like": false,
+          "reason_code": "pct_cdi_so_fundos",
+          "extrato": null,
+          "lamina": null,
+          "lamina_n": null,
+          "extrato_as_of": null,
+          "lamina_as_of": null,
+          "matched": [],
+          "rule_version": null,
           "sources": []
         },
         "performance_fee_filed": false,
@@ -18475,6 +19117,9 @@
             "cdi_n_rates": 261,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": -19.845517,
+            "cdi_like": false,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": "pct_cdi_so_fundos",
             "volatility_annual_pct": 3.726851,
             "volatility_note": "12 observações; estimativa ruidosa",
             "max_drawdown_pct": -5.425,
@@ -18537,6 +19182,9 @@
             "cdi_n_rates": 131,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": -8.921269,
+            "cdi_like": false,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": "pct_cdi_so_fundos",
             "volatility_annual_pct": 3.746558,
             "volatility_note": "6 observações; muito ruidosa",
             "max_drawdown_pct": -2.5,
@@ -18623,6 +19271,7 @@
         "reason_code": "retorno_credito_sem_serie",
         "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
         "fee": null,
+        "benchmark": null,
         "performance_fee_filed": false,
         "notes": [],
         "month_ends": [],
@@ -18646,6 +19295,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -18684,6 +19336,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -18731,6 +19386,7 @@
         "reason_code": "retorno_credito_sem_serie",
         "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
         "fee": null,
+        "benchmark": null,
         "performance_fee_filed": false,
         "notes": [],
         "month_ends": [],
@@ -18754,6 +19410,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -18792,6 +19451,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -18839,6 +19501,7 @@
         "reason_code": "retorno_credito_sem_serie",
         "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
         "fee": null,
+        "benchmark": null,
         "performance_fee_filed": false,
         "notes": [],
         "month_ends": [],
@@ -18862,6 +19525,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -18900,6 +19566,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -18947,6 +19616,7 @@
         "reason_code": "retorno_credito_sem_serie",
         "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
         "fee": null,
+        "benchmark": null,
         "performance_fee_filed": false,
         "notes": [],
         "month_ends": [],
@@ -18970,6 +19640,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -19008,6 +19681,9 @@
             "cdi_n_rates": null,
             "cdi_reason_code": null,
             "net_minus_cdi_pp": null,
+            "cdi_like": null,
+            "pct_of_cdi": null,
+            "pct_of_cdi_reason_code": null,
             "volatility_annual_pct": null,
             "volatility_note": null,
             "max_drawdown_pct": null,
@@ -21319,6 +21995,332 @@
     "n_tax_estimated": 0,
     "n_fee_estimated": 2
   },
+  "equivalents": {
+    "status": "partial",
+    "reason": "Há fundos sem equivalente de mercado ou sem comparação de retorno; cada linha informa o motivo.",
+    "errors": [],
+    "reason_codes": [
+      "equivalente_sem_par",
+      "equivalente_sem_classe"
+    ],
+    "label": "equivalente de mercado; não é recomendação",
+    "as_of": "2026-10-03",
+    "end_month": "2026-09-01",
+    "windows": [
+      {
+        "id": "12m",
+        "months": 12,
+        "base_month": "2025-09-01",
+        "end_month": "2026-09-01",
+        "annualized": false
+      },
+      {
+        "id": "6m",
+        "months": 6,
+        "base_month": "2026-03-01",
+        "end_month": "2026-09-01",
+        "annualized": false
+      }
+    ],
+    "choice_note": "O ETF é o maior por patrimônio líquido (site de terceiros, na data indicada) entre os ETFs ativos que acompanham um índice ligado à classe ANBIMA do fundo na lista revisada pelo dono (src/portfolio/rules/equivalents/class_index.yaml). Mesmo objetivo; não é recomendação de troca.",
+    "class_note": "Distribuição do retorno líquido de cota dos fundos FI ativos da mesma classe ANBIMA e do mesmo indicador de fundo de cotas (mínimo de 30 fundos), nas mesmas janelas do bloco de retorno.",
+    "band_note": "posição do retorno na distribuição da classe (p25, mediana, p75), não um ranking",
+    "pl_label": "patrimônio líquido do site etfsbrasil.com.br (fonte de terceiros), não um documento da CVM",
+    "fee_label": "taxa de administração do site etfsbrasil.com.br (fonte de terceiros), a mesma fonte das taxas de ETF na comparação de taxas; não é taxa divulgada à CVM",
+    "lines": [
+      {
+        "line_no": 3,
+        "linha_extrato": "GERAÇÃO L. PAR FIA",
+        "fund_name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
+        "cnpj": "08935128000159",
+        "valor_brl": 264615.0,
+        "classe_anbima": "Ações Livre",
+        "fundo_cotas": "N",
+        "class_indices": null,
+        "n_etfs": 0,
+        "status": "sem_equivalente",
+        "reason_code": "equivalente_sem_par",
+        "reason": "a classe ANBIMA do fundo não tem índice aprovado na lista revisada: sem equivalente de mercado",
+        "label": "equivalente de mercado; não é recomendação",
+        "etf": null,
+        "windows": [],
+        "fund_return_status": "avaliado",
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 3
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "portfolio_equivalents",
+            "call_id": 50,
+            "args": {
+              "p_classes": [
+                "Ações Livre",
+                "RENDA FIXA SIMPLES"
+              ],
+              "p_as_of": "2026-10-03"
+            },
+            "data_date": "2026-10-03"
+          }
+        ]
+      },
+      {
+        "line_no": 4,
+        "linha_extrato": "XP BANCOS FIC",
+        "fund_name": "XP BANCOS FIC FIF RENDA FIXA",
+        "cnpj": "50088190000119",
+        "valor_brl": 1387809.9,
+        "classe_anbima": null,
+        "fundo_cotas": null,
+        "class_indices": null,
+        "n_etfs": null,
+        "status": "sem_equivalente",
+        "reason_code": "equivalente_sem_classe",
+        "reason": "classe ANBIMA não informada no Extrato: sem equivalente de mercado",
+        "label": "equivalente de mercado; não é recomendação",
+        "etf": null,
+        "windows": [],
+        "fund_return_status": "avaliado",
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 4
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 5,
+        "linha_extrato": "XP LIQUIDEZ FIC",
+        "fund_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+        "cnpj": "51488342000133",
+        "valor_brl": 902591.9,
+        "classe_anbima": "RENDA FIXA SIMPLES",
+        "fundo_cotas": "S",
+        "class_indices": [
+          "TEVA LFT Curto Prazo",
+          "TEVA Tesouro Selic",
+          "Tesouro Selic (LFT)",
+          "Tesouro Selic B3"
+        ],
+        "n_etfs": 2,
+        "status": "encontrado",
+        "reason_code": null,
+        "reason": null,
+        "label": "equivalente de mercado; não é recomendação",
+        "etf": {
+          "ticker": "EXLF11",
+          "cnpj": "90000000000901",
+          "name": "ETF EXEMPLO TESOURO SELIC",
+          "underlying_index": "Tesouro Selic (LFT)",
+          "segment": "fixed_income_br",
+          "pl_brl": 4200000000.0,
+          "pl_as_of": "2026-10-01",
+          "pl_label": "patrimônio líquido do site etfsbrasil.com.br (fonte de terceiros), não um documento da CVM",
+          "fee_pct_year": 0.15,
+          "fee_as_of": "2026-10-01",
+          "fee_label": "taxa de administração do site etfsbrasil.com.br (fonte de terceiros), a mesma fonte das taxas de ETF na comparação de taxas; não é taxa divulgada à CVM",
+          "fee_reason_code": null,
+          "in_fee_peers": true,
+          "snapshot_source": "etfsbrasil",
+          "basis": "last_price_etf_renda_fixa",
+          "basis_label": "último preço do arquivo consolidado da B3 (last_price), sem proventos",
+          "without_distributions": true,
+          "note": "Sem proventos: para um ETF que distribui rendimentos, o retorno fica subestimado; para um que reinveste, muda pouco.",
+          "pl_rank": 1,
+          "sources": [
+            {
+              "tool": "portfolio_equivalents",
+              "call_id": 50,
+              "args": {
+                "p_classes": [
+                  "Ações Livre",
+                  "RENDA FIXA SIMPLES"
+                ],
+                "p_as_of": "2026-10-03"
+              },
+              "data_date": "2026-10-01"
+            }
+          ]
+        },
+        "windows": [
+          {
+            "id": "12m",
+            "months": 12,
+            "base_month": "2025-09-01",
+            "end_month": "2026-09-01",
+            "etf_net_return_pct": 14.2657,
+            "etf_status": "avaliado",
+            "etf_reason_code": null,
+            "etf_reason": null,
+            "fund_net_return_pct": 13.724449,
+            "fund_status": "avaliado",
+            "fund_reason_code": null,
+            "class_status": "avaliado",
+            "class_reason_code": null,
+            "class_reason": null,
+            "class_n_funds": 88,
+            "class_p25_pct": 13.62,
+            "class_median_pct": 14.05,
+            "class_p75_pct": 14.38,
+            "etf_minus_median_pp": 0.2157,
+            "fund_minus_median_pp": -0.325551,
+            "etf_band": "mediana_p75",
+            "etf_band_label": "entre a mediana e o p75 da classe",
+            "fund_band": "p25_mediana",
+            "fund_band_label": "entre o p25 e a mediana da classe",
+            "band_note": "posição do retorno na distribuição da classe (p25, mediana, p75), não um ranking",
+            "etf_series_reason_code": null,
+            "etf_base_date": "2025-09-30",
+            "etf_end_date": "2026-09-30",
+            "class_start_month": "2025-09-01",
+            "class_end_month": "2026-09-01",
+            "class_source_reason": null,
+            "sources": [
+              {
+                "tool": "trade_consolidated_history",
+                "call_id": 51,
+                "args": {
+                  "p_ticker": "EXLF11",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              },
+              {
+                "tool": "class_return_distribution",
+                "call_id": 52,
+                "args": {
+                  "p_classe_anbima": "RENDA FIXA SIMPLES",
+                  "p_fundo_cotas": "S",
+                  "p_month": "2026-09-01"
+                },
+                "data_date": "2026-09-01"
+              }
+            ]
+          },
+          {
+            "id": "6m",
+            "months": 6,
+            "base_month": "2026-03-01",
+            "end_month": "2026-09-01",
+            "etf_net_return_pct": 6.910973,
+            "etf_status": "avaliado",
+            "etf_reason_code": null,
+            "etf_reason": null,
+            "fund_net_return_pct": 6.657495,
+            "fund_status": "avaliado",
+            "fund_reason_code": null,
+            "class_status": "avaliado",
+            "class_reason_code": null,
+            "class_reason": null,
+            "class_n_funds": 91,
+            "class_p25_pct": 6.58,
+            "class_median_pct": 6.79,
+            "class_p75_pct": 6.95,
+            "etf_minus_median_pp": 0.120973,
+            "fund_minus_median_pp": -0.132505,
+            "etf_band": "mediana_p75",
+            "etf_band_label": "entre a mediana e o p75 da classe",
+            "fund_band": "p25_mediana",
+            "fund_band_label": "entre o p25 e a mediana da classe",
+            "band_note": "posição do retorno na distribuição da classe (p25, mediana, p75), não um ranking",
+            "etf_series_reason_code": null,
+            "etf_base_date": "2026-03-31",
+            "etf_end_date": "2026-09-30",
+            "class_start_month": "2026-03-01",
+            "class_end_month": "2026-09-01",
+            "class_source_reason": null,
+            "sources": [
+              {
+                "tool": "trade_consolidated_history",
+                "call_id": 51,
+                "args": {
+                  "p_ticker": "EXLF11",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              },
+              {
+                "tool": "class_return_distribution",
+                "call_id": 52,
+                "args": {
+                  "p_classe_anbima": "RENDA FIXA SIMPLES",
+                  "p_fundo_cotas": "S",
+                  "p_month": "2026-09-01"
+                },
+                "data_date": "2026-09-01"
+              }
+            ]
+          }
+        ],
+        "fund_return_status": "avaliado",
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 5
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "portfolio_equivalents",
+            "call_id": 50,
+            "args": {
+              "p_classes": [
+                "Ações Livre",
+                "RENDA FIXA SIMPLES"
+              ],
+              "p_as_of": "2026-10-03"
+            },
+            "data_date": "2026-10-03"
+          }
+        ]
+      },
+      {
+        "line_no": 7,
+        "linha_extrato": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+        "fund_name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
+        "cnpj": "42592315000115",
+        "valor_brl": 770616.5,
+        "classe_anbima": null,
+        "fundo_cotas": null,
+        "class_indices": null,
+        "n_etfs": null,
+        "status": "sem_equivalente",
+        "reason_code": "equivalente_sem_classe",
+        "reason": "classe ANBIMA não informada no Extrato: sem equivalente de mercado",
+        "label": "equivalente de mercado; não é recomendação",
+        "etf": null,
+        "windows": [],
+        "fund_return_status": "avaliado",
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 7
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      }
+    ],
+    "n_fund_lines": 4,
+    "n_found": 1,
+    "n_without": 3,
+    "found_value_brl": 902591.9,
+    "coverage_portfolio_value_pct": 14.5663
+  },
   "assumptions": [
     {
       "id": "fee_units",
@@ -21371,6 +22373,14 @@
     {
       "id": "tax",
       "text": "Taxa e imposto por posição (esquema 1.11): regras dos arquivos versionados em src/portfolio/rules/tax/, copiadas da nota #611 com artigo e citação. A taxa paga por ano é a do bloco de taxas (taxa divulgada x valor da posição), estimativa. O imposto em R$ é estimativa: alíquota de hoje x ganho de 12 meses do bloco de retorno, só com a data de aplicação impressa no extrato; sem ela, a faixa de alíquotas e nenhum valor. Nenhuma data é suposta; condições que o extrato não mostra ficam a conferir; nada é recomendação."
+    },
+    {
+      "id": "pct_of_cdi",
+      "text": "% do CDI (esquema 1.12): só para fundo cujo índice de referência arquivado é CDI ou DI, lido no Extrato (PARAM_TAXA_PERFM, o índice da taxa de performance, a única coluna de referência do Extrato) ou na lâmina (INDICE_REFER), pela lista versionada de grafias em src/portfolio/rules/benchmark_cdi.yaml; nunca pelo nome ou pela classe ANBIMA. Retorno líquido dividido pelo CDI das mesmas datas, vezes 100, só com CDI acima de zero; nos demais casos, só a diferença em pontos percentuais, com o motivo."
+    },
+    {
+      "id": "market_equivalent",
+      "text": "Equivalente de mercado (esquema 1.12): o maior ETF ativo por patrimônio líquido (site etfsbrasil.com.br, fonte de terceiros, datado) entre os que acompanham um índice ligado à classe ANBIMA do fundo na lista revisada pelo dono (rules/equivalents/class_index.yaml, pares aprovados). Retorno do ETF pelo fechamento sem proventos (ou último preço do arquivo consolidado, ETF de renda fixa), nas janelas do bloco de retorno, ao lado do p25, mediana e p75 da classe. Não é recomendação nem ranking."
     },
     {
       "id": "movement_class",
@@ -21459,6 +22469,14 @@
       "reason": "Há linhas sem regra de imposto; cada linha informa o motivo.",
       "reason_codes": [
         "imposto_linhas_sem_regra"
+      ]
+    },
+    "equivalents": {
+      "status": "partial",
+      "reason": "Há fundos sem equivalente de mercado ou sem comparação de retorno; cada linha informa o motivo.",
+      "reason_codes": [
+        "equivalente_sem_par",
+        "equivalente_sem_classe"
       ]
     }
   },
@@ -22143,6 +23161,47 @@
       "row_count": 283,
       "error": null,
       "id": "p49"
+    },
+    {
+      "call_id": 50,
+      "tool": "portfolio_equivalents",
+      "args": {
+        "p_classes": [
+          "Ações Livre",
+          "RENDA FIXA SIMPLES"
+        ],
+        "p_as_of": "2026-10-03"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 3,
+      "error": null,
+      "id": "p50"
+    },
+    {
+      "call_id": 51,
+      "tool": "trade_consolidated_history",
+      "args": {
+        "p_ticker": "EXLF11",
+        "p_from": "2025-09-01",
+        "p_to": "2026-09-30"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 283,
+      "error": null,
+      "id": "p51"
+    },
+    {
+      "call_id": 52,
+      "tool": "class_return_distribution",
+      "args": {
+        "p_classe_anbima": "RENDA FIXA SIMPLES",
+        "p_fundo_cotas": "S",
+        "p_month": "2026-09-01"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 2,
+      "error": null,
+      "id": "p52"
     }
   ]
 }

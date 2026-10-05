@@ -27,6 +27,7 @@ from src.portfolio.identify import LineId, identify
 from src.portfolio.indexer import compute_indexer
 from src.portfolio.liquidity import compute_liquidity
 from src.portfolio.lookthrough import add_portfolio_shares, compute_lookthrough
+from src.portfolio.market_equivalent import compute_equivalents
 from src.portfolio.movement import compute_movement, default_movement_month
 from src.portfolio.restatements import compute_restatements
 from src.portfolio.returns import compute_returns
@@ -39,7 +40,7 @@ from src.portfolio.terms import attach_to_identification, fetch_fund_terms
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.11"
+SCHEMA_VERSION = "1.12"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -176,6 +177,26 @@ ASSUMPTIONS = [
             "da posição), estimativa. O imposto em R$ é estimativa: alíquota de hoje x ganho de 12 meses do bloco de "
             "retorno, só com a data de aplicação impressa no extrato; sem ela, a faixa de alíquotas e nenhum valor. Nenhuma "
             "data é suposta; condições que o extrato não mostra ficam a conferir; nada é recomendação."
+        ),
+    },
+    {
+        "id": "pct_of_cdi",
+        "text": (
+            "% do CDI (esquema 1.12): só para fundo cujo índice de referência arquivado é CDI ou DI, lido no Extrato "
+            "(PARAM_TAXA_PERFM, o índice da taxa de performance, a única coluna de referência do Extrato) ou na lâmina "
+            "(INDICE_REFER), pela lista versionada de grafias em src/portfolio/rules/benchmark_cdi.yaml; nunca pelo nome ou "
+            "pela classe ANBIMA. Retorno líquido dividido pelo CDI das mesmas datas, vezes 100, só com CDI acima de zero; "
+            "nos demais casos, só a diferença em pontos percentuais, com o motivo."
+        ),
+    },
+    {
+        "id": "market_equivalent",
+        "text": (
+            "Equivalente de mercado (esquema 1.12): o maior ETF ativo por patrimônio líquido (site etfsbrasil.com.br, "
+            "fonte de terceiros, datado) entre os que acompanham um índice ligado à classe ANBIMA do fundo na lista "
+            "revisada pelo dono (rules/equivalents/class_index.yaml, pares aprovados). Retorno do ETF pelo fechamento sem "
+            "proventos (ou último preço do arquivo consolidado, ETF de renda fixa), nas janelas do bloco de retorno, ao "
+            "lado do p25, mediana e p75 da classe. Não é recomendação nem ranking."
         ),
     },
     {
@@ -347,6 +368,12 @@ def run_engine(
     doc = _insert_after(doc, "returns", "tax", tax)
     doc["section_status"]["tax"] = {"status": tax["status"], "reason": tax["reason"],
                                     "reason_codes": list(tax.get("reason_codes") or [])}
+    # engine 1.12: the market equivalent reads the fee comparison and the return block; its calls come last
+    equivalents = compute_equivalents(lines, fees, returns, client, stmt.position_date,
+                                      clock().astimezone(dt.timezone.utc).date(), stmt.sum_of_lines)
+    doc = _insert_after(doc, "tax", "equivalents", equivalents)
+    doc["section_status"]["equivalents"] = {"status": equivalents["status"], "reason": equivalents["reason"],
+                                            "reason_codes": list(equivalents.get("reason_codes") or [])}
     doc["provenance"] = [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance]
     log.info("engine done: %d tool calls", len(client.provenance))
     return doc

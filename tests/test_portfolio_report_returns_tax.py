@@ -125,7 +125,9 @@ def test_returns_section_shows_each_window_beside_the_cdi_and_never_a_total(html
                    "sem total da carteira", "estimativa", "retorno do período de 6 meses, não anualizado",
                    "taxa por ponto: taxa do período dividida pelo retorno bruto estimado do período"):
         assert needle in txt, needle
-    assert "do CDI</" not in sec and "% do CDI" not in txt  # the engine does not compute it
+    # engine 1.12: "% do CDI" only where the engine wrote it (a fund whose filed benchmark is CDI or DI)
+    table = text_of(sec.split("<table")[1].split("</table>")[0])
+    assert len(re.findall(r"\d+,\d+% do CDI", table)) == 4 and "(e % do CDI)" in table
     assert "carteira rendeu" not in txt and "média dos retornos" not in txt
 
 
@@ -293,7 +295,8 @@ def test_an_invented_number_in_the_new_sections_is_rejected(view, sec, text):
     ("returns.lines[1].windows[0].portfolio_return_pct", "sem caminho"),   # no such key: a total the engine never wrote
     ("returns.total_return_pct", "sem caminho"),
     ("returns.lines[1].windows.12m.net_return_pct", "sem caminho"),        # malformed: a key must start with a letter
-    ("returns.lines[1].windows[0].pct_of_cdi", "sem caminho"),             # "% do CDI" is not in the engine
+    ("returns.lines[1].windows[0].pct_of_cdi", "nulo"),                    # a share: the engine wrote no "% do CDI"
+    ("returns.lines[1].windows[0].total_pct_of_cdi", "sem caminho"),       # a key the engine never writes
     ("tax.lines[8].tax.estimate.tax_brl", "nulo"),                          # the engine computed no R$ tax for the line
     ("tax.total_tax_brl", "sem caminho"),
 ])

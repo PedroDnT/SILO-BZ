@@ -251,6 +251,26 @@ def _empty_fee() -> dict[str, Any]:
         "scale_flag": None,
         "etf_site": None,
         "findings": [],
+        "benchmark_as_filed": None,  # engine 1.12: no portfolio_fees row, so no filed benchmark read
+    }
+
+
+def _benchmark(row: dict, src: dict) -> dict[str, Any] | None:
+    """The filed benchmark exactly as served (catalog v67): the Extrato's PARAM_TAXA_PERFM whatever the fee source,
+    and the lâmina's INDICE_REFER when every class filed the same one. None when the row predates v67 (the keys are
+    absent): never read as "not filed". Read by the return block's "% do CDI" rule (benchmark.py)."""
+    if not any(k in row for k in ("benchmark_extrato", "benchmark_lamina", "benchmark_lamina_n")):
+        return None
+    n = row.get("benchmark_lamina_n")
+    return {
+        "extrato": row.get("benchmark_extrato"),
+        "extrato_field": "PARAM_TAXA_PERFM",
+        "extrato_as_of": row.get("extrato_as_of"),
+        "lamina": row.get("benchmark_lamina"),
+        "lamina_field": "INDICE_REFER",
+        "lamina_n": int(n) if isinstance(n, (int, float)) and not isinstance(n, bool) else None,
+        "lamina_as_of": row.get("lamina_as_of"),
+        "sources": [src],
     }
 
 
@@ -591,6 +611,7 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
         "scale_flag": scale_flag,
         "etf_site": etf_site,
         "findings": findings,
+        "benchmark_as_filed": _benchmark(row, src),  # engine 1.12
     }
 
 

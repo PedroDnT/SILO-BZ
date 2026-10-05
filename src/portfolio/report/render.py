@@ -407,6 +407,66 @@ def _etf_peers_html(engine: dict, q: str, row: dict) -> str:
 WINDOW_LABEL = {"12m": "12 meses", "6m": "6 meses"}
 
 
+def _equivalents_section(engine: dict) -> str:
+    """Engine 1.12: the market equivalent of each fund line beside the class's return distribution. A fact beside the
+    fund, labelled "equivalente de mercado; não é recomendação": no ranking, no "melhor", no instruction. A line with no
+    equivalent says why with the fixed text of its code."""
+    eq = engine.get("equivalents") or {}
+    b = "equivalents"
+    out = [f'<p><span class="tag unk">{v(engine, f"{b}.label")}</span></p>',
+           f"<p class=cit>{v(engine, f'{b}.choice_note')}</p>",
+           f"<p class=cit>{v(engine, f'{b}.class_note')}</p>"]
+    rows = []
+    none = []
+    for i, ln in enumerate(eq.get("lines") or []):
+        q = f"{b}.lines[{i}]"
+        fund = f"{v(engine, f'{q}.line_id')} {v(engine, f'{q}.fund_name')}"
+        if ln.get("status") != "encontrado" or not ln.get("etf"):
+            none.append(f"<li>{fund}: {v(engine, f'{q}.reason')}.</li>")
+            continue
+        et = f"{q}.etf"
+        fund += f"<br><span class=cit>classe {v(engine, f'{q}.classe_anbima')}</span>"
+        etf = (f"<span class=v>{v(engine, f'{et}.ticker')}</span> {v(engine, f'{et}.name')}"
+               f"<br><span class=cit>índice {v(engine, f'{et}.underlying_index')}</span>"
+               f"<br>PL {v(engine, f'{et}.pl_brl')} em {v(engine, f'{et}.pl_as_of')}"
+               f"<br><span class=cit>{v(engine, f'{et}.pl_label')}</span>")
+        if ln["etf"].get("fee_pct_year") is not None:
+            etf += (f"<br>taxa {v(engine, f'{et}.fee_pct_year')} a.a. em {v(engine, f'{et}.fee_as_of')}"
+                    f"<br><span class=cit>{v(engine, f'{et}.fee_label')}</span>")
+        else:
+            etf += f"<br><span class=cit>{v(engine, f'{et}.fee_reason')}</span>"
+        etf += f'<br><span class="tag unk">sem proventos</span><br><span class=cit>{v(engine, f"{et}.basis_label")}</span>'
+        for j, w in enumerate(ln.get("windows") or []):
+            wq = f"{q}.windows[{j}]"
+            label = (e(WINDOW_LABEL.get(w.get("id"), w.get("id")))
+                     + f"<br><span class=cit>{v(engine, f'{wq}.base_month')} a {v(engine, f'{wq}.end_month')}</span>")
+
+            def ret(who: str) -> str:
+                if w.get(f"{who}_net_return_pct") is None:
+                    why = w.get(f"{who}_reason")
+                    return f"<span class=cit>{v(engine, f'{wq}.{who}_reason')}</span>" if why else "—"
+                cell = f"<span class=v>{v(engine, f'{wq}.{who}_net_return_pct')}</span>"
+                if w.get(f"{who}_band_label"):
+                    cell += f"<br><span class=cit>{v(engine, f'{wq}.{who}_band_label')}</span>"
+                return cell
+
+            if w.get("class_median_pct") is not None:
+                cls = (f"p25 {v(engine, f'{wq}.class_p25_pct')}<br>mediana {v(engine, f'{wq}.class_median_pct')}"
+                       f"<br>p75 {v(engine, f'{wq}.class_p75_pct')}<br><span class=cit>{v(engine, f'{wq}.class_n_funds')} fundos</span>")
+            else:
+                cls = f"<span class=cit>{v(engine, f'{wq}.class_reason')}</span>" if w.get("class_reason") else "—"
+            rows.append([fund if j == 0 else "", etf if j == 0 else "", label, ret("fund"), ret("etf"), cls])
+    if rows:
+        out.append(_table([("Fundo", False), ("Equivalente de mercado (ETF)", False), ("Janela", False),
+                           ("Retorno líquido do fundo", True), ("Retorno do ETF", True), ("Classe ANBIMA do fundo", True)], rows))
+        out.append(f"<ul><li class=cit>{v(engine, f'{b}.band_note')}</li></ul>")
+    if none:
+        out.append("<p>Fundos sem equivalente de mercado:</p><ul>" + "".join(none) + "</ul>")
+    if eq.get("status") in ("partial", "unknown") and eq.get("reason"):
+        out.append(f'<p><span class="tag unk">{e(SECTION_STATUS_LABELS.get(eq["status"], eq["status"]))}</span> {v(engine, f"{b}.reason")}.</p>')
+    return "\n".join(out)
+
+
 def _returns_section(engine: dict) -> str:
     """Engine 1.10: the return per position over 12 and 6 months, beside the CDI of the same dates. One row per line
     and window; a line not evaluated says why with the fixed text of its code. No portfolio total, mean or ranking:
@@ -456,6 +516,10 @@ def _returns_section(engine: dict) -> str:
                 cdi_cell = (f"{v(engine, f'{wq}.cdi_pct')}<br><span class=cit>{v(engine, f'{wq}.cdi_base_date')} a "
                             f"{v(engine, f'{wq}.cdi_end_date')}</span>")
                 vs = v(engine, f"{wq}.net_minus_cdi_pp")
+                if w.get("pct_of_cdi") is not None:  # engine 1.12: only for a fund whose filed benchmark is CDI or DI
+                    vs += f"<br><span class=v>{v(engine, f'{wq}.pct_of_cdi')}</span>"
+                elif w.get("pct_of_cdi_reason") and w.get("pct_of_cdi_reason_code") != "pct_cdi_so_fundos":
+                    vs += f"<br><span class=cit>{v(engine, f'{wq}.pct_of_cdi_reason')}</span>"
             else:
                 cdi_cell = f"<span class=cit>{v(engine, f'{wq}.cdi_reason')}</span>" if w.get("cdi_reason") else "—"
                 vs = "—"
@@ -468,7 +532,7 @@ def _returns_section(engine: dict) -> str:
                        f"{v(engine, f'{wq}.max_drawdown_trough_month')}</span>")
             rows.append([asset if j == 0 else "", label, net, cdi_cell, vs, vol, dd, _fee_drag_html(engine, wq, w)])
     out.append(_table([("Linha e base", False), ("Janela", False), ("Retorno líquido", True), ("CDI nas mesmas datas", True),
-                       ("Líquido menos CDI", True), ("Volatilidade anualizada", True), ("Queda máxima", True),
+                       ("Líquido menos CDI (e % do CDI)", True), ("Volatilidade anualizada", True), ("Queda máxima", True),
                        ("Taxa por ponto e perda de Sharpe", False)], rows))
     notes = [v(engine, f"{b}.gross_note"), v(engine, f"{b}.sharpe_drag_note"), v(engine, f"{b}.drawdown_note")]
     fpp = next((f"{b}.lines[{i}].windows[{j}].fee_per_point_note" for i, ln in enumerate(r.get("lines") or [])
@@ -483,6 +547,9 @@ def _returns_section(engine: dict) -> str:
     notes += [v(engine, path) for n, path in line_notes if n != r.get("performance_note")]
     if any(ln.get("performance_fee_filed") for ln in r.get("lines") or []):
         notes.append(v(engine, f"{b}.performance_note"))
+    if r.get("pct_of_cdi_note") and any(w.get("pct_of_cdi") is not None for ln in r.get("lines") or []
+                                        for w in ln.get("windows") or []):
+        notes.append(v(engine, f"{b}.pct_of_cdi_note"))
     out.append("<ul>" + "".join(f"<li class=cit>{n}</li>" for n in notes if n and n != "—") + "</ul>")
     if r.get("status") in ("partial", "unknown") and r.get("reason"):
         out.append(f'<p><span class="tag unk">{e(SECTION_STATUS_LABELS.get(r["status"], r["status"]))}</span> {v(engine, f"{b}.reason")}.</p>')
@@ -1175,7 +1242,12 @@ def _returns_tax_method(engine: dict) -> list[str]:
     out = []
     if engine.get("returns"):
         out.append(f"Retorno por posição: {v(engine, 'returns.definition')} Sem retorno da carteira inteira, sem média e sem "
-                   "ranking; \"% do CDI\" não é mostrado: o motor compara com o CDI em pontos percentuais.")
+                   "ranking. \"% do CDI\" (retorno líquido dividido pelo CDI das mesmas datas) só aparece para fundo cujo índice "
+                   "de referência arquivado, no Extrato (índice da taxa de performance) ou na lâmina, é CDI ou DI, por uma lista "
+                   "fixa de grafias, e só com CDI do período acima de zero; nas demais linhas, a diferença em pontos percentuais.")
+    if engine.get("equivalents"):
+        out.append(f"Equivalente de mercado: {v(engine, 'equivalents.choice_note')} {v(engine, 'equivalents.class_note')} "
+                   f"O patrimônio líquido e a taxa do ETF são do site etfsbrasil.com.br (fonte de terceiros), com a data.")
     tx = engine.get("tax") or {}
     if tx:
         files = "; ".join(
@@ -1247,6 +1319,8 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
           if engine.get("returns") else []),
         *([section("Taxa e imposto por posição", _tax_section(engine) + _findings_html(engine, narrative, "impostos"))]
           if engine.get("tax") else []),
+        *([section("Equivalente de mercado", _equivalents_section(engine) + _findings_html(engine, narrative, "equivalentes"))]
+          if engine.get("equivalents") else []),
         section("Reapresentações", _restatements_section(engine) + _findings_html(engine, narrative, "reapresentacoes")),
         section("Sinais de risco", _risk_section(engine) + _findings_html(engine, narrative, "sinais_de_risco")),
         section("O que não foi possível avaliar", _unknowns_section(engine, narrative)),

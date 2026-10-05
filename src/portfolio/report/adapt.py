@@ -30,6 +30,9 @@ SOURCE_BY_TOOL = {
     "screen_late_filers": "FNET",
     # engine 1.10: the return block's series (fund quota from CVM, closes from B3, the CDI from BCB's SGS 12)
     "fund_nav": "CVM", "quote_history": "B3", "trade_consolidated_history": "B3", "macro_series": "BCB",
+    # engine 1.12: the class distribution is CVM's quotas; the equivalents list is SILO's ETF registry (CVM) with the
+    # etfsbrasil PL and fee, listed apart as ETFSBRASIL with the snapshot date (see _provenance_view)
+    "class_return_distribution": "CVM", "portfolio_equivalents": "CVM",
 }
 LEVEL_BY_KIND = {
     "mesmo_ativo": "ativo",
@@ -52,7 +55,7 @@ SECTION_TITLES_PT = {
     "indexer": "Indexador", "sector": "Setor", "restatements": "Reapresentações", "risk_screens": "Telas de risco",
     "abnormal_movement": "Movimento incomum", "concentration": "Concentração", "allocation": "Alocação por classe",
     "risks": "Principais riscos", "liquidity": "Liquidez", "returns": "Retorno por posição",
-    "tax": "Taxa e imposto por posição",
+    "tax": "Taxa e imposto por posição", "equivalents": "Equivalente de mercado",
 }
 # engine 1.9: what the identification table marks on a line, from the position's own flags and the credit match
 BADGES = (
@@ -674,6 +677,7 @@ def _movement_view(eng: dict) -> dict | None:
 
 
 RETURN_WINDOW_DROP = ("sources", "reason", "cdi_reason_code", "fee_reason_code", "null_reasons")
+EQUIVALENT_WINDOW_DROP = ("sources", "class_source_reason", "etf_reason", "class_reason")
 
 
 def _returns_view(eng: dict) -> dict | None:
@@ -700,6 +704,9 @@ def _returns_view(eng: dict) -> dict | None:
                 reason=reason_text(w.get("reason_code")) if w.get("reason_code") or w.get("status") != "avaliado" else None,
                 cdi_reason=reason_text(w.get("cdi_reason_code")) if w.get("cdi_reason_code") else None,
                 fee_reason=reason_text(w.get("fee_reason_code")) if w.get("fee_reason_code") else None,
+                # engine 1.12: why there is no "% do CDI" (only the difference in p.p. is shown)
+                pct_of_cdi_reason=(reason_text(w.get("pct_of_cdi_reason_code"))
+                                   if w.get("pct_of_cdi_reason_code") else None),
                 provenance=_prov(w.get("sources")),
             )
             wins.append(out)
@@ -715,6 +722,8 @@ def _returns_view(eng: dict) -> dict | None:
                     "rate_pct_year": fee.get("rate_pct_year"), "kind": fee.get("kind"), "fee_status": fee.get("fee_status"),
                     "origin": fee.get("origin"), "as_of": fee.get("as_of")},
             "performance_fee_filed": ln.get("performance_fee_filed"),
+            # engine 1.12: the filed benchmark as filed, and whether it is CDI-like (the reason is a fixed text)
+            "benchmark": _benchmark_view(ln.get("benchmark")),
             "notes": list(ln.get("notes") or []),
             "windows": wins,
             "provenance": _prov(ln.get("sources"), fee.get("sources"),
@@ -730,6 +739,7 @@ def _returns_view(eng: dict) -> dict | None:
                                            "volatility_note", "note")} for w in r.get("windows") or []],
         "definition": r.get("definition"), "gross_note": r.get("gross_note"), "sharpe_drag_note": r.get("sharpe_drag_note"),
         "drawdown_note": r.get("drawdown_note"), "performance_note": r.get("performance_note"), "note": r.get("note"),
+        "pct_of_cdi_note": r.get("pct_of_cdi_note"),
         "cdi": {"series": cdi.get("series"), "sgs_code": cdi.get("sgs_code"), "unit": cdi.get("unit"),
                 "convention": cdi.get("convention"), "n_rates": cdi.get("n_rates"), "first_date": cdi.get("first_date"),
                 "last_date": cdi.get("last_date"), "status": cdi.get("status"), "reason_code": cdi.get("reason_code"),
@@ -738,6 +748,65 @@ def _returns_view(eng: dict) -> dict | None:
         "n_lines": r.get("n_lines"), "n_evaluated": r.get("n_evaluated"), "n_not_evaluated": r.get("n_not_evaluated"),
         "coverage": [{"id": wid, **{k: (cov.get(wid) or {}).get(k) for k in ("evaluated_value_brl", "coverage_portfolio_value_pct",
                                                                               "n_evaluated")}} for wid in order if wid in cov],
+        "lines": lines,
+    }
+
+
+def _benchmark_view(b: dict | None) -> dict | None:
+    if not isinstance(b, dict):
+        return None
+    return {"cdi_like": b.get("cdi_like"), "reason_code": b.get("reason_code"),
+            "reason": reason_text(b.get("reason_code")) if b.get("reason_code") else None,
+            "extrato": b.get("extrato"), "extrato_as_of": b.get("extrato_as_of"), "lamina": b.get("lamina"),
+            "lamina_n": b.get("lamina_n"), "lamina_as_of": b.get("lamina_as_of"),
+            "provenance": _prov(b.get("sources"))}
+
+
+def _equivalents_view(eng: dict) -> dict | None:
+    """Engine 1.12: the market equivalent per fund line, copied (every figure is the engine's), lines as ``L<n>``.
+
+    Every reason is the fixed text of its code; the SQL's own reason never reaches the view. Labelled "equivalente de
+    mercado; não é recomendação"; the view ranks nothing and says nothing is better."""
+    e = eng.get("equivalents")
+    if not isinstance(e, dict):
+        return None
+    lines = []
+    for ln in e.get("lines") or []:
+        etf = ln.get("etf")
+        etf_v = None
+        if isinstance(etf, dict):
+            etf_v = {k: v for k, v in etf.items() if k != "sources"}
+            etf_v["fee_reason"] = reason_text(etf.get("fee_reason_code")) if etf.get("fee_reason_code") else None
+            etf_v["provenance"] = _prov(etf.get("sources"))
+        wins = []
+        for w in ln.get("windows") or []:
+            out = {k: v for k, v in w.items() if k not in EQUIVALENT_WINDOW_DROP}
+            out.update(
+                etf_reason=reason_text(w.get("etf_reason_code")) if w.get("etf_reason_code") else None,
+                etf_series_reason=reason_text(w.get("etf_series_reason_code")) if w.get("etf_series_reason_code") else None,
+                fund_reason=reason_text(w.get("fund_reason_code")) if w.get("fund_reason_code") else None,
+                class_reason=reason_text(w.get("class_reason_code")) if w.get("class_reason_code") else None,
+                provenance=_prov(w.get("sources")),
+            )
+            wins.append(out)
+        lines.append({
+            "line_id": f"L{ln['line_no']}", "instrument": ln.get("linha_extrato"), "fund_name": ln.get("fund_name"),
+            "cnpj": ln.get("cnpj"), "value_brl": ln.get("valor_brl"), "classe_anbima": ln.get("classe_anbima"),
+            "fundo_cotas": ln.get("fundo_cotas"), "class_indices": ln.get("class_indices"), "n_etfs": ln.get("n_etfs"),
+            "status": ln.get("status"), "reason_code": ln.get("reason_code"),
+            "reason": reason_text(ln.get("reason_code")) if ln.get("reason_code") else None,
+            "label": ln.get("label"), "etf": etf_v, "windows": wins,
+            "provenance": _prov(ln.get("sources"), (etf or {}).get("sources"), *[w.get("sources") for w in ln.get("windows") or []]),
+        })
+    return {
+        "status": e.get("status"),
+        "reason": _codes_text(e.get("reason_codes")) if e.get("status") in ("partial", "unknown") else None,
+        "label": e.get("label"), "as_of": e.get("as_of"), "end_month": e.get("end_month"),
+        "windows": [{k: w.get(k) for k in ("id", "months", "base_month", "end_month", "annualized")} for w in e.get("windows") or []],
+        "choice_note": e.get("choice_note"), "class_note": e.get("class_note"), "band_note": e.get("band_note"),
+        "pl_label": e.get("pl_label"), "fee_label": e.get("fee_label"),
+        "n_fund_lines": e.get("n_fund_lines"), "n_found": e.get("n_found"), "n_without": e.get("n_without"),
+        "found_value_brl": e.get("found_value_brl"), "coverage_portfolio_value_pct": e.get("coverage_portfolio_value_pct"),
         "lines": lines,
     }
 
@@ -821,7 +890,7 @@ def _sections_view(eng: dict, lines: list[dict]) -> dict:
     ss = eng["section_status"]
     mapping = {"identification": "identification", "fees": "fees", "lookthrough": "look_through", "indexer": "indexer",
                "sector": "sector", "restatements": "restatements", "risk_screens": "risk_signals"}
-    for key in ("concentration", "allocation", "liquidity", "risks", "returns", "tax"):
+    for key in ("concentration", "allocation", "liquidity", "risks", "returns", "tax", "equivalents"):
         if key in ss:
             mapping[key] = key
     out: dict[str, Any] = {k: _section_entry(ss[v]) for k, v in mapping.items()}
@@ -942,7 +1011,8 @@ def _gaps_view(eng: dict, sections: dict, fees: dict, risk: dict, movement: dict
     # engines 1.10 and 1.11: the lines without a return or without a tax rule, grouped by code (no value: the view sums
     # nothing the engine did not)
     for title, block, codes_of in ((SECTION_TITLES_PT["returns"], eng.get("returns"), _return_gap_codes),
-                                   (SECTION_TITLES_PT["tax"], eng.get("tax"), _tax_gap_codes)):
+                                   (SECTION_TITLES_PT["tax"], eng.get("tax"), _tax_gap_codes),
+                                   (SECTION_TITLES_PT["equivalents"], eng.get("equivalents"), _equivalent_gap_codes)):
         groups: dict[str, list[str]] = {}
         for ln in (block.get("lines") or []) if isinstance(block, dict) else []:
             for code in codes_of(ln):
@@ -951,7 +1021,7 @@ def _gaps_view(eng: dict, sections: dict, fees: dict, risk: dict, movement: dict
         for code, ids in groups.items():
             add(title, reason_text(code), ids)
     for key in ("fees", "lookthrough", "restatements", "risk_screens", "abnormal_movement", "concentration", "liquidity",
-                "returns", "tax"):
+                "returns", "tax", "equivalents"):
         sec = sections.get(key) or {}
         if key == "risk_screens" and failed_screens:
             continue  # the screens that did not run are a line above
@@ -968,7 +1038,10 @@ def _gaps_view(eng: dict, sections: dict, fees: dict, risk: dict, movement: dict
 
 
 COVERED_ABOVE = ("sem_taxa_divulgada", "taxa_a_conferir", "fundos_nao_avaliados", "linhas_nao_identificadas",
-                 "riscos_nao_avaliados", "linhas_sem_retorno", "imposto_linhas_sem_regra")
+                 "riscos_nao_avaliados", "linhas_sem_retorno", "imposto_linhas_sem_regra",
+                 # engine 1.12: the equivalents block's line codes are grouped above with their lines
+                 "equivalente_fora_escopo", "equivalente_sem_classe", "equivalente_sem_par", "equivalente_sem_etf",
+                 "equivalente_sem_pl", "equivalente_sem_linha", "equivalente_sem_retorno", "distribuicao_classe_nao_avaliada")
 
 
 def _return_gap_codes(ln: dict) -> list[str]:
@@ -977,6 +1050,13 @@ def _return_gap_codes(ln: dict) -> list[str]:
         return [ln["reason_code"]] if ln.get("reason_code") else []
     return [w["reason_code"] for w in (ln.get("windows") or {}).values()
             if isinstance(w, dict) and w.get("status") != "avaliado" and w.get("reason_code")]
+
+
+def _equivalent_gap_codes(ln: dict) -> list[str]:
+    """A fund line with no equivalent gives its code; a found one gives the codes of the windows it could not compare."""
+    if ln.get("status") != "encontrado":
+        return [ln["reason_code"]] if ln.get("reason_code") else []
+    return [c for w in ln.get("windows") or [] for c in (w.get("etf_reason_code"), w.get("class_reason_code")) if c]
 
 
 def _tax_gap_codes(ln: dict) -> list[str]:
@@ -1034,7 +1114,7 @@ def _provenance_view(eng: dict) -> tuple[list[dict], dict[str, str]]:
                 walk(v)
 
     for key in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals", "movement",
-                "returns", "tax"):
+                "returns", "tax", "equivalents"):
         walk(eng.get(key))
     prov = []
     by_source: dict[str, str] = {}
@@ -1055,6 +1135,10 @@ def _provenance_view(eng: dict) -> tuple[list[dict], dict[str, str]]:
     # engine 1.6: the site's cotistas and PL date it too, whatever the fee's state
     site_dates += [str(es["as_of"]) for es in ((ln.get("etf_site") or {}) for ln in fee_lines)
                    if es.get("as_of") and (es.get("nr_cotistas") is not None or es.get("pl_brl") is not None)]
+    # engine 1.12: the equivalent ETF's PL and fee are the same site's, dated by their snapshots
+    for ln in (eng.get("equivalents") or {}).get("lines") or []:
+        etf = ln.get("etf") or {}
+        site_dates += [str(etf[k]) for k in ("pl_as_of", "fee_as_of") if etf.get(k)]
     if site_dates:
         by_source["ETFSBRASIL"] = max(site_dates)
     return prov, by_source
@@ -1124,6 +1208,9 @@ def to_view(eng: dict) -> dict:
     tax = _tax_view(eng)
     if tax is not None:
         view["tax"] = tax
+    equivalents = _equivalents_view(eng)
+    if equivalents is not None:
+        view["equivalents"] = equivalents
     view["gaps"] = _gaps_view(eng, view["sections"], view["fees"], view["risk_screens"], movement)
     view["gaps"] += _chart_and_risk_gaps(eng, view)
     return view

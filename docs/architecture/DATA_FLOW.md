@@ -53,7 +53,9 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - `api.portfolio_fee_peers` (`31_api_portfolio.sql`) groups the latest FI Extrato
   fees of active funds by class, FUNDO_COTAS and scope (30-peer minimum), plus ETFs
   via `portfolio_class_index` (generated from a reviewed YAML) and
-  `etf_market_snapshot`. `class_return_distribution` reads `fact_fund_monthly`.
+  `etf_market_snapshot`. `class_return_distribution` reads `fact_fund_monthly`;
+  `portfolio_equivalents` reads the same view (approved pairs), `cvm_etf_registry`
+  and `etf_market_snapshot`.
 - Nothing depends on pg_cron. The live database has none (checked 2026-09-29),
   so the jobs in `08_cron_schedules.sql` do not run.
 

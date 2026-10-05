@@ -33,6 +33,7 @@ SECTIONS = (
     "sinais_de_risco",
     "retornos",
     "impostos",
+    "equivalentes",
 )
 
 SECTION_TITLES = {
@@ -46,6 +47,7 @@ SECTION_TITLES = {
     "sinais_de_risco": "Sinais de risco",
     "retornos": "Retorno por posição",
     "impostos": "Taxa e imposto por posição",
+    "equivalentes": "Equivalente de mercado",
 }
 
 # Keys that would carry the client's identity. Fund and issuer names are public
@@ -170,8 +172,9 @@ Na seção taxas, quando fees.comparison existir: compare apenas linhas com stat
 7. resumo: dois a quatro achados curtos para abrir o relatório; dê prioridade aos riscos em atenção e ao custo total em taxas.
 8. riscos (risks, engine 1.8): a tabela "Principais riscos" já traz cada risco com valor, semáforo (severity_label: atenção, moderado ou baixo) e limites fixos. Escreva no máximo três achados curtos sobre as linhas avaliadas de maior semáforo, na ordem de risks.rows (atenção primeiro, depois moderado), sempre por marcador: o nome (risks.rows[i].risk), o valor (risks.rows[i].value_pct, value_brl ou value_count, conforme unit), o assunto (subject) e o semáforo (severity_label), com a explicação fixa (explanation). Nunca recomende comprar, vender, manter ou diversificar, nunca diga o que o investidor deveria fazer e nunca faça previsão de mercado, de juros, de inflação ou de retorno. Uma linha com text_allowed falso não entra no texto, e o semáforo da linha movimento_anormal (severity_label) também não: o movimento forte já é escrito em sinais_de_risco. Linha "não avaliado" ou "não se aplica" não é achado. Engine 1.9: as linhas credito_situacao (CRA/CRI fora de 'Adimplente', como arquivado), credito_vencimento_diverge (sempre "a conferir", check_label), credito_preco_marcacao (sempre com check_label "informativo, não é veredito de preço": preço do extrato e marcação dos fundos em datas diferentes; nunca diga que o preço está caro, barato, errado ou certo), concentracao_gestor (a gestora agrupada pelo identificador arquivado, subject é o nome como arquivado) e liquidez (parte acima de D+30, com prazos como arquivados) seguem a mesma regra, só por marcador. Quando a linha indexador traz check_label (mais de 25% da carteira sem indexador classificado), a leitura é parcial: diga isso junto, por marcador. O rating (credit.lines[i].rating) é como arquivado, nunca uma opinião sua. O custo total em taxas está em fees.summary (adm_disclosed_fixed_per_year_brl, coverage_*_fund_value_pct, not_included): a cobertura é parte do valor em fundos, não taxa.
 9. movimento incomum (movement): o retorno mensal da cota de um fundo contra os fundos da sua classe ANBIMA. No texto, cite SOMENTE movement.strong[i] (nível forte): o retorno do fundo (own_value_pct), o mês (month), a classe (class_as_filed), o número de fundos da classe (n_peers), a média e o desvio padrão da classe (class_mean_pct, class_sd_pct) e a distância em desvios padrão (z), sempre por marcador. O nível atenção (movement.table, movement.by_line) NUNCA entra no texto: fica só na tabela do relatório. Um fundo sem veredito (movement.not_evaluated[i]) é escrito como "não avaliado", com o motivo em movement.not_evaluated[i].reason por marcador, nunca como normal. Não é previsão nem recomendação.
-10. retornos (returns, engine 1.10): por linha avaliada, o retorno líquido (returns.lines[i].windows[j].net_return_pct; windows[0] é a janela de 12 meses e windows[1] a de 6, de base_month a end_month, e a de 6 meses não é anualizada), a base (basis_label), o CDI das mesmas datas (cdi_pct) e a diferença em pontos percentuais (net_minus_cdi_pp), sempre por marcador. Nunca some, faça média, mediana ou ranking de retornos entre linhas, nunca escreva um retorno da carteira, nunca escreva "% do CDI" (o motor não o calcula) e nunca preveja retorno. A taxa por ponto (fee_per_point) e a perda de Sharpe (sharpe_drag) só com a nota do motor (fee_per_point_note, sharpe_drag_note); um valor com fee_per_point_excluded_from_aggregates verdadeiro é mostrado e nunca comparado. O retorno bruto é sempre "estimativa" (gross_label). Volatilidade e queda máxima com as notas volatility_note e max_drawdown_note. Linha não avaliada não é achado.
+10. retornos (returns, engine 1.10): por linha avaliada, o retorno líquido (returns.lines[i].windows[j].net_return_pct; windows[0] é a janela de 12 meses e windows[1] a de 6, de base_month a end_month, e a de 6 meses não é anualizada), a base (basis_label), o CDI das mesmas datas (cdi_pct) e a diferença em pontos percentuais (net_minus_cdi_pp), sempre por marcador. Nunca some, faça média, mediana ou ranking de retornos entre linhas, nunca escreva um retorno da carteira e nunca preveja retorno. "% do CDI" só pelo marcador returns.lines[i].windows[j].pct_of_cdi, e só onde ele existe e não é nulo: o motor o calcula apenas para fundo cujo índice de referência arquivado (Extrato ou lâmina) é CDI ou DI (cdi_like verdadeiro) e com CDI do período acima de zero. O renderizador já escreve esse marcador como "% do CDI": não escreva "%", "do CDI" nem "por cento" ao lado dele, e não escreva "do CDI" depois de nenhum outro marcador além de cdi_pct. Nas demais linhas, só a diferença em pontos percentuais (net_minus_cdi_pp); nunca escreva "% do CDI" de outra forma. A taxa por ponto (fee_per_point) e a perda de Sharpe (sharpe_drag) só com a nota do motor (fee_per_point_note, sharpe_drag_note); um valor com fee_per_point_excluded_from_aggregates verdadeiro é mostrado e nunca comparado. O retorno bruto é sempre "estimativa" (gross_label). Volatilidade e queda máxima com as notas volatility_note e max_drawdown_note. Linha não avaliada não é achado.
 11. impostos (tax, engine 1.11): a taxa paga em R$ por ano (tax.lines[i].fee.per_year_brl, sempre com o rótulo fee.label, "estimativa"), a alíquota em vigor com o artigo (tax.lines[i].tax.rate_text e tax.article) ou "isento"; imposto em R$ só por tax.lines[i].tax.estimate.tax_brl, sempre como estimativa; sem ele, a faixa (tax.lines[i].tax.bracket.text). Previdência: os dois regimes (pension.regressive.text e pension.progressive.text), nunca indique um, nunca escolha entre PGBL e VGBL. Os fatos de otimização (tax.lines[i].optimization[k].text) vão sempre com o rótulo optimization[k].label ("informativo; não é recomendação"), sem verbo no imperativo e sem falar em economia. Nunca escreva um total de imposto da carteira nem some taxas e impostos.
+12. equivalentes (equivalents, engine 1.12): para um fundo com equivalente (equivalents.lines[i] com status encontrado), o ETF (etf.ticker, etf.name, etf.underlying_index), o patrimônio líquido e a taxa do site de terceiros sempre com a data e o rótulo (etf.pl_brl com etf.pl_as_of e etf.pl_label; etf.fee_pct_year com etf.fee_as_of e etf.fee_label), e, por janela (windows[0] é 12 meses, windows[1] 6), o retorno do ETF (etf_net_return_pct, sem proventos: etf.note) e o do fundo (fund_net_return_pct) ao lado da mediana e dos percentis da classe (class_median_pct, class_p25_pct, class_p75_pct, class_n_funds) e da posição na distribuição (etf_band_label, fund_band_label, com band_note), sempre por marcador. Diga sempre "equivalente de mercado; não é recomendação" (equivalents.label). Nunca diga que um é melhor ou pior, nunca recomende trocar, manter ou comprar, nunca use verbo no imperativo, nunca ordene fundos ou ETFs e nunca preveja retorno. Uma linha sem equivalente não é achado.
 
 Regras:
 - citations lista os ids de provenance (campo "id" em provenance) que sustentam o achado; pelo menos um, só ids que existem.
@@ -520,7 +523,27 @@ def template_findings(engine: dict) -> dict:
                f"líquido ({{{{{q}.basis_label}}}}).")
         if wins[0].get("cdi_pct") is not None:
             txt += (f" O CDI das mesmas datas rendeu {{{{{w}.cdi_pct}}}}, uma diferença de {{{{{w}.net_minus_cdi_pp}}}} em relação ao CDI.")
+        if wins[0].get("pct_of_cdi") is not None:  # engine 1.12: only where the engine wrote it (filed benchmark CDI or DI)
+            txt += f" O índice de referência arquivado do fundo é o CDI: o retorno equivale a {{{{{w}.pct_of_cdi}}}}."
         add("retornos", "Retorno líquido em doze meses", txt, ln.get("provenance"))
+
+    # equivalentes (engine 1.12): the market equivalent of a fund, beside the class distribution; never a ranking
+    eqv = engine.get("equivalents") or {}
+    for i, ln in enumerate(eqv.get("lines") or []):
+        if ln.get("status") != "encontrado" or not ln.get("etf"):
+            continue
+        q, et = f"equivalents.lines[{i}]", f"equivalents.lines[{i}].etf"
+        txt = (f"Para a linha {{{{{q}.line_id}}}}, da classe {{{{{q}.classe_anbima}}}}, o ETF {{{{{et}.ticker}}}} acompanha "
+               f"{{{{{et}.underlying_index}}}}, com patrimônio líquido de {{{{{et}.pl_brl}}}} em {{{{{et}.pl_as_of}}}} "
+               f"({{{{{et}.pl_label}}}}): {{{{equivalents.label}}}}.")
+        w0 = (ln.get("windows") or [{}])[0]
+        w = f"{q}.windows[0]"
+        if w0.get("etf_net_return_pct") is not None and w0.get("fund_net_return_pct") is not None \
+                and w0.get("class_median_pct") is not None:
+            txt += (f" De {{{{{w}.base_month}}}} a {{{{{w}.end_month}}}}, o ETF rendeu {{{{{w}.etf_net_return_pct}}}} e o fundo "
+                    f"{{{{{w}.fund_net_return_pct}}}}; a mediana dos {{{{{w}.class_n_funds}}}} fundos da classe foi "
+                    f"{{{{{w}.class_median_pct}}}}.")
+        add("equivalentes", "Equivalente de mercado", txt, ln.get("provenance"))
 
     # impostos (engine 1.11): the fee paid, the rate in force or the exemption, the engine's R$ figure only
     tx = engine.get("tax") or {}

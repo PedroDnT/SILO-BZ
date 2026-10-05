@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.11)
+# Portfolio engine output (schema 1.12)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -23,6 +23,19 @@ measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the val
 
 ## Changes since 1.0
 
+1.12 (#609 owner's resolution and #606 addendum Q36, 2026-10-05; catalog v67). Keys were added, none renamed, retyped
+or removed. A new top-level section `equivalents` (below), placed after `tax`, with its `section_status` entry and the
+assumptions `pct_of_cdi` and `market_equivalent`. Every `returns.lines[]` gains `benchmark` and every return window
+gains `cdi_like`, `pct_of_cdi` and `pct_of_cdi_reason_code`; `returns` gains `pct_of_cdi_note`; every `fees.lines[]`
+gains `benchmark_as_filed` (`portfolio_fees` v67's `benchmark_extrato`, `benchmark_lamina`, `benchmark_lamina_n`, null
+for a row that predates them). New reason codes in `common.REASON_TEXT`: `referencia_nao_informada`,
+`referencia_nao_cdi`, `referencia_diverge`, `referencia_nao_servida`, `pct_cdi_so_fundos`, `cdi_nao_positivo`,
+`equivalente_fora_escopo`, `equivalente_sem_classe`, `equivalente_sem_par`, `equivalente_sem_etf`,
+`equivalente_sem_pl`, `equivalente_sem_linha`, `equivalente_sem_retorno`, `equivalente_sem_taxa`,
+`distribuicao_classe_nao_avaliada`. The equivalents block calls `portfolio_equivalents`, `class_return_distribution`
+and the ETF's series after every other block, so no earlier call id moves. The report shows it in "Equivalente de
+mercado" and prints "% do CDI" only where the engine wrote it (`redator-revisor.md`).
+
 1.11 (owner's resolution of #613, 2026-10-05; rules from `docs/reference/research/tax-rules-by-instrument.md` (#611)
 and `pension-plan-data.md` (#612)). Keys were added, none renamed, retyped or removed: a new top-level section `tax`
 (below), placed after `returns`, with its `section_status` entry and the assumption `tax`; `statement.positions[]`
@@ -35,7 +48,7 @@ call id moves. The report shows it in "Taxa e imposto por posição" (`redator-r
 `etf_peer_fee_oldest`, `etf_peer_fee_newest` and `etf_peer_fee_source`, copied as `portfolio_fee_peers` serves them
 (null when the row was not served), and `fees.comparison.basis` says ETFs on an index mapped to the class enter as peers
 and in the statistics with the third-party site's fee, counted apart in `n_etf_peers`. The equivalente de mercado (#609: an ETF of the same objective with its
-12- and 6-month return against the class distribution) is not computed by the engine yet.
+12- and 6-month return against the class distribution) came in 1.12.
 
 1.10 (owner's resolution of #610, 2026-10-05; inputs `docs/reference/research/portfolio-return-coverage.md`
 (#606) and `quota-net-of-fees.md` (#631)). Keys were added, none renamed, retyped or removed: a new top-level
@@ -189,7 +202,7 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
 
 `schema_version`, `generated_at_utc`, `engine` (`version`, `client`, `params`), `statement`,
 `identification`, `fees`, `look_through`, `indexer`, `sector`, `restatements`, `risk_signals`, `movement`,
-`concentration` (1.7), `allocation` and `risks` (1.8), `returns` (1.10), `tax` (1.11), `assumptions`, `section_status`, `provenance`.
+`concentration` (1.7), `allocation` and `risks` (1.8), `returns` (1.10), `tax` (1.11), `equivalents` (1.12), `assumptions`, `section_status`, `provenance`.
 
 - `engine.params`: `cda_month` (default: position month - 4), `fee_month` (default: position
   month - 1), `movement_month` (default: the position month when the position date is a month-end, else the
@@ -198,7 +211,8 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
   `coverage()`-driven default exists.
 - `assumptions[]`: `{id, text}`, each a reading the engine could not verify (`fee_units`,
   `weight_in_root`, `position_date`, `valuation`, `direct_tesouro`, `economic_group`,
-  `abnormal_movement`, `movement_class`, `risks` (1.8), `returns` (1.10), `tax` (1.11)). The report states the ones that touch what it says.
+  `abnormal_movement`, `movement_class`, `risks` (1.8), `returns` (1.10), `tax` (1.11), `pct_of_cdi` and
+  `market_equivalent` (1.12)). The report states the ones that touch what it says.
 - `section_status`: `{section: {status, reason, reason_codes}}`, for a cover-page summary.
 - `provenance[]`: every tool call in order: `call_id`, `id` (`p<call_id>`), `tool`, `args`,
   `requested_at_utc`, `row_count` (null on error), `error` (verbatim, null on success). No trimming;
@@ -611,6 +625,18 @@ The CDI is `macro_series('CDI', base month, position date)`, compounded by B3's 
 date exclusive, the product rounded to 8. A ticker's dates are its sessions; a fund's are the last business day
 of the base and end months in the CDI's own calendar.
 
+"% do CDI" (1.12, #606 addendum Q36). A line's `benchmark` is the filed benchmark the fee block read
+(`fees.lines[i].benchmark_as_filed`): `extrato` (the Extrato's `PARAM_TAXA_PERFM`, the performance fee's index and the
+Extrato's only benchmark column), `lamina` (`INDICE_REFER`, one value when every class filed the same one),
+`lamina_n`, their dates, `cdi_like`, `reason_code`, `matched`, `rule_version` (of `src/portfolio/rules/benchmark_cdi.yaml`),
+`sources`; both as filed, never normalized in the output. `src/portfolio/benchmark.py` matches them exactly, after
+trimming, collapsing whitespace and upper-casing, against the rule file's `accepted` list (`CDI`, `DI1 - DI DE UM DIA`,
+`CDI252`, `CDI 100%`, `DI-CETIP`, `CDI DIARIO`, `(CDI252+0%)`); every other spelling is not CDI-like. A window's
+`pct_of_cdi` is `net_return_pct ÷ cdi_pct × 100` (4 decimals) only when `cdi_like` and the window's CDI is above zero;
+otherwise null with `pct_of_cdi_reason_code`: `pct_cdi_so_fundos` (not a fund), `referencia_nao_servida` (no fee row
+carried the benchmark), `referencia_nao_informada`, `referencia_nao_cdi`, `referencia_diverge` (the two documents, or the
+lâmina's classes, disagree), `cdi_indisponivel` or `cdi_nao_positivo`. `net_minus_cdi_pp` is kept in every case.
+
 ## `tax`
 
 1.11, fee paid and tax per position (`src/portfolio/tax.py`, issue #613). Rules: one YAML per instrument type in
@@ -665,6 +691,39 @@ of the line's rule files, plus `data_aplicacao` when the rate depends on a date 
 `minimum_tax` (`text` "depende da renda total anual; fora do escopo", `excluded_income[]`, `computed` false),
 `a_conferir[]`, `rules_file`. No figure.
 
+## `equivalents`
+
+1.12, the market equivalent per fund line (`src/portfolio/market_equivalent.py`, #609). For a `fundo` line whose ANBIMA
+class and FUNDO_COTAS (as the fee comparison read them from the Extrato) are mapped in the reviewed YAML
+(`src/portfolio/rules/equivalents/class_index.yaml`, approved pairs only, read in reverse), the equivalent is the
+largest active ETF by third-party PL across every index mapped to the class (`portfolio_equivalents`, catalog v67). The
+indices the SQL served must be the YAML's approved ones, and the flagged ETF the largest by PL, else
+`resposta_inconsistente`. Keys: `status`, `reason`, `errors`, `reason_codes`, `label` ("equivalente de mercado; não é
+recomendação"), `as_of` (the run's UTC date, as the fee comparison), `end_month` and `windows[]` (the return block's),
+`choice_note`, `class_note`, `band_note`, `pl_label`, `fee_label`, `lines[]`, `n_fund_lines`, `n_found`, `n_without`,
+`found_value_brl`, `coverage_portfolio_value_pct`. No ranking, no "melhor", no instruction.
+
+A line (every `fundo` line): `line_no`, `linha_extrato`, `fund_name`, `cnpj`, `valor_brl`, `classe_anbima`,
+`fundo_cotas`, `class_indices`, `n_etfs`, `status` (`encontrado` | `sem_equivalente`), `reason_code` and `reason`
+(`equivalente_fora_escopo`, `equivalente_sem_classe`, `equivalente_sem_par`, `equivalente_sem_etf`, `equivalente_sem_pl`,
+`equivalente_sem_linha`, `consulta_falhou`, `resposta_inconsistente`), `label`, `etf`, `windows[]`,
+`fund_return_status`, `sources`.
+
+- `etf`: `ticker`, `cnpj`, `name`, `underlying_index`, `segment`, `pl_brl` and `pl_as_of` with `pl_label` (etfsbrasil,
+  third party), `fee_pct_year` and `fee_as_of` with `fee_label` (the same source as the fee comparison's ETF peers;
+  `fee_reason_code` `equivalente_sem_taxa` when the site printed none), `in_fee_peers`, `snapshot_source`, `basis`
+  (`close_sem_proventos` from `quote_history` `close`, or `last_price_etf_renda_fixa` from `trade_consolidated_history`
+  for a `fixed_income_br` ETF; never `ref_price` or `close_adj`), `basis_label`, `without_distributions` (true),
+  `note`, `pl_rank`, `sources`.
+- `windows[i]` (`12m`, `6m`, the return block's dates): `etf_net_return_pct` (or `etf_reason_code`
+  `equivalente_sem_retorno` with `etf_series_reason_code`, e.g. `serie_incompleta`, `etf_rf_sem_api`),
+  `fund_net_return_pct` (the return block's, or `fund_reason_code`), the class distribution
+  (`class_return_distribution` for the class and FUNDO_COTAS at the return block's end month: `class_p25_pct`,
+  `class_median_pct`, `class_p75_pct`, `class_n_funds`, or `class_reason_code` `distribuicao_classe_nao_avaliada`),
+  `etf_minus_median_pp`, `fund_minus_median_pp`, and the position in the distribution, `etf_band` / `fund_band`
+  (`abaixo_p25`, `p25_mediana`, `mediana_p75`, `acima_p75`) with `*_band_label` and `band_note` (a position in the
+  class's distribution, not a ranking; `class_return_distribution` serves quartiles, not an exact percentile rank).
+
 ## The report's view (mapping)
 
 `src/portfolio/report/adapt.py` is this table as code: `python -m src.portfolio.report.build engine.json` maps an
@@ -717,16 +776,18 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `liquidity` (1.9) (`buckets[i]` with `weight_pct`, `line_ids`)                                                                                                                                                                                                                                                                   | `liquidity`, copied, line numbers as `L<n>`                                                                                                                                                                                                                                                                                                            |
 | `concentration.manager` (1.9) (`groups[i]`, `fund_value_weight_pct`)                                                                                                                                                                                                                                                             | `concentration.manager`                                                                                                                                                                                                                                                                                                                                |
 | `lines[i].badges[]` (1.9) (`code`, `label`: `ocr`, `codigo_nao_conferido`, `taxa_nao_conferida`, `vencimento_diverge`)                                                                                                                                                                                                           | the statement's `fonte_texto`, `codigo_conferido`, `taxa_conferida` and `credit_match.flags`                                                                                                                                                                                                                                                           |
-| `returns` (1.10) (`windows[i]`, `coverage[i]` with `id`, `cdi`, `lines[i]`: `line_id`, `basis_label`, `fee`, `windows[j]`) | `returns.*`, copied; `windows` and `coverage` become lists in the engine's window order (`12m`, `6m`), because a placeholder key must start with a letter; every `reason` is the fixed text of its code (`cdi_reason`, `fee_reason` for the window's other codes); no total, mean or ranking is added, and "% do CDI" is not shown (the engine has none) |
+| `returns` (1.10) (`windows[i]`, `coverage[i]` with `id`, `cdi`, `lines[i]`: `line_id`, `basis_label`, `fee`, `windows[j]`) | `returns.*`, copied; `windows` and `coverage` become lists in the engine's window order (`12m`, `6m`), because a placeholder key must start with a letter; every `reason` is the fixed text of its code (`cdi_reason`, `fee_reason` for the window's other codes); no total, mean or ranking is added, and "% do CDI" is shown only where the engine wrote `pct_of_cdi` (1.12), with `pct_of_cdi_reason` beside a fund that has none; `lines[i].benchmark` copied with its fixed reason |
 | `tax` (1.11) (`labels`, `rules_files`, `not_covered`, `person`, `lines[i]`: `line_id`, `fee`, `holding`, `tax`, `pension`, `optimization`, `iof`, `a_conferir`) | `tax.*`, copied without `rule_source`, `sources` and the `date_missing` template; `tax.act` from `rule_source.act`; every `reason` the fixed text of its code; `person.flags[i].line_ids` as `L<n>` |
 | `gaps[i]` from returns and tax (1.10, 1.11) | the lines with no return (`returns.lines[i].reason_code`) and the `sem_regra` tax lines, grouped by code, with their line ids and no value |
 | `fees.comparison.by_line[i]` `n_fund_peers`, `n_etf_peers`, `n_etf_excluded`, `etf_peer_*` (1.11) | the same keys of `fees.comparison.lines[i]` |
+| `equivalents` (1.12) (`label`, notes, `lines[i]`: `line_id`, `etf`, `windows[j]`) | `equivalents.*`, copied without `sources`; every reason the fixed text of its code (the SQL's own reason never reaches the view); lines with no equivalent and windows not compared are `gaps[i]`, grouped by code; the ETF's PL and fee dates date `ETFSBRASIL` |
 | `data_dates`                                                                                                                                                                                                                                                                                                                     | the newest `data_date` per source name                                                                                                                                                                                                                                                                                                                 |
 
 ## Tools the engine calls
 
-`fund_nav`, `quote_history`, `macro_series` and `trade_consolidated_history` (1.10, the return block; the last
-is catalog v65, merged in #632 and live once the analytical SQL and the MCP are deployed; until then its unknown-tool answer is the expected `etf_rf_sem_api`), `portfolio_instruments` and `portfolio_fund_terms` (catalog v62), `portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57), `portfolio_lookthrough` (merged; the canned
+`portfolio_equivalents` and `class_return_distribution` (1.12, catalog v67 and v66; live once the analytical SQL
+and the MCP are deployed), `fund_nav`, `quote_history`, `macro_series` and `trade_consolidated_history` (1.10, the return block; the last
+is catalog v65, merged in #632 and live once the analytical SQL and the MCP are deployed; until then its unknown-tool answer is the expected `etf_rf_sem_api`), `portfolio_instruments` and `portfolio_fund_terms` (catalog v62), `portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57, 3 in v67), `portfolio_lookthrough` (merged; the canned
 rows follow their documented columns and have not been run against the live functions), and the
 existing `lookup`, `quote_latest`, `company_financials`, `short_interest`, `fidc_portfolio`,
 `fund_restatements`, `fund_restatement_diff` and the `screen_*` tools. Default client: the public

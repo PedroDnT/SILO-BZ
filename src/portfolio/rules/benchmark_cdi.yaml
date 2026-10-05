@@ -1,0 +1,100 @@
+# Which filed benchmark spellings make a fund "CDI-like" for "% do CDI" (engine 1.12).
+#
+# Owner's decision (#606, addendum Q36 of 2026-10-05): a fund is CDI-like ONLY when its
+# own filed benchmark is CDI or DI, as filed in the CVM Extrato or the lâmina. Never
+# inferred from the fund's name or its ANBIMA class (options B and C were rejected).
+#
+# Where a benchmark is filed (served by api.portfolio_fees since catalog v67):
+#   - Extrato das Informações: PARAM_TAXA_PERFM (benchmark_extrato). It is the index the
+#     PERFORMANCE FEE is measured against, and the Extrato's only benchmark column (its
+#     117 columns were read on 2026-10-05). A fund that charges performance over the CDI
+#     therefore reads as CDI-like under the owner's rule.
+#   - Lâmina: INDICE_REFER (benchmark_lamina), the declared reference index, one value only
+#     when every class filed the same one.
+#
+# Matching: exact, after `normalize` (trim, collapse inner whitespace, upper-case). No
+# fuzzy match, no substring, no regex. A spelling not listed under `accepted` is not
+# CDI-like; `rejected` records spellings that were seen and deliberately not accepted, so
+# a reviewer can see the decision (a spelling in neither list is treated as rejected too).
+#
+# Combination rule (src/portfolio/benchmark.py):
+#   - nothing filed in either document               -> not CDI-like, referencia_nao_informada
+#   - the lâmina's classes file different values      -> not CDI-like, referencia_diverge
+#   - every filed value accepted                      -> CDI-like
+#   - every filed value rejected                      -> not CDI-like, referencia_nao_cdi
+#   - one accepted and one rejected (Extrato vs lâmina) -> not CDI-like, referencia_diverge
+#
+# Measured 2026-10-05 (read-only, bounded SELECTs on vw_fi_extrato_latest and
+# vw_fi_lamina_latest, lâminas up to 36 months old) over the 26,063 FI funds with a quota
+# in 2026-07..2026-09: 8,104 filed a benchmark in either document (5,457 in the Extrato,
+# 4,008 in the lâmina); 4,631 are CDI-like under this list; 112 have an accepted spelling in
+# one document and a rejected one in the other.
+version: 1
+measured_on: "2026-10-05"
+accepted:
+  # spelling (normalized): where seen, count of funds
+  - spelling: "CDI"
+    seen: "Extrato PARAM_TAXA_PERFM 5,405; lâmina INDICE_REFER 2,900"
+  - spelling: "DI1 - DI DE UM DIA"
+    seen: "lâmina 130"
+  - spelling: "CDI252"
+    seen: "lâmina 103"
+  - spelling: "CDI 100%"
+    seen: "lâmina 58"
+  - spelling: "DI-CETIP"
+    seen: "lâmina 21"
+  - spelling: "CDI DIARIO"
+    seen: "lâmina 9"
+  - spelling: "(CDI252+0%)"
+    seen: "lâmina 5"
+rejected:
+  - spelling: "SELIC"
+    why: "the Selic rate is not the CDI (owner: CDI or DI only)"
+  - spelling: "SELIC 100%"
+    why: "Selic, not CDI"
+  - spelling: "105%CDI252"
+    why: "a multiple of the CDI, not the CDI"
+  - spelling: "103%CDI252"
+    why: "a multiple of the CDI"
+  - spelling: "110%CDI252"
+    why: "a multiple of the CDI"
+  - spelling: "101%CDI252"
+    why: "a multiple of the CDI"
+  - spelling: "89.00%CDI252"
+    why: "a multiple of the CDI"
+  - spelling: "CDI 125%"
+    why: "a multiple of the CDI"
+  - spelling: "CDI 115%"
+    why: "a multiple of the CDI"
+  - spelling: "(CDI252+1%)"
+    why: "CDI plus a spread, not the CDI"
+  - spelling: "(CDI252+2%)"
+    why: "CDI plus a spread"
+  - spelling: "CDI + 1%"
+    why: "CDI plus a spread"
+  - spelling: "CDI+0.02 %"
+    why: "CDI plus a spread"
+  - spelling: "80.00%CDI252 /20.00%"
+    why: "a mix of the CDI and another index"
+  - spelling: "CDI 80%, IBOV 20%"
+    why: "a mix of the CDI and the Ibovespa"
+  - spelling: "CDI 50%, IBOV 50%"
+    why: "a mix"
+  - spelling: "CDI 90%, IBOV 10%"
+    why: "a mix"
+  - spelling: "CDI_I"
+    why: "meaning not stated by the filer"
+  - spelling: "CDI ANO"
+    why: "meaning not stated by the filer"
+  - spelling: "CDI00035"
+    why: "meaning not stated by the filer"
+  - spelling: "IDI2003"
+    why: "an index of the DI, not the DI rate"
+  - spelling: "OUTROS"
+    why: "the Extrato's 'other' option names no index"
+  - spelling: "NÃO SE APLICA"
+    why: "no index"
+  - spelling: "INDICE"
+    why: "names no index"
+  - spelling: "0,00"
+    why: "not an index"
