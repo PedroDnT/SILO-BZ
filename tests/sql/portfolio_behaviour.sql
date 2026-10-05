@@ -1172,4 +1172,65 @@ BEGIN
     RAISE NOTICE 'portfolio grants OK';
 END $$;
 
+-- Fee-peer cohorts: independent S/N flags and FI/FIF scopes; invalid and
+-- stale/future fees stay as filed and never enter the distribution.
+INSERT INTO public.cvm_fi_diario (cnpj, id_subclasse, dt_comptc, vl_quota, vl_patrim_liq, raw)
+SELECT (98000000000000::bigint + g)::text, '', DATE '2026-10-01', 1, 1000, '{}'
+FROM generate_series(1, 95) g;
+INSERT INTO public.cvm_fi_extrato
+    (cnpj, dt_comptc, classe_anbima, fundo_cotas, tp_fundo_classe, taxa_adm, raw)
+SELECT (98000000000000::bigint + g)::text,
+       CASE WHEN g = 94 THEN DATE '2022-01-01' WHEN g = 95 THEN DATE '2026-11-01' ELSE DATE '2026-09-30' END,
+       'TEST FEE CLASS', CASE WHEN g BETWEEN 31 AND 60 THEN 'S' ELSE 'N' END,
+       CASE WHEN g BETWEEN 61 AND 89 THEN 'CLASSES - FIF' ELSE 'FI' END,
+       CASE WHEN g = 1 THEN 2 WHEN g BETWEEN 31 AND 60 THEN 3
+            WHEN g = 90 THEN 0 WHEN g = 91 THEN 10 WHEN g = 92 THEN -1
+            WHEN g = 93 THEN NULL ELSE 1 END, '{}'
+FROM generate_series(1, 95) g;
+REFRESH MATERIALIZED VIEW public.fact_fund_monthly;
+DO $$
+DECLARE r RECORD; n INT;
+BEGIN
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000001'], DATE '2026-10-05');
+    IF r.status <> 'compared' OR r.n_peers <> 30 OR r.n_excluded <> 6
+       OR r.median_pct_year <> 1 OR r.p25_pct_year <> 1 OR r.p75_pct_year <> 1
+       OR r.difference_pp <> 1 OR r.percentile_pct <> 98.3333 THEN
+        RAISE EXCEPTION 'fee peers mixed cohorts or invalid fees: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000031'], DATE '2026-10-05');
+    IF r.status <> 'compared' OR r.median_pct_year <> 3 OR r.n_peers <> 30
+       OR r.percentile_pct <> 50 THEN RAISE EXCEPTION 'fee peers S split/ties: %', row_to_json(r); END IF;
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000061'], DATE '2026-10-05');
+    IF r.reason_code <> 'pares_insuficientes' OR r.n_peers <> 29 OR r.median_pct_year IS NOT NULL THEN
+        RAISE EXCEPTION 'fee peers broadened a FIF cohort: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000090'], DATE '2026-10-05');
+    IF r.taxa_adm <> 0 OR r.reason_code <> 'taxa_nao_utilizavel' OR r.difference_pp IS NOT NULL THEN
+        RAISE EXCEPTION 'fee peers treated zero as a fee'; END IF;
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000094'], DATE '2026-10-05');
+    IF r.reason_code <> 'taxa_defasada_comparacao' THEN RAISE EXCEPTION 'stale fee entered comparison'; END IF;
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000095'], DATE '2026-10-05');
+    IF r.reason_code <> 'taxa_data_futura' THEN RAISE EXCEPTION 'future fee entered comparison'; END IF;
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98999999999999'], DATE '2026-10-05');
+    IF r.reason_code <> 'sem_extrato_comparavel' OR r.n_peers <> 0 THEN RAISE EXCEPTION 'missing fee fabricated'; END IF;
+    SELECT count(*) INTO n FROM api.portfolio_fee_peers(ARRAY['98.000.000/0000-01', '98000000000001'], DATE '2026-10-05');
+    IF n <> 1 THEN RAISE EXCEPTION 'duplicate fee target changed distribution'; END IF;
+    BEGIN
+        PERFORM * FROM api.portfolio_fee_peers(ARRAY(SELECT '98000000000001' FROM generate_series(1,201)));
+        RAISE EXCEPTION 'fee peers accepted 201';
+    EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+    BEGIN
+        PERFORM * FROM api.portfolio_fee_peers(ARRAY['invalid']);
+        RAISE EXCEPTION 'fee peers accepted invalid CNPJ';
+    EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+    -- The function can read; the caller cannot read its source table.
+    SET LOCAL ROLE anon;
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000001'], DATE '2026-10-05');
+    IF r.status <> 'compared' THEN RAISE EXCEPTION 'anon fee peers cannot compare'; END IF;
+    IF has_table_privilege('anon','public.cvm_fi_extrato','SELECT') THEN
+        RAISE EXCEPTION 'anon can read raw Extrato'; END IF;
+    RESET ROLE;
+    RAISE NOTICE 'portfolio_fee_peers behavior OK';
+END $$;
+
 ROLLBACK;

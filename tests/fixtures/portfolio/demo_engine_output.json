@@ -4531,6 +4531,275 @@
       "adm_disclosed_range_high_portfolio_pct": 0.0672,
       "estimate_adm_portfolio_pct": 0.4253
     },
+    "comparison": {
+      "status": "partial",
+      "reason": "Há fundos não comparados; cada linha informa o motivo.",
+      "errors": [],
+      "reason_codes": [
+        "sem_extrato_comparavel",
+        "tipo_fora_comparacao"
+      ],
+      "as_of": "2026-10-03",
+      "basis": "Taxa de administração do Extrato CVM versus fundos FI ativos da mesma classe ANBIMA, indicador de fundo de fundos e escopo do documento (fundo FI ou classe FIF). Ao menos trinta taxas utilizáveis, positivas e até cinco por cento ao ano, com documento de até trinta e seis meses. Universo ativo: cota em um dos três meses de referência. Inclui o próprio fundo quando elegível. Documentos mais recentes disponíveis, não um histórico. Performance, despesa total e ETFs não entram. Percentil por posição média dos empates; diferença em pontos percentuais para a mediana. Não mede qualidade, economia realizável ou recomendação de troca.",
+      "lines": [
+        {
+          "line_no": 3,
+          "cnpj": "08935128000159",
+          "fund_name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
+          "position_value_brl": 264615.0,
+          "status": "compared",
+          "reason_code": null,
+          "reason": null,
+          "sources": [
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 3
+              },
+              "data_date": "2026-09-30"
+            },
+            {
+              "tool": "portfolio_fee_peers",
+              "call_id": 19,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_as_of": "2026-10-03"
+              },
+              "data_date": "2026-07-31"
+            }
+          ],
+          "p25_pct_year": 0.75,
+          "median_pct_year": 1.0,
+          "p75_pct_year": 1.5,
+          "percentile_pct": 95.0,
+          "difference_pp": 1.0,
+          "own_fee_pct_year": 2.0,
+          "classe_anbima": "Ações Livre",
+          "fundo_cotas": "N",
+          "tp_fundo_classe": "FI",
+          "fee_as_of": "2026-07-31",
+          "comparison_as_of": "2026-10-03",
+          "activity_from": "2026-08-01",
+          "activity_to": "2026-10-01",
+          "n_peers": 40,
+          "n_excluded": 4,
+          "peer_fee_oldest": "2024-01-31",
+          "peer_fee_newest": "2026-09-30"
+        },
+        {
+          "line_no": 4,
+          "cnpj": "50088190000119",
+          "fund_name": "XP BANCOS FIC FIF RENDA FIXA",
+          "position_value_brl": 1387809.9,
+          "status": "not_compared",
+          "reason_code": "sem_extrato_comparavel",
+          "reason": "sem Extrato CVM para comparar",
+          "sources": [
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 4
+              },
+              "data_date": "2026-09-30"
+            },
+            {
+              "tool": "portfolio_fee_peers",
+              "call_id": 19,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_as_of": "2026-10-03"
+              },
+              "data_date": null
+            }
+          ],
+          "p25_pct_year": null,
+          "median_pct_year": null,
+          "p75_pct_year": null,
+          "percentile_pct": null,
+          "difference_pp": null,
+          "own_fee_pct_year": null,
+          "classe_anbima": null,
+          "fundo_cotas": null,
+          "tp_fundo_classe": null,
+          "fee_as_of": null,
+          "comparison_as_of": null,
+          "activity_from": null,
+          "activity_to": null,
+          "n_peers": 0,
+          "n_excluded": 0,
+          "peer_fee_oldest": null,
+          "peer_fee_newest": null
+        },
+        {
+          "line_no": 5,
+          "cnpj": "51488342000133",
+          "fund_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+          "position_value_brl": 902591.9,
+          "status": "not_compared",
+          "reason_code": "sem_extrato_comparavel",
+          "reason": "sem Extrato CVM para comparar",
+          "sources": [
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 5
+              },
+              "data_date": "2026-09-30"
+            },
+            {
+              "tool": "portfolio_fee_peers",
+              "call_id": 19,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_as_of": "2026-10-03"
+              },
+              "data_date": null
+            }
+          ],
+          "p25_pct_year": null,
+          "median_pct_year": null,
+          "p75_pct_year": null,
+          "percentile_pct": null,
+          "difference_pp": null,
+          "own_fee_pct_year": null,
+          "classe_anbima": null,
+          "fundo_cotas": null,
+          "tp_fundo_classe": null,
+          "fee_as_of": null,
+          "comparison_as_of": null,
+          "activity_from": null,
+          "activity_to": null,
+          "n_peers": 0,
+          "n_excluded": 0,
+          "peer_fee_oldest": null,
+          "peer_fee_newest": null
+        },
+        {
+          "line_no": 6,
+          "cnpj": "32113885000121",
+          "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+          "position_value_brl": 750000.0,
+          "status": "not_compared",
+          "reason_code": "tipo_fora_comparacao",
+          "reason": "ETF, FIDC, FII ou FIP: fora da comparação de taxas de fundos FI",
+          "sources": [
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 6
+              },
+              "data_date": "2026-09-30"
+            }
+          ],
+          "p25_pct_year": null,
+          "median_pct_year": null,
+          "p75_pct_year": null,
+          "percentile_pct": null,
+          "difference_pp": null,
+          "own_fee_pct_year": null
+        },
+        {
+          "line_no": 7,
+          "cnpj": "42592315000115",
+          "fund_name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
+          "position_value_brl": 770616.5,
+          "status": "not_compared",
+          "reason_code": "sem_extrato_comparavel",
+          "reason": "sem Extrato CVM para comparar",
+          "sources": [
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 7
+              },
+              "data_date": "2026-09-30"
+            },
+            {
+              "tool": "portfolio_fee_peers",
+              "call_id": 19,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_as_of": "2026-10-03"
+              },
+              "data_date": null
+            }
+          ],
+          "p25_pct_year": null,
+          "median_pct_year": null,
+          "p75_pct_year": null,
+          "percentile_pct": null,
+          "difference_pp": null,
+          "own_fee_pct_year": null,
+          "classe_anbima": null,
+          "fundo_cotas": null,
+          "tp_fundo_classe": null,
+          "fee_as_of": null,
+          "comparison_as_of": null,
+          "activity_from": null,
+          "activity_to": null,
+          "n_peers": 0,
+          "n_excluded": 0,
+          "peer_fee_oldest": null,
+          "peer_fee_newest": null
+        },
+        {
+          "line_no": 8,
+          "cnpj": "11728688000147",
+          "fund_name": "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO",
+          "position_value_brl": 175440.0,
+          "status": "not_compared",
+          "reason_code": "tipo_fora_comparacao",
+          "reason": "ETF, FIDC, FII ou FIP: fora da comparação de taxas de fundos FI",
+          "sources": [
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 8
+              },
+              "data_date": "2026-09-30"
+            }
+          ],
+          "p25_pct_year": null,
+          "median_pct_year": null,
+          "p75_pct_year": null,
+          "percentile_pct": null,
+          "difference_pp": null,
+          "own_fee_pct_year": null
+        }
+      ],
+      "n_compared": 1,
+      "n_not_compared": 5,
+      "compared_value_brl": 264615.0,
+      "fund_value_brl": 4251073.3,
+      "coverage_fund_value_pct": 6.2247,
+      "coverage_portfolio_value_pct": 4.2704
+    },
     "summary": {
       "title": "Quanto a carteira paga em taxas",
       "basis": "taxa de administração divulgada por fundo (Extrato CVM, lâmina, cad_fi), em R$ por ano = valor da posição x taxa; as taxas fixas são somadas, a faixa das linhas com classes de taxas diferentes fica à parte, a taxa de ETF do site etfsbrasil.com.br (fonte de terceiros) é somada à parte, e a estimativa do balancete nunca é somada a nenhuma delas",
@@ -11736,7 +12005,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 19,
+            "call_id": 20,
             "args": {
               "p_id": "AXIA7",
               "p_from": "2025-03-31",
@@ -11802,7 +12071,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 20,
+            "call_id": 21,
             "args": {
               "p_id": "BRAP4",
               "p_from": "2025-03-31",
@@ -11835,7 +12104,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 21,
+            "call_id": 22,
             "args": {
               "p_id": "VALE3",
               "p_from": "2025-03-31",
@@ -11868,7 +12137,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 21,
+            "call_id": 22,
             "args": {
               "p_id": "VALE3",
               "p_from": "2025-03-31",
@@ -11901,7 +12170,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 22,
+            "call_id": 23,
             "args": {
               "p_id": "USIM5",
               "p_from": "2025-03-31",
@@ -11934,7 +12203,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 23,
+            "call_id": 24,
             "args": {
               "p_id": "CLSC4",
               "p_from": "2025-03-31",
@@ -11967,7 +12236,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 24,
+            "call_id": 25,
             "args": {
               "p_id": "HYPE3",
               "p_from": "2025-03-31",
@@ -13352,7 +13621,7 @@
         "sources": [
           {
             "tool": "fidc_portfolio",
-            "call_id": 25,
+            "call_id": 26,
             "args": {
               "p_cnpj": "32113885000121",
               "p_kind": "sector",
@@ -13374,7 +13643,7 @@
         "sources": [
           {
             "tool": "fidc_portfolio",
-            "call_id": 25,
+            "call_id": 26,
             "args": {
               "p_cnpj": "32113885000121",
               "p_kind": "sector",
@@ -13396,7 +13665,7 @@
         "sources": [
           {
             "tool": "fidc_portfolio",
-            "call_id": 25,
+            "call_id": 26,
             "args": {
               "p_cnpj": "32113885000121",
               "p_kind": "sector",
@@ -13418,7 +13687,7 @@
         "sources": [
           {
             "tool": "fidc_portfolio",
-            "call_id": 25,
+            "call_id": 26,
             "args": {
               "p_cnpj": "32113885000121",
               "p_kind": "sector",
@@ -13440,7 +13709,7 @@
         "sources": [
           {
             "tool": "fidc_portfolio",
-            "call_id": 25,
+            "call_id": 26,
             "args": {
               "p_cnpj": "32113885000121",
               "p_kind": "sector",
@@ -13738,7 +14007,7 @@
             "sources": [
               {
                 "tool": "fund_restatements",
-                "call_id": 26,
+                "call_id": 27,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_from": "2025-09-01",
@@ -13748,7 +14017,7 @@
               },
               {
                 "tool": "fund_restatement_diff",
-                "call_id": 27,
+                "call_id": 28,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_fnet_id": 1298163
@@ -13814,7 +14083,7 @@
             "sources": [
               {
                 "tool": "fund_restatements",
-                "call_id": 26,
+                "call_id": 27,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_from": "2025-09-01",
@@ -13824,7 +14093,7 @@
               },
               {
                 "tool": "fund_restatement_diff",
-                "call_id": 28,
+                "call_id": 29,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_fnet_id": 1120221
@@ -13890,7 +14159,7 @@
             "sources": [
               {
                 "tool": "fund_restatements",
-                "call_id": 26,
+                "call_id": 27,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_from": "2025-09-01",
@@ -13900,7 +14169,7 @@
               },
               {
                 "tool": "fund_restatement_diff",
-                "call_id": 29,
+                "call_id": 30,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_fnet_id": 1086024
@@ -14094,7 +14363,7 @@
             "sources": [
               {
                 "tool": "screen_restatements",
-                "call_id": 34,
+                "call_id": 35,
                 "args": {},
                 "data_date": null
               }
@@ -14134,7 +14403,7 @@
             "sources": [
               {
                 "tool": "screen_delinquency_drivers",
-                "call_id": 37,
+                "call_id": 38,
                 "args": {
                   "p_driver": "consistent_worsening"
                 },
@@ -14232,7 +14501,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 41,
+            "call_id": 42,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14283,7 +14552,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 41,
+            "call_id": 42,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14334,7 +14603,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 41,
+            "call_id": 42,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14385,7 +14654,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 41,
+            "call_id": 42,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14436,7 +14705,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 41,
+            "call_id": 42,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14487,7 +14756,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 41,
+            "call_id": 42,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -15604,7 +15873,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 41,
+            "call_id": 42,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -15620,7 +15889,7 @@
           },
           {
             "tool": "portfolio_movement",
-            "call_id": 41,
+            "call_id": 42,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -15636,7 +15905,7 @@
           },
           {
             "tool": "portfolio_movement",
-            "call_id": 41,
+            "call_id": 42,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -15768,7 +16037,7 @@
         "sources": [
           {
             "tool": "fund_restatements",
-            "call_id": 26,
+            "call_id": 27,
             "args": {
               "p_cnpj": "32113885000121",
               "p_from": "2025-09-01",
@@ -15778,7 +16047,7 @@
           },
           {
             "tool": "fund_restatement_diff",
-            "call_id": 27,
+            "call_id": 28,
             "args": {
               "p_cnpj": "32113885000121",
               "p_fnet_id": 1298163
@@ -15787,7 +16056,7 @@
           },
           {
             "tool": "fund_restatements",
-            "call_id": 26,
+            "call_id": 27,
             "args": {
               "p_cnpj": "32113885000121",
               "p_from": "2025-09-01",
@@ -15797,7 +16066,7 @@
           },
           {
             "tool": "fund_restatement_diff",
-            "call_id": 28,
+            "call_id": 29,
             "args": {
               "p_cnpj": "32113885000121",
               "p_fnet_id": 1120221
@@ -15806,7 +16075,7 @@
           },
           {
             "tool": "fund_restatements",
-            "call_id": 26,
+            "call_id": 27,
             "args": {
               "p_cnpj": "32113885000121",
               "p_from": "2025-09-01",
@@ -15816,7 +16085,7 @@
           },
           {
             "tool": "fund_restatement_diff",
-            "call_id": 29,
+            "call_id": 30,
             "args": {
               "p_cnpj": "32113885000121",
               "p_fnet_id": 1086024
@@ -16769,14 +17038,18 @@
     },
     {
       "call_id": 19,
-      "tool": "company_financials",
+      "tool": "portfolio_fee_peers",
       "args": {
-        "p_id": "AXIA7",
-        "p_from": "2025-03-31",
-        "p_to": "2026-09-30"
+        "p_cnpjs": [
+          "08935128000159",
+          "42592315000115",
+          "50088190000119",
+          "51488342000133"
+        ],
+        "p_as_of": "2026-10-03"
       },
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
+      "row_count": 4,
       "error": null,
       "id": "p19"
     },
@@ -16784,7 +17057,7 @@
       "call_id": 20,
       "tool": "company_financials",
       "args": {
-        "p_id": "BRAP4",
+        "p_id": "AXIA7",
         "p_from": "2025-03-31",
         "p_to": "2026-09-30"
       },
@@ -16797,7 +17070,7 @@
       "call_id": 21,
       "tool": "company_financials",
       "args": {
-        "p_id": "VALE3",
+        "p_id": "BRAP4",
         "p_from": "2025-03-31",
         "p_to": "2026-09-30"
       },
@@ -16810,7 +17083,7 @@
       "call_id": 22,
       "tool": "company_financials",
       "args": {
-        "p_id": "USIM5",
+        "p_id": "VALE3",
         "p_from": "2025-03-31",
         "p_to": "2026-09-30"
       },
@@ -16823,7 +17096,7 @@
       "call_id": 23,
       "tool": "company_financials",
       "args": {
-        "p_id": "CLSC4",
+        "p_id": "USIM5",
         "p_from": "2025-03-31",
         "p_to": "2026-09-30"
       },
@@ -16836,7 +17109,7 @@
       "call_id": 24,
       "tool": "company_financials",
       "args": {
-        "p_id": "HYPE3",
+        "p_id": "CLSC4",
         "p_from": "2025-03-31",
         "p_to": "2026-09-30"
       },
@@ -16847,6 +17120,19 @@
     },
     {
       "call_id": 25,
+      "tool": "company_financials",
+      "args": {
+        "p_id": "HYPE3",
+        "p_from": "2025-03-31",
+        "p_to": "2026-09-30"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 1,
+      "error": null,
+      "id": "p25"
+    },
+    {
+      "call_id": 26,
       "tool": "fidc_portfolio",
       "args": {
         "p_cnpj": "32113885000121",
@@ -16857,10 +17143,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 6,
       "error": null,
-      "id": "p25"
+      "id": "p26"
     },
     {
-      "call_id": 26,
+      "call_id": 27,
       "tool": "fund_restatements",
       "args": {
         "p_cnpj": "32113885000121",
@@ -16870,18 +17156,6 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 3,
       "error": null,
-      "id": "p26"
-    },
-    {
-      "call_id": 27,
-      "tool": "fund_restatement_diff",
-      "args": {
-        "p_cnpj": "32113885000121",
-        "p_fnet_id": 1298163
-      },
-      "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 2,
-      "error": null,
       "id": "p27"
     },
     {
@@ -16889,7 +17163,7 @@
       "tool": "fund_restatement_diff",
       "args": {
         "p_cnpj": "32113885000121",
-        "p_fnet_id": 1120221
+        "p_fnet_id": 1298163
       },
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 2,
@@ -16901,7 +17175,7 @@
       "tool": "fund_restatement_diff",
       "args": {
         "p_cnpj": "32113885000121",
-        "p_fnet_id": 1086024
+        "p_fnet_id": 1120221
       },
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 2,
@@ -16910,6 +17184,18 @@
     },
     {
       "call_id": 30,
+      "tool": "fund_restatement_diff",
+      "args": {
+        "p_cnpj": "32113885000121",
+        "p_fnet_id": 1086024
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 2,
+      "error": null,
+      "id": "p30"
+    },
+    {
+      "call_id": 31,
       "tool": "fund_restatements",
       "args": {
         "p_cnpj": "11728688000147",
@@ -16919,20 +17205,11 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 0,
       "error": null,
-      "id": "p30"
-    },
-    {
-      "call_id": 31,
-      "tool": "screen_zombie_growth",
-      "args": {},
-      "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
-      "error": null,
       "id": "p31"
     },
     {
       "call_id": 32,
-      "tool": "screen_captive_vehicles",
+      "tool": "screen_zombie_growth",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 1,
@@ -16941,34 +17218,34 @@
     },
     {
       "call_id": 33,
-      "tool": "screen_evergreen_aging",
+      "tool": "screen_captive_vehicles",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 0,
+      "row_count": 1,
       "error": null,
       "id": "p33"
     },
     {
       "call_id": 34,
-      "tool": "screen_restatements",
+      "tool": "screen_evergreen_aging",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
+      "row_count": 0,
       "error": null,
       "id": "p34"
     },
     {
       "call_id": 35,
-      "tool": "screen_late_filers",
+      "tool": "screen_restatements",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 0,
+      "row_count": 1,
       "error": null,
       "id": "p35"
     },
     {
       "call_id": 36,
-      "tool": "screen_silent_filers",
+      "tool": "screen_late_filers",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 0,
@@ -16977,12 +17254,10 @@
     },
     {
       "call_id": 37,
-      "tool": "screen_delinquency_drivers",
-      "args": {
-        "p_driver": "consistent_worsening"
-      },
+      "tool": "screen_silent_filers",
+      "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
+      "row_count": 0,
       "error": null,
       "id": "p37"
     },
@@ -16990,22 +17265,21 @@
       "call_id": 38,
       "tool": "screen_delinquency_drivers",
       "args": {
-        "p_driver": "value_up_rate_masked"
+        "p_driver": "consistent_worsening"
       },
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 0,
+      "row_count": 1,
       "error": null,
       "id": "p38"
     },
     {
       "call_id": 39,
-      "tool": "screen_dormant_funds",
+      "tool": "screen_delinquency_drivers",
       "args": {
-        "p_lookback_months": 3,
-        "p_dormancy": "empty_shell"
+        "p_driver": "value_up_rate_masked"
       },
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
+      "row_count": 0,
       "error": null,
       "id": "p39"
     },
@@ -17014,7 +17288,7 @@
       "tool": "screen_dormant_funds",
       "args": {
         "p_lookback_months": 3,
-        "p_min_nav": 1000000000
+        "p_dormancy": "empty_shell"
       },
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 1,
@@ -17023,6 +17297,18 @@
     },
     {
       "call_id": 41,
+      "tool": "screen_dormant_funds",
+      "args": {
+        "p_lookback_months": 3,
+        "p_min_nav": 1000000000
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 1,
+      "error": null,
+      "id": "p41"
+    },
+    {
+      "call_id": 42,
       "tool": "portfolio_movement",
       "args": {
         "p_cnpjs": [
@@ -17038,7 +17324,7 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 6,
       "error": null,
-      "id": "p41"
+      "id": "p42"
     }
   ]
 }

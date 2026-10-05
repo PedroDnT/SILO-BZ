@@ -270,6 +270,7 @@ REFUSING_FUNCTIONS = {
     # v62: statement codes and fund terms (31_api_portfolio.sql).
     "portfolio_instruments",
     "portfolio_fund_terms",
+    "portfolio_fee_peers",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 

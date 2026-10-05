@@ -23,6 +23,16 @@ measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the val
 
 ## Changes since 1.0
 
+Additive extension of 1.9 (2026-10-05, catalog v63): `fees.comparison` is an independently
+statused peer comparison, with `as_of`, `basis`, per-position `lines` and statement/API
+`sources`. Comparable lines carry their filed class, fund-of-funds flag, document
+scope, own fee/date, p25/median/p75, percentile, difference in percentage points,
+peer/exclusion counts and peer document dates. Non-comparable lines retain null
+statistics and a fixed reason. Section totals report compared/not-compared counts,
+fund value, compared value and coverage by fund and portfolio value. The report
+view adapts lines into `fees.comparison.by_line`. See
+[fee-peer-comparison.md](fee-peer-comparison.md) for eligibility and limitations.
+
 1.9 (owner's brief of 2026-10-05: identify the CRA, CRI and debentures held directly; manager concentration and
 liquidity, both "não avaliado" in 1.8; catalog v62 serves `portfolio_instruments` and `portfolio_fund_terms`). Keys
 were added, none renamed, retyped or removed. **Identification:** a CRA, CRI or debenture line with a code is

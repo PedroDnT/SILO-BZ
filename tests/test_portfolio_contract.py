@@ -35,6 +35,7 @@ SIGNATURES = {
     "portfolio_movement": "api.portfolio_movement(TEXT[], DATE)",
     "portfolio_instruments": "api.portfolio_instruments(TEXT[])",
     "portfolio_fund_terms": "api.portfolio_fund_terms(TEXT[])",
+    "portfolio_fee_peers": "api.portfolio_fee_peers(TEXT[], DATE)",
 }
 
 
@@ -57,11 +58,11 @@ def test_file_is_one_guarded_transaction_after_its_inputs():
         assert ordered.index("31_api_portfolio.sql") > ordered.index(needed)
 
 
-def test_exactly_the_six_api_functions_are_created():
+def test_exactly_the_seven_api_functions_are_created():
     created = re.findall(r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+api\.(\w+)\(", _strip(SQL31))
     assert created == [
         "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
-        "portfolio_instruments", "portfolio_fund_terms",
+        "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
     ]
 
 
@@ -86,7 +87,7 @@ def test_every_function_refuses_above_one_page_and_never_trims():
     helper = _strip(SQL19[SQL19.index("FUNCTION api.assert_row_cap"):SQL19.index("COMMENT ON FUNCTION api.assert_row_cap")])
     assert "p_fn = 'portfolio_resolve'" in helper
     assert re.search(
-        r"\('portfolio_fees', 'portfolio_lookthrough', 'portfolio_movement',\s*'portfolio_fund_terms'\)",
+        r"\('portfolio_fees', 'portfolio_lookthrough', 'portfolio_movement',\s*'portfolio_fund_terms', 'portfolio_fee_peers'\)",
         helper,
     )
     assert "p_fn = 'portfolio_instruments'" in helper
