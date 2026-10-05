@@ -81,6 +81,12 @@ class Narrative:
     cost_cap_usd: float = 0.0
 
 
+
+# engine 1.9 liquidity table: where the filed terms came from, and the broker label kept only for a pension wrapper
+TERMS_SOURCE_LABEL = {"extrato": "Extrato da CVM", "lamina": "lâmina"}
+PREV_WRAPPER = re.compile(r"previd|pgbl|vgbl", re.I)
+RATING_NOT_FILED = ("0", "-", "—")
+
 def signature(cli_value: str | None = None) -> str:
     return cli_value or os.environ.get(SIGNATURE_ENV) or DEFAULT_SIGNATURE
 
@@ -514,7 +520,10 @@ def _credit_section(engine: dict) -> str:
         if x.get("cnpj_securit"):
             code += f"<br><span class=cit>securitizadora: {v(engine, f'{q}.cnpj_securit')}</span>"
         code += "".join(f'<br><span class="tag unk">{v(engine, f"{q}.flags[{j}].label")}</span>' for j in range(len(x.get("flags") or [])))
-        situ = f"{v(engine, f'{q}.situacao')}<br><span class=cit>rating:</span> {v(engine, f'{q}.rating')}"
+        rating = v(engine, f'{q}.rating')
+        if str(x.get("rating") or "").strip() in RATING_NOT_FILED:  # a filed "0" is no rating, shown as filed
+            rating = f"não informado (arquivado: {rating})"
+        situ = f"{v(engine, f'{q}.situacao')}<br><span class=cit>rating:</span> {rating}"
         price = (f"<span class=cit>extrato ({v(engine, f'{q}.statement_date')}):</span> {v(engine, f'{q}.statement_preco_brl')}<br>"
                  f"<span class=cit>fundos")
         if x.get("fund_mark_brl") is not None:
@@ -530,7 +539,7 @@ def _credit_section(engine: dict) -> str:
                      pair(q, "statement_vencimento", "registry_vencimento"), pair(q, "statement_taxa", "registry_taxa"),
                      situ, price])
     head = (f"<p class=cit>{_cap(v(engine, 'credit.label'))}. Vencimento, taxa e preço como informados no extrato, no registro "
-            f"da CVM e nas carteiras dos fundos. {_cap(v(engine, 'credit.price_note'))}.</p>")
+            f"da CVM e nas carteiras dos fundos. {_cap(v(engine, 'credit.price_note'))}. {_cap(v(engine, 'credit.rate_note'))}.</p>")
     return head + _table([("Linha", False), ("Código, série e securitizadora", False), ("Emissor (como impresso)", False),
                           ("Vencimento", False), ("Taxa", False), ("Situação e rating", False),
                           ("Preço (extrato | marcação dos fundos)", False)], rows)
@@ -554,9 +563,10 @@ def _liquidity_section(engine: dict) -> str:
             if x.get("qt_dia_resgate_cotas"):
                 t += f", carência {v(engine, f'{lq_}.qt_dia_resgate_cotas')} dias"
             if x.get("terms_source"):
-                t += f" ({v(engine, f'{lq_}.terms_source')}"
+                # "Extrato da CVM", never a bare "extrato": the reader holds the broker's extrato in the other hand
+                t += f" ({e(TERMS_SOURCE_LABEL.get(x['terms_source'], x['terms_source']))}"
                 t += f" de {v(engine, f'{lq_}.terms_dt_comptc')})" if x.get("terms_dt_comptc") else ")"
-            if x.get("estrategia_corretora"):
+            if PREV_WRAPPER.search(x.get("estrategia_corretora") or ""):
                 t += f" · {v(engine, f'{lq_}.estrategia_corretora')}"
             terms.append(t)
         rows.append([v(engine, f"{q}.bucket"), e(", ".join(b.get("line_ids") or [])) or "—",

@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.8)
+# Portfolio engine output (schema 1.9)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,28 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.9 (owner's brief of 2026-10-05: identify the CRA, CRI and debentures held directly; manager concentration and
+liquidity, both "não avaliado" in 1.8; catalog v62 serves `portfolio_instruments` and `portfolio_fund_terms`). Keys
+were added, none renamed, retyped or removed. **Identification:** a CRA, CRI or debenture line with a code is
+looked up in `portfolio_instruments` (one batched call, the `_resolve` chunk and retry path) and gains
+`credit_match` (below); a fund line gains `fund_terms` (below); `identity.issuer_code` for a debenture found in the
+CDA. `FIP` is a fund type (statement, BTG extrato, identification, report). **New section `liquidity`** (below),
+after `allocation` and in `section_status`. `concentration.manager` is computed (below) and
+`concentration.fund_liquidity` points at `liquidity`. **Risks:** rows `credito_situacao`, `credito_vencimento_diverge`,
+`credito_preco_marcacao`, `concentracao_gestor`, and `liquidez` is evaluated (table below). `look_through.lines[].
+max_depth_used`: a fund of funds whose look-through passes the API's one-page cap (22023) is asked again one level
+shallower, down to 1, and the section gains `profundidade_reduzida`. **Signals:** `screen_delinquency_drivers` refuses
+with its defaults (above 1000 rows on 2026-10-05), so it is called once per worsening driver
+(`screen_delinquency_drivers[consistent_worsening]`, `[value_up_rate_masked]`). Assumptions `credit_registry` and
+`fund_terms`. `REASON_TEXT` codes `credito_sem_registro`, `credito_sem_codigo`, `vencimento_diverge`,
+`serie_sem_vencimento`, `situacao_fora_adimplente`, `codigo_nao_conferido`, `sem_cra_cri`, `cra_cri_sem_registro`,
+`sem_debenture`, `sem_marcacao_fundos`, `gestor_nao_informado`, `sem_gestor`, `prazo_nao_informado`,
+`liquidez_sem_identificacao`, `profundidade_reduzida`. **Changed values** (from the first real-statement review,
+2026-10-05): a `renamed` finding is written only when the name led the identification (`match_kind` other than
+`cnpj`), since CVM 175 renamed almost every fund; `concentracao_fundo` sums the lines of one fund (same CNPJ, else
+same code) held in several accounts; the `indexador` row carries `check_label` when more than 25% of the portfolio has
+no indexer (`INDEXER_UNCLASSIFIED_CHECK_PCT`).
 
 1.8 (owner's brief of 2026-10-04: charts, a clear fee total and the main risks). Keys were added, none renamed,
 retyped or removed. **New section `allocation`** and **new section `risks`** (below), placed after `concentration`
@@ -206,9 +228,23 @@ lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titu
 - `valuation`: `{value_brl, basis: "statement", note, sources}`. A Tesouro line has no price
   series in SILO: the statement's value is the value.
 - `findings[]`: `{kind: "renamed" | "cnpj_conflict", text, ...}`.
-- A CRI, CRA, CDB, LCI, LCA or debenture held directly is `unknown` (SILO has no registry or
-  price for them) with the statement's registry code in the reason; its printed rate and maturity
-  still feed the indexer block.
+- A CDB, LCI or LCA held directly is `unknown` (SILO has no registry or price for them) with the statement's
+  registry code in the reason; its printed rate and maturity still feed the indexer block. A CRA, CRI or debenture
+  is looked up by its code (1.9):
+- `credit_match` (1.9): `matched`, `reason_code`, `reason`, `input_code`, `code`, `match_kind` (`securit_cetip` |
+  `cda_ticker` | null). For a CRA or CRI the series columns of `cvm_securit_serie` as filed (`instrument_type`,
+  `cnpj_securit`, `numero_serie`, `classe`, `data_vencimento`, `situacao`, `taxa_juros`, `classificacao_risco_atual`,
+  `valor_total_integralizado_brl`, `data_referencia`), `n_series` and `series[]` when the code has several; the
+  series chosen is the one whose maturity equals the statement's, else the only one, else the lowest number
+  (`serie_sem_vencimento`). For a debenture `cd_isin`, `issuer_code` (ISIN characters 3-6), `n_fundos`,
+  `preco_marcacao_fundos_brl` and `cda_period`, and `price_gap_pct` / `price_gap_abs_pct` / `price_gap_label` (the
+  statement's price against the funds' mark, other dates: information, never a price verdict). `statement`
+  (`issuer_as_printed`, `vencimento`, `taxa_texto`, `preco_brl`, `preco_implicito`, `data_posicao`): the issuer stays
+  the one printed. `flags[]` (`code`, `text`, and the two maturities for `vencimento_diverge`): `vencimento_diverge`,
+  `situacao_fora_adimplente`, `codigo_nao_conferido` (an OCR code sent as read, never fuzzy-matched). `sources`.
+- `fund_terms` (1.9), on a fund line: `answered`, `gestor_id`, `gestor_name`, `admin_cnpj`, `admin_name`,
+  `terms_source` (`extrato` | `lamina` | null), `terms_dt_comptc`, `qt_dia_conversao_cota`, `qt_dia_pagto_resgate`,
+  `tp_dia_pagto_resgate`, `qt_dia_resgate_cotas`, `tool_note`, `sources`: as filed; null is "not filed", never 0.
 
 ## `fees`
 
@@ -417,9 +453,14 @@ rules about where a level may appear, and checks the served level against the se
   `label` "a conferir: limite por CPF e instituição; o extrato consolidado pode ter mais de um titular", `rule`
   (Regulamento do FGC, Anexo II da Resolução CMN nº 4.222/2013, art. 2º: CDB, RDB, LC, LCI, LCA, LCD covered; LF,
   CRA, CRI, debêntures and fund quotas not), `scope_note`, `n_above_limit`.
-- `manager` and `fund_liquidity`: `{status: "unknown", reason_code, reason}`. No `api` function or view serves a
-  fund's manager CNPJ or the lâmina's `qt_dia_pagto_resgate` (checked 2026-10-04), and the engine reads SILO through
-  the public API only, so neither is computed.
+- `manager` (1.9): the fund lines with a CNPJ summed by the filed `gestor_id` of `portfolio_fund_terms`, never by
+  name: `label`, `basis`, `status`, `reason_code`, `fund_value_brl`, `fund_value_portfolio_pct`, `groups[]`
+  (`gestor_id`, `gestor_name`, `names_as_filed`, `line_nos`, `n_lines`, `value_brl`, `portfolio_pct`,
+  `fund_value_pct`, `sources`), largest first, `without_gestor_line_nos` / `without_gestor_value_brl` (no gestor
+  filed: `partial`, `gestor_nao_informado`), `unanswered_line_nos` (the call failed for them). A PGBL / VGBL wrapper
+  counts under its fund's manager. Before 1.9: `{status: "unknown", reason_code: "gestor_sem_api"}`.
+- `fund_liquidity` (1.9): `{status, reason_code, reason, section: "liquidity"}`, a pointer to the `liquidity`
+  section.
 
 ## `allocation`
 
@@ -428,6 +469,21 @@ takes the class SILO's `lookup` gave it (`ação`, `cota de fundo listada`), nev
 is `crédito privado direto` (the `concentration.issuer` rule). `source = "statement"`, `basis`, `portfolio_value_brl`,
 `classes[]` (`asset_class`, `value_brl`, `portfolio_pct`, `n_lines`, `line_nos`), largest first, with `sem
 classificação` always last, even at zero; `sum_check_brl` (0 within a cent).
+
+## `liquidity`
+
+1.9. How fast each line can turn into cash, by the redemption terms as filed (`portfolio_fund_terms`: CVM Extrato,
+else lâmina) and the statement's type. `title`, `source`, `basis`, `days_note` (business and calendar days are never
+converted: a D+N in calendar days sits in the bucket of its N), `note` (no sale price, discount or market depth),
+`thresholds_days` (`d5` 5, `d30` 30), `portfolio_value_brl`, `buckets[]` (`bucket_id`, `bucket`, `value_brl`,
+`portfolio_pct`, `n_lines`, `line_nos`, `lines[]` with the filed terms and `sources`), in this order: `d0_d5` (D+0
+a D+5), `d6_d30`, `acima_d30` (payment days as filed), `lockup` (`qt_dia_resgate_cotas` above 0 wins over the
+payment days), `fundo_sem_prazo` (a fund with no terms filed: closed-end FIDC, FII, FIP, or not filed;
+`prazo_nao_informado`), `credito_direto` (no liquidity before maturity), `titulos_publicos`, `bolsa` (ETF and
+shares), `caixa`, `sem_classificacao` (unidentified, or the terms call failed: never `fundo_sem_prazo`).
+`above_d30_parts` / `above_d30_total_brl` / `above_d30_total_pct`: `acima_d30` + `lockup` + `fundo_sem_prazo` +
+`credito_direto`. `evaluated` (false when the terms call failed for every fund: `status` `unknown`, the risk row
+`nao_avaliado`), `unanswered_line_nos`, `sum_check_brl` (0 within a cent).
 
 ## `risks`
 
@@ -453,7 +509,11 @@ row not evaluated or not applicable), `line_nos`, `sources`, `text_allowed`, and
 | `indexador` | largest indexer group (inflação, pré-fixado, pós-fixado, renda variável, câmbio), % of the portfolio, every group in `parts`; a fact, no forecast | 80% | 60% |
 | `reapresentacoes` | restatements of the portfolio's FIDC and FII in the window, a count | — | 0 |
 | `movimento_anormal` | funds at the strong level, a count; atenção with one, moderado with only attention-level funds | 0 | — |
-| `liquidez` | always `nao_avaliado` (`liquidez_sem_api`): no `api` function serves the lâmina's redemption terms | — | — |
+| `liquidez` | `liquidity.above_d30_total_pct` (beyond D+30, lock-up, funds without terms, direct credit), % of the portfolio (1.9; `nao_avaliado` before) | 50% | 30% |
+| `concentracao_gestor` | largest manager by filed `gestor_id`, % of the portfolio (1.9) | 40% | 25% |
+| `credito_situacao` | CRA/CRI whose registry `situacao` is not `Adimplente`, a count (1.9) | 0 | — |
+| `credito_vencimento_diverge` | CRA/CRI whose statement maturity differs from the registry's, a count, "a conferir" (1.9) | — | 0 |
+| `credito_preco_marcacao` | largest gap between a debenture's statement price and the funds' CDA mark, % (1.9; information, never a price verdict) | — | 5% |
 
 Rows are ordered evaluated first (atenção, moderado, baixo), then not evaluated, then not applicable. The movement
 row keeps the owner's rule that the attention level is a table row: its count of such funds is under `table_only`,
@@ -508,11 +568,15 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `risks` (`status`, `title`, `note`, `severity_rule`, `thresholds`, `counts`, `rows[i]`) (1.8) | `risks.*`; a row without `sources`, `line_nos` (as `line_ids`) and with `reason` only when not evaluated; `provenance` from its `sources` |
 | `lookthrough.tree[i]` (`line_id`, `name`, `value_brl`, `weight_pct`, `n_exposures`, `children[j]` `name`, `value_brl`, `weight_pct`) (1.8) | the five largest funds of `look_through.lines` with an opened portfolio and, under each, its three largest positive `exposures` (`exposure_brl`, `portfolio_pct`): the diagram's selection, never a new figure |
 | `gaps[i]` from the charts and risks (1.8) | every risk row `nao_avaliado` and every chart not drawn (`sem_vencimento`, `sem_credito_direto`, `sem_carteira_dos_fundos`, `sem_taxa_em_reais`), fixed texts |
+| `credit` (1.9) (`label`, `price_note`, `rate_note`, `lines[i]`: `line_id`, `tipo`, codes, `status_label`, issuer as printed, both maturities and rates, `situacao`, rating, ISIN, `issuer_code`, funds' mark and gap) | `identification.lines[i].credit_match` of every CRA, CRI and debenture line |
+| `liquidity` (1.9) (`buckets[i]` with `weight_pct`, `line_ids`) | `liquidity`, copied, line numbers as `L<n>` |
+| `concentration.manager` (1.9) (`groups[i]`, `fund_value_weight_pct`) | `concentration.manager` |
+| `lines[i].badges[]` (1.9) (`code`, `label`: `ocr`, `codigo_nao_conferido`, `taxa_nao_conferida`, `vencimento_diverge`) | the statement's `fonte_texto`, `codigo_conferido`, `taxa_conferida` and `credit_match.flags` |
 | `data_dates` | the newest `data_date` per source name |
 
 ## Tools the engine calls
 
-`portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57), `portfolio_lookthrough` (merged; the canned
+`portfolio_instruments` and `portfolio_fund_terms` (catalog v62), `portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57), `portfolio_lookthrough` (merged; the canned
 rows follow their documented columns and have not been run against the live functions), and the
 existing `lookup`, `quote_latest`, `company_financials`, `short_interest`, `fidc_portfolio`,
 `fund_restatements`, `fund_restatement_diff` and the `screen_*` tools. Default client: the public

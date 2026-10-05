@@ -231,6 +231,8 @@ def _credit_view(eng: dict) -> dict | None:
     return {
         "label": "emissor como impresso no extrato; registro da CVM (CRA, CRI) e marcação dos fundos (CDA bloco 4, debêntures)",
         "price_note": "preço do extrato e marcação média ponderada dos fundos em datas diferentes: informativo, não é veredito de preço",
+        "rate_note": ("a taxa do extrato é a que a corretora imprime para a posição; a do registro é a remuneração da série "
+                      "como arquivada na CVM: as duas podem diferir e nenhuma é corrigida"),
         "lines": rows,
     }
 

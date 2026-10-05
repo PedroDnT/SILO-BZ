@@ -147,7 +147,12 @@ NOT_APPLICABLE_TEXT = {
 DETAIL_LABEL = {"credito_sem_fgc": "valor sem cobertura", "fgc_acima_limite": "excedente somado",
                 "credito_situacao": "valor desses títulos", "credito_vencimento_diverge": "valor desses títulos",
                 "concentracao_gestor": "valor nos fundos da gestora", "liquidez": "valor acima de D+30"}
-CHECK_LABEL = {"credito_vencimento_diverge": "a conferir", "credito_preco_marcacao": "informativo, não é veredito de preço"}
+CHECK_LABEL = {"credito_vencimento_diverge": "a conferir", "credito_preco_marcacao": "informativo, não é veredito de preço",
+               "indexador": "leitura parcial: mais de 25% da carteira sem indexador classificado (partes ao lado)"}
+# Above this share of the portfolio without an indexer, the indexer row's largest group may not be the largest one:
+# the row keeps its value and severity and carries CHECK_LABEL["indexador"] (real statement, 2026-10-05: 46% of the
+# value unclassified, the funds' part the ingested CDA blocks do not explain, printed beside "baixo").
+INDEXER_UNCLASSIFIED_CHECK_PCT = 25.0
 FUND_TIPOS = ("fundo", "FIDC", "FII", "ETF", "FIP")
 INDEXER_GROUPS = (
     ("inflação", lambda c: c.startswith("inflação")),
@@ -262,21 +267,37 @@ def _issuer_rows(doc: dict) -> list[dict]:
 
 
 def _fund_row(doc: dict) -> dict:
+    """The largest fund, summed over every line that identifies as it (same CNPJ, else same code): a fund held in
+    two accounts is one exposure (real statement, 2026-10-05: one fund in two accounts, 3.65% + 6.10%)."""
     idents = {ln["line_no"]: ln for ln in doc["identification"]["lines"]}
-    best = None
+    groups: dict[str, dict] = {}
     for i, p in enumerate(doc["statement"]["positions"]):
         ident = idents.get(p["line_no"]) or {}
         identity = ident.get("identity") or {}
         is_fund = p.get("tipo") in FUND_TIPOS or identity.get("kind") == "fund" or identity.get("asset_class") == "fund_quota"
-        if is_fund and (best is None or (p.get("valor_brl") or 0) > (best[1].get("valor_brl") or 0)):
-            best = (i, p, identity)
-    if best is None:
+        if not is_fund:
+            continue
+        key = identity.get("cnpj") or p.get("codigo") or f"L{p['line_no']}"
+        g = groups.setdefault(key, {"value": Decimal("0"), "pct": Decimal("0"), "line_nos": [], "idx": [], "sources": [],
+                                    "subject": identity.get("name") or p.get("linha_extrato")})
+        g["value"] += dec(p.get("valor_brl")) or Decimal("0")
+        g["pct"] += dec(p.get("portfolio_pct")) or Decimal("0")
+        g["line_nos"].append(p["line_no"])
+        g["idx"].append(i)
+        if p.get("source"):
+            g["sources"].append(p["source"])
+    if not groups:
         return _row("concentracao_fundo", status=NOT_APPLICABLE, unit="pct", code="sem_fundos")
-    i, p, identity = best
-    return _row("concentracao_fundo", status=EVALUATED, unit="pct", value=p.get("portfolio_pct"),
-                subject=identity.get("name") or p.get("linha_extrato"), source_path=f"statement.positions[{i}].portfolio_pct",
-                line_nos=[p["line_no"]], sources=[p["source"]] if p.get("source") else [],
-                extra={"value_brl_detail": p.get("valor_brl")})
+    g = max(groups.values(), key=lambda x: (x["value"], -x["line_nos"][0]))
+    if len(g["idx"]) == 1:
+        path, value = f"statement.positions[{g['idx'][0]}].portfolio_pct", doc["statement"]["positions"][g["idx"][0]].get("portfolio_pct")
+    else:
+        total = dec(doc["statement"].get("sum_of_lines_brl")) or Decimal("0")
+        path = "statement.positions[" + ", ".join(str(i) for i in g["idx"]) + "].valor_brl, somados (mesmo fundo), sobre statement.sum_of_lines_brl"
+        value = pct(g["value"], total)
+    return _row("concentracao_fundo", status=EVALUATED, unit="pct", value=value,
+                subject=g["subject"], source_path=path, line_nos=g["line_nos"], sources=g["sources"],
+                extra={"value_brl_detail": brl(g["value"])})
 
 
 def _maturity_row(doc: dict) -> dict:
@@ -307,9 +328,13 @@ def _indexer_row(doc: dict) -> dict:
     if not factors:
         return _row("indexador", status=NOT_EVALUATED, unit="pct", code="sem_indexador", extra={"parts": parts})
     top = max(factors, key=lambda p: p["value_brl"])
+    extra: dict = {"parts": parts}
+    unclassified = next(p for p in parts if p["group"] == UNCLASSIFIED)["portfolio_pct"] or 0
+    if unclassified > INDEXER_UNCLASSIFIED_CHECK_PCT:
+        extra["check_label"] = CHECK_LABEL["indexador"]
     return _row("indexador", status=EVALUATED, unit="pct", value=top["portfolio_pct"], subject=top["group"],
                 source_path="indexer.classes[].value_brl, somados por grupo sobre indexer.portfolio_value_brl",
-                extra={"parts": parts})
+                extra=extra)
 
 
 def _restatement_row(doc: dict) -> dict:

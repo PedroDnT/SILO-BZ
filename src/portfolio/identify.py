@@ -655,7 +655,10 @@ def _apply_resolve(li: LineId, cands: list[dict], src: dict) -> dict[str, Any]:
     li.reason = top.get("reason")
     out["chosen"] = cand(top)
     matched = top.get("matched_name")
-    if matched and li.name and _norm(matched) != _norm(li.name):
+    # A rename is a finding only when the name led the identification: a line resolved by the CNPJ the statement
+    # prints never depended on any name, and CVM 175 renamed almost every fund (FI to FIF, "RESPONSABILIDADE
+    # LIMITADA"), so flagging it there is noise (real statement, 2026-10-05: five such findings, none useful).
+    if matched and li.name and _norm(matched) != _norm(li.name) and top.get("match_kind") != "cnpj":
         li.findings.append(
             {
                 "kind": "renamed",

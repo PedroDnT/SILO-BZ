@@ -563,3 +563,27 @@ def test_a_transient_failure_is_not_retried_shallower():
     _, lines = identify(s, Down(resolve_none()))
     compute_lookthrough(lines, Down(resolve_none()), dt.date(2026, 5, 1), 4)
     assert asked and set(asked) == {4}
+
+
+def test_a_line_resolved_by_its_cnpj_carries_no_rename_finding():
+    """CVM 175 renamed almost every fund: a rename matters only when the name led the identification."""
+    s = stmt(fund("FUNDO EXEMPLO FI RF", A, 100.0))
+    row = dict(line_no=1, input_name="FUNDO EXEMPLO FI RF", candidate_cnpj=A, candidate_name="FUNDO EXEMPLO FIF RENDA FIXA",
+               matched_name="FUNDO EXEMPLO FUNDO DE INVESTIMENTO RENDA FIXA", matched_period="2024-01-01", entity_type="fi",
+               match_kind="cnpj", similarity=0.4, rank=1, quota_on_date=None, quota_rel_diff=None, ambiguous=False,
+               reason="CNPJ supplied by the statement")
+    _, lines = identify(s, FakeClient({"portfolio_resolve": [{"match": {}, "rows": [row]}]}))
+    assert lines[0].status == "identified" and lines[0].findings == []
+    row.update(match_kind="exact_history")
+    _, lines = identify(s, FakeClient({"portfolio_resolve": [{"match": {}, "rows": [row]}]}))
+    assert [f["kind"] for f in lines[0].findings] == ["renamed"]
+
+
+def test_the_largest_fund_sums_one_fund_held_in_two_accounts():
+    from src.portfolio.risks import _fund_row
+    pos = [dict(line_no=1, tipo="fundo", codigo=A, valor_brl=30.0, portfolio_pct=30.0, linha_extrato="F A"),
+           dict(line_no=2, tipo="fundo", codigo=B, valor_brl=40.0, portfolio_pct=40.0, linha_extrato="F B"),
+           dict(line_no=3, tipo="fundo", codigo=A, valor_brl=30.0, portfolio_pct=30.0, linha_extrato="F A")]
+    ident = [dict(line_no=n, identity=dict(kind="fund", cnpj=c, name=f"FUNDO {c[:2]}")) for n, c in ((1, A), (2, B), (3, A))]
+    row = _fund_row({"statement": {"positions": pos, "sum_of_lines_brl": 100.0}, "identification": {"lines": ident}})
+    assert row["value_pct"] == 60.0 and row["line_nos"] == [1, 3] and "somados (mesmo fundo)" in row["source_path"]
