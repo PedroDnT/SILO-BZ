@@ -44,7 +44,15 @@ this pipeline reads (`src/fetchers/cvm_config.py:293-367`).
 | `cad`                  | static CSV              | `cia_company`                                             | every daily run                        |
 | `ipe`                  | yearly ZIP, 1 CSV       | `cia_event`                                               | current year daily; 2010+ backfill     |
 | `fca_valor_mobiliario` | 1 member of the FCA ZIP | `cia_ticker`                                              | current year daily; backfill           |
-| `itr` / `dfp`          | yearly ZIP, 19 CSVs     | `cia_filing` (header) + `cia_account` (16 scoped members) | current year daily; **2019+** backfill |
+| `itr` / `dfp`          | yearly ZIP, 19 CSVs     | `cia_filing` (header) + `cia_account` (16 scoped members) | current year daily; previous year daily, new documents only; **2019+** backfill |
+
+The previous year is read for a DFP filed in January and for a restated
+prior-year document, which land in last year's ZIP (#383). Re-reading that ZIP in
+full would cost about 4.7M upserts a day, so `ingest_cia_itr_dfp_new_versions`
+reads its header CSV, compares `(cd_cvm, dt_refer, versao)` with `cia_filing`
+and stops there when nothing is new; otherwise it upserts only those documents'
+header and statement lines. On 2026-10-05 the 2025 files listed 3 ITR and 4 DFP
+documents SILO did not hold.
 
 ITR/DFP backfill runs **strictly serially** — the code comment records why:
 concurrency 2 made the CVM endpoint return content that yielded zero rows
