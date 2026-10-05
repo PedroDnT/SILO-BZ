@@ -530,7 +530,12 @@ __all__ = [
 # or column changes.
 # v63: fee peers by filed class, FUNDO_COTAS and document scope; >=30 usable,
 # dated fees, explicit non-comparison reasons, no source correction.
-CATALOG_VERSION = 63
+# v64: api.fund_nav's description said period is CVM's filed month-END date for
+# every family. Only fidc rows are (fi, fii and fiagro are dated the first of
+# the month, fip 31 December), measured live on 2026-10-05 (research #606). The
+# description now states each family's convention. No data, signature or column
+# change.
+CATALOG_VERSION = 64
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
