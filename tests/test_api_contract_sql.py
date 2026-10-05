@@ -116,6 +116,11 @@ RESEARCH_FUNCTIONS = ("api.research_universe",)
 # published under limits.page.functions.paged, not raise_only.
 INDEX_FUNCTIONS = ("api.index_history",)
 
+# v65: B3's FORWARD segment in 32_api_trade_consolidated.sql
+# (tests/test_trade_consolidated_history_contract.py owns the body). It
+# PAGES with a date cursor, like index_history.
+TRADE_CONSOLIDATED_FUNCTIONS = ("api.trade_consolidated_history",)
+
 # v51: the portfolio-diagnosis reads in 31_api_portfolio.sql
 # (tests/test_portfolio_contract.py owns the bodies). Raise-only. v54 adds
 # portfolio_movement (tests/test_portfolio_movement_contract.py); v62 adds
@@ -653,9 +658,11 @@ def test_row_cap_helper_page_size_is_the_one_constant():
         f.split(".", 1)[1]
         for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
         + RATES_FUNCTIONS + RESEARCH_FUNCTIONS + INDEX_FUNCTIONS + PORTFOLIO_FUNCTIONS
+        + TRADE_CONSOLIDATED_FUNCTIONS
     }
     assert set(page["functions"]["paged"]) == {
-        f.split(".", 1)[1] for f in PAGED_FUNCTIONS + INDEX_FUNCTIONS
+        f.split(".", 1)[1]
+        for f in PAGED_FUNCTIONS + INDEX_FUNCTIONS + TRADE_CONSOLIDATED_FUNCTIONS
     }
     assert set(page["functions"]["raise_only"]) == {
         f.split(".", 1)[1]
@@ -678,7 +685,8 @@ def test_row_cap_error_says_why_and_how():
     assert "v_why, v_how" in raise_at, "the message itself must carry both halves"
     # The HOW is per function: a cursor for the three that page, a fund pin
     # and an explicit head for the FIDC trio, thresholds for the screens.
-    for name in ("panel", "quote_history", "fund_nav", "index_history"):
+    for name in ("panel", "quote_history", "fund_nav", "index_history",
+                 "trade_consolidated_history"):
         assert f"p_fn = '{name}'" in helper
     assert "p_entity_type" in helper, "fund_nav paging requires a family; the hint must say so"
     assert "p_fn = 'fidc_cedentes'" in helper
@@ -1563,15 +1571,17 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # (research_universe), forty-five since v45 (index_history, which pages),
     # forty-eight since v51 (the three portfolio reads), forty-nine since v54
     # (portfolio_movement), fifty-one since v62 (portfolio_instruments,
-    # portfolio_fund_terms). The
+    # portfolio_fund_terms), fifty-two since v63 (portfolio_fee_peers),
+    # fifty-three since v65 (trade_consolidated_history, which pages). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "fifty-two" in c.lower().split(), "all fifty-two capped functions refuse"
+    assert "fifty-three" in c.lower().split(), "all fifty-three capped functions refuse"
     assert (
         len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
         + len(WAVE3_FUNCTIONS) + len(RATES_FUNCTIONS) + len(RESEARCH_FUNCTIONS)
         + len(INDEX_FUNCTIONS) + len(PORTFOLIO_FUNCTIONS)
-    ) == 52
+        + len(TRADE_CONSOLIDATED_FUNCTIONS)
+    ) == 53
     for fn in WAVE3_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:
@@ -1580,7 +1590,8 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in RATES_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
-    for fn in RESEARCH_FUNCTIONS + INDEX_FUNCTIONS + PORTFOLIO_FUNCTIONS:
+    for fn in (RESEARCH_FUNCTIONS + INDEX_FUNCTIONS + PORTFOLIO_FUNCTIONS
+               + TRADE_CONSOLIDATED_FUNCTIONS):
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
 
 
