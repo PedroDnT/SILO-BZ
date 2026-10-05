@@ -21306,6 +21306,12 @@
     },
     "searches_used": 0,
     "searches_by_kind": {},
+    "costs": {
+      "llm_usd": 0.0,
+      "llm_cap_usd": null,
+      "exa_usd": 0.0,
+      "exa_cap_usd": 1.0
+    },
     "web_search": {
       "provider": "exa",
       "available": false,

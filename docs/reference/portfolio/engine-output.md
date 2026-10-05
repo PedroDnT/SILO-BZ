@@ -694,7 +694,12 @@ document. Without the key the section says so (`web_search.available` false, `bu
 
 **Budget**: `limits.searches_per_trigger` 5 and `limits.searches_per_report` 20, plus a wall clock of 180 s. A
 counted search is an FNET certificate lookup, an FNET listing page, a `company_events` call or an Exa Agent run;
-downloads and `/contents` reads are not. `searches_used`, `searches_by_kind`.
+downloads and `/contents` reads are not. `searches_used`, `searches_by_kind`. The wall clock is checked before
+every search, download, extraction and judge call. A failure of one item (network, an unexpected answer) is a
+note on that item; the others keep their facts. An item with no public identifier gets no web search. `costs`:
+`llm_usd` and `llm_cap_usd` (the extractor and judge share their own meter, `SILO_INVESTIGATOR_COST_CAP_USD`,
+default US$1.00, apart from the report's), `exa_usd` and `exa_cap_usd` (US$1.00; Exa runs stop at it). The
+report's `X-Silo-Cost-Usd` does not include them.
 
 **Tiers** (Q31): `A` "verificado na fonte" (the quote, normalized for spaces, accents, case, line breaks and
 hyphenation, is in the document text, and the value is in the quote); `B` "conferido por modelo; a conferir" (a
