@@ -1,0 +1,54 @@
+# Coordinator (lead underwriter) -> the web domain where it publishes its issues' documents (#605, owner's
+# addendum of 2026-10-05). The issue documents of many structured issues are on the site of the bank that
+# coordinated them, so an APPROVED coordinator's domain joins the "official domains" the investigator's Exa
+# fallback searches first, beside CVM, B3, the securitizadora and the issuer.
+#
+# The owner approves this file, as src/portfolio/rules/equivalents/class_index.yaml. Only `aprovada`
+# entries are used; a `proposta` entry is read by nothing until the owner changes its status.
+#
+# Rules:
+#   - The coordinator is read from the issue's OWN documents (a "Coordenador Líder" fact the investigator
+#     accepted, tier A or B, from a termo, escritura, prospecto or anúncio), never inferred from the asset's
+#     name. SILO holds no public offer data (no oferta table, checked 2026-10-05).
+#   - A fact matches an entry by the entry's CNPJ (14 digits printed in the fact's value) or by one of its
+#     `names`, normalized (accents and case dropped) and found in the value.
+#   - Every domain is one whose page was fetched and shown to carry the bank's issue documents (`evidence`).
+#     Domains are never invented.
+#
+# Keys: cnpj (14 digits or null when no document read here printed it), names (as printed in issue
+# documents), domains, status (proposta | aprovada), evidence (URL fetched, what it showed), checked_on.
+
+coordinators:
+  - cnpj: "46482072000113"
+    names:
+      - "BTG PACTUAL INVESTMENT BANKING LTDA"
+    domains: ["btgpactual.com"]
+    status: proposta
+    evidence: >-
+      https://web.cvm.gov.br/sre-publico-cvm/rest/download/4eec5860-ef2a-4917-9d00-94269776ea9c (CVM, fetched
+      2026-10-05): an anúncio de início naming BTG PACTUAL INVESTMENT BANKING LTDA., CNPJ 46.482.072/0001-13, as
+      Coordenador Líder, and its documents page https://www.btgpactual.com/investment-banking ("Mercado de
+      Capitais - Download"). The termo of the #604 research CRA (FNET 1099750) names the same Coordenador Líder.
+      The page itself renders with JavaScript: a plain fetch returned only the cookie banner.
+    checked_on: "2026-10-05"
+  - cnpj: "30306294000145"
+    names:
+      - "BANCO BTG PACTUAL S.A"
+    domains: ["btgpactual.com"]
+    status: proposta
+    evidence: >-
+      https://web.cvm.gov.br/sre-publico-cvm/rest/download/d4dbf285-740e-4179-b992-f5a7e3970d6b (CVM, fetched
+      2026-10-05): an anúncio de início naming BANCO BTG PACTUAL S.A., CNPJ 30.306.294/0001-45, as Coordenador
+      Líder, with its documents at https://www.btgpactual.com/investment-banking.
+    checked_on: "2026-10-05"
+  - cnpj: null
+    names:
+      - "XP INVESTIMENTOS CORRETORA DE CAMBIO, TITULOS E VALORES MOBILIARIOS S.A"
+    domains: ["ofertaspublicas.xpi.com.br"]
+    status: proposta
+    evidence: >-
+      https://ofertaspublicas.xpi.com.br/ (fetched 2026-10-05): "Ofertas públicas", "Ofertas em andamento",
+      listing CRA, CRI and debenture offers with their aviso ao mercado, prospecto, lâmina and anúncio de
+      início. The legal name and CNPJ were not read from an issue document here: confirm the name before
+      approving.
+    checked_on: "2026-10-05"

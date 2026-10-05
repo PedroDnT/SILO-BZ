@@ -94,6 +94,14 @@ REASON_TEXT = {
     "ganho_12m_nao_positivo": "ganho de 12 meses não positivo: nenhum imposto estimado",
     "previdencia_sem_estimativa": "previdência: regime não informado; os dois regimes são mostrados, sem valor em R$",
     "isento_sem_imposto": "isento de imposto de renda",
+    # engine 1.12: the investigator of official documents (src/portfolio/investigator/)
+    "investigador_desligado": "investigador de documentos oficiais desligado nesta execução",
+    "investigador_falhou": "o investigador de documentos oficiais falhou; nenhum fato foi lido",
+    "sem_gatilho_investigador": "nenhum item da carteira aciona o investigador de documentos",
+    "investigacao_parcial": "há itens sem fato citado; cada item diz onde procurou",
+    "limite_buscas": "limite de buscas atingido; a conferir",
+    "busca_web_indisponivel": "busca na web indisponível nesta execução; só Fundos.NET e RAD foram consultados",
+    "nivel_b_desligado": "conferência por segundo modelo (nível B) desligada; só fatos de nível A são mostrados",
     # identification, per line
     "cnpj_extrato": "CNPJ do extrato; nome não conferido",
     "sem_candidato": "nome e CNPJ sem correspondência nos dados do SILO",

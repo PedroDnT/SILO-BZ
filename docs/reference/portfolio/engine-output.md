@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.11)
+# Portfolio engine output (schema 1.12)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,13 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.12 (owner's resolution of #605, 2026-10-05). Keys were added, none renamed, retyped or removed: a new top-level
+section `investigation` (below), placed after `tax`, with its `section_status` entry and the assumption
+`investigation`. New reason codes in `common.REASON_TEXT`: `investigador_desligado`, `investigador_falhou`,
+`sem_gatilho_investigador`, `investigacao_parcial`, `limite_buscas`, `busca_web_indisponivel`, `nivel_b_desligado`.
+The block runs last; its SILO calls (`company_events`, RAD only) come after every earlier call id. Off by default
+(the CLI and the demo fixture); the report does not show it yet.
 
 1.11 (owner's resolution of #613, 2026-10-05; rules from `docs/reference/research/tax-rules-by-instrument.md` (#611)
 and `pension-plan-data.md` (#612)). Keys were added, none renamed, retyped or removed: a new top-level section `tax`
@@ -189,7 +196,7 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
 
 `schema_version`, `generated_at_utc`, `engine` (`version`, `client`, `params`), `statement`,
 `identification`, `fees`, `look_through`, `indexer`, `sector`, `restatements`, `risk_signals`, `movement`,
-`concentration` (1.7), `allocation` and `risks` (1.8), `returns` (1.10), `tax` (1.11), `assumptions`, `section_status`, `provenance`.
+`concentration` (1.7), `allocation` and `risks` (1.8), `returns` (1.10), `tax` (1.11), `investigation` (1.12), `assumptions`, `section_status`, `provenance`.
 
 - `engine.params`: `cda_month` (default: position month - 4), `fee_month` (default: position
   month - 1), `movement_month` (default: the position month when the position date is a month-end, else the
@@ -198,7 +205,7 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
   `coverage()`-driven default exists.
 - `assumptions[]`: `{id, text}`, each a reading the engine could not verify (`fee_units`,
   `weight_in_root`, `position_date`, `valuation`, `direct_tesouro`, `economic_group`,
-  `abnormal_movement`, `movement_class`, `risks` (1.8), `returns` (1.10), `tax` (1.11)). The report states the ones that touch what it says.
+  `abnormal_movement`, `movement_class`, `risks` (1.8), `returns` (1.10), `tax` (1.11), `investigation` (1.12)). The report states the ones that touch what it says.
 - `section_status`: `{section: {status, reason, reason_codes}}`, for a cover-page summary.
 - `provenance[]`: every tool call in order: `call_id`, `id` (`p<call_id>`), `tool`, `args`,
   `requested_at_utc`, `row_count` (null on error), `error` (verbatim, null on success). No trimming;
@@ -664,6 +671,100 @@ of the line's rule files, plus `data_aplicacao` when the rate depends on a date 
 `person`: `flags[]` (`dividends`, `jcp`: `line_nos` of share lines, `rate_pct`, `text`, `article`, `computed` false),
 `minimum_tax` (`text` "depende da renda total anual; fora do escopo", `excluded_income[]`, `computed` false),
 `a_conferir[]`, `rules_file`. No figure.
+
+## `investigation`
+
+Engine 1.12 (owner's resolution of #605, 2026-10-05; sources from `docs/reference/research/credit-issue-documents.md`,
+#604). Built by `src/portfolio/investigator/`, placed after `tax`, in `section_status`. It runs only when the engine
+is given an investigator: the server builds one with `SILO_INVESTIGATOR=on` (the Worker's var, `off` in the deployed
+demo until the owner's supervised live run, #605 Q37), the CLI never does,
+so the demo fixture carries the section off (`status` `not_applicable`, reason code `investigador_desligado`). A
+failure of the investigator is `status` `unknown` (`investigador_falhou`), never a failed report.
+
+**Triggers** (Q33): a CRA, CRI or debenture line not identified (`credito_nao_identificado`) or with
+`vencimento_diverge` (`credito_vencimento_diverge`); every FIP (`fip`); every line in
+`movement.investigator_trigger_line_nos` (`movimento_forte`; this is how an FII is read, only on a trigger).
+
+**Sources, in order.** A CRA or CRI: Fundos.NET certificados (`listarFundos?term=<ISIN>&paraCerts=true`, then the
+certificate's list with `paginaCertificados=true`; categories Termo (17) and Aditamento (19) first: the original
+termo and the newest aditamentos, at most 3 documents; else offer (16) and rating (36) documents). Fundos.NET
+matches the ISIN, not the CETIP code, and `portfolio_instruments` serves no ISIN for a CRA or CRI yet, so today
+this path runs only when the statement prints the ISIN; otherwise the trigger says so in `notes`. A debenture:
+RAD escrituras through `company_events` (category "Escrituras e aditamentos de debêntures") when SILO knows the
+issuer's CNPJ. A FIP: the newest periodic report on Fundos.NET that reads (structured monthly informe and CDA
+skipped). A fund with a `forte` movement: fato relevante, comunicado or relatório gerencial delivered in the
+movement month or the two after. When those give no accepted fact: Exa Agent (`EXA_API_KEY`), official domains
+first (`cvm.gov.br`, `b3.com.br`, `bmfbovespa.com.br`, `debentures.com.br` and the issuer's, securitizadora's or
+manager's site), then the open web; each cited URL is read again through Exa `/contents` and checked like any
+document; a page that does not name the asset (its code or ISIN, a debenture's issuer CNPJ, a fund's CNPJ or CVM
+name) is discarded (`documento_sem_identificador`), since a quote can be verbatim in a page about another asset.
+An item with no such identifier gets no web search. Without the key the section says so (`web_search.available` false, `busca_web_indisponivel`).
+
+**Budget**: `limits.searches_per_trigger` 5 and `limits.searches_per_report` 20, plus a wall clock of 180 s. A
+counted search is an FNET certificate lookup, an FNET listing page, a `company_events` call or an Exa Agent run;
+downloads and `/contents` reads are not. `searches_used`, `searches_by_kind`. The wall clock is checked before
+every search, download, extraction and judge call. A failure of one item (network, an unexpected answer) is a
+note on that item; the others keep their facts. An item with no public identifier gets no web search.
+
+**Cost** (owner, #605 Q37): ONE US$1.00 cap per report (`llm.COST_CAP_USD`) covers the report's LLM, the
+investigator's LLM and Exa together, on one `CostMeter` the server creates per report. The investigator runs first,
+inside the engine, and may book at most US$0.30 of it (`extract.INVESTIGATOR_SHARE_USD`, through `ShareMeter`);
+at least US$0.70 stays for the Redator and the Revisor (a complete report cost US$0.31, deploy run 37226627623). Each
+LLM call is checked at its worst case before it is made (the extractor and the judge run at low reasoning effort with
+8,000 and 3,000 output tokens, the excerpt is at most 40,000 characters); an Exa Agent run at its list price (`low`
+US$0.025) and a `/contents` read at US$0.001, then booked at the reported `costDollars`. When the share is spent the
+investigator stops: that item and every later one carry "limite de custo do investigador atingido (US$0,30 do teto de
+US$1,00 do relatório); a conferir", and the report goes on. `costs`: `usd`, `llm_usd`, `exa_usd`, `share_cap_usd`,
+`report_cap_usd`, `note`. The spend is in `X-Silo-Cost-Usd` and in the trace (`invoke_agent investigator` and
+`invoke_agent investigator_judge` spans, `app.cost_usd`, `app.exa.calls`, `app.exa.cost_usd`).
+
+**Coordinator** (owner's addendum to #605): the extractor also reads `coordenador`, the Coordenador Líder the issue's
+own documents name. A coordinator fact alone does not count as "found", so the web fallback still runs; the domains
+of the APPROVED entries it matches in `src/portfolio/rules/investigator/coordinators.yaml` (by CNPJ or printed name,
+never from the asset's name; entries are `proposta` until the owner sets `aprovada`) are listed first among the
+official domains, and a page on them is labelled `web_coordenador`. `triggers[].coordinator`: `value`, `fact_id`,
+`domains`, `list_status` ("aprovada", "proposta, aguarda revisão do dono", "sem entrada na lista revisada"), or null.
+
+**Tiers** (Q31): `A` "verificado na fonte" (the quote, normalized for spaces, accents, case, line breaks and
+hyphenation, is in the document text, and the value is in the quote); `B` "conferido por modelo; a conferir" (a
+passage resembling the quote is located, and a judge model different from the extractor confirms it supports the
+fact); `C` "descartado", counted in `discarded` (`count`, `text` "N fatos descartados", `by_reason{code: {count,
+text}}`). In every tier every number of the value, and for B of the quote, must be a number of the document's
+passage: enforced in `tiers.assess`, never asked of a model. `models`: `extractor`, `judge`, `tier_b_enabled`
+(false when no judge is set or both name the same model), `note`.
+
+- `triggers[]`: `trigger_id`, `line_no`, `kind`, `kind_label`, `tipo`, `identifiers` (public only: code, ISIN,
+  securitizadora or issuer CNPJ, fund CNPJ and CVM name), `sources_tried[]`, `notes[]`, `searches_used`,
+  `limit_reached`, `message` (never blank: "N fato(s) com citação (nível A: a; nível B: b)", "não encontrado em:
+  Fundos.NET, RAD, sites oficiais, busca aberta" listing what was tried, "limite de 20 buscas atingido; a conferir",
+  "limite de 5 buscas deste item atingido; a conferir", "tempo do investigador esgotado; a conferir", the cost
+  limit message above), `fact_ids[]`, `coordinator`.
+- `facts[]`: `fact_id`, `trigger_id`, `line_no`, `field` (`emissor_cnpj`, `lastro`, `devedor`, `garantias`,
+  `indexador`, `vencimento`, `rating`, `coordenador`; `empresa_investida`, `participacao_pct`; `evento`), `field_label`, `subject`
+  (the series or investee, as the document names it), `value` (as quoted), `quote`, `passage` and `passage_ratio`
+  (tier B only), `url`, `document_id` (`fnet:<id>`, `rad:<protocol>`, `web:<sha256 of the URL, 32 hex>`),
+  `document_title`, `document_date` (as the source prints it), `read_at_utc`, `read_date`, `source_type` (`fnet`,
+  `rad`, `web_cvm`, `web_b3`, `web_snd`, `web_coordenador`, `web_dominio_nao_verificado`, `web_busca_aberta`, labelled from the URL's
+  domain by code), `source_type_label`, `tier`, `tier_label`, `fnet_id`, `rad_protocol`, `cross_check`.
+- `cross_check` (credit facts with a `credit_match`; else null): `silo_field`, `silo_value`, `agrees` (true or false
+  only for a date or a CNPJ of the same series; null for free text or another series), `note`; for `vencimento` also
+  `silo_serie`, `document_value_iso`, `statement_vencimento`. A divergence is shown, neither value is changed.
+  `counts.divergences` counts `agrees` false.
+- `documents_consulted[]`: `document_id`, `source_type`, `url`, `title`, `document_date`, `read_at_utc`, `fnet_id`,
+  `rad_protocol`, `status` ("lido" or "não lido"), `error_code`, `cache` (`hit` or `miss`), `sha256` of the text,
+  `n_chars`, `trigger_ids[]`.
+- `counts` (`triggers`, `facts`, `tier_a`, `tier_b`, `discarded`, `divergences`, `documents_read`,
+  `documents_not_read`), `messages[]` (one line per trigger), `web_search`, `tiers`, `note`, `enabled`.
+
+**Cache** (Q35): a document is kept under `docs/<fnet|rad|web>/<id>/<sha256 of the text>.txt`. In the deployed
+demo the engine hands new entries to the Worker with the run's trace (`GET /trace/<id>`, key `documents`) and the
+Worker writes them to the private R2 bucket of ADR 0003 after checking the hash; there is no read path from R2 into
+the engine yet, so each report reads its documents again. The listing is re-queried in every report.
+
+**Privacy**: nothing from the statement but public asset identifiers leaves the engine (no holder, CPF, account,
+quantity, value, price or the line's own text), in a URL, a request body or a prompt
+(`tests/test_portfolio_investigator.py::test_nothing_from_the_statement_leaves_the_engine`). The report does not
+show the section yet.
 
 ## The report's view (mapping)
 

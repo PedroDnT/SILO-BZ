@@ -9,9 +9,9 @@ name: Deploy Cloudflare demo
 # deploy_mcp.yml: a merge deploys nothing.
 #
 # Needs the repository secrets CLOUDFLARE_API_TOKEN (account-owned, "Edit
-# Cloudflare Workers"), CLOUDFLARE_ACCOUNT_ID, DEMO_ACCESS_TOKEN and
-# OPENAI_API_KEY, and the account on Workers Paid. The last two are copied into
-# the Worker as secrets. Prints status codes, sizes, timings and the engine's
+# Cloudflare Workers"), CLOUDFLARE_ACCOUNT_ID, DEMO_ACCESS_TOKEN, OPENAI_API_KEY
+# and EXA_API_KEY (the investigator's web fallback, #605), and the account on
+# Workers Paid. The last three are copied into the Worker as secrets. Prints status codes, sizes, timings and the engine's
 # cost header only: never a secret, never the PDF.
 
 on:
@@ -38,12 +38,14 @@ jobs:
       - name: Refuse without the secrets
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
         run: |
           missing=""
           [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
           [ -n "$DEMO_ACCESS_TOKEN" ] || missing="$missing DEMO_ACCESS_TOKEN"
           [ -n "$OPENAI_API_KEY" ] || missing="$missing OPENAI_API_KEY"
+          [ -n "$EXA_API_KEY" ] || missing="$missing EXA_API_KEY"
           if [ -n "$missing" ]; then
             echo "::error::Set the repository secret(s):$missing (issue #519)."
             exit 1
@@ -89,6 +91,7 @@ jobs:
         uses: cloudflare/wrangler-action@v4
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -97,6 +100,7 @@ jobs:
           secrets: |
             DEMO_ACCESS_TOKEN
             OPENAI_API_KEY
+            EXA_API_KEY
 
       - name: Image size
         run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep -i healthcontainer || true

@@ -16,7 +16,8 @@
 // forwarded. After answering, each run's trace is written to the private R2
 // bucket bound as TRACES (only this Worker writes it, through the binding):
 // traces/YYYY/MM/DD/<trace_id>.json (OTLP/JSON, the date is UTC), the masked
-// engine JSON as artifacts/<sha256>.json and the PDF as artifacts/<sha256>.pdf.
+// engine JSON as artifacts/<sha256>.json and the PDF as artifacts/<sha256>.pdf, and (engine 1.12) the
+// public documents the investigator read as docs/<source>/<id>/<sha256>.txt.
 // Holder, CPF and account are masked by the engine's readers before any of it
 // exists. No KV, D1 or DO storage of our own.
 import { Container, ContainerProxy, getContainer } from "@cloudflare/containers";
@@ -30,6 +31,9 @@ interface Env {
 	TRACES: R2Bucket;
 	DEMO_ACCESS_TOKEN?: string;
 	OPENAI_API_KEY?: string;
+	// Engine 1.12 (#605): the investigator of official documents and its web fallback (Exa).
+	EXA_API_KEY?: string;
+	SILO_INVESTIGATOR?: string;
 	SILO_LLM_PROVIDER?: string;
 	SILO_LLM_MODEL?: string;
 	SILO_LLM_EFFORT?: string;
@@ -43,8 +47,17 @@ const TOKEN_HEADER = "x-demo-token";
 const TRACE_HEADER = "x-silo-trace-id";
 const TRACE_ID = /^[0-9a-f]{32}$/;
 const SHA256_KEY = /^artifacts\/[0-9a-f]{64}\.json$/;
-// silo-mcp (and PostgREST) on Supabase, and the LLM provider. Nothing else.
-const EGRESS_ALLOWED = ["zcjbtpxuhdekpwcxmepn.supabase.co", "api.openai.com"];
+// Engine 1.12 (#605, Q35): public documents the investigator read, keyed by source, id and the text's SHA-256.
+const DOC_KEY = /^docs\/(fnet|rad|web)\/[A-Za-z0-9_.-]{1,128}\/([0-9a-f]{64})\.txt$/;
+// silo-mcp (and PostgREST) on Supabase, the LLM provider, and (engine 1.12, #605) the investigator's
+// public sources: B3 Fundos.NET, CVM RAD and Exa. Nothing else.
+const EGRESS_ALLOWED = [
+	"zcjbtpxuhdekpwcxmepn.supabase.co",
+	"api.openai.com",
+	"fnet.bmfbovespa.com.br",
+	"www.rad.cvm.gov.br",
+	"api.exa.ai",
+];
 // Response headers of the engine passed back to the client: status, sizes,
 // timings and cost only, never content.
 const PASS_HEADERS = [
@@ -90,6 +103,8 @@ export class HealthContainer extends Container<Env> {
 			SILO_TRUST_CF_CA: open ? "0" : "1",
 		};
 		if (env.OPENAI_API_KEY) vars.OPENAI_API_KEY = env.OPENAI_API_KEY;
+		if (env.EXA_API_KEY) vars.EXA_API_KEY = env.EXA_API_KEY;
+		if (env.SILO_INVESTIGATOR) vars.SILO_INVESTIGATOR = env.SILO_INVESTIGATOR;
 		if (env.SILO_LLM_MODEL) vars.SILO_LLM_MODEL = env.SILO_LLM_MODEL;
 		if (env.SILO_LLM_EFFORT) vars.SILO_LLM_EFFORT = env.SILO_LLM_EFFORT;
 		this.envVars = vars;
@@ -227,6 +242,7 @@ interface TraceBundle {
 	trace_id: string;
 	trace: { resourceSpans: { scopeSpans: { spans: { attributes: { key: string; value: Record<string, unknown> }[] }[] }[] }[] };
 	artifacts: Record<string, string>;
+	documents?: Record<string, string>;
 }
 
 function rootAttribute(bundle: TraceBundle, key: string): string | null {
@@ -253,6 +269,14 @@ async function storeTrace(bucket: R2Bucket, container: { fetch: (r: Request) => 
 		const body = fromBase64(b64);
 		if (`artifacts/${await sha256Hex(body)}.json` !== key) continue;
 		puts.push(bucket.put(key, body, { httpMetadata: { contentType: "application/json" } }));
+	}
+	for (const [key, b64] of Object.entries(bundle.documents ?? {})) {
+		const m = DOC_KEY.exec(key);
+		if (!m) continue;
+		const body = fromBase64(b64);
+		// A body that does not hash to its key is skipped, as for the artifacts.
+		if ((await sha256Hex(body)) !== m[2]) continue;
+		puts.push(bucket.put(key, body, { httpMetadata: { contentType: "text/plain; charset=utf-8" } }));
 	}
 	if (pdf) {
 		const sha = await sha256Hex(pdf);

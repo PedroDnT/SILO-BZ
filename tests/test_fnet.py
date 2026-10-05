@@ -190,6 +190,26 @@ async def test_html_body_with_200_is_retried_then_raises():
             await _fetcher().search(day=date(2026, 9, 1))
 
 
+async def test_certificados_page_sends_the_parameter_and_accepts_cri_and_cra():
+    rows = [_row(i) for i in range(1, 4)]
+    handler, seen = _paged(rows)
+    with patch("src.fetchers.fnet_fetcher.httpx.AsyncClient", _client_factory(handler)):
+        got = await _fetcher().search(certificados=True, tipo_fundo=6, id_fundo=24864, categoria=17)
+    assert [r["id"] for r in got] == [1, 2, 3]
+    p = seen[0].url.params
+    assert p["paginaCertificados"] == "true" and p["tipoFundo"] == "6"
+    assert p["idFundo"] == "24864" and p["idCategoriaDocumento"] == "17" and "dataInicial" not in p
+    # the funds page is unchanged: no certificados parameter, and 5/6 are still refused there
+    handler, seen = _paged(rows)
+    with patch("src.fetchers.fnet_fetcher.httpx.AsyncClient", _client_factory(handler)):
+        await _fetcher().search(day=date(2026, 9, 1), tipo_fundo=1)
+    assert "paginaCertificados" not in seen[0].url.params
+    with pytest.raises(ValueError):
+        await _fetcher().search(day=date(2026, 9, 1), tipo_fundo=6)
+    with pytest.raises(ValueError):
+        await _fetcher().search(id_fundo=1)
+
+
 async def test_unwindowed_query_is_refused():
     with pytest.raises(ValueError, match="533"):
         await _fetcher().search()

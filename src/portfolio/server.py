@@ -52,6 +52,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from flask import Flask, Response, jsonify, request
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
@@ -120,6 +121,8 @@ def trace_bundle(otlp: dict, rec: "trace.RunRecord") -> bytes:
         "trace_id": trace.trace_id_of(otlp),
         "trace": otlp,
         "artifacts": {k: base64.b64encode(v).decode("ascii") for k, v in arts.items()},
+        # engine 1.12: public documents the investigator read (docs/<source>/<id>/<sha256>.txt), never client data
+        "documents": {k: base64.b64encode(v).decode("ascii") for k, v in (rec.documents or {}).items()},
     }, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
@@ -260,7 +263,17 @@ def engine_rev(root: Path | None = None) -> str:
     return h.hexdigest()[:12]
 
 
-def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Flask:
+def default_investigator(meter: "llm.CostMeter | None" = None):
+    """Engine 1.12: the investigator of official documents, on only with ``SILO_INVESTIGATOR=on``. It books on
+    ``meter``, the report's one cost meter (owner, #605 Q37: one US$1.00 cap for the report LLM, the
+    investigator LLM and Exa together), within its share."""
+    from src.portfolio.investigator.run import from_env
+
+    return from_env(meter=meter)
+
+
+def create_app(client_factory: Callable[[], SiloClient] = default_client,
+               investigator_factory: Callable[..., Any] = default_investigator) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     app.logger.disabled = True  # Flask's own handler would log tracebacks; this module logs instead
@@ -357,7 +370,13 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
                 stage = "engine"
                 t1 = time.monotonic()
                 rec.engine_start_ns = time.time_ns()
-                doc = run_engine(stmt, client_factory(), default_params(stmt.position_date))
+                meter = llm.CostMeter()  # one per report: the investigator books first, the Redator and Revisor after
+                investigator = investigator_factory(meter)
+                extra = {"investigator": investigator} if investigator is not None else {}
+                doc = run_engine(stmt, client_factory(), default_params(stmt.position_date), **extra)
+                pending = getattr(getattr(getattr(investigator, "deps", None), "cache", None), "pending", None)
+                rec.documents = pending() if callable(pending) else {}  # public documents read once (#605, Q35)
+                rec.investigator_calls = [dict(c) for c in meter.calls]  # only the investigator has booked so far
                 engine_text = dumps(doc)  # the masked engine JSON: the trace's artifact, hashed once
                 rec.engine_json = engine_text.encode("utf-8")
                 engine = json.loads(engine_text)  # the CLI's round trip, so the report sees the same JSON
@@ -369,7 +388,7 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
                 stage = "report"
                 rec.report_start_ns = time.time_ns()
                 try:
-                    html_text, narrative = build.build(engine)
+                    html_text, narrative = build.build(engine, meter=meter)
                 except (llm.LLMError, redator.UnmaskedInputError) as exc:
                     log.warning("report failed: %s", type(exc).__name__)
                     raise _Refusal(502, type(exc).__name__) from None
