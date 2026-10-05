@@ -452,6 +452,16 @@ Verify afterwards with the query in the file's footer.
 hand; the password comes in as a psql variable (instructions in the file header) and
 never appears in the repo or in a shell history line. Re-running rotates the password.
 
+**Rotating the owner's password.** Reset it in the Supabase dashboard (Database →
+Settings), then run `bash scripts/rotate_db_password.sh`. The owner's password lives in
+`.env` (`POSTGRES_URL`, `SUPABASE_POOLER_URL`), in the GitHub secret `POSTGRES_URL` (the
+session-pooler URL) and in one Vercel variable, `EVIDENCE_SOURCE__supabase__password`
+(production and preview together, edited by hand). The script tests the new login on the
+pooler before it writes anything. Nothing else holds it: the Sentinel has its own role, and
+the `silo-mcp` function and the Cloudflare engine use the public anon key. Afterwards run
+`health.yml` (it exercises the GitHub secret) and a dashboard build (the Vercel value), so a
+mistake shows up then and not at the 03:00 UTC-3 daily run.
+
 ---
 
 ## 9. Storage, vacuum, `ANALYZE`
