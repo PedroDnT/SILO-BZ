@@ -41,6 +41,7 @@ Grouped by when you would reach for them.
 | `gen_openapi.py`         | Regenerates `openapi.json` from a Postgres with the analytical layer applied; CI fails when it is stale.                                                                  |
 | `gen_mcp_contract.py`    | Regenerates `supabase/functions/silo-mcp/contract.generated.ts` from `openapi.json` (`--check` exits 1 when stale). Run after `gen_openapi.py`.                          |
 | `install_hooks.sh`       | Points git at `.githooks/` (pre-commit secret + syntax checks).                                                                                                           |
+| `setup_agents_wizard.sh` | The owner's steps for the agent loop (OPEN_ITEMS item 13), run by hand on the owner's machine: creates the three `agent:*` labels, creates or re-passwords the read-only role `silo_sentinel` from `docs/reference/security/sentinel_readonly_role.sql` (after a confirmation), tests its login on the session pooler, and walks the cloud environment that holds `SENTINEL_DATABASE_URL`. Values go to `.env` only; nothing secret is printed. Re-run to rotate the password. |
 | `build_etf_seed.py`      | Regenerates the curated B3 ETF seed at `src/store/seeds/etf_registry_seed.csv`.                                                                                           |
 
 ## One-off, historical
