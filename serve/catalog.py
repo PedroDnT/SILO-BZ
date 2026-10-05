@@ -535,7 +535,18 @@ __all__ = [
 # the month, fip 31 December), measured live on 2026-10-05 (research #606). The
 # description now states each family's convention. No data, signature or column
 # change.
-CATALOG_VERSION = 64
+# v65: #609, ETFs in the fee peers and the class return distribution (owner's
+# resolution of 2026-10-05). api.portfolio_fee_peers adds ETF peers: an active
+# ETF whose cvm_etf_registry.underlying_index is mapped to the fund's ANBIMA
+# class in src/portfolio/rules/equivalents/class_index.yaml (owner-reviewed,
+# generated into public.portfolio_class_index) joins every cell of that class
+# with its third-party etfsbrasil fee. Seven columns appended (n_fund_peers,
+# n_etf_peers, n_etf_excluded, etf_peer_tickers, etf_peer_fee_oldest,
+# etf_peer_fee_newest, etf_peer_fee_source); n_peers is now funds plus ETFs and
+# the statistics are over both. New api.class_return_distribution(p_classe_anbima,
+# p_fundo_cotas, p_month): p25 / median / p75 of the funds' 12- and 6-month net
+# quota return, >= 30 funds or nao_avaliado. Capped count fifty-two -> fifty-three.
+CATALOG_VERSION = 65
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -792,7 +803,8 @@ NOTEBOOK_REDUCERS: Dict[str, str] = {
 }
 
 CONSTRAINTS = [
-    "PORTFOLIO FEE PEERS ARE A CURRENT EXTRATO SNAPSHOT, NOT A HISTORY OR SAVING ESTIMATE. portfolio_fee_peers compares positive administration fees up to 5 percent/year filed within 36 months, within the same ANBIMA class, FUNDO_COTAS S/N and FI versus CLASSES-FIF document scope. Active means a non-null quota in the current or previous two reference months. At least 30 usable funds (including the target when eligible) are required; no wider fallback. Percentile uses midrank ties; difference is percentage points from the median. Future/latest-only documents, zero or invalid fees and insufficient groups are explicitly not compared. Performance fees, total expense, ETFs and equivalent replacements are outside scope.",
+    "PORTFOLIO FEE PEERS ARE A CURRENT EXTRATO SNAPSHOT, NOT A HISTORY OR SAVING ESTIMATE. portfolio_fee_peers compares positive administration fees up to 5 percent/year filed within 36 months, within the same ANBIMA class, FUNDO_COTAS S/N and FI versus CLASSES-FIF document scope. Active means a non-null quota in the current or previous two reference months. ETFs enter the group (v65, #609) only through the owner-reviewed ANBIMA class to index map, because CVM files no ANBIMA class for an ETF: an active ETF whose underlying index is mapped to the class is a peer in each of the class's cells, with the third-party etfsbrasil fee (etf_market_snapshot), never a CVM-disclosed one, and is counted apart (n_etf_peers beside n_fund_peers, etf_peer_tickers, etf_peer_fee_source). At least 30 usable fees in the combined group (including the target when eligible) are required; no wider fallback. Percentile uses midrank ties; difference is percentage points from the median. Future/latest-only documents, zero or invalid fees and insufficient groups are explicitly not compared. Performance fees, total expense and replacement recommendations are outside scope.",
+    "A CLASS RETURN DISTRIBUTION IS A STATISTIC OF FUNDS, NOT A BENCHMARK OR A RECOMMENDATION. class_return_distribution (v65, #609) gives, for one ANBIMA class exactly as filed in the Extrato and one FUNDO_COTAS flag, the p25, median and p75 of the FI funds' net quota return (fact_fund_monthly's stable quota subclass, the quota fund_nav serves) over 12 and 6 months ending at the close of one month. Active funds as in portfolio_fee_peers; a fund with no positive quota at either end, or with a quota subclass change, is excluded and counted. Fewer than 30 funds with a return, or an incomplete month: nao_avaliado with a reason, never a wider class. ETFs are not in the universe; an equivalent ETF's own return is set against these numbers by the caller.",
     "A NULL OUTSIDE A FAMILY'S COLUMN SET IS NOT APPLICABLE, NOT MISSING. fund_nav returns the same eleven columns for every family, but each family files only some of them (`applicability` in this catalog, read off fact_fund_monthly's per-family arms): fi files quota, quotaholders, inflows and redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield and assets; fip files nav alone. A null outside that list is set by construction and carries no information; a null inside it is a blank in that month's filing.",
     "A FIDC CEDENTE SHARE IS A PERCENT OF ITS BLOCK, NOT OF THE FUND. fidc_cedentes serves tab I''s nine slots per block: bloco A is the receivables acquired WITH substantial retention of risks and benefits by the originator, B WITHOUT, and share_pct is the cedente''s share of that block. The block totals are not served (tab I''s asset lines are not ingested), so a share cannot be turned into reais here. cedente_id is the originator''s own filed CPF/CNPJ, kept only when its check digits verify — placeholders (all-zero, all-nine) and unrecoverable identifiers were dropped at ingest, never coerced — and cedente_tickers is the FCA map''s active listings for it, NULL when not listed. share_pct is AS FILED and dirty in the way CVM''s percentage fields are: 9% of slots carry a value above 100 (max 19,771 in 2026-07); validate the range in the notebook, never read it as a fraction. Slots exist from 2019-11; nothing is matched by name.".replace("''", "'"),
     "FIDC SACADOS ARE ANONYMIZED RANKS. fidc_sacados and the sacado_top1 / sacado_top25 metrics come from tab VIII, which publishes the 25 largest debtors as (rank, value) with no identity — CVM''s dictionary describes neither column. seq is CVM''s rank as filed and is never recomputed from valor (65 of 3,043 funds filed a non-descending series in 2026-07; they are served as filed). sacado_top25 sums the ranks the fund filed, which may be fewer than 25. Concentration = sacado_top1 / receivables (or top25 / receivables) is a notebook division, not a served number — and it can exceed 1: tab VIII and tab II do not share a base for every fund (2026-07: the top-25 sum exceeds the receivables total for 1.9% of funds, rank 1 alone for 0.5%), served as filed and never capped.".replace("''", "'"),
@@ -905,7 +917,7 @@ CONSTRAINTS = [
     "WHY (the response is one 1000-row page and SILO never returns a silently "
     "truncated result) and HOW to fix it for that function, in the message and "
     "again as PostgREST's `details` / `hint`. That is all "
-    "fifty-two — panel, quote_history, fund_nav, option_history, termo_history, "
+    "fifty-three — panel, quote_history, fund_nav, option_history, termo_history, "
     "financials, financial_statement_history, company_financials, "
     "income_statements, balance_sheets, "
     "cash_flow_statements, anbima_classes, "
@@ -913,7 +925,7 @@ CONSTRAINTS = [
     "fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, "
     "fund_restatements, fund_restatement_diff, company_events, macro_series, "
-    "ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers and the ten "
+    "ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers, class_return_distribution and the ten "
     "screen_* functions "
     "(`limits.page.all`). "
     "FOUR OF THEM PAGE with p_after: panel, quote_history, fund_nav and index_history. Send "
@@ -1385,6 +1397,7 @@ LIMITS = {
             "research_universe", "index_history",
             "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
             "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
+            "class_return_distribution",
         ],
         # The protocol every cursor below shares.
         "cursor_protocol": (
@@ -1469,6 +1482,8 @@ LIMITS = {
                 "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
                 # v62: statement codes and fund terms, split by the caller too.
                 "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
+                # v65: two rows for one class; nothing to walk.
+                "class_return_distribution",
             ],
         },
         "over_cap": (
@@ -2003,6 +2018,7 @@ def catalog_payload() -> Dict[str, Any]:
             "portfolio_instruments": "POST /rest/v1/rpc/portfolio_instruments",
             "portfolio_fund_terms": "POST /rest/v1/rpc/portfolio_fund_terms",
             "portfolio_fee_peers": "POST /rest/v1/rpc/portfolio_fee_peers",
+            "class_return_distribution": "POST /rest/v1/rpc/class_return_distribution",
             # B3 securities lending and investor flow (v27). VIEWS, not
             # functions: filter them with PostgREST's own syntax
             # (?ticker=eq.PETR4&trade_date=gte.2026-09-01) and page with

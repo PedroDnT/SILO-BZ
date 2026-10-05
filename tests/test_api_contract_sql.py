@@ -128,6 +128,7 @@ PORTFOLIO_FUNCTIONS = (
     "api.portfolio_instruments",
     "api.portfolio_fund_terms",
     "api.portfolio_fee_peers",
+    "api.class_return_distribution",
 )
 
 # The FNET register (v33) and its restatement diff (v40) live in
@@ -1563,15 +1564,16 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # (research_universe), forty-five since v45 (index_history, which pages),
     # forty-eight since v51 (the three portfolio reads), forty-nine since v54
     # (portfolio_movement), fifty-one since v62 (portfolio_instruments,
-    # portfolio_fund_terms). The
+    # portfolio_fund_terms), fifty-two since v63 (portfolio_fee_peers),
+    # fifty-three since v65 (class_return_distribution). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "fifty-two" in c.lower().split(), "all fifty-two capped functions refuse"
+    assert "fifty-three" in c.lower().split(), "all fifty-three capped functions refuse"
     assert (
         len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
         + len(WAVE3_FUNCTIONS) + len(RATES_FUNCTIONS) + len(RESEARCH_FUNCTIONS)
         + len(INDEX_FUNCTIONS) + len(PORTFOLIO_FUNCTIONS)
-    ) == 52
+    ) == 53
     for fn in WAVE3_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:

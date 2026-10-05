@@ -271,6 +271,8 @@ REFUSING_FUNCTIONS = {
     "portfolio_instruments",
     "portfolio_fund_terms",
     "portfolio_fee_peers",
+    # v65: the class return distribution (31_api_portfolio.sql).
+    "class_return_distribution",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 

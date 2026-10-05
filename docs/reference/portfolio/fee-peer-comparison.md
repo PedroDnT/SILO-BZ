@@ -1,7 +1,8 @@
 # Administration-fee peer comparison
 
 Implementation of the narrow cost-comparison slice proposed in #614, informed by
-#608. It contributes to #609; equivalent products remain an open decision.
+#608. It contributes to #609, whose owner resolution (2026-10-05) adds ETF peers
+and the class return distribution (catalog v65, section "ETF peers" below).
 
 `api.portfolio_fee_peers(p_cnpjs TEXT[], p_as_of DATE DEFAULT CURRENT_DATE)`
 returns one row for each distinct normalized CNPJ (1–200 inputs), with a dated
@@ -28,8 +29,40 @@ counts, exclusion counts and oldest/newest document dates.
 This is the latest-document snapshot available when queried, **not a historical
 universe or backtest**. `p_as_of` dates the activity window and document filters;
 it does not restore older versions of a latest document. Peers' fee dates can
-vary. Performance fees, total expense, ETFs, FIDC, FII, FIP, returns, taxes and
-replacement-product equivalence are outside this comparison.
+vary. Performance fees, total expense, FIDC, FII, FIP, taxes and any replacement
+recommendation are outside this comparison.
+
+## ETF peers (catalog v65, #609)
+
+ETFs enter the peer group because an ETF can replace a fund. CVM files no ANBIMA
+class for an ETF (173 of the 178 active ETFs are in `cvm_registro_classe` with the
+class empty), so an ETF reaches a class only through
+`src/portfolio/rules/equivalents/class_index.yaml`, a short list of
+(class, index) pairs as filed, each `status: proposta` until the owner approves it.
+The index is never inferred from a fund's name. `scripts/gen_class_index_sql.py`
+writes the pairs into `31_api_portfolio.sql` as the internal view
+`public.portfolio_class_index` (a VALUES list, so the pairs go live with the same
+analytics-only apply as the function, and no migration carries data);
+`tests/test_portfolio_equivalents.py` fails when the two disagree and checks every
+spelling against a fixture of filed values.
+
+Read in reverse, an active ETF whose `underlying_index` is mapped to class C is a
+peer in every FUNDO_COTAS and scope cell of C, once per CNPJ. Its fee is
+`etf_market_snapshot.taxa_adm_pct` (etfsbrasil, the newest snapshot dated no later
+than `p_as_of`), a third-party value and never a CVM-disclosed one, held to the same
+`0 < fee <= 5` and 36-month rules. `n_peers` is `n_fund_peers + n_etf_peers`, and the
+30 minimum and the statistics are over both; `n_etf_excluded`, `etf_peer_tickers`,
+the ETF snapshot dates and `etf_peer_fee_source` say which ETFs entered and that
+their fee is third-party. Measured 2026-10-05: the mapped equity classes have fewer
+than 30 usable fund fees in every cell, and the Selic ETFs (six CNPJs) take some
+`RENDA FIXA BAIXA DURAÇÃO - SOBERANO` cells over 30 (26 and 28 usable fund fees in
+the N cells); `n_fund_peers` shows when ETFs made the difference.
+
+`api.class_return_distribution(p_classe_anbima, p_fundo_cotas, p_month)` gives the
+p25, median and p75 of the class's net fund quota returns over 12 and 6 months, at
+least 30 funds or `nao_avaliado`: what the equivalent ETF's return is set against.
+The engine wiring (equivalent selection by net assets, the label "equivalente de
+mercado com o mesmo objetivo; não é recomendação", ETF price returns) is a later PR.
 
 ## Engine and report
 

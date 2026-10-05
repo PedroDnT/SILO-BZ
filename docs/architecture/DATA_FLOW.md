@@ -50,20 +50,20 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   it, rebuilt by the same apply. `portfolio_lookthrough` reads the CDA tables
   only by CNPJ and one month; `portfolio_instruments` reads them only by
   `cd_ativo` and one month, and `cvm_securit_serie` by CETIP code (migration 73).
-- `api.portfolio_fee_peers` (`31_api_portfolio.sql`) reads the latest FI Extrato
-  and recent `fact_fund_monthly` quota activity. It groups by ANBIMA class,
-  FUNDO_COTAS and document scope, with dated fee exclusions and a 30-peer minimum.
-  The engine passes its deterministic comparison to the report under `fees.comparison`.
+- `api.portfolio_fee_peers` (`31_api_portfolio.sql`) groups the latest FI Extrato
+  fees of active funds by class, FUNDO_COTAS and scope (30-peer minimum), plus ETFs
+  via `portfolio_class_index` (generated from a reviewed YAML) and
+  `etf_market_snapshot`. `class_return_distribution` reads `fact_fund_monthly`.
 - Nothing depends on pg_cron. The live database has none (checked 2026-09-29),
   so the jobs in `08_cron_schedules.sql` do not run.
 
 ## Serving
 
-| Path                          | Reads                  | Fresh as of           |
-| ----------------------------- | ---------------------- | --------------------- |
-| PostgREST, SDK, `silo-mcp`    | `api.*`                | live database         |
-| `serve/` (local only)         | `api.*`                | live database         |
-| dashboard                     | `public`, at build     | last successful build |
-| research job                  | landing tables         | when dispatched       |
+| Path                       | Reads              | Fresh as of           |
+| -------------------------- | ------------------ | --------------------- |
+| PostgREST, SDK, `silo-mcp` | `api.*`            | live database         |
+| `serve/` (local only)      | `api.*`            | live database         |
+| dashboard                  | `public`, at build | last successful build |
+| research job               | landing tables     | when dispatched       |
 
 Deeper: [API](../reference/API.md), [data inventory](../reference/DATA_INVENTORY.md).

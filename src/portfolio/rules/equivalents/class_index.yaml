@@ -1,0 +1,81 @@
+# ANBIMA class -> the index an ETF tracks (#609, owner's resolution of 2026-10-05).
+#
+# The owner approves this file. Every pair is a proposal until the owner sets
+# its status to `aprovada`; removing a pair and regenerating the SQL
+# (python scripts/gen_class_index_sql.py) is how a pair leaves the API.
+#
+# The index is NEVER inferred from a fund's name, and a class is never inferred
+# for an ETF: CVM files no ANBIMA class for any ETF (173 of the 178 active ETFs
+# are in cvm_registro_classe with classificacao_anbima empty), so an ETF reaches
+# a class only through a pair written here, read in reverse (an active ETF whose
+# cvm_etf_registry.underlying_index is listed under class C is a fee peer of C).
+#
+# Spellings are exact and as filed, read on 2026-10-05 with bounded SELECTs:
+#   class = vw_fi_extrato_latest.classe_anbima (CVM Extrato, CLASSE_ANBIMA)
+#   index = cvm_etf_registry.underlying_index
+# A class may appear in several pairs when one objective is filed under several
+# index spellings (Tesouro Selic has four). (class, index) is unique.
+#
+# Used by: src/portfolio/equivalents.py (loader and validation) and, through the
+# generated block in src/store/analytical/31_api_portfolio.sql, by
+# api.portfolio_fee_peers. Keys: class, index, status (proposta | aprovada),
+# rationale (one line).
+
+pairs:
+  - class: "AÇÕES - ATIVO - SMALL CAPS"
+    index: "SMLL (Small Cap)"
+    status: proposta
+    rationale: "ANBIMA Small Caps invests in companies outside the largest by market value; SMLL is B3's small-cap index."
+  - class: "AÇÕES - ATIVO - DIVIDENDOS"
+    index: "IDIV (Dividendos)"
+    status: proposta
+    rationale: "ANBIMA Dividendos invests in dividend-paying stocks; IDIV is B3's dividend index."
+  - class: "AÇÕES - ATIVO - SUSTENTABILIDADE / GOVERNANÇA"
+    index: "ISE (Sustentabilidade)"
+    status: proposta
+    rationale: "Sustainability objective; ISE is B3's corporate sustainability index (the class also holds governance funds; the IGCT ETF is inactive)."
+  - class: "RENDA FIXA SIMPLES"
+    index: "Tesouro Selic (LFT)"
+    status: proposta
+    rationale: "RF Simples holds at least 95% in federal bonds or equivalent low-risk paper and follows the Selic/CDI; the index is LFT."
+  - class: "RENDA FIXA SIMPLES"
+    index: "Tesouro Selic B3"
+    status: proposta
+    rationale: "Same objective as Tesouro Selic (LFT): B3's LFT index, another spelling in the registry."
+  - class: "RENDA FIXA SIMPLES"
+    index: "TEVA Tesouro Selic"
+    status: proposta
+    rationale: "Same objective as Tesouro Selic (LFT): TEVA's LFT index."
+  - class: "RENDA FIXA SIMPLES"
+    index: "TEVA LFT Curto Prazo"
+    status: proposta
+    rationale: "Same objective as Tesouro Selic (LFT): TEVA's short-dated LFT index."
+  - class: "RENDA FIXA BAIXA DURAÇÃO - SOBERANO"
+    index: "Tesouro Selic (LFT)"
+    status: proposta
+    rationale: "Low duration, sovereign only: floating-rate federal bonds, which is what the LFT index holds."
+  - class: "RENDA FIXA BAIXA DURAÇÃO - SOBERANO"
+    index: "Tesouro Selic B3"
+    status: proposta
+    rationale: "Same objective as Tesouro Selic (LFT): B3's LFT index, another spelling in the registry."
+  - class: "RENDA FIXA BAIXA DURAÇÃO - SOBERANO"
+    index: "TEVA Tesouro Selic"
+    status: proposta
+    rationale: "Same objective as Tesouro Selic (LFT): TEVA's LFT index."
+  - class: "RENDA FIXA BAIXA DURAÇÃO - SOBERANO"
+    index: "TEVA LFT Curto Prazo"
+    status: proposta
+    rationale: "Same objective as Tesouro Selic (LFT): TEVA's short-dated LFT index."
+
+# Classes deliberately left without an index, with the reason. Not read by SQL.
+unmapped:
+  - class: "AÇÕES - INDEXADO - ÍNDICE PASSIVO"
+    reason: "The class does not name the index (Ibovespa, IBrX, SMLL...); choosing one would infer it from the fund."
+  - class: "AÇÕES - ATIVO - ÍNDICE ATIVO"
+    reason: "Beats a stock index the class does not name; same problem as the passive class."
+  - class: "RENDA FIXA - PASSIVO - ÍNDICES"
+    reason: "The class does not name the index (IMA-B, IMA-B 5, IRF-M...); choosing one would infer it from the fund."
+  - class: "PREVIDÊNCIA - *"
+    reason: "Pension funds (PGBL/VGBL) cannot be replaced by an ETF inside the plan; no PREVIDÊNCIA class is mapped."
+  - class: "(indices excluded from the Selic pairs)"
+    reason: "TEVA ITBR Selic Target 760, MarketVector Brazil Treasury 760D (longer LFTs) and CDI Tesouro Selic B3 (a CDI target) have a different objective."
