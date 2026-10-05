@@ -29,6 +29,7 @@ from src.portfolio.liquidity import compute_liquidity
 from src.portfolio.lookthrough import add_portfolio_shares, compute_lookthrough
 from src.portfolio.movement import compute_movement, default_movement_month
 from src.portfolio.restatements import compute_restatements
+from src.portfolio.returns import compute_returns
 from src.portfolio.risks import compute_risks
 from src.portfolio.sector import compute_sector
 from src.portfolio.signals import compute_signals
@@ -37,7 +38,7 @@ from src.portfolio.terms import attach_to_identification, fetch_fund_terms
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.9"
+SCHEMA_VERSION = "1.10"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -154,6 +155,16 @@ ASSUMPTIONS = [
             "Movimento incomum (esquema 1.3): o retorno mensal da cota do fundo é comparado com o da sua classe ANBIMA "
             "conforme arquivada no Extrato da CVM, nos limiares do dono (atenção acima de 2 desvios padrão, só em tabela; "
             "forte acima de 3, no texto). Os limiares de materialidade de reapresentação seguem estacionados pelo dono."
+        ),
+    },
+    {
+        "id": "returns",
+        "text": (
+            "Retorno por posição (esquema 1.10): 12 e 6 meses até o mês da posição, em valores de fim de mês servidos "
+            "pelo SILO (cota mensal do fundo; fechamento com proventos da ação; fechamento sem proventos de ETF e FII). "
+            "O retorno bruto é uma estimativa: líquido mais a taxa de administração divulgada do bloco de taxas, metade "
+            "dela em 6 meses. Volatilidade amostral dos retornos mensais vezes raiz de 12; perda de Sharpe = taxa anual "
+            "sobre volatilidade anualizada. Sem limiar, sem total da carteira e sem ranking."
         ),
     },
     {
@@ -314,6 +325,12 @@ def run_engine(
     doc = _insert_after(doc, "liquidity", "risks", risks)
     doc["section_status"]["risks"] = {"status": risks["status"], "reason": risks["reason"],
                                       "reason_codes": list(risks.get("reason_codes") or [])}
+    # engine 1.10: the return block reads the fee block's headline, so it runs last (the earlier call ids do not move)
+    returns = compute_returns(lines, fees, client, stmt.position_date, stmt.sum_of_lines)
+    doc = _insert_after(doc, "risks", "returns", returns)
+    doc["section_status"]["returns"] = {"status": returns["status"], "reason": returns["reason"],
+                                        "reason_codes": list(returns.get("reason_codes") or [])}
+    doc["provenance"] = [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance]
     log.info("engine done: %d tool calls", len(client.provenance))
     return doc
 

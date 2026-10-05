@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.9)
+# Portfolio engine output (schema 1.10)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,15 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.10 (owner's resolution of #610, 2026-10-05; inputs `docs/reference/research/portfolio-return-coverage.md`
+(#606) and `quota-net-of-fees.md` (#631)). Keys were added, none renamed, retyped or removed: a new top-level
+section `returns` (below), placed after `risks`, with its `section_status` entry and the assumption `returns`.
+New reason codes in `common.REASON_TEXT`: `linhas_sem_retorno`, `cdi_indisponivel`, `retorno_tesouro_sem_serie`,
+`retorno_credito_sem_serie`, `retorno_caixa`, `retorno_fidc_sem_classe`, `retorno_fip_sem_serie`,
+`retorno_sem_ticker`, `retorno_sem_regra`, `retorno_linha_nao_identificada`, `etf_rf_sem_api`,
+`serie_incompleta`, `retorno_total_nulo`, `sem_taxa_utilizavel`, `taxa_nao_aplicavel`. The block runs after
+every other one, so the call ids of the earlier sections do not move. The report does not show it yet.
 
 Additive extension of 1.9 (2026-10-05, catalog v63): `fees.comparison` is an independently
 statused peer comparison, with `as_of`, `basis`, per-position `lines` and statement/API
@@ -167,7 +176,7 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
 
 `schema_version`, `generated_at_utc`, `engine` (`version`, `client`, `params`), `statement`,
 `identification`, `fees`, `look_through`, `indexer`, `sector`, `restatements`, `risk_signals`, `movement`,
-`concentration` (1.7), `allocation` and `risks` (1.8), `assumptions`, `section_status`, `provenance`.
+`concentration` (1.7), `allocation` and `risks` (1.8), `returns` (1.10), `assumptions`, `section_status`, `provenance`.
 
 - `engine.params`: `cda_month` (default: position month - 4), `fee_month` (default: position
   month - 1), `movement_month` (default: the position month when the position date is a month-end, else the
@@ -176,7 +185,7 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
   `coverage()`-driven default exists.
 - `assumptions[]`: `{id, text}`, each a reading the engine could not verify (`fee_units`,
   `weight_in_root`, `position_date`, `valuation`, `direct_tesouro`, `economic_group`,
-  `abnormal_movement`, `movement_class`, `risks` (1.8)). The report states the ones that touch what it says.
+  `abnormal_movement`, `movement_class`, `risks` (1.8), `returns` (1.10)). The report states the ones that touch what it says.
 - `section_status`: `{section: {status, reason, reason_codes}}`, for a cover-page summary.
 - `provenance[]`: every tool call in order: `call_id`, `id` (`p<call_id>`), `tool`, `args`,
   `requested_at_utc`, `row_count` (null on error), `error` (verbatim, null on success). No trimming;
@@ -532,6 +541,62 @@ row keeps the owner's rule that the attention level is a table row: its count of
 and `text_allowed` is false when only that count sets the severity. The section is `partial`
 (`riscos_nao_avaliados`) while any row is not evaluated.
 
+## `returns`
+
+1.10, return per position (`src/portfolio/returns.py`). A fact per asset over a past period: no threshold, no
+portfolio total, no mean, median or ranking, no recommendation (`note`). Keys: `position_date`, `end_month` (the
+position month when the position date is the month's last calendar day, else the month before, as `movement`),
+`windows[]` (`id` `12m` | `6m`, `months`, `base_month`, `end_month`, `annualized` false, `fee_share_of_annual`
+1 | 0.5, `volatility_note`, `note`), `definition`, `gross_note`, `sharpe_drag_note`, `drawdown_note`,
+`performance_note`, `cdi` (`series`, `sgs_code`, `unit`, `convention`, `n_rates`, `first_date`, `last_date`,
+`status`, `reason_code`, `sources`), `lines[]`, `n_lines`, `n_evaluated`, `n_not_evaluated`, `coverage`
+(`{12m, 6m}`: `evaluated_value_brl`, `coverage_portfolio_value_pct`, `n_evaluated`; a share of the statement's
+value, not a return).
+
+A line (every statement line, in order): `line_no`, `linha_extrato`, `tipo`, `cnpj` (funds), `ticker` (tickers),
+`name`, `valor_brl`, `basis` and `basis_label`, `without_distributions`, `status` (`avaliado` | `nao_avaliado`) and
+`status_label`, `reason_code` and `reason` (a line not evaluated), `fee`, `performance_fee_filed`, `notes[]`,
+`month_ends[]` (`month`, `date` (null for a fund: `fund_nav` serves the month, not the quota's day), `value`,
+`null_reason`), `windows` (`{12m, 6m}`), `sources` (the statement line and the series call).
+
+| `basis`                     | Series                                                                      | Rule                                                                                                                             |
+| --------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `cota_fundo`                | `fund_nav(p_cnpj, p_from, p_entity_type 'fi')`, `quota` per month            | `fundo` of family `fi`. No `p_to`: the series ends at the family's latest complete period, so a month not served is missing.     |
+| `close_total_return`        | `quote_history(..., p_fields [close_total_return, close_total_return_null_reason])` | `ação` (or `outro` of class equity). A null is `retorno_total_nulo` with its reason, never the price return.                |
+| `close_sem_proventos`       | `quote_history(..., p_fields [close])`                                       | `FII` with a ticker; `ETF` that `lookup` found on the cash tape. "Sem proventos": an ETF that distributes is understated.          |
+| `last_price_etf_renda_fixa` | `trade_consolidated_history(p_ticker, p_from, p_to)`, `last_price`           | `ETF` known only from the ETF registry (not on COTAHIST). Tool unknown or refused: `etf_rf_sem_api`. `ref_price` is never read. |
+| null                        | none                                                                        | Tesouro, CDB, LCI, LCA, CRA, CRI, debênture, FIDC (tranche unknown), FIP, cash, unidentified line: a fixed `retorno_*` code.     |
+
+The month-end value of a ticker is its last session in the month on or before the position date (`date` says
+which). A window needs all its month-ends (13 for `12m`, 7 for `6m`), else `serie_incompleta` with
+`missing_months`.
+
+`fee` is the fee block's own headline, never fetched again: `status` (`ok` | `nao_avaliado` | `nao_se_aplica`),
+`reason_code` (`sem_taxa_utilizavel` for no headline, a range, a filed 0 or above 5, or an ETF site fee not
+counted as a cost; `taxa_nao_aplicavel` for a share), `rate_pct_year`, `kind`, `fee_status`, `origin`, `as_of`,
+`sources`. Usable kinds: `fixa`, `lamina_mais_recente`, and `etf_site` with `counted_as_cost`. A fund whose
+disclosed fee has a performance part (`performance_fee_filed`) keeps the administration fee only and carries the
+note "o retorno líquido já desconta a performance provisionada; a taxa por ponto mostrada considera só a
+administração".
+
+A window: `status`, `status_label`, `reason_code`, `reason`, `base_month`, `end_month`, `base_date`, `end_date`,
+`base_value`, `end_value`, `n_observations`, `net_return_pct` (the period's return; 6 months is not annualized),
+`cdi_pct`, `cdi_base_date`, `cdi_end_date`, `cdi_n_rates`, `cdi_reason_code`, `net_minus_cdi_pp`,
+`volatility_annual_pct` (sample standard deviation of the monthly returns × √12) and `volatility_note`
+("12 observações; estimativa ruidosa" | "6 observações; muito ruidosa"), `max_drawdown_pct` (≤ 0, on month-end
+values), `max_drawdown_peak_month`, `max_drawdown_trough_month`, `max_drawdown_note` ("em fechamentos mensais;
+quedas dentro do mês não aparecem"), `fee_status`, `fee_reason_code`, `fee_pct_period` (the annual fee, half of it
+for `6m`), `gross_return_est_pct` (net + `fee_pct_period`) with `gross_label` "estimativa", `fee_per_point`
+(`fee_pct_period` ÷ gross, a ratio), `fee_per_point_excluded_from_aggregates` (true when the gross is ≤ 0: the
+negative value is shown as computed and never enters a mean, median or ranking; null when the gross is exactly 0),
+`fee_per_point_note`, `sharpe_drag` (annual fee ÷ annualized volatility, both windows: the Sharpe the fee takes)
+and `sharpe_drag_note`, `notes`, `sources`; where it applies, `missing_months` and `null_reasons`.
+
+The CDI is `macro_series('CDI', base month, position date)`, compounded by B3's DI-factor convention: daily factors
+`1 + rate/100` truncated at 16 decimals, multiplied over the rates dated from the base date inclusive to the end
+date exclusive, the product rounded to 8. A ticker's dates are its sessions; a fund's are the last business day
+of the base and end months in the CDI's own calendar.
+
 ## The report's view (mapping)
 
 `src/portfolio/report/adapt.py` is this table as code: `python -m src.portfolio.report.build engine.json` maps an
@@ -588,7 +653,8 @@ still renders. The view holds no holder, account or statement-file identifier. U
 
 ## Tools the engine calls
 
-`portfolio_instruments` and `portfolio_fund_terms` (catalog v62), `portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57), `portfolio_lookthrough` (merged; the canned
+`fund_nav`, `quote_history`, `macro_series` and `trade_consolidated_history` (1.10, the return block; the last
+is not live yet and its unknown-tool answer is the expected `etf_rf_sem_api`), `portfolio_instruments` and `portfolio_fund_terms` (catalog v62), `portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57), `portfolio_lookthrough` (merged; the canned
 rows follow their documented columns and have not been run against the live functions), and the
 existing `lookup`, `quote_latest`, `company_financials`, `short_interest`, `fidc_portfolio`,
 `fund_restatements`, `fund_restatement_diff` and the `screen_*` tools. Default client: the public
