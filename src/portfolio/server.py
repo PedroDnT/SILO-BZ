@@ -20,6 +20,12 @@ carry status, timings, sizes and exception type names only, never the file, its
 name, the holder, the CPF or the account, and an error answer is a fixed
 Portuguese message with no stack trace and nothing of the request echoed.
 
+Run trace (ADR 0003): every ``/diagnose`` that passed the token check builds one
+OTLP/JSON trace (``src/portfolio/trace.py``) and names it in ``X-Silo-Trace-Id``.
+``GET /trace/<id>`` (same bearer token) answers it once, with the masked engine
+JSON beside it, and forgets it; the Worker writes both and the PDF to private R2.
+The uploaded statement's bytes are never in it, nor an exception message.
+
 A SILO that does not answer while the statement's lines are identified (a timeout,
 a 5xx or a network error, still failing after the engine's one retry) is a
 retryable failure, not a data gap: ``/diagnose`` answers 503 with ``Retry-After``
@@ -33,6 +39,7 @@ LLM provider is ``SILO_LLM_PROVIDER`` (``fake`` needs no key).
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -40,7 +47,9 @@ import logging
 import os
 import re
 import tempfile
+import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
 
@@ -49,7 +58,8 @@ from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from src.portfolio.client import McpClient, PostgrestClient, SiloClient
 from src.portfolio.common import SiloUnavailable
-from src.portfolio.engine import default_params, dumps, run_engine
+from src.portfolio import trace
+from src.portfolio.engine import SCHEMA_VERSION, default_params, dumps, run_engine
 from src.portfolio.report import adapt, build, llm, redator
 from src.portfolio.report.render import html_to_pdf
 from src.portfolio.statement import Statement, read_statement
@@ -77,9 +87,47 @@ MSG_UNAVAILABLE = "Os dados públicos do SILO não responderam agora. Nenhum rel
 RETRY_AFTER_S = 120
 
 
+# Run traces (ADR 0003): one per authenticated /diagnose, kept until the Worker reads it once.
+TRACE_HEADER = "X-Silo-Trace-Id"
+TRACE_ID_RE = re.compile(r"[0-9a-f]{32}")
+# One instance serves one upload (the Worker starts one per request), so a few is plenty; the oldest goes first.
+TRACE_STORE_MAX = 4
+_GIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
+
+
+def _git_sha() -> str | None:
+    """``GITHUB_SHA`` when set and a git object name, else None: never guessed (as ``ingest_log.lineage``)."""
+    raw = (os.environ.get("GITHUB_SHA") or "").strip().lower()
+    return raw if _GIT_SHA_RE.fullmatch(raw) else None
+
+
+def trace_summary(engine: dict) -> dict:
+    """The few engine fields the trace's ``engine.run`` span reads (statuses, reason codes, counts)."""
+    stmt = engine.get("statement") or {}
+    return {
+        "section_status": engine.get("section_status") or {},
+        "identification": {"counts": (engine.get("identification") or {}).get("counts") or {}},
+        "statement": {"n_lines": stmt.get("n_lines"), "source_format": stmt.get("source_format")},
+        "engine": {k: (engine.get("engine") or {}).get(k) for k in ("version", "client")},
+    }
+
+
+def trace_bundle(otlp: dict, rec: "trace.RunRecord") -> bytes:
+    """What ``GET /trace/<id>`` answers: the OTLP/JSON trace and the masked engine JSON (base64, keyed by
+    ``artifacts/<sha256>.json``). The PDF is not in it: the Worker already holds the answer it forwarded."""
+    arts = trace.artifact_objects(rec.engine_json, None)
+    return json.dumps({
+        "trace_id": trace.trace_id_of(otlp),
+        "trace": otlp,
+        "artifacts": {k: base64.b64encode(v).decode("ascii") for k, v in arts.items()},
+    }, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
 class _Refusal(Exception):
-    def __init__(self, status: int):
+    def __init__(self, status: int, exc_type: str | None = None):
         self.status = status
+        # The type name of the exception behind the refusal, for the run trace only.
+        self.exc_type = exc_type
 
 
 def _unavailable(stage: str) -> tuple[Response, int]:
@@ -227,12 +275,60 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
     def health():
         return Response("ok\n", mimetype="text/plain")
 
+    traces: OrderedDict[str, bytes] = OrderedDict()
+    traces_lock = threading.Lock()
+
+    def keep_trace(rec: trace.RunRecord, resp: Response) -> Response:
+        """Build the run's trace, keep it for one ``GET /trace/<id>`` and name it in ``X-Silo-Trace-Id``.
+
+        A failure here never changes the answer: the type name is logged and the response goes out
+        without the header (the Worker then writes nothing)."""
+        try:
+            rec.end_ns = time.time_ns()
+            tid = trace.new_trace_id()
+            bundle = trace_bundle(trace.build_trace(rec, tid), rec)
+            with traces_lock:
+                traces[tid] = bundle
+                while len(traces) > TRACE_STORE_MAX:
+                    traces.popitem(last=False)
+            resp.headers[TRACE_HEADER] = tid
+        except Exception as exc:  # noqa: BLE001 - a trace is never worth a failed answer
+            log.warning("trace failed: %s", type(exc).__name__)
+        return resp
+
+    @app.get("/trace/<tid>")
+    def get_trace(tid: str):
+        """The kept trace bundle of one run, once: read and forgotten. Same bearer token as /diagnose."""
+        try:
+            _authorized()
+        except _Refusal as r:
+            return _error(r.status)
+        if not TRACE_ID_RE.fullmatch(tid):
+            return _error(404)
+        with traces_lock:
+            bundle = traces.pop(tid, None)
+        if bundle is None:
+            return _error(404)
+        return Response(bundle, mimetype="application/json", headers={"Cache-Control": "no-store"})
+
     @app.post("/diagnose")
     def diagnose():
         t0 = time.monotonic()
+        rec = trace.RunRecord(start_ns=time.time_ns(), end_ns=0, status=500, stage="auth",
+                              engine_rev=rev, schema_version=SCHEMA_VERSION, git_sha=_git_sha())
         size = 0
         fmt = "-"
         stage = "auth"
+
+        def done(resp: Response, status: int, exc_type: str | None = None):
+            rec.status, rec.stage, rec.exc_type = status, stage, exc_type
+            rec.in_bytes, rec.formats = size, fmt
+            if stage == "auth":
+                # Refused before the upload was read: no trace, so an unauthenticated
+                # client cannot fill the store (the Worker never forwards these anyway).
+                return resp, status
+            return keep_trace(rec, resp), status
+
         try:
             _authorized()
             stage = "upload"
@@ -240,6 +336,7 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
             size = sum(len(d) for d in parts)
             fmts = [_sniff(d) or "-" for d in parts]
             fmt = "+".join(fmts)
+            rec.files = len(parts)
             if "-" in fmts:
                 raise _Refusal(415)
             with tempfile.TemporaryDirectory(prefix="diag-") as tmp:
@@ -255,24 +352,33 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
                         stmt = consolidate(stmts).statement
                 except Exception as exc:  # noqa: BLE001 - every reader failure is one answer; the type alone is logged
                     log.warning("read failed: %s", type(exc).__name__)
-                    raise _Refusal(422) from None
+                    raise _Refusal(422, type(exc).__name__) from None
                 del parts
                 stage = "engine"
                 t1 = time.monotonic()
+                rec.engine_start_ns = time.time_ns()
                 doc = run_engine(stmt, client_factory(), default_params(stmt.position_date))
-                engine = json.loads(dumps(doc))  # the CLI's round trip, so the report sees the same JSON
+                engine_text = dumps(doc)  # the masked engine JSON: the trace's artifact, hashed once
+                rec.engine_json = engine_text.encode("utf-8")
+                engine = json.loads(engine_text)  # the CLI's round trip, so the report sees the same JSON
+                rec.engine_doc = trace_summary(engine)
+                rec.engine_end_ns = time.time_ns()
                 if adapt.is_engine_output(engine):
                     engine = adapt.to_view(engine)
                 t2 = time.monotonic()
                 stage = "report"
+                rec.report_start_ns = time.time_ns()
                 try:
                     html_text, narrative = build.build(engine)
                 except (llm.LLMError, redator.UnmaskedInputError) as exc:
                     log.warning("report failed: %s", type(exc).__name__)
-                    raise _Refusal(502) from None
+                    raise _Refusal(502, type(exc).__name__) from None
+                rec.narrative = narrative
+                rec.report_end_ns = time.time_ns()
                 stage = "pdf"
                 pdf_path = html_to_pdf(html_text, work / "diagnostico.pdf")
                 pdf = pdf_path.read_bytes()
+                rec.pdf = pdf
                 t3 = time.monotonic()
             log.info(
                 "diagnose 200 format=%s files=%d in_bytes=%d out_bytes=%d engine_s=%.1f report_s=%.1f total_s=%.1f "
@@ -280,7 +386,7 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
                 fmt, len(fmts), size, len(pdf), t2 - t1, t3 - t2, t3 - t0,
                 narrative.status, narrative.provider, narrative.cost_usd,
             )
-            return Response(
+            return done(Response(
                 pdf,
                 mimetype="application/pdf",
                 headers={
@@ -293,21 +399,21 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
                     "X-Silo-Seconds": f"{t3 - t0:.1f}",
                     **narrative_headers(narrative),
                 },
-            )
+            ), 200)
         except _Refusal as r:
             log.info("diagnose %d stage=%s format=%s in_bytes=%d total_s=%.1f", r.status, stage, fmt, size, time.monotonic() - t0)
-            return _error(r.status, stage)
+            return done(_error(r.status, stage)[0], r.status, r.exc_type)
         except SiloUnavailable:
             # Identification could not finish because SILO did not answer: no PDF, the caller retries later.
             log.warning("diagnose 503 stage=%s format=%s in_bytes=%d error=%s total_s=%.1f",
                         stage, fmt, size, SiloUnavailable.code, time.monotonic() - t0)
-            return _unavailable(stage)
+            return done(_unavailable(stage)[0], 503, SiloUnavailable.__name__)
         except RequestEntityTooLarge:
             log.info("diagnose 413 stage=%s total_s=%.1f", stage, time.monotonic() - t0)
-            return _error(413, stage)
+            return done(_error(413, stage)[0], 413)
         except Exception as exc:  # noqa: BLE001 - no traceback in logs or answers: messages can carry amounts
             log.error("diagnose 500 stage=%s format=%s in_bytes=%d error=%s", stage, fmt, size, type(exc).__name__)
-            return _error(500, stage, exc)
+            return done(_error(500, stage, exc)[0], 500, type(exc).__name__)
 
     @app.errorhandler(HTTPException)
     def http_error(exc: HTTPException):

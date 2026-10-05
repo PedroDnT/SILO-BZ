@@ -10,9 +10,15 @@
 // Clients send the token as `x-demo-token` (the scheme of the first deploy) or
 // as `Authorization: Bearer`. It is compared as a SHA-256 digest with
 // timingSafeEqual. Nothing is logged: no console call, invocation logs off in
-// wrangler.jsonc, and the Container's onError is silenced. Bodies are never
-// read except to forward them, and never stored (no KV, R2, D1, no DO storage
-// of our own).
+// wrangler.jsonc, and the Container's onError is silenced.
+//
+// Storage (ADR 0003): the uploaded statement is never stored; its bytes are only
+// forwarded. After answering, each run's trace is written to the private R2
+// bucket bound as TRACES (only this Worker writes it, through the binding):
+// traces/YYYY/MM/DD/<trace_id>.json (OTLP/JSON, the date is UTC), the masked
+// engine JSON as artifacts/<sha256>.json and the PDF as artifacts/<sha256>.pdf.
+// Holder, CPF and account are masked by the engine's readers before any of it
+// exists. No KV, D1 or DO storage of our own.
 import { Container, ContainerProxy, getContainer } from "@cloudflare/containers";
 
 // The outbound allow-list runs through ContainerProxy, which must be exported.
@@ -20,6 +26,8 @@ export { ContainerProxy };
 
 interface Env {
 	ENGINE: DurableObjectNamespace<HealthContainer>;
+	// Private R2 bucket silo-diagnosis-traces (wrangler.jsonc).
+	TRACES: R2Bucket;
 	DEMO_ACCESS_TOKEN?: string;
 	OPENAI_API_KEY?: string;
 	SILO_LLM_PROVIDER?: string;
@@ -31,6 +39,10 @@ interface Env {
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const TOKEN_HEADER = "x-demo-token";
+// The engine names each run's trace here; never passed to the client (not in PASS_HEADERS).
+const TRACE_HEADER = "x-silo-trace-id";
+const TRACE_ID = /^[0-9a-f]{32}$/;
+const SHA256_KEY = /^artifacts\/[0-9a-f]{64}\.json$/;
 // silo-mcp (and PostgREST) on Supabase, and the LLM provider. Nothing else.
 const EGRESS_ALLOWED = ["zcjbtpxuhdekpwcxmepn.supabase.co", "api.openai.com"];
 // Response headers of the engine passed back to the client: status, sizes,
@@ -172,15 +184,88 @@ async function diagnose(request: Request, env: Env, ctx: ExecutionContext): Prom
 		return erro(503, "Serviço ocupado ou iniciando. Tente de novo em alguns minutos.");
 	}
 	const out = await res.arrayBuffer();
-	// The answer is in hand: stop the instance now, which frees the slot and
-	// discards its disk.
-	ctx.waitUntil(container.stop().catch(() => undefined));
+	// The answer is in hand. After it goes out: read the run's trace from this
+	// same instance (it keeps it in memory for one read), write it to R2, then
+	// stop the instance, which frees the slot and discards its disk. The open
+	// /trace request keeps the instance up; sleepAfter is only the backstop.
+	const traceId = res.headers.get(TRACE_HEADER) ?? "";
+	const isPdf = res.status === 200 && (res.headers.get("content-type") ?? "").startsWith("application/pdf");
+	ctx.waitUntil(
+		(async () => {
+			try {
+				if (env.TRACES && TRACE_ID.test(traceId)) {
+					await storeTrace(env.TRACES, container, env.DEMO_ACCESS_TOKEN as string, traceId, isPdf ? out : null);
+				}
+			} catch {
+				// A lost trace never fails the answer; nothing is logged.
+			} finally {
+				await container.stop().catch(() => undefined);
+			}
+		})(),
+	);
 	const headers = new Headers({ "cache-control": "no-store", "x-silo-origin": "engine" });
 	for (const name of PASS_HEADERS) {
 		const v = res.headers.get(name);
 		if (v) headers.set(name, v);
 	}
 	return new Response(out, { status: res.status, headers });
+}
+
+async function sha256Hex(data: ArrayBuffer | Uint8Array): Promise<string> {
+	const d = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+	return Array.from(d, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function fromBase64(b64: string): Uint8Array {
+	const bin = atob(b64);
+	const out = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+	return out;
+}
+
+interface TraceBundle {
+	trace_id: string;
+	trace: { resourceSpans: { scopeSpans: { spans: { attributes: { key: string; value: Record<string, unknown> }[] }[] }[] }[] };
+	artifacts: Record<string, string>;
+}
+
+function rootAttribute(bundle: TraceBundle, key: string): string | null {
+	const span = bundle.trace?.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+	const kv = span?.attributes?.find((a) => a.key === key);
+	const v = kv?.value?.stringValue;
+	return typeof v === "string" ? v : null;
+}
+
+// One run's objects in R2 (ADR 0003). Each artifact is written under its own
+// SHA-256, computed here: a body that does not hash to its key is skipped.
+async function storeTrace(bucket: R2Bucket, container: { fetch: (r: Request) => Promise<Response> }, token: string, traceId: string, pdf: ArrayBuffer | null): Promise<void> {
+	const res = await container.fetch(
+		new Request(`http://container/trace/${traceId}`, { headers: { authorization: `Bearer ${token}` } }),
+	);
+	if (res.status !== 200) return;
+	const raw = await res.arrayBuffer();
+	const bundle = JSON.parse(new TextDecoder().decode(raw)) as TraceBundle;
+	if (bundle.trace_id !== traceId) return;
+	const day = new Date().toISOString().slice(0, 10).replaceAll("-", "/"); // UTC
+	const puts: Promise<unknown>[] = [];
+	for (const [key, b64] of Object.entries(bundle.artifacts ?? {})) {
+		if (!SHA256_KEY.test(key)) continue;
+		const body = fromBase64(b64);
+		if (`artifacts/${await sha256Hex(body)}.json` !== key) continue;
+		puts.push(bucket.put(key, body, { httpMetadata: { contentType: "application/json" } }));
+	}
+	if (pdf) {
+		const sha = await sha256Hex(pdf);
+		// Only the PDF the engine traced: a different hash means a different body.
+		if (rootAttribute(bundle, "app.pdf.sha256") === sha) {
+			puts.push(bucket.put(`artifacts/${sha}.pdf`, pdf, { httpMetadata: { contentType: "application/pdf" } }));
+		}
+	}
+	await Promise.all(puts);
+	// The trace last, so a trace in R2 means its artifacts are there too.
+	await bucket.put(`traces/${day}/${traceId}.json`, JSON.stringify(bundle.trace), {
+		httpMetadata: { contentType: "application/json" },
+	});
 }
 
 export default {
@@ -229,7 +314,7 @@ button[disabled] { opacity: .6; cursor: wait; }
 <body>
 <main>
 <h1>Diagnóstico de carteira</h1>
-<p>Envie o extrato: o PDF do BTG ("Extrato da Conta Investimento" ou relatório de performance) ou a planilha modelo .xlsx. Com mais de uma conta, selecione um arquivo por conta: eles são somados num diagnóstico só. Até 10 MB no total. Os arquivos são processados em memória e não são guardados. O relatório leva alguns minutos.</p>
+<p>Envie o extrato: o PDF do BTG ("Extrato da Conta Investimento" ou relatório de performance) ou a planilha modelo .xlsx. Com mais de uma conta, selecione um arquivo por conta: eles são somados num diagnóstico só. Até 10 MB no total. O arquivo enviado não é guardado. Guardamos, de forma privada, o relatório e a análise com nome, CPF e conta mascarados, para melhorar o serviço. O relatório leva alguns minutos.</p>
 <form id="f">
 <label for="token">Código de acesso</label>
 <input id="token" type="password" autocomplete="off" required>

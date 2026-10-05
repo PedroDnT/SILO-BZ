@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import copy
 import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import SimpleNamespace
@@ -186,7 +187,9 @@ class CostMeter:
 
     def book(self, role: str, model: str | None, cost_usd: float, **tokens: int) -> None:
         self.spent_usd += cost_usd
-        self.calls.append({"role": role, "model": model, "cost_usd": round(cost_usd, 6), **tokens})
+        # ended_unix_nano: when the call returned, for the run trace's agent spans (src/portfolio/trace.py).
+        self.calls.append({"role": role, "model": model, "cost_usd": round(cost_usd, 6), **tokens,
+                           "ended_unix_nano": time.time_ns()})
 
 
 class Provider(Protocol):
