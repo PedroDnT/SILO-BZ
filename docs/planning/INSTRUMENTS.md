@@ -130,8 +130,10 @@ settlement NUMERIC, prior_settlement NUMERIC, variation NUMERIC, raw JSONB)`
 - **Typed:** `api.future_series(p_contract, p_from, p_to)` (5001 cap) and
   `api.future_curve(p_root TEXT, p_trade_date DATE)` — all live maturities of
   one root on one date, which is how humans actually read DI1.
-- **Panel:** ids are contract codes, `id_type='future'`, metric
-  `settlement`. 1-D per contract — fits.
+- **Panel:** ids are contract codes, `id_type='future'`. 1-D per contract,
+  so it fits. **Built in catalog v61** with three metrics, `settlement_rate`
+  (the default), `settlement_price` and `open_interest`: DI1 publishes the
+  settlement both as a rate and as a PU, so one `settlement` would not say which.
 
 ### 5. Yield curves — PRE / DIC / DOC reference rates
 

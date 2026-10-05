@@ -1,4 +1,4 @@
-"""The portfolio-diagnosis reads in schema `api` (31_api_portfolio.sql, catalog v51; v54 adds portfolio_movement; v61 portfolio_instruments and portfolio_fund_terms).
+"""The portfolio-diagnosis reads in schema `api` (31_api_portfolio.sql, catalog v51; v54 adds portfolio_movement; v62 portfolio_instruments and portfolio_fund_terms).
 
 Offline: the SQL text, the catalog and the CI wiring are pinned to each other.
 The behaviour itself is executed in tests/sql/portfolio_behaviour.sql (CI's

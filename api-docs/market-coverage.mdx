@@ -87,7 +87,7 @@ Nothing on this API is interpolated or forward-filled, and exactly one price is 
 
 - **Quotes are unadjusted, except `quote_history`'s `close_adj`.** `close` and the `adjusted` flag (`false` on every row) are as traded. `close_adj`, the default field of `quote_history`, is continuous across splits, groupings and bonus shares, and a window it cannot adjust is refused with the cause, never served raw. `close_total_return`, selected in `p_fields`, adds the cash distributions and is NULL with a reason wherever one cannot be valued. The tape starts on 2019-01-02, and `quote_history` refuses a window that starts before an instrument's first session. `b3_corporate_event` still carries the events as published.
 - **A null is a null.** Never a guessed last close, a zero, or a carried-forward figure. An unknown ticker returns an empty array.
-- **A regime break is not a trend.** FIDC `delinquency` is null through 2024-12 and filed from 2025-01. `catalog().regime_breaks` lists them.
+- **A regime break is not a trend.** FIDC `delinquency` starts in 2013-01 and is on every row only from 2020-11, so a count of reporting funds jumps there. `catalog().regime_breaks` lists them.
 - **No ANBIMA-to-fund mapping exists.** ANBIMA rows are industry aggregates carrying no fund id, and CVM's `classe` is a different taxonomy. Joining by name would be an invention.
 
 ### Next

@@ -1,4 +1,4 @@
-"""api.portfolio_instruments and api.portfolio_fund_terms (31_api_portfolio.sql, catalog v61).
+"""api.portfolio_instruments and api.portfolio_fund_terms (31_api_portfolio.sql, catalog v62).
 
 Offline: the signatures and return columns (fixed, another agent writes the engine side against them), the
 refusals, the normalisation, the read paths, the catalog, the MCP tool lines and the migration-73 index are pinned

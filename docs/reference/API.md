@@ -665,8 +665,12 @@ The operator half:
   raise-only above one page. `coverage()` gains `di_futures` (landed_at from
   `market` / `b3_price_report`) and `reference_curves` (`market` /
   `b3_reference_rate`).
-- Not built: the futures arm of `api.panel` (`id_type='future'`, metric
-  `settlement`), which `INSTRUMENTS.md` phase B also lists.
+- The futures arm of `api.panel`, which `INSTRUMENTS.md` phase B also lists,
+  came in catalog v61: `id_type='future'`, `asset_class` `derivative`, source
+  `b3_price_report`. Its metrics are `settlement_rate` (the default), `settlement_price`
+  and `open_interest`, not one `settlement`: DI1 publishes both a rate and a PU.
+  Only a settlement B3 marks final (F) is served, because the panel has no status
+  column; 23 sessions from 2018-02 to 2018-05 are P and stay in `future_series`.
 
 ### Row caps refuse, and say why (catalog v34)
 
