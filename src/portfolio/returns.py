@@ -119,6 +119,10 @@ NOTE_FEE_PER_POINT_NEGATIVE = (
 NOTE_SHARPE = (
     "quanto de Sharpe a taxa come: Sharpe bruto menos Sharpe líquido = taxa anual dividida pela volatilidade anualizada"
 )
+# Owner, 2026-10-05 (Q17): below 1% annual volatility (a cash-like fund) fee / volatility explodes and says nothing
+# the fee per point does not; a fixed rule, never tuned per fund.
+SHARPE_MIN_VOL = Decimal("0.01")
+NOTE_SHARPE_LOW_VOL = "não aplicável: volatilidade anualizada abaixo de 1% a.a. (fundo tipo caixa); veja a taxa por ponto"
 NOTE_DRAWDOWN = "em fechamentos mensais; quedas dentro do mês não aparecem"
 NOTE_SIX_MONTHS = "retorno do período de 6 meses, não anualizado"
 NOT_A_RECOMMENDATION = (
@@ -682,10 +686,10 @@ def _window(
         else:
             w.update(fee_per_point=ratio(fee_period / gross, 6), fee_per_point_excluded_from_aggregates=gross < 0,
                      fee_per_point_note=NOTE_FEE_PER_POINT_NEGATIVE if gross < 0 else NOTE_FEE_PER_POINT)
-        if vol > 0:
+        if vol >= SHARPE_MIN_VOL:
             w.update(sharpe_drag=ratio(rate / 100 / vol, 4), sharpe_drag_note=NOTE_SHARPE)
         else:
-            w.update(sharpe_drag=None, sharpe_drag_note="volatilidade zero no período: perda de Sharpe indefinida")
+            w.update(sharpe_drag=None, sharpe_drag_note=NOTE_SHARPE_LOW_VOL)
     return w
 
 

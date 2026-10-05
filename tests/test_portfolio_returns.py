@@ -307,6 +307,19 @@ def test_sharpe_drag_is_the_annual_fee_over_the_annualized_volatility():
         assert "quanto de Sharpe a taxa come" in w["sharpe_drag_note"]
 
 
+@pytest.mark.parametrize("values", [
+    path(100.0, [0.9] * 12),  # constant return: zero volatility
+    path(100.0, [0.9, 0.95, 0.9, 0.92, 0.88, 0.9, 0.91, 0.9, 0.93, 0.89, 0.9, 0.9]),  # cash-like, well under 1% a.a.
+])
+def test_sharpe_drag_is_not_applicable_below_one_percent_volatility(values):
+    sec, _ = run(lines_for(fund_line()), {"fund_nav": [{"match": {}, "rows": nav_rows(FUND, values)}]}, fees=fee_lines(1.5))
+    for wid in ("12m", "6m"):
+        w = one(sec)["windows"][wid]
+        assert w["volatility_annual_pct"] < 1
+        assert w["sharpe_drag"] is None and w["sharpe_drag_note"].startswith("não aplicável: volatilidade")
+        assert w["fee_per_point"] is not None  # the fee per point still answers
+
+
 # 8. Max drawdown -----------------------------------------------------------------------------------------
 
 

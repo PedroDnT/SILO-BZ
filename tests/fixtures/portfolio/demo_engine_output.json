@@ -18165,8 +18165,8 @@
             "fee_per_point": 0.120228,
             "fee_per_point_excluded_from_aggregates": false,
             "fee_per_point_note": "taxa do período dividida pelo retorno bruto estimado do período",
-            "sharpe_drag": 26.3669,
-            "sharpe_drag_note": "quanto de Sharpe a taxa come: Sharpe bruto menos Sharpe líquido = taxa anual dividida pela volatilidade anualizada",
+            "sharpe_drag": null,
+            "sharpe_drag_note": "não aplicável: volatilidade anualizada abaixo de 1% a.a. (fundo tipo caixa); veja a taxa por ponto",
             "notes": [],
             "sources": [
               {
@@ -18240,8 +18240,8 @@
             "fee_per_point": 0.122625,
             "fee_per_point_excluded_from_aggregates": false,
             "fee_per_point_note": "taxa do período dividida pelo retorno bruto estimado do período",
-            "sharpe_drag": 31.4135,
-            "sharpe_drag_note": "quanto de Sharpe a taxa come: Sharpe bruto menos Sharpe líquido = taxa anual dividida pela volatilidade anualizada",
+            "sharpe_drag": null,
+            "sharpe_drag_note": "não aplicável: volatilidade anualizada abaixo de 1% a.a. (fundo tipo caixa); veja a taxa por ponto",
             "notes": [
               "retorno do período de 6 meses, não anualizado"
             ],
