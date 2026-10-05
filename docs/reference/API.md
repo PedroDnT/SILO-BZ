@@ -406,14 +406,15 @@ tickers (67 on 2026-09-29), so `quote_history` and `panel` have nothing for them
   can read `b3_trade_consolidated`. Executed checks:
   `tests/sql/trade_consolidated_history_behaviour.sql`.
 
-### The portfolio reads (catalog v51, v54, v61)
+### The portfolio reads (catalog v51, v54, v61, v63, v66)
 
-Six set-based functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
+Eight functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
 map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`): three since v51,
 `portfolio_movement` since v54, `portfolio_instruments` and `portfolio_fund_terms`
-since v61. All six are raise-only on the one 1000-row page, anon-callable like the
-rest of `api`, and take a set of funds, codes or lines, never a name search that
-guesses.
+since v61, `portfolio_fee_peers` since v63 and `class_return_distribution` since v66.
+All are raise-only on the one 1000-row page and anon-callable like the rest of
+`api`. Seven take a set of funds, codes or lines; `class_return_distribution` takes
+one ANBIMA class as filed. None is a name search that guesses.
 
 - **`api.portfolio_resolve(p_names, p_cnpjs, p_quotas, p_quota_dates)`**: one row
   per line and candidate (up to 5, `rank`), arrays parallel, at most 200 lines
@@ -573,6 +574,35 @@ guesses.
   not filed, never zero. A FII, FIDC, FIP or FIAGRO is in neither document (the
   Extrato holds only FI and FIF classes) and the reason says so. 24 ms cold for the
   12 pinned CNPJs. At most 200 CNPJs.
+- **`api.portfolio_fee_peers(p_cnpjs, p_as_of)`** (catalog v63; ETF peers v66,
+  #609): a fund's administration fee against the active FI funds of its exact
+  ANBIMA class, FUNDO_COTAS and document scope (method:
+  [`fee-peer-comparison.md`](portfolio/fee-peer-comparison.md)). Since v66 ETFs enter
+  the group: CVM files no ANBIMA class for an ETF, so an active ETF joins a class
+  only when its `underlying_index` is mapped to it in
+  `src/portfolio/rules/equivalents/class_index.yaml` (owner-reviewed, generated into
+  the internal view `public.portfolio_class_index` by
+  `scripts/gen_class_index_sql.py`), and it is a peer in every FUNDO_COTAS and scope
+  cell of that class, once per CNPJ. Its fee is the third-party etfsbrasil value
+  (`etf_market_snapshot.taxa_adm_pct`, newest snapshot dated no later than
+  `p_as_of`, the same `0 < fee <= 5` and 36-month rules), never a CVM-disclosed fee.
+  Seven columns appended: `n_fund_peers`, `n_etf_peers` (`n_peers` is their sum and
+  the statistics are over both), `n_etf_excluded`, `etf_peer_tickers`,
+  `etf_peer_fee_oldest` / `_newest` and `etf_peer_fee_source`, which says the ETF fee
+  is a third-party site's. Still at least 30 usable fees, no wider fallback.
+- **`api.class_return_distribution(p_classe_anbima, p_fundo_cotas, p_month)`**
+  (catalog v66, #609): what an equivalent ETF's return is set against. Two rows,
+  `window_months` 12 and 6, ending at the close of `p_month` (NULL = the last
+  complete FI month). Funds: FI funds whose newest Extrato files exactly that class
+  and FUNDO_COTAS (S or N), active as in `portfolio_fee_peers` (`n_universe`). Return
+  = closing quota of `end_month` over that of `start_month`, minus 1, from
+  `fact_fund_monthly`'s stable quota subclass (the quota `fund_nav` serves, net of
+  the class's fees, research #610). `p25_pct`, `median_pct`, `p75_pct` over the
+  `n_funds` returns; `n_excluded_no_quota` and `n_excluded_subclass` count the
+  excluded funds. Fewer than 30 funds or an incomplete month: `nao_avaliado`, NULL
+  statistics and a reason, never a wider class. ETFs are not in the universe.
+  Measured 2026-10-05 (bounded SELECT of the same query, 0.19 s): 17 active funds
+  in `AÇÕES - ATIVO - SMALL CAPS` / N, so that class is not evaluated today.
 - A merge deploys nothing: the functions go live on the next analytical apply
   (`daily_ingest` `mode=analytics-only`), the MCP tools after `deploy_mcp.yml`.
 
@@ -872,8 +902,8 @@ page with a `p_after` cursor**; the others
 `fund_documents`, `fund_restatements`, `fund_restatement_diff`,
 `company_events`, `macro_series`, `ptax`, `future_curve`, `future_series`,
 `curve`, `curve_history`, `research_universe`, `portfolio_resolve`, `portfolio_fees`,
-`portfolio_lookthrough`, `portfolio_movement`, `portfolio_instruments`, `portfolio_fund_terms`
-and the ten `screen_*` functions) have no cursor and
+`portfolio_lookthrough`, `portfolio_movement`, `portfolio_instruments`, `portfolio_fund_terms`,
+`portfolio_fee_peers`, `class_return_distribution` and the ten `screen_*` functions) have no cursor and
 ask you to narrow the window or send fewer funds. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.

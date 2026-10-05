@@ -479,8 +479,13 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 Fee comparison slice (#614 / #609): implemented as `api.portfolio_fee_peers` and
 `fees.comparison`; see [method and rollout](../reference/portfolio/fee-peer-comparison.md).
 Analytical SQL, MCP and engine deployment plus live coverage/cold performance
-validation remain. Equivalent products are still undecided; this slice does not
-complete #609, #606 (return engine) or #607 (brief).
+validation remain. #609 was resolved by the owner on 2026-10-05; its data side
+(branch `demo/equivalents-etf-peers`, catalog v66) adds ETF fee peers through the
+class → index YAML (`src/portfolio/rules/equivalents/class_index.yaml`, every pair
+`proposta` until the owner approves it) and `api.class_return_distribution`. Open:
+the owner's review of the YAML, the analytics-only apply and `deploy_mcp.yml`, and
+the engine and report wiring of the equivalent. This does not complete #606
+(return engine) or #607 (brief).
 
 Return block (#610, owner's resolution of 2026-10-05): implemented in the engine
 only, schema 1.10 `returns` (`src/portfolio/returns.py`; keys in

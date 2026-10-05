@@ -37,6 +37,8 @@ SIGNATURES = {
     "portfolio_fund_terms": "api.portfolio_fund_terms(TEXT[])",
     "portfolio_fee_peers": "api.portfolio_fee_peers(TEXT[], DATE)",
 }
+# api.class_return_distribution (v66) takes one class, not a set of CNPJs: its contract is
+# pinned in tests/test_portfolio_equivalents.py and executed in tests/sql/portfolio_behaviour.sql.
 
 
 def _strip(sql: str) -> str:
@@ -58,11 +60,12 @@ def test_file_is_one_guarded_transaction_after_its_inputs():
         assert ordered.index("31_api_portfolio.sql") > ordered.index(needed)
 
 
-def test_exactly_the_seven_api_functions_are_created():
+def test_exactly_the_eight_api_functions_are_created():
     created = re.findall(r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+api\.(\w+)\(", _strip(SQL31))
     assert created == [
         "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
         "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
+        "class_return_distribution",
     ]
 
 

@@ -273,6 +273,8 @@ REFUSING_FUNCTIONS = {
     "portfolio_fee_peers",
     # v65: B3's FORWARD segment (32_api_trade_consolidated.sql). Pages.
     "trade_consolidated_history",
+    # v66: the class return distribution (31_api_portfolio.sql).
+    "class_return_distribution",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav", "trade_consolidated_history"}
 

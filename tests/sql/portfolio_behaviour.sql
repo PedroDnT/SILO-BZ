@@ -1233,4 +1233,161 @@ BEGIN
     RAISE NOTICE 'portfolio_fee_peers behavior OK';
 END $$;
 
+-- ===========================================================================
+-- ETF fee peers (catalog v66, #609). The generated class -> index view holds
+-- the YAML's pairs; inside this transaction it is replaced by a test pair so the
+-- fixture class above meets synthetic ETFs. An ETF joins only through the
+-- mapped index; it counts once per CNPJ; inactive, unmapped, zero-fee and
+-- future-snapshot ETFs never enter the distribution.
+-- ===========================================================================
+DO $$
+DECLARE n INT;
+BEGIN
+    SELECT count(*) INTO n FROM public.portfolio_class_index;
+    IF n < 1 OR EXISTS (SELECT 1 FROM public.portfolio_class_index WHERE status NOT IN ('proposta', 'aprovada')) THEN
+        RAISE EXCEPTION 'the generated class_index view is empty or carries an unknown status';
+    END IF;
+    IF has_table_privilege('anon', 'public.portfolio_class_index', 'SELECT') THEN
+        RAISE EXCEPTION 'anon can read the internal class_index view';
+    END IF;
+END $$;
+CREATE OR REPLACE VIEW public.portfolio_class_index AS
+SELECT v.classe_anbima, v.underlying_index, v.status
+FROM (VALUES ('TEST FEE CLASS', 'TEST INDEX', 'proposta'),
+             ('TEST FEE CLASS', 'TEST INDEX B', 'proposta')) AS v(classe_anbima, underlying_index, status);
+INSERT INTO cvm_etf_registry (ticker, cnpj, fund_name, underlying_index, is_active) VALUES
+    ('PEQA11', '76000000000001', 'PEER ETF A', 'TEST INDEX', TRUE),     -- usable 0.5
+    ('PEQB11', '76000000000001', 'PEER ETF A 2', 'TEST INDEX', TRUE),   -- same CNPJ, no snapshot: counted once
+    ('PEQC11', '76000000000002', 'PEER ETF C', 'TEST INDEX B', TRUE),   -- fee 0: excluded
+    ('PEQD11', '76000000000003', 'PEER ETF D', 'TEST INDEX', FALSE),    -- inactive: ignored
+    ('PEQE11', '76000000000004', 'PEER ETF E', 'TEST INDEX', TRUE),     -- only a future snapshot: excluded
+    ('PEQF11', '76000000000005', 'PEER ETF F', 'OTHER INDEX', TRUE);    -- unmapped index: ignored
+INSERT INTO etf_market_snapshot (ticker, snapshot_date, source, cnpj, taxa_adm_pct) VALUES
+    ('PEQA11', '2026-10-01', 'etfsbrasil', '76000000000001', 0.50),
+    ('PEQC11', '2026-10-01', 'etfsbrasil', '76000000000002', 0.00),
+    ('PEQD11', '2026-10-01', 'etfsbrasil', '76000000000003', 0.20),
+    ('PEQE11', '2026-11-01', 'etfsbrasil', '76000000000004', 0.30),
+    ('PEQF11', '2026-10-01', 'etfsbrasil', '76000000000005', 0.20);
+DO $$
+DECLARE r RECORD;
+BEGIN
+    -- The FIF cohort has 29 fund peers and one ETF: ETFs never make a group qualify (owner, #609 Q18),
+    -- so the cell stays pares_insuficientes with the ETF still counted apart.
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000061'], DATE '2026-10-05');
+    IF r.status = 'compared' OR r.reason_code <> 'pares_insuficientes' OR r.n_fund_peers <> 29
+       OR r.n_etf_peers <> 1 OR r.median_pct_year IS NOT NULL OR r.percentile_pct IS NOT NULL THEN
+        RAISE EXCEPTION 'ETFs made a 29-fund cell qualify: %', row_to_json(r);
+    END IF;
+    -- The same ETF joins every FUNDO_COTAS and scope cell of the class.
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000001'], DATE '2026-10-05');
+    IF r.n_peers <> 31 OR r.n_fund_peers <> 30 OR r.n_etf_peers <> 1 OR r.n_excluded <> 6
+       OR r.percentile_pct <> round(100.0 * 30.5 / 31, 4) THEN
+        RAISE EXCEPTION 'ETF peers in the N/FI cell: %', row_to_json(r);
+    END IF;
+    -- Dated before the snapshot, the ETF has no fee: no ETF peer, and the cell is not widened.
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000061'], DATE '2026-09-30');
+    -- No fund of the cell is active that month, and the cell still shows its mapped ETFs (3 with no usable fee).
+    IF r.reason_code <> 'pares_insuficientes' OR r.n_etf_peers <> 0 OR r.n_etf_excluded <> 3 OR r.n_fund_peers <> 0
+       OR r.etf_peer_tickers IS NOT NULL
+       OR r.etf_peer_fee_source IS NOT NULL OR r.median_pct_year IS NOT NULL THEN
+        RAISE EXCEPTION 'ETF fee dated after p_as_of entered: %', row_to_json(r);
+    END IF;
+    -- A class with no mapped index: no ETF peer.
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['81000000000001'], CURRENT_DATE);
+    IF r.n_etf_peers <> 0 OR r.n_etf_excluded <> 0 OR r.n_fund_peers <> r.n_peers THEN
+        RAISE EXCEPTION 'an unmapped class got ETF peers: %', row_to_json(r);
+    END IF;
+    SET LOCAL ROLE anon;
+    SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000061'], DATE '2026-10-05');
+    IF r.n_etf_peers <> 1 THEN RAISE EXCEPTION 'anon cannot see ETF peers'; END IF;
+    RESET ROLE;
+    RAISE NOTICE 'portfolio_fee_peers ETF peers OK';
+END $$;
+
+-- ===========================================================================
+-- Class return distribution (catalog v66, #609). 'TESTE RET' / N: 33 active
+-- funds, quotas at the close of 2021-06, 2021-12 and 2022-06. Fund i returns
+-- i % over 12 months and i/2 % over 6. Fund 31 has no 2021-06 quota (excluded
+-- from the 12-month window only); fund 32 last filed in 2022-05 (active, no
+-- end quota: excluded from both); fund 33 files a zero quota at the end. Three
+-- 'S' funds of the same class are a separate group of 3.
+-- ===========================================================================
+INSERT INTO cvm_fi_diario (cnpj, id_subclasse, dt_comptc, vl_quota, vl_patrim_liq, raw)
+SELECT '761' || lpad(i::text, 11, '0'), '', d.dt, d.q, 1000000, '{}'
+FROM generate_series(1, 30) i
+CROSS JOIN LATERAL (VALUES (DATE '2021-06-30', 1.0::numeric),
+                           (DATE '2021-12-31', (1.0 + i / 100.0) / (1.0 + i / 200.0)),
+                           (DATE '2022-06-30', 1.0 + i / 100.0)) AS d(dt, q);
+INSERT INTO cvm_fi_diario (cnpj, id_subclasse, dt_comptc, vl_quota, vl_patrim_liq, raw) VALUES
+    ('76100000000031', '', '2021-12-31', 1.0, 1000000, '{}'), ('76100000000031', '', '2022-06-30', 1.10, 1000000, '{}'),
+    ('76100000000032', '', '2021-06-30', 1.0, 1000000, '{}'), ('76100000000032', '', '2021-12-31', 1.0, 1000000, '{}'),
+    ('76100000000032', '', '2022-05-31', 1.0, 1000000, '{}'),
+    ('76100000000033', '', '2021-06-30', 1.0, 1000000, '{}'), ('76100000000033', '', '2021-12-31', 1.0, 1000000, '{}'),
+    ('76100000000033', '', '2022-06-30', 0, 1000000, '{}');
+INSERT INTO cvm_fi_diario (cnpj, id_subclasse, dt_comptc, vl_quota, vl_patrim_liq, raw)
+SELECT '762' || lpad(i::text, 11, '0'), '', d.dt, d.q, 1000000, '{}'
+FROM generate_series(1, 3) i
+CROSS JOIN (VALUES (DATE '2021-06-30', 1.0::numeric), (DATE '2021-12-31', 1.0), (DATE '2022-06-30', 1.5)) AS d(dt, q);
+INSERT INTO cvm_fi_extrato (cnpj, dt_comptc, classe_anbima, fundo_cotas, tp_fundo_classe, taxa_adm, raw)
+SELECT '761' || lpad(i::text, 11, '0'), DATE '2026-09-30', CASE WHEN i % 2 = 0 THEN ' TESTE RET ' ELSE 'TESTE RET' END,
+       'N', CASE WHEN i % 3 = 0 THEN 'CLASSES - FIF' ELSE 'FI' END, 1, '{}'
+FROM generate_series(1, 33) i;
+INSERT INTO cvm_fi_extrato (cnpj, dt_comptc, classe_anbima, fundo_cotas, tp_fundo_classe, taxa_adm, raw)
+SELECT '762' || lpad(i::text, 11, '0'), DATE '2026-09-30', 'TESTE RET', 'S', 'FI', 1, '{}'
+FROM generate_series(1, 3) i;
+REFRESH MATERIALIZED VIEW public.fact_fund_monthly;
+REFRESH MATERIALIZED VIEW public.mv_period_completeness;
+DO $$
+DECLARE r RECORD; n INT;
+BEGIN
+    IF NOT (SELECT is_complete FROM public.mv_period_completeness WHERE entity_type = 'fi' AND period = DATE '2022-06-01') THEN
+        RAISE EXCEPTION 'fixture month 2022-06 is not complete: the test would prove nothing';
+    END IF;
+    SELECT count(*) INTO n FROM api.class_return_distribution('TESTE RET', 'N', DATE '2022-06-15');
+    IF n <> 2 THEN RAISE EXCEPTION 'two windows expected, got %', n; END IF;
+    -- 12 months: funds 1..30 (returns 1..30 %), 31 to 33 excluded.
+    SELECT * INTO r FROM api.class_return_distribution('TESTE RET', 'N', DATE '2022-06-15') WHERE window_months = 12;
+    IF r.status <> 'evaluated' OR r.start_month <> DATE '2021-06-01' OR r.end_month <> DATE '2022-06-01'
+       OR NOT r.month_complete OR r.n_universe <> 33 OR r.n_funds <> 30 OR r.n_excluded_no_quota <> 3
+       OR r.n_excluded_subclass <> 0 OR r.min_funds <> 30
+       OR r.p25_pct <> 8.25 OR r.median_pct <> 15.5 OR r.p75_pct <> 22.75
+       OR r.classe_anbima <> 'TESTE RET' OR r.fundo_cotas <> 'N' THEN
+        RAISE EXCEPTION 'class returns, 12 months: %', row_to_json(r);
+    END IF;
+    -- 6 months: fund 31 enters (10 %), so 31 funds; 32 and 33 excluded.
+    SELECT * INTO r FROM api.class_return_distribution(' TESTE RET', 'N', DATE '2022-06-15') WHERE window_months = 6;
+    IF r.status <> 'evaluated' OR r.start_month <> DATE '2021-12-01' OR r.n_funds <> 31
+       OR r.n_excluded_no_quota <> 2 OR abs(r.median_pct - 8.0) > 0.0001 THEN
+        RAISE EXCEPTION 'class returns, 6 months: %', row_to_json(r);
+    END IF;
+    -- The S group has 3 funds: no statistics, a reason, no fallback to the N group.
+    SELECT * INTO r FROM api.class_return_distribution('TESTE RET', 'S', DATE '2022-06-15') WHERE window_months = 12;
+    IF r.status <> 'nao_avaliado' OR r.n_funds <> 3 OR r.median_pct IS NOT NULL OR r.reason NOT LIKE 'apenas 3 fundos%' THEN
+        RAISE EXCEPTION 'class returns broadened a small group: %', row_to_json(r);
+    END IF;
+    -- An unknown class: an empty universe, said so.
+    SELECT * INTO r FROM api.class_return_distribution('NO SUCH CLASS', 'N', DATE '2022-06-15') WHERE window_months = 12;
+    IF r.status <> 'nao_avaliado' OR r.n_universe <> 0 OR r.reason NOT LIKE 'nenhum fundo FI ativo%' THEN
+        RAISE EXCEPTION 'class returns, unknown class: %', row_to_json(r);
+    END IF;
+    -- The running month is never complete.
+    SELECT * INTO r FROM api.class_return_distribution('TESTE RET', 'N', CURRENT_DATE) WHERE window_months = 12;
+    IF r.status <> 'nao_avaliado' OR r.month_complete OR r.median_pct IS NOT NULL OR r.reason NOT LIKE '%incompleto%' THEN
+        RAISE EXCEPTION 'class returns judged an incomplete month: %', row_to_json(r);
+    END IF;
+    BEGIN
+        PERFORM * FROM api.class_return_distribution('TESTE RET', 'X');
+        RAISE EXCEPTION 'class returns accepted FUNDO_COTAS X';
+    EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+    BEGIN
+        PERFORM * FROM api.class_return_distribution('  ', 'N');
+        RAISE EXCEPTION 'class returns accepted a blank class';
+    EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+    SET LOCAL ROLE anon;
+    SELECT * INTO r FROM api.class_return_distribution('TESTE RET', 'N', DATE '2022-06-15') WHERE window_months = 12;
+    IF r.status <> 'evaluated' THEN RAISE EXCEPTION 'anon cannot read class returns'; END IF;
+    RESET ROLE;
+    RAISE NOTICE 'class_return_distribution behavior OK';
+END $$;
+
 ROLLBACK;
