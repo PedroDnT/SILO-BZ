@@ -31,6 +31,11 @@ contract. It is public nowhere and can only come from the client: their
 certificate, or a consented phase-2 call. When the regime is unknown, the report
 shows both scenarios (owner, Q13.1, 2026-10-05).
 
+Corrected in the addendum of 2026-10-05: SUSEP does publish the carregamento
+and the FIE CNPJ for a plan on sale, as fields of its PGBL/VGBL plan search
+(`Plano.aspx/Detalhar`), and the Open Insurance phase-1 endpoint answers live
+for XP, Icatu, Bradesco and Caixa. The table above says otherwise for SUSEP.
+
 Recommendation (no build in this ticket): keep the CNPJ printed on the statement
 as the FIE key, and keep reading the FIE as a fund through the existing
 `portfolio_*` functions. Show the carregamento only when the client supplies it.
@@ -82,8 +87,11 @@ The shell's proxy refused `www2.susep.gov.br`, `dados.susep.gov.br`,
   subramo. The Consulta Pública opens the regulation (Condições
   Contratuais/Regulamento) for a processo number. The regulation is where the
   carregamento is written, as a document, not a field. Reading it is a per-plan
-  PDF read; it was not done here.
-- **No FIE in SUSEP's open data.** Olinda has no fund field. The SES fund tables
+  PDF read; it was not done here. (Corrected in the addendum of 2026-10-05:
+  SUSEP's PGBL/VGBL plan search shows the carregamento and the FIE CNPJ as
+  fields, for plans on sale.)
+- **No FIE in SUSEP's open data.** Olinda has no fund field. (Corrected in
+  the addendum of 2026-10-05: the PGBL/VGBL plan search lists the FIE CNPJ.) The SES fund tables
   (`ses_pgbl_fundos`, `ses_vgbl_fundos`) give the provision (PMBaC) total per
   insurer code and month, with no fund identifier. SES is a weekly zip of CSVs
   taken from the FIP forms, and its base ran to 2026-07 when read.
@@ -110,7 +118,7 @@ The shell's proxy refused `www2.susep.gov.br`, `dados.susep.gov.br`,
   holds. The participants directory
   (<https://data.directory.opinbrasil.com.br/participants>) was reachable through
   Exa, but only a truncated first page came back. No insurer's `/life-pension`
-  endpoint was called.
+  endpoint was called. (Done in the addendum of 2026-10-05.)
 
 ## 5. CVM, in SILO
 
@@ -205,20 +213,176 @@ fundo de fundos de previdência (FoF)". That value is as filed.
 
 ## 7. Not verified
 
+Status after the addendum of 2026-10-05 (A1 to A6 below). The original wording
+of each item is kept; the status follows it.
+
 1. That any insurer serves the phase-1 `/life-pension` endpoint live, and whether
    the XP processos above appear there with this FIE's CNPJ and a carregamento
-   range.
+   range. **Closed (A2, A3).** XP, Icatu, Bradesco and Caixa answered HTTP 200
+   with `loadingAntecipated`, `loadingLate` and `investmentFunds[].cnpjNumber`;
+   Brasilprev answered HTTP 400. The XP Superprev processo was not on the one XP
+   page read (10 of 625 records), but SUSEP's plan page links that processo to
+   this FIE's CNPJ, with the carregamento (A3).
 2. The SES documentation was read through an LLM extraction, not line by line.
-   Only the three columns of the two fund tables are claimed.
+   Only the three columns of the two fund tables are claimed. **Open.** Not
+   re-read.
 3. Which cell "Não há" belongs to on XP's sheet: Taxa de carregamento,
-   Liquidação de Resgate or Taxa Perf.
-4. Why the Extrato's 2.6 and the sheet's 0,60% differ.
+   Liquidação de Resgate or Taxa Perf. **Closed for the plan (A3), open for the
+   sheet.** SUSEP gives the PGBL processo 15414.632689/2019-60 a carregamento of
+   0,00 and 0,00. The sheet itself was not re-read.
+4. Why the Extrato's 2.6 and the sheet's 0,60% differ. **Open (A4).** There are
+   now three values for this FIE: 2.6 (Extrato), 0,60 (XP's fund page, "ao ano")
+   and 0 (XP's phase-1 `maximumAdministrationFee`).
 5. Whether the BTG heading "Previdência Individual - Posições abertas por
    alíquota" shows the regime (a regressive table by holding period) or only the
    rates. It is skipped today. Measuring it needs the owner's local runner.
+   **Open.** Unchanged.
 6. The Olinda `produtos` rows themselves. Only the field documentation was read;
-   the shell could not reach `dados.susep.gov.br`.
+   the shell could not reach `dados.susep.gov.br`. **Open (A5).** The service
+   root answers; both collection queries returned HTTP 500.
 7. Whether the regulation PDFs behind the Consulta Pública state the carregamento
-   in a uniform place that could be read automatically.
+   in a uniform place that could be read automatically. **Closed for plans on
+   sale (A3).** SUSEP's PGBL/VGBL plan search shows the carregamento as fields
+   ("Percentual 1 (até 10%)"), so no PDF read is needed for those. Plans no longer
+   sold were not checked.
 8. Whether SUSEP rules require the FIE's CNPJ in the participant's certificate or
-   statement. No regulation was read for this note.
+   statement. No regulation was read for this note. **Closed (A6).** Circular
+   SUSEP 698/2024 requires "denominação e CNPJ do(s) FIE(s) vinculado(s) ao
+   plano" daily (art. 78, II) and in the yearly statement (art. 79, III).
+
+## Addendum 2026-10-05 (UTC-3)
+
+Measured 2026-10-05 10:00 to 10:20 UTC-3 (13:00 to 13:20 UTC). Endpoints were
+called through Firecrawl with `maxAge: 0` (a live fetch, which reports the HTTP
+status) and, where noted, through Exa, which reports no status. The shell's proxy
+refused `data.directory.opinbrasil.com.br`, `dados.susep.gov.br` and
+`insurance-openfinance.xpi.com.br` (CONNECT 403). Only public product data and
+public regulation were read: no client statement, contract or consented API. No
+SQL ran for this addendum.
+
+### A1. The participants directory
+
+`https://data.directory.opinbrasil.com.br/participants`: HTTP 200,
+`application/json`, 38 organisations, each `"Status":"Active"`. The phase-1
+family read here is `products-services_life-pension`; `products-services_pension-plan`
+is a separate family, not read. The paths the directory lists are
+`/open-insurance/products-services/v1/...` and `/v2/...`, not the `v3` of the
+specification read in section 4. Organisations listing a `life-pension`
+endpoint: Bradesco, Icatu, Itaú, Mapfre, Porto (a sandbox host), Safra (an
+`api-hml` host for v2), Zurich, Zurich Santander, Brasilprev, BTG Pactual Vida e
+Previdência (an `openinsurance-dev` host for v2), Caixa Vida e Previdência, Rio
+Grande, Sul América and XP. The homologation and sandbox hosts are as filed.
+
+### A2. Phase-1 `life-pension`: four insurers answer, one refuses
+
+| Insurer                     | URL                                                                                         | Result | Records                                   | Sample (as filed)                                                                                                                                                                                                                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------- | ------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| XP Vida e Previdência       | `https://insurance-openfinance.xpi.com.br/open-insurance/products-services/v2/life-pension` | 200    | `"totalRecords":625`, 63 pages            | `"PGBL INDIVIDUAL SPARTA INFLAÇÃO"`, `"susepProcessNumber":"15414.615915/2022-43"`, `"cnpjNumber":"44843813000119"`, `"companyName":"Sparta Inflação Prev Advisory XP Seg FICFIRF CP"`, `"maximumAdministrationFee":"0"`, `"loadingAntecipated":{"minValue":"0","maxValue":"0"}`, `"loadingLate":{"minValue":"0","maxValue":"0"}` |
+| Icatu Seguros               | `https://opin.icatuseguros.com.br/open-insurance/products-services/v2/life-pension`         | 200    | `"totalRecords":31318`, 1,253 pages of 25 | `"ICATU VGBL - ANGARIAÇÃO"`, `"susepProcessNumber":"15414.902074/2019-14"`, `"cnpjNumber":"33499011000117"`, `"companyName":"FINACAP ICATU PREVIDENCIÁRIO 70 FIM"`, `"maximumAdministrationFee":"1,8"`, `"loadingAntecipated":{"minValue":"0","maxValue":"0"}`                                                                    |
+| Bradesco Vida e Previdência | `https://opin.bradescoseguros.com.br/open-insurance/products-services/v2/life-pension`      | 200    | `"totalRecords":17775`, 1,778 pages       | `"PGBL SPX LANCER PLUS"`, `"susepProcessNumber":"15414600741202214"`, `"cnpjNumber":"42461943000161"`, `"companyName":"BRADESCO SPX LANCER PLUS PGBL/VGBL FIC MULTIMERCADO"`, `"maximumAdministrationFee":"2.0"`, `"loadingAntecipated":{"minValue":"0.0","maxValue":"0.0"}`                                                      |
+| Caixa Vida e Previdência    | `https://api.caixavidaeprevidencia.com.br/open-insurance/products-services/v2/life-pension` | 200    | `"totalRecords":1`                        | `"FEDERALPREV CRESCER - 1000"`, `"susepProcessNumber":"15414.005446/2011-05"`, `"cnpjNumber":"38122278000104"`, `"companyName":"FUNDO SEM VARIACAO DE COTA"`, `"maximumAdministrationFee":"20"`, `"loadingAntecipated":{"minValue":"10.000","maxValue":"4.122"}`                                                                  |
+| Brasilprev                  | `https://opin.brasilprev.com.br/open-insurance/products-services/v2/life-pension`           | 400    | none                                      | `{"errors":[{"code":"400","detail":"Parameter 'cache-control' is required.","title":"Malformed Request"}]}`                                                                                                                                                                                                                       |
+
+What this shows, as filed:
+
+- **The fields exist and are filled.** Each product carries the processo, the
+  type (`PGBL` or `VGBL`), `costs.loadingAntecipated` and `loadingLate` (min and
+  max) and one or more `investmentFunds[].cnpjNumber`. That is the
+  processo-to-FIE link, in JSON, from four insurers.
+- **The values need care.** XP files `"maximumAdministrationFee":"0"` for every
+  fund on the page read, so XP's phase 1 is not a fee source. Icatu writes
+  `"1,8"` with a comma, Bradesco `"2.0"` with a dot. Bradesco writes the processo
+  without punctuation (`15414600741202214`). Caixa's only record gives the
+  insurer's own CNPJ (38122278000104) as the fund's, a fee of `"20"`, and a
+  loading `minValue` above its `maxValue`. Nothing here is corrected.
+- **Paging.** XP ignores `page-size` (a request for 1,000 returned 10) and its v2
+  URL returns v1 `links`. Only page 1 of each insurer was read. The XP Superprev
+  processos of section 6 are not on XP's page 1; the other 62 pages were not
+  read.
+- **Brasilprev is not shown to be down.** It asks for a `cache-control` request
+  header, which the scraping tools cannot send.
+- **Timestamps.** Icatu's `requestTime` reads `2026-10-05T10:11:39Z` and Caixa's
+  `2026-10-05T10:11:55Z`, for calls made at about 13:11 UTC. These servers stamp
+  UTC-3 time with a `Z`. Quoted as filed.
+
+### A3. SUSEP's PGBL/VGBL plan search has the carregamento and the FIE
+
+`https://www2.susep.gov.br/safe/menumercado/PVGBL/Plano.aspx/Detalhar/24737?tipoPlanoId=1`:
+HTTP 200, `text/html`. SUSEP describes the system as a "pesquisa quanto aos
+principais parâmetros técnicos dos planos do tipo PGBL/VGBL aprovados pela
+SUSEP, que estejam atualmente aptos para comercialização"
+(`https://www2.susep.gov.br/menuatendimento/vgblpgbl/menuempresa_2011.asp?plano=vg`,
+read through Exa). Plan 24737, as filed:
+
+- "Tipo: PGBL Individual", "Processo N°.: 15414.632689/2019-60", "Seguradora: XP
+  VIDA E PREVIDÊNCIA S.A.", "Data da primeira aprovação: 15/01/2020".
+- "Carregamento", "Forma: Cobrado quando do recebimento dos prêmios e da
+  efetivação de pedidos de resgate e/ou portabilidade", "Percentual 1 (até 10%):
+  0,00", "Percentual 2 (até 10%): 0,00".
+- "Fundos de investimento para o período de acumulação": "35.420.569/0001-90 |
+  XP SEGUROS SUPERPREV FUNDO DE INVESTIMENTO MULTIMERCADO | Composto | 0,00 |
+  70,00". What Min. and Máx. measure is not stated on the page.
+
+So SUSEP itself links the section-6 processo to the section-6 FIE, with the
+carregamento as a field. Plan 24738 (read through Exa) is a different XP PGBL:
+processo 15414.632691/2019-39, FIE 35.420.532/0001-62, carregamento 0,00 and
+0,00. It came back for `tipoPlanoId=4`, so that parameter looks ignored. The
+VGBL processo 15414.632690/2019-94 was not found. The list page is
+`https://www2.susep.gov.br/safe/menumercado/PVGBL/Plano.aspx`. It is HTML, one
+page per plan; no download or API was found.
+
+### A4. The Superprev fee, still not reconciled
+
+XP's fund page (`https://conteudos.xpi.com.br/previdencia-privada/xp-seg-superprev-fim/`,
+read through Exa): "CNPJ 35.420.569/0001-90", "Taxa de Administração (ao ano)
+0,60 %", "Liquidação de Resgate D+2 (Dias Úteis)". The page has no carregamento
+line. Two aggregators print the Extrato's value: "Taxa de administração total
+2,60%" (etfsbrasil.com.br) and "TAXA DE ADMINISTRAÇÃO 2,60%" (investidor10.com.br).
+A total of the FIE and its underlying funds, against the FIE's own 0,60, would
+explain the gap, but no primary document read says so. Item 4 stays open.
+
+### A5. Olinda `produtos`
+
+`https://dados.susep.gov.br/olinda/servico/produtos/versao/v1/odata/`: HTTP 200,
+an AtomPub service document with one collection, `DadosProdutos`.
+`.../DadosProdutos?$top=5&$format=json`, and the same collection with
+`$filter=numeroprocesso eq '15414.632689/2019-60'`: HTTP 500, `"codigo" : 500,
+"mensagem" : "Erro desconhecido"`. The rows were not read. Whether the
+collection needs parameters, or the service was failing, was not established.
+
+### A6. What SUSEP makes the insurer tell the participant
+
+Circular SUSEP nº 698, de 4 de abril de 2024 (EAPC plans; Circular nº 699 of the
+same date has the same lists for insurers' survival-cover plans, art. 80 and
+81), read through Exa from
+`https://www.in.gov.br/en/web/dou/-/circular-susep-n-698-de-4-de-abril-de-2024-553936390`
+and `https://www2.susep.gov.br/safe/scripts/bnweb/bnmapi.exe?router=upload%2F28312`:
+
+- Art. 78, daily: "II - denominação e CNPJ do(s) FIE(s) vinculado(s) ao plano";
+  "IX - quando for o caso, informação sobre o critério de tributação escolhido
+  pelo participante".
+- Art. 79, at least yearly: "II - número do processo administrativo por meio do
+  qual o plano foi aprovado pela Susep"; "III - denominação e CNPJ do(s) FIE(s)
+  vinculado(s) ao plano"; "VI - valor pago a título de carregamento no período de
+  competência referenciado no extrato"; "XX - a taxa de administração e a taxa de
+  performance efetivamente aplicadas relativas ao(s) FIE(s) vinculado(s) ao
+  plano"; "XXI - quando for o caso, informação sobre o critério de tributação
+  escolhido pelo participante".
+
+The client's yearly statement from the insurer therefore carries the processo,
+the FIE CNPJ, the carregamento paid, the fees actually applied and, where it
+applies, the tax regime. That backs the recommendation: take these from the
+client's own documents, and use a product range only as context.
+
+### What changes
+
+- The plan-to-FIE link and the carregamento are public in two places, not one:
+  the insurer's phase-1 JSON and SUSEP's PGBL/VGBL plan search. Both are per
+  insurer or per plan (paged JSON, or one HTML page per plan); neither is a bulk
+  file.
+- The recommendation stands: the statement's CNPJ stays the FIE key, and the
+  carregamento and the regime come from the client. Two tickets are worth
+  considering if the owner wants them: (a) the BTG "por alíquota" table
+  (unchanged); (b) reading SUSEP's plan search, or one insurer's phase-1 pages,
+  to check a statement's FIE CNPJ against its processo. No build in this
+  addendum.
