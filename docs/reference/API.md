@@ -406,12 +406,12 @@ tickers (67 on 2026-09-29), so `quote_history` and `panel` have nothing for them
   can read `b3_trade_consolidated`. Executed checks:
   `tests/sql/trade_consolidated_history_behaviour.sql`.
 
-### The portfolio reads (catalog v51, v54, v61, v63, v66)
+### The portfolio reads (catalog v51, v54, v61, v63, v66, v67)
 
 Eight functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
 map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`): three since v51,
 `portfolio_movement` since v54, `portfolio_instruments` and `portfolio_fund_terms`
-since v61, `portfolio_fee_peers` since v63 and `class_return_distribution` since v66.
+since v61 (`portfolio_instruments` serves a CRA or CRI ISIN since v67), `portfolio_fee_peers` since v63 and `class_return_distribution` since v66.
 All are raise-only on the one 1000-row page and anon-callable like the rest of
 `api`. Seven take a set of funds, codes or lines; `class_return_distribution` takes
 one ANBIMA class as filed. None is a name search that guesses.
@@ -551,7 +551,10 @@ one ANBIMA class as filed. None is a name search that guesses.
   (`numero_serie`, `classe`) at its highest `versao`, with `instrument_type`
   (`cra_mensal` / `cri_mensal`), `cnpj_securit`, `data_vencimento`, `situacao`,
   `taxa_juros` (text), `classificacao_risco_atual` and `valor_total_integralizado` as
-  filed. Else `'cda_ticker'`: a debenture in CDA block 4 (`tp_aplic = 'Debêntures'`)
+  filed; since v67 also `cd_isin`, the series' `codigo_isin` as filed and not validated
+  (NULL when not filed; B3 Fundos.NET finds a CRA or CRI document by ISIN, never by
+  CETIP code), while `issuer_code` stays NULL (a CRA or CRI ISIN names the
+  securitizer, not the debtor). Else `'cda_ticker'`: a debenture in CDA block 4 (`tp_aplic = 'Debêntures'`)
   at the newest month the code appears in (`cda_period`), with `cd_isin` (the most
   common ISIN), `issuer_code` (ISIN characters 3-6, never a CNPJ), `n_fundos` and
   `preco_marcacao_fundos` = sum of the funds' market value / sum of their quantity

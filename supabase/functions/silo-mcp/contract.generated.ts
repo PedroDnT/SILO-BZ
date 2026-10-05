@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "66";
+export const CONTRACT_VERSION = "67";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -3242,7 +3242,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "portfolio_instruments": {
     "kind": "rpc",
     "path": "/rpc/portfolio_instruments",
-    "description": "CRA, CRI and debenture codes from a statement (catalog v62). Per code (trimmed, upper-cased, a leading CRA-, CRI- or DEB- stripped; the hyphen is required, so CRA0260025T keeps its CRA): match_kind securit_cetip returns every series of cvm_securit_serie whose codigo_cetip is the code, at the code's newest data_referencia, one row per (numero_serie, classe) at its highest versao, with the series columns as filed and instrument_type as stored (cra_mensal, cri_mensal); a code can match several series. Else match_kind cda_ticker: the newest month the code appears in CDA block 4 (cvm_fi_cda_acoes, any tp_aplic) and that month's rows with tp_aplic Debêntures: cd_isin (the most common ISIN), issuer_code (ISIN characters 3-6, never a CNPJ), n_fundos (distinct holding funds), preco_marcacao_fundos (sum of market value over sum of quantity, 6 places: the funds' own marks, not a trade price) and cda_period (the newest CDA month may still be filling, so n_fundos can be low). A code held that month as something other than a debenture is no match, and the reason says what it was held as. Else one row with match_kind NULL and the reason in words (Portuguese). Nothing is inferred from a code's letters. More than 200 codes RAISES 22023; the result is at most one 1000-row page, refused above it, never trimmed.",
+    "description": "CRA, CRI and debenture codes from a statement (catalog v62; securit cd_isin v67). Per code (trimmed, upper-cased, a leading CRA-, CRI- or DEB- stripped; the hyphen is required, so CRA0260025T keeps its CRA): match_kind securit_cetip returns every series of cvm_securit_serie whose codigo_cetip is the code, at the code's newest data_referencia, one row per (numero_serie, classe) at its highest versao, with the series columns as filed and instrument_type as stored (cra_mensal, cri_mensal), and (v67) cd_isin the series' codigo_isin as filed, not validated, NULL when not filed (issuer_code stays NULL: a CRA or CRI ISIN's characters 3-6 name the securitizer, not the debtor); a code can match several series. Else match_kind cda_ticker: the newest month the code appears in CDA block 4 (cvm_fi_cda_acoes, any tp_aplic) and that month's rows with tp_aplic Debêntures: cd_isin (the most common ISIN), issuer_code (ISIN characters 3-6, never a CNPJ), n_fundos (distinct holding funds), preco_marcacao_fundos (sum of market value over sum of quantity, 6 places: the funds' own marks, not a trade price) and cda_period (the newest CDA month may still be filling, so n_fundos can be low). A code held that month as something other than a debenture is no match, and the reason says what it was held as. Else one row with match_kind NULL and the reason in words (Portuguese). Nothing is inferred from a code's letters. More than 200 codes RAISES 22023; the result is at most one 1000-row page, refused above it, never trimmed.",
     "inputSchema": {
       "type": "object",
       "properties": {
