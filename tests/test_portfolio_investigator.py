@@ -658,3 +658,17 @@ def test_fnet_reader_refuses_a_short_listing():
     with pytest.raises(SourceError) as e:
         FnetReader(FakeHttp({"pesquisarGerenciadorDocumentosDados": short})).documents(id_fundo=1, certificados=True)
     assert e.value.code == "fnet_listagem_incompleta"
+
+
+@pytest.mark.parametrize("served, codigo, expected", [
+    (ISIN, "CRA0260025T", ISIN),            # the served ISIN is used for a CETIP-coded line
+    ("NÃO TEM", "CRA0260025T", None),       # a filed non-ISIN is never a search term
+    ("00000", f"CRA-{ISIN}", ISIN),         # ... and the statement's own ISIN is used instead
+    (None, "CRA0260025T", None),
+])
+def test_only_an_isin_shaped_value_is_the_fundos_net_term(served, codigo, expected):
+    li = credit_line(codigo=codigo)
+    li.credit["cd_isin"] = served
+    li.credit["code"] = codigo.removeprefix("CRA-")
+    [t] = R.find_triggers([li], {})
+    assert t.identifiers.get("isin") == expected
