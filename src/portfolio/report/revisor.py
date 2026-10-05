@@ -80,6 +80,7 @@ _MOVEMENT_WORD_RE = re.compile(r"movimento", re.IGNORECASE)
 
 # Engine 1.8: a risks row whose severity comes only from the attention level of the movement section is table-only.
 _RISK_ROW_RE = re.compile(r"^risks\.rows\[(\d+)\]")
+_RETURN_WINDOW_RE = re.compile(r"^returns\.lines\[\d+\]\.windows\[(\d+)\]")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _DIGIT_RE = re.compile(r"\d")
 
@@ -122,6 +123,18 @@ def _extreme(engine: dict, path: str, value: Any) -> tuple[str, float] | None:
     if low_path.startswith("movement."):
         # A class-relative return, mean or sd is a sample statistic, not an exposure: it carries its own
         # n_peers, class and month, and the section's level rule decides where it may appear.
+        return None
+    if low_path.startswith(("returns.", "tax.")):
+        # engines 1.10 and 1.11: a past return, the CDI, a volatility, a drawdown or a legal tax rate is not an exposure;
+        # only a fee rate under these sections keeps the fee rule (a fee above 5% a.a. needs a second path)
+        if "_pct" in key and ("fee" in key or ".fee." in low_path):
+            annual = float(value)
+            m = _RETURN_WINDOW_RE.match(path)
+            if key == "fee_pct_period" and m:  # half the annual fee in the 6-month window
+                share = resolve(engine, f"returns.windows[{m.group(1)}].fee_share_of_annual")
+                if is_number(share) and float(share) > 0:
+                    annual = float(value) / float(share)
+            return ("fee", annual) if annual > FEE_PCT_YEAR_MAX else None
         return None
     parent = resolve(engine, parent_path(path))
     leaf = str(parent.get("leaf", "")).lower() if isinstance(parent, dict) else ""

@@ -4552,7 +4552,7 @@
         "tipo_fora_comparacao"
       ],
       "as_of": "2026-10-03",
-      "basis": "Taxa de administração do Extrato CVM versus fundos FI ativos da mesma classe ANBIMA, indicador de fundo de fundos e escopo do documento (fundo FI ou classe FIF). Ao menos trinta taxas utilizáveis, positivas e até cinco por cento ao ano, com documento de até trinta e seis meses. Universo ativo: cota em um dos três meses de referência. Inclui o próprio fundo quando elegível. Documentos mais recentes disponíveis, não um histórico. Performance, despesa total e ETFs não entram. Percentil por posição média dos empates; diferença em pontos percentuais para a mediana. Não mede qualidade, economia realizável ou recomendação de troca.",
+      "basis": "Taxa de administração do Extrato CVM versus fundos FI ativos da mesma classe ANBIMA, indicador de fundo de fundos e escopo do documento (fundo FI ou classe FIF). Ao menos trinta taxas utilizáveis, positivas e até cinco por cento ao ano, com documento de até trinta e seis meses. Universo ativo: cota em um dos três meses de referência. Inclui o próprio fundo quando elegível. Documentos mais recentes disponíveis, não um histórico. Performance e despesa total não entram. ETFs de índice ligado à classe na lista revisada entram como pares e nas estatísticas, com a taxa do site etfsbrasil.com.br (fonte de terceiros), e são contados à parte. Percentil por posição média dos empates; diferença em pontos percentuais para a mediana. Não mede qualidade, economia realizável ou recomendação de troca.",
       "lines": [
         {
           "line_no": 3,
@@ -4602,7 +4602,14 @@
           "n_peers": 40,
           "n_excluded": 4,
           "peer_fee_oldest": "2024-01-31",
-          "peer_fee_newest": "2026-09-30"
+          "peer_fee_newest": "2026-09-30",
+          "n_fund_peers": 40,
+          "n_etf_peers": 0,
+          "n_etf_excluded": 0,
+          "etf_peer_tickers": null,
+          "etf_peer_fee_oldest": null,
+          "etf_peer_fee_newest": null,
+          "etf_peer_fee_source": null
         },
         {
           "line_no": 4,
@@ -4652,7 +4659,14 @@
           "n_peers": 0,
           "n_excluded": 0,
           "peer_fee_oldest": null,
-          "peer_fee_newest": null
+          "peer_fee_newest": null,
+          "n_fund_peers": null,
+          "n_etf_peers": null,
+          "n_etf_excluded": null,
+          "etf_peer_tickers": null,
+          "etf_peer_fee_oldest": null,
+          "etf_peer_fee_newest": null,
+          "etf_peer_fee_source": null
         },
         {
           "line_no": 5,
@@ -4702,7 +4716,14 @@
           "n_peers": 0,
           "n_excluded": 0,
           "peer_fee_oldest": null,
-          "peer_fee_newest": null
+          "peer_fee_newest": null,
+          "n_fund_peers": null,
+          "n_etf_peers": null,
+          "n_etf_excluded": null,
+          "etf_peer_tickers": null,
+          "etf_peer_fee_oldest": null,
+          "etf_peer_fee_newest": null,
+          "etf_peer_fee_source": null
         },
         {
           "line_no": 6,
@@ -4777,7 +4798,14 @@
           "n_peers": 0,
           "n_excluded": 0,
           "peer_fee_oldest": null,
-          "peer_fee_newest": null
+          "peer_fee_newest": null,
+          "n_fund_peers": null,
+          "n_etf_peers": null,
+          "n_etf_excluded": null,
+          "etf_peer_tickers": null,
+          "etf_peer_fee_oldest": null,
+          "etf_peer_fee_newest": null,
+          "etf_peer_fee_source": null
         },
         {
           "line_no": 8,

@@ -31,6 +31,8 @@ SECTIONS = (
     "exposicao",
     "reapresentacoes",
     "sinais_de_risco",
+    "retornos",
+    "impostos",
 )
 
 SECTION_TITLES = {
@@ -42,6 +44,8 @@ SECTION_TITLES = {
     "exposicao": "Exposição",
     "reapresentacoes": "Reapresentações",
     "sinais_de_risco": "Sinais de risco",
+    "retornos": "Retorno por posição",
+    "impostos": "Taxa e imposto por posição",
 }
 
 # Keys that would carry the client's identity. Fund and issuer names are public
@@ -153,7 +157,7 @@ class FindingsOutput(BaseModel):
 
 SYSTEM_PROMPT = """Você é o Redator do SILO, um diagnóstico independente de carteira de investimentos feito só com dados públicos (CVM, BCB, B3, FNET). Você recebe um JSON produzido pelo motor do SILO e escreve achados em português do Brasil para o investidor.
 
-Regra zero: todo número vem do JSON. Você nunca escreve um algarismo. Cada valor, percentual, data, contagem, CNPJ ou nome que contenha algarismo entra como marcador ligado a um caminho do JSON, no formato {{caminho}}, por exemplo {{fees.total_estimated_brl_year}} ou {{lines[3].fund_name}}. O renderizador substitui o marcador pelo valor do JSON já formatado (R$, %, datas), então não escreva "R$", "%" nem unidades ao lado do marcador. Uma frase com algarismo fora de marcador é apagada pelo Revisor. Um marcador cujo caminho não existe ou é nulo também apaga a frase.
+Regra zero: todo número vem do JSON. Você nunca escreve um algarismo. Cada valor, percentual, data, contagem, CNPJ ou nome que contenha algarismo entra como marcador ligado a um caminho do JSON, no formato {{caminho}}, por exemplo {{fees.total_estimated_brl_year}} ou {{lines[3].fund_name}}. O renderizador substitui o marcador pelo valor do JSON já formatado (R$, %, datas), então não escreva "R$", "%", "p.p." nem unidades ao lado do marcador. Uma frase com algarismo fora de marcador é apagada pelo Revisor. Um marcador cujo caminho não existe ou é nulo também apaga a frase.
 
 O que escrever, nesta ordem de importância:
 1. identificacao: a carteira identificada fundo a fundo; linhas ambíguas e como foram desempatadas; fundos que mudaram de nome.
@@ -166,6 +170,8 @@ Na seção taxas, quando fees.comparison existir: compare apenas linhas com stat
 7. resumo: dois a quatro achados curtos para abrir o relatório; dê prioridade aos riscos em atenção e ao custo total em taxas.
 8. riscos (risks, engine 1.8): a tabela "Principais riscos" já traz cada risco com valor, semáforo (severity_label: atenção, moderado ou baixo) e limites fixos. Escreva no máximo três achados curtos sobre as linhas avaliadas de maior semáforo, na ordem de risks.rows (atenção primeiro, depois moderado), sempre por marcador: o nome (risks.rows[i].risk), o valor (risks.rows[i].value_pct, value_brl ou value_count, conforme unit), o assunto (subject) e o semáforo (severity_label), com a explicação fixa (explanation). Nunca recomende comprar, vender, manter ou diversificar, nunca diga o que o investidor deveria fazer e nunca faça previsão de mercado, de juros, de inflação ou de retorno. Uma linha com text_allowed falso não entra no texto, e o semáforo da linha movimento_anormal (severity_label) também não: o movimento forte já é escrito em sinais_de_risco. Linha "não avaliado" ou "não se aplica" não é achado. Engine 1.9: as linhas credito_situacao (CRA/CRI fora de 'Adimplente', como arquivado), credito_vencimento_diverge (sempre "a conferir", check_label), credito_preco_marcacao (sempre com check_label "informativo, não é veredito de preço": preço do extrato e marcação dos fundos em datas diferentes; nunca diga que o preço está caro, barato, errado ou certo), concentracao_gestor (a gestora agrupada pelo identificador arquivado, subject é o nome como arquivado) e liquidez (parte acima de D+30, com prazos como arquivados) seguem a mesma regra, só por marcador. Quando a linha indexador traz check_label (mais de 25% da carteira sem indexador classificado), a leitura é parcial: diga isso junto, por marcador. O rating (credit.lines[i].rating) é como arquivado, nunca uma opinião sua. O custo total em taxas está em fees.summary (adm_disclosed_fixed_per_year_brl, coverage_*_fund_value_pct, not_included): a cobertura é parte do valor em fundos, não taxa.
 9. movimento incomum (movement): o retorno mensal da cota de um fundo contra os fundos da sua classe ANBIMA. No texto, cite SOMENTE movement.strong[i] (nível forte): o retorno do fundo (own_value_pct), o mês (month), a classe (class_as_filed), o número de fundos da classe (n_peers), a média e o desvio padrão da classe (class_mean_pct, class_sd_pct) e a distância em desvios padrão (z), sempre por marcador. O nível atenção (movement.table, movement.by_line) NUNCA entra no texto: fica só na tabela do relatório. Um fundo sem veredito (movement.not_evaluated[i]) é escrito como "não avaliado", com o motivo em movement.not_evaluated[i].reason por marcador, nunca como normal. Não é previsão nem recomendação.
+10. retornos (returns, engine 1.10): por linha avaliada, o retorno líquido (returns.lines[i].windows[j].net_return_pct; windows[0] é a janela de 12 meses e windows[1] a de 6, de base_month a end_month, e a de 6 meses não é anualizada), a base (basis_label), o CDI das mesmas datas (cdi_pct) e a diferença em pontos percentuais (net_minus_cdi_pp), sempre por marcador. Nunca some, faça média, mediana ou ranking de retornos entre linhas, nunca escreva um retorno da carteira, nunca escreva "% do CDI" (o motor não o calcula) e nunca preveja retorno. A taxa por ponto (fee_per_point) e a perda de Sharpe (sharpe_drag) só com a nota do motor (fee_per_point_note, sharpe_drag_note); um valor com fee_per_point_excluded_from_aggregates verdadeiro é mostrado e nunca comparado. O retorno bruto é sempre "estimativa" (gross_label). Volatilidade e queda máxima com as notas volatility_note e max_drawdown_note. Linha não avaliada não é achado.
+11. impostos (tax, engine 1.11): a taxa paga em R$ por ano (tax.lines[i].fee.per_year_brl, sempre com o rótulo fee.label, "estimativa"), a alíquota em vigor com o artigo (tax.lines[i].tax.rate_text e tax.article) ou "isento"; imposto em R$ só por tax.lines[i].tax.estimate.tax_brl, sempre como estimativa; sem ele, a faixa (tax.lines[i].tax.bracket.text). Previdência: os dois regimes (pension.regressive.text e pension.progressive.text), nunca indique um, nunca escolha entre PGBL e VGBL. Os fatos de otimização (tax.lines[i].optimization[k].text) vão sempre com o rótulo optimization[k].label ("informativo; não é recomendação"), sem verbo no imperativo e sem falar em economia. Nunca escreva um total de imposto da carteira nem some taxas e impostos.
 
 Regras:
 - citations lista os ids de provenance (campo "id" em provenance) que sustentam o achado; pelo menos um, só ids que existem.
@@ -502,6 +508,42 @@ def template_findings(engine: dict) -> dict:
                 "Em {{movement.month}}, nenhum fundo da carteira ficou além do limite forte de movimento contra a sua classe. "
                 "A seção de sinais de risco traz o detalhe de cada fundo.",
                 _ids(*[b.get("provenance") for b in mv.get("by_line") or []]))
+
+    # retornos (engine 1.10): the 12-month window of each evaluated line beside the CDI of the same dates, never a total
+    rt = engine.get("returns") or {}
+    for i, ln in enumerate(rt.get("lines") or []):
+        wins = ln.get("windows") or []
+        if ln.get("status") != "avaliado" or not wins or wins[0].get("status") != "avaliado":
+            continue
+        q, w = f"returns.lines[{i}]", f"returns.lines[{i}].windows[0]"
+        txt = (f"De {{{{{w}.base_month}}}} a {{{{{w}.end_month}}}}, a linha {{{{{q}.line_id}}}} rendeu {{{{{w}.net_return_pct}}}} "
+               f"líquido ({{{{{q}.basis_label}}}}).")
+        if wins[0].get("cdi_pct") is not None:
+            txt += (f" O CDI das mesmas datas rendeu {{{{{w}.cdi_pct}}}}, uma diferença de {{{{{w}.net_minus_cdi_pp}}}} em relação ao CDI.")
+        add("retornos", "Retorno líquido em doze meses", txt, ln.get("provenance"))
+
+    # impostos (engine 1.11): the fee paid, the rate in force or the exemption, the engine's R$ figure only
+    tx = engine.get("tax") or {}
+    for i, ln in enumerate(tx.get("lines") or []):
+        q = f"tax.lines[{i}]"
+        fee, t = ln.get("fee") or {}, ln.get("tax") or {}
+        if fee.get("status") == "estimada" and fee.get("per_year_brl") is not None:
+            add("impostos", "Taxa paga por ano",
+                f"A taxa de administração da linha {{{{{q}.line_id}}}} custa cerca de {{{{{q}.fee.per_year_brl}}}} por ano "
+                f"({{{{{q}.fee.label}}}}).", ln.get("provenance"))
+        if (t.get("estimate") or {}).get("tax_brl") is not None:
+            add("impostos", "Imposto estimado",
+                f"Na linha {{{{{q}.line_id}}}}, a alíquota de {{{{{q}.tax.rate_text}}}} ({{{{{q}.tax.article}}}}) sobre o ganho "
+                f"de doze meses dá cerca de {{{{{q}.tax.estimate.tax_brl}}}} ({{{{{q}.tax.estimate.label}}}}).", ln.get("provenance"))
+        elif t.get("status") == "isento" and ln.get("provenance"):
+            add("impostos", "Posição isenta",
+                f"A linha {{{{{q}.line_id}}}} é {{{{{q}.tax.rate_text}}}} de imposto de renda ({{{{{q}.tax.article}}}}).",
+                ln.get("provenance"))
+        for k, o in enumerate(ln.get("optimization") or []):
+            if o.get("kind") == "equivalencia_bruta" and ln.get("provenance"):
+                add("impostos", "Equivalência bruta",
+                    f"Linha {{{{{q}.line_id}}}}: {{{{{q}.optimization[{k}].text}}}} ({{{{{q}.optimization[{k}].label}}}}).",
+                    ln.get("provenance"))
 
     # resumo: the first identification line, the fee total, the first shared exposure
     if pf:

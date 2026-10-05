@@ -482,16 +482,18 @@ Analytical SQL, MCP and engine deployment plus live coverage/cold performance
 validation remain. #609 was resolved by the owner on 2026-10-05; its data side
 (branch `demo/equivalents-etf-peers`, catalog v66) adds ETF fee peers through the
 class → index YAML (`src/portfolio/rules/equivalents/class_index.yaml`, every pair
-`proposta` until the owner approves it) and `api.class_return_distribution`. Open:
-the owner's review of the YAML, the analytics-only apply and `deploy_mcp.yml`, and
-the engine and report wiring of the equivalent. This does not complete #606
+`proposta` until the owner approves it) and `api.class_return_distribution`. The
+engine copies the fund/ETF peer split and the report prints it (`demo/report-returns-tax`).
+Open: the owner's review of the YAML, the analytics-only apply and `deploy_mcp.yml`, and
+the engine and report wiring of the equivalent (equivalente de mercado). This does not complete #606
 (return engine) or #607 (brief).
 
 Return block (#610, owner's resolution of 2026-10-05): implemented in the engine
 only, schema 1.10 `returns` (`src/portfolio/returns.py`; keys in
-[engine-output.md](../reference/portfolio/engine-output.md)). Remaining: the
-report adapter and HTML do not show it yet, and fixed-income ETFs stay "não
-avaliado" until `api.trade_consolidated_history` (catalog v65, #632) is deployed
+[engine-output.md](../reference/portfolio/engine-output.md)); the report shows it,
+and the tax block (#613, engine 1.11), since `demo/report-returns-tax`. Remaining:
+"% do CDI" for CDI-like funds is not in the engine (only the difference in p.p.), and
+fixed-income ETFs stay "não avaliado" until `api.trade_consolidated_history` (catalog v65, #632) is deployed
 to the live MCP.
 
 **Superseded by map #510 (2026-10-03).** #340 and #341–#345 were closed as not
