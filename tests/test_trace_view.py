@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -80,3 +81,32 @@ def test_list_needs_the_cloudflare_env(monkeypatch):
     monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
     with pytest.raises(SystemExit, match="CLOUDFLARE_ACCOUNT_ID"):
         trace_view.list_keys(1)
+
+
+DEMO_ENGINE = Path(__file__).resolve().parent / "fixtures" / "portfolio" / "demo_engine_output.json"
+
+
+def test_exposure_says_where_an_assets_exposure_comes_from():
+    text = trace_view.exposure_text(json.loads(DEMO_ENGINE.read_text()), "petr4")
+    assert "PETR4 (BRPETRACNPR6): R$ 1.031.894,86 = 16,65% da carteira" in text
+    assert "direta       PETROBRAS PN (linha 2): R$ 988.000,00" in text
+    assert "via fundo    GERAÇÃO L. PAR FIA (linha 3): R$ 43.894,86; 16,59% do valor do fundo; CDA de 2026-05" in text
+    assert "não na data do extrato" in text and "Grupo econômico NÃO avaliado" in text
+
+
+def test_exposure_for_an_asset_in_one_line_only_says_so():
+    text = trace_view.exposure_text(json.loads(DEMO_ENGINE.read_text()), "XXXX99")
+    assert text.startswith("XXXX99: no asset held through more than one statement line")
+
+
+def test_exposure_cli_reads_an_engine_file(capsys):
+    assert trace_view.main(["exposure", "PETR4", str(DEMO_ENGINE)]) == 0
+    assert "16,65% da carteira" in capsys.readouterr().out
+
+
+def test_engine_doc_of_a_trace_without_an_artifact_is_refused(tmp_path):
+    rec = trace.RunRecord(start_ns=T0, end_ns=T0 + 1_000_000_000, status=422, stage="statement", exc_type="StatementError")
+    p = tmp_path / "t.json"
+    p.write_text(json.dumps(trace.build_trace(rec)))
+    with pytest.raises(SystemExit, match="no engine JSON artifact"):
+        trace_view.engine_doc(str(p))
