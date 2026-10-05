@@ -1,0 +1,1 @@
+| 2026-10-05 | docs/research-index-510 | **The research index lists the five map #510 notes.** `docs/reference/research/README.md` gains one section pointing at the notes for #604 (official credit issue documents), #606 (12-month return vs CDI), #608 (fee peers within the ANBIMA class), #611 (tax rules per instrument) and #612 (PGBL/VGBL public data). Docs only. |
