@@ -3,7 +3,7 @@
 # coordinated them, so an APPROVED coordinator's domain joins the "official domains" the investigator's Exa
 # fallback searches first, beside CVM, B3, the securitizadora and the issuer.
 #
-# The owner approves this file, as src/portfolio/rules/equivalents/class_index.yaml. Only `aprovada`
+# The owner approves this file, as src/portfolio/rules/equivalents/class_index.yaml (BTG approved 2026-10-05, #605 Q39; XP waits for its legal name). Only `aprovada`
 # entries are used; a `proposta` entry is read by nothing until the owner changes its status.
 #
 # Rules:
@@ -23,7 +23,7 @@ coordinators:
     names:
       - "BTG PACTUAL INVESTMENT BANKING LTDA"
     domains: ["btgpactual.com"]
-    status: proposta
+    status: aprovada
     evidence: >-
       https://web.cvm.gov.br/sre-publico-cvm/rest/download/4eec5860-ef2a-4917-9d00-94269776ea9c (CVM, fetched
       2026-10-05): an anúncio de início naming BTG PACTUAL INVESTMENT BANKING LTDA., CNPJ 46.482.072/0001-13, as
@@ -35,7 +35,7 @@ coordinators:
     names:
       - "BANCO BTG PACTUAL S.A"
     domains: ["btgpactual.com"]
-    status: proposta
+    status: aprovada
     evidence: >-
       https://web.cvm.gov.br/sre-publico-cvm/rest/download/d4dbf285-740e-4179-b992-f5a7e3970d6b (CVM, fetched
       2026-10-05): an anúncio de início naming BANCO BTG PACTUAL S.A., CNPJ 30.306.294/0001-45, as Coordenador
