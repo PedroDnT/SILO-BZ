@@ -62,7 +62,7 @@ the N cells); `n_fund_peers` shows when ETFs made the difference.
 p25, median and p75 of the class's net fund quota returns over 12 and 6 months, at
 least 30 funds or `nao_avaliado`: what the equivalent ETF's return is set against.
 
-## Market equivalent (catalog v67, engine 1.12)
+## Market equivalent (catalog v68, engine 1.13)
 
 `api.portfolio_equivalents(p_classes TEXT[], p_as_of DATE)` reads the same pairs,
 only those with `status: aprovada`, and returns, per class, every active ETF (one
@@ -120,7 +120,7 @@ checks cohort separation, minimum count, exclusions, tie percentiles,
 normalization, input refusal and anon privileges with synthetic rows.
 
 Apply analytical SQL before deploying `silo-mcp`; then redeploy the Python engine.
-The catalog is version 67 (`portfolio_equivalents` and the filed benchmark on
+The catalog is version 68 (`portfolio_equivalents` and the filed benchmark on
 `portfolio_fees`), with regenerated OpenAPI and MCP contracts. A merge
 alone does not deploy analytical SQL or the remote MCP. Until the RPC is available,
 its refusal/error is shown as a gap and the existing fee section remains usable.

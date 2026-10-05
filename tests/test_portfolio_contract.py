@@ -102,7 +102,7 @@ def test_every_function_refuses_above_one_page_and_never_trims():
 def test_calls_are_capped_and_refused_with_a_why_and_a_how():
     for name in SIGNATURES:
         body = _function(name)
-        cap = "more than 50" if name == "portfolio_equivalents" else "more than 200"  # v67: classes, not funds
+        cap = "more than 50" if name == "portfolio_equivalents" else "more than 200"  # v68: classes, not funds
         assert cap in body, f"{name} caps the call ({cap})"
     # The refusals the caller can fix carry both halves in the message itself.
     assert body.count("To fix") >= 1
@@ -402,15 +402,15 @@ def test_catalog_v57_names_cotistas_and_pl():
     assert f'"version": {CATALOG_VERSION}' in SQL19
 
 
-V67_COLUMNS = ["benchmark_extrato", "benchmark_lamina", "benchmark_lamina_n"]
+V68_COLUMNS = ["benchmark_extrato", "benchmark_lamina", "benchmark_lamina_n"]
 
 
-def test_v67_appends_the_filed_benchmark_last():
+def test_v68_appends_the_filed_benchmark_last():
     cols = _fee_columns()
-    assert cols[cols.index(V57_COLUMNS[-1]) + 1:] == V67_COLUMNS
+    assert cols[cols.index(V57_COLUMNS[-1]) + 1:] == V68_COLUMNS
 
 
-def test_v67_the_benchmark_is_served_as_filed_whatever_the_fee_source():
+def test_v68_the_benchmark_is_served_as_filed_whatever_the_fee_source():
     body = _strip(_function("portfolio_fees"))
     # the Extrato's column is read unconditionally (extrato_param_taxa_perfm stays gated on the fee source)
     assert "CASE WHEN f.use_ext THEN f.x_param END" in body
@@ -426,10 +426,10 @@ def test_v67_the_benchmark_is_served_as_filed_whatever_the_fee_source():
     assert "min(r.indice_refer) AS bench" in body
 
 
-def test_catalog_v67_names_the_benchmark_and_the_equivalents():
+def test_catalog_v68_names_the_benchmark_and_the_equivalents():
     from serve.catalog import CATALOG_VERSION, catalog_payload
 
-    assert CATALOG_VERSION >= 67
+    assert CATALOG_VERSION >= 68
     text = str(catalog_payload())
     for needle in ("benchmark_extrato", "benchmark_lamina", "portfolio_equivalents", "is_equivalent",
                    "POST /rest/v1/rpc/portfolio_equivalents"):
@@ -437,7 +437,7 @@ def test_catalog_v67_names_the_benchmark_and_the_equivalents():
     assert f'"version": {CATALOG_VERSION}' in SQL19
 
 
-def test_v67_equivalents_read_approved_pairs_only_and_rank_by_pl():
+def test_v68_equivalents_read_approved_pairs_only_and_rank_by_pl():
     body = _strip(_function("portfolio_equivalents"))
     assert "m.status = 'aprovada'" in body
     assert "r.is_active IS TRUE" in body and "DISTINCT ON (c.cls, c.cnpj)" in body

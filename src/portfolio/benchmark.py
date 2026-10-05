@@ -1,4 +1,4 @@
-"""Is a fund CDI-like? Its own filed benchmark, read against the versioned spelling list (engine 1.12).
+"""Is a fund CDI-like? Its own filed benchmark, read against the versioned spelling list (engine 1.13).
 
 Owner's decision (#606, addendum Q36 of 2026-10-05): "% do CDI" is shown only for a fund whose own filed benchmark
 is CDI or DI, as filed in the CVM Extrato (``PARAM_TAXA_PERFM``, the performance fee's index, its only benchmark

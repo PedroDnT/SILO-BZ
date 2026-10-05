@@ -125,7 +125,7 @@ def test_returns_section_shows_each_window_beside_the_cdi_and_never_a_total(html
                    "sem total da carteira", "estimativa", "retorno do período de 6 meses, não anualizado",
                    "taxa por ponto: taxa do período dividida pelo retorno bruto estimado do período"):
         assert needle in txt, needle
-    # engine 1.12: "% do CDI" only where the engine wrote it (a fund whose filed benchmark is CDI or DI)
+    # engine 1.13: "% do CDI" only where the engine wrote it (a fund whose filed benchmark is CDI or DI)
     table = text_of(sec.split("<table")[1].split("</table>")[0])
     assert len(re.findall(r"\d+,\d+% do CDI", table)) == 4 and "(e % do CDI)" in table
     assert "carteira rendeu" not in txt and "média dos retornos" not in txt

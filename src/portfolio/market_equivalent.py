@@ -1,4 +1,4 @@
-"""Block 17 (engine 1.12): the market equivalent per fund line (#609, owner's resolution of 2026-10-05).
+"""Block 17 (engine 1.13): the market equivalent per fund line (#609, owner's resolution of 2026-10-05).
 
 For a fund line whose ANBIMA class (as filed in the Extrato, read by the fee comparison) is mapped to an index in the
 reviewed YAML (``rules/equivalents/class_index.yaml``, approved pairs, read in reverse: class -> index), the

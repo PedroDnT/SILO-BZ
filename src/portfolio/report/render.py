@@ -408,7 +408,7 @@ WINDOW_LABEL = {"12m": "12 meses", "6m": "6 meses"}
 
 
 def _equivalents_section(engine: dict) -> str:
-    """Engine 1.12: the market equivalent of each fund line beside the class's return distribution. A fact beside the
+    """Engine 1.13: the market equivalent of each fund line beside the class's return distribution. A fact beside the
     fund, labelled "equivalente de mercado; não é recomendação": no ranking, no "melhor", no instruction. A line with no
     equivalent says why with the fixed text of its code."""
     eq = engine.get("equivalents") or {}
@@ -516,7 +516,7 @@ def _returns_section(engine: dict) -> str:
                 cdi_cell = (f"{v(engine, f'{wq}.cdi_pct')}<br><span class=cit>{v(engine, f'{wq}.cdi_base_date')} a "
                             f"{v(engine, f'{wq}.cdi_end_date')}</span>")
                 vs = v(engine, f"{wq}.net_minus_cdi_pp")
-                if w.get("pct_of_cdi") is not None:  # engine 1.12: only for a fund whose filed benchmark is CDI or DI
+                if w.get("pct_of_cdi") is not None:  # engine 1.13: only for a fund whose filed benchmark is CDI or DI
                     vs += f"<br><span class=v>{v(engine, f'{wq}.pct_of_cdi')}</span>"
                 elif w.get("pct_of_cdi_reason") and w.get("pct_of_cdi_reason_code") != "pct_cdi_so_fundos":
                     vs += f"<br><span class=cit>{v(engine, f'{wq}.pct_of_cdi_reason')}</span>"

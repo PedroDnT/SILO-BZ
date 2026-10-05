@@ -61,9 +61,9 @@ def test_top_level_schema_is_stable(doc):
     assert list(doc) == [
         "schema_version", "generated_at_utc", "engine", "statement", "identification", "fees", "look_through",
         "indexer", "sector", "restatements", "risk_signals", "movement", "concentration", "allocation", "liquidity", "risks",
-        "returns", "tax", "equivalents", "assumptions", "section_status", "provenance",
+        "returns", "tax", "equivalents", "investigation", "assumptions", "section_status", "provenance",
     ]
-    assert doc["schema_version"] == "1.12"
+    assert doc["schema_version"] == "1.13"
     for sec in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals", "movement",
                 "concentration", "allocation", "liquidity", "risks", "returns", "tax", "equivalents"):
         assert {"status", "reason", "errors", "reason_codes"} <= set(doc[sec])

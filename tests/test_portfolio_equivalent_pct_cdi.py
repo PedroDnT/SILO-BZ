@@ -1,4 +1,4 @@
-"""Engine 1.12: "% do CDI" by the filed benchmark (#606 Q36) and the market equivalent (#609), offline.
+"""Engine 1.13: "% do CDI" by the filed benchmark (#606 Q36) and the market equivalent (#609), offline.
 
 Synthetic data only: canned rows for FakeClient and the demo engine fixture; no real statement or portfolio is read.
 The SQL side (api.portfolio_equivalents and the benchmark columns of api.portfolio_fees) is executed in
@@ -168,7 +168,7 @@ def test_the_fee_record_carries_the_filed_benchmark_as_served():
            "lamina_as_of": "2026-08-01", "disclosed_origin": "extrato", "disclosed_source": "cvm_fi_extrato"}
     rec = _fee_record(row, Decimal(100), call, dt.date(2026, 8, 1))
     assert rec["benchmark_as_filed"]["extrato"] == "CDI" and rec["benchmark_as_filed"]["lamina_n"] == 0
-    # a pre-v67 row has no benchmark keys: not read as "not filed"
+    # a pre-v68 row has no benchmark keys: not read as "not filed"
     assert _fee_record({"disclosed_origin": "extrato"}, Decimal(100), call, dt.date(2026, 8, 1))["benchmark_as_filed"] is None
 
 
@@ -334,7 +334,7 @@ def view(engine) -> dict:
 
 
 def test_the_demo_carries_both_and_every_gap_has_a_fixed_text(engine):
-    assert engine["schema_version"] == "1.12" and list(engine).index("equivalents") == list(engine).index("tax") + 1
+    assert engine["schema_version"] == "1.13" and list(engine).index("equivalents") == list(engine).index("tax") + 1
     eqs = engine["equivalents"]
     assert {ln["status"] for ln in eqs["lines"]} == {"encontrado", "sem_equivalente"}
     for ln in eqs["lines"]:

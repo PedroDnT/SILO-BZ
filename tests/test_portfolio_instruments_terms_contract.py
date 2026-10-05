@@ -149,7 +149,7 @@ def test_migration_73_index_matches_schema():
 def test_catalog_openapi_mcp_and_behaviour_agree():
     from serve.catalog import CATALOG_VERSION, catalog_payload
 
-    assert CATALOG_VERSION >= 61
+    assert CATALOG_VERSION >= 67
     c = catalog_payload()
     for fn in ("portfolio_instruments", "portfolio_fund_terms"):
         assert fn in c["limits"]["page"]["all"]
@@ -163,3 +163,50 @@ def test_catalog_openapi_mcp_and_behaviour_agree():
         assert f"RAISE NOTICE '{notice}'" in BEHAVIOUR
         assert BEHAVIOUR.index(notice) < BEHAVIOUR.index("portfolio grants OK")
     assert "api.portfolio_instruments(ARRAY(SELECT 'X' || g FROM generate_series(1, 201) g))" in BEHAVIOUR
+
+
+# --- v67: the securit_cetip row carries its series' ISIN ------------------------------------------------------------
+
+
+def test_securit_rows_serve_codigo_isin_as_cd_isin():
+    body = _strip(_function("portfolio_instruments"))
+    # the picked series row's own ISIN, from the same DISTINCT ON row (not a lookup by code)
+    assert "x.versao AS s_versao, x.codigo_isin AS s_isin" in body
+    # an explicit CASE: a securit match with no ISIN filed stays NULL, never the CDA's
+    assert re.search(r"CASE WHEN s\.line_no IS NOT NULL THEN s\.s_isin\s+WHEN c\.c_rows > 0 THEN c\.c_isin END", body)
+    assert "COALESCE(s.s_isin" not in body
+    # issuer_code stays debenture-only: a CRA / CRI ISIN's characters 3-6 name the securitizer
+    assert "CASE WHEN c.c_rows > 0 THEN substring(c.c_isin FROM 3 FOR 4) END" in body
+    assert "s_isin FROM 3" not in body
+    from serve.catalog import catalog_payload
+    assert "since v67 cd_isin, the series' codigo_isin as filed" in json.dumps(catalog_payload(), ensure_ascii=False)
+    assert "(v67) cd_isin the series'' codigo_isin as filed" in _flat(SQL31)
+    assert "r.cd_isin IS DISTINCT FROM 'BRZZSCCRA0C0'" in BEHAVIOUR
+    assert "r.isins IS DISTINCT FROM 'BRZZSCCRI0A0,-'" in BEHAVIOUR
+
+
+def test_identify_passes_a_cra_isin_through_and_keeps_it_out_of_the_issuer_overlap():
+    import datetime as dt
+
+    from src.portfolio.client import FakeClient
+    from src.portfolio.identify import identify
+    from src.portfolio.lookthrough import _direct_exposures
+    from src.portfolio.statement import parse_rows
+
+    d = dt.date(2026, 9, 30)
+    hdr = ["linha_extrato", "tipo", "codigo", "quantidade", "preco_unitario", "valor", "data_posicao", "vencimento", "taxa"]
+    s = parse_rows([["total_extrato", 100.0], hdr,
+                    ["CRA AGRO X", "CRA", "CRA-CRA026000MD", 1, 100.0, 100.0, d, dt.date(2031, 10, 15), None]])
+    row = {c: None for c, _ in INSTRUMENT_COLUMNS}
+    row.update(line_no=1, input_code="CRA-CRA026000MD", code="CRA026000MD", match_kind="securit_cetip",
+               instrument_type="cra_mensal", numero_serie=1, data_vencimento="2031-10-15", situacao="Adimplente",
+               cd_isin="BRZZSCCRA0C0")
+    sec, lines = identify(s, FakeClient({"portfolio_instruments": [{"match": {}, "rows": [row]}]}))
+    line = sec["lines"][0]
+    assert line["status"] == "identified" and line["credit_match"]["match_kind"] == "securit_cetip"
+    # the investigator reads credit_match.cd_isin to search B3 Fundos.NET by ISIN
+    assert line["credit_match"]["cd_isin"] == "BRZZSCCRA0C0" and line["credit_match"]["issuer_code"] is None
+    assert line["identity"]["isin"] == "BRZZSCCRA0C0"
+    # the direct credit exposure keeps neither ISIN nor issuer code for a CRA: its ISIN names the securitizer
+    (e,) = _direct_exposures(lines[0])
+    assert e.asset_kind == "credito_direto" and e.isin is None and e.issuer_code is None

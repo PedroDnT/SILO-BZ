@@ -406,13 +406,13 @@ tickers (67 on 2026-09-29), so `quote_history` and `panel` have nothing for them
   can read `b3_trade_consolidated`. Executed checks:
   `tests/sql/trade_consolidated_history_behaviour.sql`.
 
-### The portfolio reads (catalog v51, v54, v61, v63, v66, v67)
+### The portfolio reads (catalog v51, v54, v61, v63, v66, v67, v68)
 
 Nine functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
 map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`): three since v51,
 `portfolio_movement` since v54, `portfolio_instruments` and `portfolio_fund_terms`
-since v61, `portfolio_fee_peers` since v63, `class_return_distribution` since v66 and
-`portfolio_equivalents` since v67.
+since v61 (`portfolio_instruments` serves a CRA or CRI ISIN since v67), `portfolio_fee_peers` since v63,
+`class_return_distribution` since v66 and `portfolio_equivalents` since v68.
 All are raise-only on the one 1000-row page and anon-callable like the rest of
 `api`. Seven take a set of funds, codes or lines; `class_return_distribution` takes
 one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a name search that guesses.
@@ -480,7 +480,7 @@ one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a n
   106,027 and R$ 15.32 bn; IVVB11 241,779 and R$ 7.78 bn; B5P211 43,321 and
   R$ 4.33 bn). The site prints PL in R$ millions with two decimals, so it resolves to
   R$ 10 thousand. Descriptive third-party facts: never summed, never a fee base.
-  Catalog v67 (#606 Q36): the filed benchmark, whatever the fee source, as filed.
+  Catalog v68 (#606 Q36): the filed benchmark, whatever the fee source, as filed.
   `benchmark_extrato` is the Extrato's `PARAM_TAXA_PERFM` (the index the performance
   fee is measured against; the Extrato has no other benchmark column, and
   `extrato_param_taxa_perfm` stays NULL when the Extrato is not the fee source),
@@ -561,7 +561,10 @@ one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a n
   (`numero_serie`, `classe`) at its highest `versao`, with `instrument_type`
   (`cra_mensal` / `cri_mensal`), `cnpj_securit`, `data_vencimento`, `situacao`,
   `taxa_juros` (text), `classificacao_risco_atual` and `valor_total_integralizado` as
-  filed. Else `'cda_ticker'`: a debenture in CDA block 4 (`tp_aplic = 'Debêntures'`)
+  filed; since v67 also `cd_isin`, the series' `codigo_isin` as filed and not validated
+  (NULL when not filed; B3 Fundos.NET finds a CRA or CRI document by ISIN, never by
+  CETIP code), while `issuer_code` stays NULL (a CRA or CRI ISIN names the
+  securitizer, not the debtor). Else `'cda_ticker'`: a debenture in CDA block 4 (`tp_aplic = 'Debêntures'`)
   at the newest month the code appears in (`cda_period`), with `cd_isin` (the most
   common ISIN), `issuer_code` (ISIN characters 3-6, never a CNPJ), `n_fundos` and
   `preco_marcacao_fundos` = sum of the funds' market value / sum of their quantity
@@ -613,7 +616,7 @@ one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a n
   statistics and a reason, never a wider class. ETFs are not in the universe.
   Measured 2026-10-05 (bounded SELECT of the same query, 0.19 s): 17 active funds
   in `AÇÕES - ATIVO - SMALL CAPS` / N, so that class is not evaluated today.
-- **`api.portfolio_equivalents(p_classes, p_as_of)`** (catalog v67, #609): the
+- **`api.portfolio_equivalents(p_classes, p_as_of)`** (catalog v68, #609): the
   market equivalent of an ANBIMA class. For each class as filed (1 to 50), the active
   ETFs (`cvm_etf_registry.is_active`, one row per CNPJ, the fee-peer universe) that
   track an index the reviewed list maps to the class (only `status = aprovada`

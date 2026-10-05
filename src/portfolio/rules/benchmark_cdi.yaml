@@ -1,10 +1,10 @@
-# Which filed benchmark spellings make a fund "CDI-like" for "% do CDI" (engine 1.12).
+# Which filed benchmark spellings make a fund "CDI-like" for "% do CDI" (engine 1.13).
 #
 # Owner's decision (#606, addendum Q36 of 2026-10-05): a fund is CDI-like ONLY when its
 # own filed benchmark is CDI or DI, as filed in the CVM Extrato or the lâmina. Never
 # inferred from the fund's name or its ANBIMA class (options B and C were rejected).
 #
-# Where a benchmark is filed (served by api.portfolio_fees since catalog v67):
+# Where a benchmark is filed (served by api.portfolio_fees since catalog v68):
 #   - Extrato das Informações: PARAM_TAXA_PERFM (benchmark_extrato). It is the index the
 #     PERFORMANCE FEE is measured against, and the Extrato's only benchmark column (its
 #     117 columns were read on 2026-10-05). A fund that charges performance over the CDI

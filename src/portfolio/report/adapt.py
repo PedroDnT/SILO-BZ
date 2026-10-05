@@ -30,7 +30,7 @@ SOURCE_BY_TOOL = {
     "screen_late_filers": "FNET",
     # engine 1.10: the return block's series (fund quota from CVM, closes from B3, the CDI from BCB's SGS 12)
     "fund_nav": "CVM", "quote_history": "B3", "trade_consolidated_history": "B3", "macro_series": "BCB",
-    # engine 1.12: the class distribution is CVM's quotas; the equivalents list is SILO's ETF registry (CVM) with the
+    # engine 1.13: the class distribution is CVM's quotas; the equivalents list is SILO's ETF registry (CVM) with the
     # etfsbrasil PL and fee, listed apart as ETFSBRASIL with the snapshot date (see _provenance_view)
     "class_return_distribution": "CVM", "portfolio_equivalents": "ETFSBRASIL",
 }
@@ -704,7 +704,7 @@ def _returns_view(eng: dict) -> dict | None:
                 reason=reason_text(w.get("reason_code")) if w.get("reason_code") or w.get("status") != "avaliado" else None,
                 cdi_reason=reason_text(w.get("cdi_reason_code")) if w.get("cdi_reason_code") else None,
                 fee_reason=reason_text(w.get("fee_reason_code")) if w.get("fee_reason_code") else None,
-                # engine 1.12: why there is no "% do CDI" (only the difference in p.p. is shown)
+                # engine 1.13: why there is no "% do CDI" (only the difference in p.p. is shown)
                 pct_of_cdi_reason=(reason_text(w.get("pct_of_cdi_reason_code"))
                                    if w.get("pct_of_cdi_reason_code") else None),
                 provenance=_prov(w.get("sources")),
@@ -722,7 +722,7 @@ def _returns_view(eng: dict) -> dict | None:
                     "rate_pct_year": fee.get("rate_pct_year"), "kind": fee.get("kind"), "fee_status": fee.get("fee_status"),
                     "origin": fee.get("origin"), "as_of": fee.get("as_of")},
             "performance_fee_filed": ln.get("performance_fee_filed"),
-            # engine 1.12: the filed benchmark as filed, and whether it is CDI-like (the reason is a fixed text)
+            # engine 1.13: the filed benchmark as filed, and whether it is CDI-like (the reason is a fixed text)
             "benchmark": _benchmark_view(ln.get("benchmark")),
             "notes": list(ln.get("notes") or []),
             "windows": wins,
@@ -763,7 +763,7 @@ def _benchmark_view(b: dict | None) -> dict | None:
 
 
 def _equivalents_view(eng: dict) -> dict | None:
-    """Engine 1.12: the market equivalent per fund line, copied (every figure is the engine's), lines as ``L<n>``.
+    """Engine 1.13: the market equivalent per fund line, copied (every figure is the engine's), lines as ``L<n>``.
 
     Every reason is the fixed text of its code; the SQL's own reason never reaches the view. Labelled "equivalente de
     mercado; não é recomendação"; the view ranks nothing and says nothing is better."""
@@ -1039,7 +1039,7 @@ def _gaps_view(eng: dict, sections: dict, fees: dict, risk: dict, movement: dict
 
 COVERED_ABOVE = ("sem_taxa_divulgada", "taxa_a_conferir", "fundos_nao_avaliados", "linhas_nao_identificadas",
                  "riscos_nao_avaliados", "linhas_sem_retorno", "imposto_linhas_sem_regra",
-                 # engine 1.12: the equivalents block's line codes are grouped above with their lines
+                 # engine 1.13: the equivalents block's line codes are grouped above with their lines
                  "equivalente_fora_escopo", "equivalente_sem_classe", "equivalente_sem_par", "equivalente_sem_etf",
                  "equivalente_sem_pl", "equivalente_sem_linha", "equivalente_sem_retorno", "distribuicao_classe_nao_avaliada")
 
@@ -1137,7 +1137,7 @@ def _provenance_view(eng: dict) -> tuple[list[dict], dict[str, str]]:
     # engine 1.6: the site's cotistas and PL date it too, whatever the fee's state
     site_dates += [str(es["as_of"]) for es in ((ln.get("etf_site") or {}) for ln in fee_lines)
                    if es.get("as_of") and (es.get("nr_cotistas") is not None or es.get("pl_brl") is not None)]
-    # engine 1.12: the equivalent ETF's PL and fee are the same site's, dated by their snapshots
+    # engine 1.13: the equivalent ETF's PL and fee are the same site's, dated by their snapshots
     for ln in (eng.get("equivalents") or {}).get("lines") or []:
         etf = ln.get("etf") or {}
         site_dates += [str(etf[k]) for k in ("pl_as_of", "fee_as_of") if etf.get(k)]

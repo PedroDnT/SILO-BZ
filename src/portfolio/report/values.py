@@ -173,7 +173,7 @@ def unit_of(doc: Any, path: str) -> str:
     """``brl`` | ``pct`` | ``pp`` | ``cnpj`` | ``month`` | ``date`` | ``plain`` for the leaf at ``path``."""
     key = last_key(path).lower()
     if key == "pct_of_cdi":
-        return "pct_cdi"  # engine 1.12: the phrase "% do CDI" is the formatter's, never the writer's
+        return "pct_cdi"  # engine 1.13: the phrase "% do CDI" is the formatter's, never the writer's
     if "_brl" in key or key == "brl":
         return "brl"
     if "_pct" in key or key == "pct":

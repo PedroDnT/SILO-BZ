@@ -82,7 +82,7 @@ _MOVEMENT_WORD_RE = re.compile(r"movimento", re.IGNORECASE)
 _RISK_ROW_RE = re.compile(r"^risks\.rows\[(\d+)\]")
 _RETURN_WINDOW_RE = re.compile(r"^returns\.lines\[\d+\]\.windows\[(\d+)\]")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
-# engine 1.12 (#606 Q36): "% do CDI" exists only where the engine wrote pct_of_cdi (a fund whose filed benchmark is CDI
+# engine 1.13 (#606 Q36): "% do CDI" exists only where the engine wrote pct_of_cdi (a fund whose filed benchmark is CDI
 # or DI). The renderer prints that placeholder as "97,05% do CDI", so the phrase never comes from the writer: a literal
 # "% do CDI" is removed, and so is any other figure followed by "do CDI" (it would print as a "% do CDI" the engine
 # never computed). The CDI's own return (cdi_pct) may still be called "do CDI".
@@ -131,7 +131,7 @@ def _extreme(engine: dict, path: str, value: Any) -> tuple[str, float] | None:
         # n_peers, class and month, and the section's level rule decides where it may appear.
         return None
     if low_path.startswith(("returns.", "tax.", "equivalents.")):
-        # engines 1.10 to 1.12: a past return, the CDI, a class percentile, a volatility, a drawdown or a legal tax rate
+        # engines 1.10 to 1.13: a past return, the CDI, a class percentile, a volatility, a drawdown or a legal tax rate
         # is not an exposure;
         # only a fee rate under these sections keeps the fee rule (a fee above 5% a.a. needs a second path)
         if "_pct" in key and ("fee" in key or ".fee." in low_path):

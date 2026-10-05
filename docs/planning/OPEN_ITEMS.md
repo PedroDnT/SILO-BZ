@@ -484,17 +484,17 @@ validation remain. #609 was resolved by the owner on 2026-10-05; its data side
 class → index YAML (`src/portfolio/rules/equivalents/class_index.yaml`, every pair
 `proposta` until the owner approves it) and `api.class_return_distribution`. The
 engine copies the fund/ETF peer split and the report prints it (`demo/report-returns-tax`).
-The owner approved the YAML's 11 pairs. The equivalente de mercado is wired in the engine (schema 1.12,
+The owner approved the YAML's 11 pairs. The equivalente de mercado is wired in the engine (schema 1.13,
 `equivalents`, `src/portfolio/market_equivalent.py`) and the report (branch `demo/equivalente-pct-cdi`), through
-the new `api.portfolio_equivalents` (catalog v67). Open: the analytics-only apply and `deploy_mcp.yml` for
-catalog v66 and v67, then live coverage. This does not complete #607 (brief).
+the new `api.portfolio_equivalents` (catalog v68). Open: the analytics-only apply and `deploy_mcp.yml` for
+catalog v66 and v68, then live coverage. This does not complete #607 (brief).
 
 Return block (#610, owner's resolution of 2026-10-05): implemented in the engine
 only, schema 1.10 `returns` (`src/portfolio/returns.py`; keys in
 [engine-output.md](../reference/portfolio/engine-output.md)); the report shows it,
-and the tax block (#613, engine 1.11), since `demo/report-returns-tax`. "% do CDI" (engine 1.12, #606
+and the tax block (#613, engine 1.11), since `demo/report-returns-tax`. "% do CDI" (engine 1.13, #606
 addendum Q36) is computed only for a fund whose own filed benchmark (Extrato `PARAM_TAXA_PERFM` or lâmina
-`INDICE_REFER`, served by `portfolio_fees` since catalog v67) is CDI or DI by the spelling list
+`INDICE_REFER`, served by `portfolio_fees` since catalog v68) is CDI or DI by the spelling list
 `src/portfolio/rules/benchmark_cdi.yaml`. Remaining: fixed-income ETFs stay "não avaliado" until
 `api.trade_consolidated_history` (catalog v65, #632) is deployed to the live MCP.
 
@@ -527,7 +527,15 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - Sunday scope: spreadsheet input, blocks 1, 3, 10, 11, 14 (screens), 4, 2, PDF.
 - The disclosed fund fee must be correct, not only the balancete estimate:
   slice A adds the `cad_fi` fee columns (migration 64) and the CVM lâmina.
-- Cost cap US$1.00 per report; investigator cap 20 searches per report.
+- Cost cap US$1.00 per report; investigator cap 20 searches per report. The
+  investigator is built (engine 1.12, #605, branch `demo/investigator`): inside
+  the same US$1.00 cap (at most US$0.30 of it, LLM and Exa), 5 searches per item,
+  180 s. **Owner action:** it ships `off` (`SILO_INVESTIGATOR` in `wrangler.jsonc`);
+  run it once, supervised, then turn it on. **Owner review:** the coordinator
+  domains in `src/portfolio/rules/investigator/coordinators.yaml` are all
+  `proposta`. Still open: the report's HTML section, `portfolio_instruments`
+  serving the CRA/CRI ISIN (branch `demo/instruments-isin`), and a read path from
+  R2 for the document cache.
 - Report LLM (owner, 2026-10-03): the Anthropic key has no credits, so the Redator and
   Revisor run on OpenAI at medium reasoning (`SILO_LLM_PROVIDER=openai`, branch
   `demo/openai-provider`), `gpt-5.1` since 2026-10-04 (was `gpt-6-luna`); `anthropic` stays selectable, the cap is unchanged.

@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.12",
+  "schema_version": "1.13",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -22334,6 +22334,66 @@
     "found_value_brl": 902591.9,
     "coverage_portfolio_value_pct": 14.5663
   },
+  "investigation": {
+    "status": "not_applicable",
+    "reason": "Investigador de documentos oficiais desligado nesta execução.",
+    "reason_codes": [
+      "investigador_desligado"
+    ],
+    "errors": [],
+    "enabled": false,
+    "limits": {
+      "searches_per_trigger": 5,
+      "searches_per_report": 20,
+      "max_documents_per_trigger": 3
+    },
+    "searches_used": 0,
+    "searches_by_kind": {},
+    "costs": {
+      "usd": 0.0,
+      "llm_usd": 0,
+      "exa_usd": 0.0,
+      "share_cap_usd": 0.3,
+      "report_cap_usd": 1.0,
+      "note": "parte do teto único de US$1,00 do relatório (LLM do relatório, LLM do investigador e Exa); incluído em X-Silo-Cost-Usd"
+    },
+    "web_search": {
+      "provider": "exa",
+      "available": false,
+      "note": null
+    },
+    "models": {
+      "extractor": null,
+      "judge": null,
+      "tier_b_enabled": false,
+      "note": null
+    },
+    "tiers": {
+      "A": "verificado na fonte",
+      "B": "conferido por modelo; a conferir",
+      "C": "descartado"
+    },
+    "counts": {
+      "triggers": 0,
+      "facts": 0,
+      "tier_a": 0,
+      "tier_b": 0,
+      "discarded": 0,
+      "divergences": 0,
+      "documents_read": 0,
+      "documents_not_read": 0
+    },
+    "triggers": [],
+    "facts": [],
+    "discarded": {
+      "count": 0,
+      "text": "0 fatos descartados",
+      "by_reason": {}
+    },
+    "documents_consulted": [],
+    "messages": [],
+    "note": null
+  },
   "assumptions": [
     {
       "id": "fee_units",
@@ -22388,12 +22448,16 @@
       "text": "Taxa e imposto por posição (esquema 1.11): regras dos arquivos versionados em src/portfolio/rules/tax/, copiadas da nota #611 com artigo e citação. A taxa paga por ano é a do bloco de taxas (taxa divulgada x valor da posição), estimativa. O imposto em R$ é estimativa: alíquota de hoje x ganho de 12 meses do bloco de retorno, só com a data de aplicação impressa no extrato; sem ela, a faixa de alíquotas e nenhum valor. Nenhuma data é suposta; condições que o extrato não mostra ficam a conferir; nada é recomendação."
     },
     {
+      "id": "investigation",
+      "text": "Investigador de documentos oficiais (esquema 1.12): roda só quando ligado (SILO_INVESTIGATOR=on no servidor). Lê Fundos.NET, o RAD da CVM e, quando nada for achado, o Exa (sites oficiais e depois a web aberta), no máximo 5 buscas por item e 20 por relatório. Cada fato traz citação, endereço, data do documento e data de leitura. Nível A: citação achada no texto; nível B: conferido por um segundo modelo, a conferir; o resto é descartado e contado. Nenhum número vem de modelo. Divergência com o registro da CVM é mostrada, nunca corrigida. Só identificadores públicos saem do motor, nunca dados do titular ou valores do extrato."
+    },
+    {
       "id": "pct_of_cdi",
-      "text": "% do CDI (esquema 1.12): só para fundo cujo índice de referência arquivado é CDI ou DI, lido no Extrato (PARAM_TAXA_PERFM, o índice da taxa de performance, a única coluna de referência do Extrato) ou na lâmina (INDICE_REFER), pela lista versionada de grafias em src/portfolio/rules/benchmark_cdi.yaml; nunca pelo nome ou pela classe ANBIMA. Retorno líquido dividido pelo CDI das mesmas datas, vezes 100, só com CDI acima de zero; nos demais casos, só a diferença em pontos percentuais, com o motivo."
+      "text": "% do CDI (esquema 1.13): só para fundo cujo índice de referência arquivado é CDI ou DI, lido no Extrato (PARAM_TAXA_PERFM, o índice da taxa de performance, a única coluna de referência do Extrato) ou na lâmina (INDICE_REFER), pela lista versionada de grafias em src/portfolio/rules/benchmark_cdi.yaml; nunca pelo nome ou pela classe ANBIMA. Retorno líquido dividido pelo CDI das mesmas datas, vezes 100, só com CDI acima de zero; nos demais casos, só a diferença em pontos percentuais, com o motivo."
     },
     {
       "id": "market_equivalent",
-      "text": "Equivalente de mercado (esquema 1.12): o maior ETF ativo por patrimônio líquido (site etfsbrasil.com.br, fonte de terceiros, datado) entre os que acompanham um índice ligado à classe ANBIMA do fundo na lista revisada pelo dono (rules/equivalents/class_index.yaml, pares aprovados). Retorno do ETF pelo fechamento sem proventos (ou último preço do arquivo consolidado, ETF de renda fixa), nas janelas do bloco de retorno, ao lado do p25, mediana e p75 da classe. Não é recomendação nem ranking."
+      "text": "Equivalente de mercado (esquema 1.13): o maior ETF ativo por patrimônio líquido (site etfsbrasil.com.br, fonte de terceiros, datado) entre os que acompanham um índice ligado à classe ANBIMA do fundo na lista revisada pelo dono (rules/equivalents/class_index.yaml, pares aprovados). Retorno do ETF pelo fechamento sem proventos (ou último preço do arquivo consolidado, ETF de renda fixa), nas janelas do bloco de retorno, ao lado do p25, mediana e p75 da classe. Não é recomendação nem ranking."
     },
     {
       "id": "movement_class",
@@ -22490,6 +22554,13 @@
       "reason_codes": [
         "equivalente_sem_par",
         "equivalente_sem_classe"
+      ]
+    },
+    "investigation": {
+      "status": "not_applicable",
+      "reason": "Investigador de documentos oficiais desligado nesta execução.",
+      "reason_codes": [
+        "investigador_desligado"
       ]
     }
   },

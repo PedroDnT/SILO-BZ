@@ -27,7 +27,7 @@ session in the month on or before the position date. Every window needs all its 
 
 Per window: net return; the CDI over the same dates (``macro_series('CDI')``, B3's DI-factor convention: daily
 factors ``1 + rate/100`` truncated at 16 decimals, product over the rates dated from the base date inclusive to
-the end date exclusive, rounded to 8); "% do CDI" (engine 1.12, #606 Q36) only for a fund whose own filed benchmark
+the end date exclusive, rounded to 8); "% do CDI" (engine 1.13, #606 Q36) only for a fund whose own filed benchmark
 is CDI or DI (``benchmark.py``, the versioned spelling list) and only when the CDI over the window is above zero, else
 a reason code and only the difference in percentage points; volatility (sample standard deviation of the monthly returns, × √12);
 maximum drawdown on month-end values; and, when the fee block has a single disclosed administration fee
@@ -167,7 +167,7 @@ REASONS = {
     "consulta_falhou": "consulta ao SILO falhou ou foi recusada",
     "resposta_inconsistente": "resposta do SILO inconsistente; a linha não foi avaliada",
 }
-# engine 1.12: why a window has no "% do CDI" (fixed Portuguese text in common.REASON_TEXT)
+# engine 1.13: why a window has no "% do CDI" (fixed Portuguese text in common.REASON_TEXT)
 PCT_CDI_ONLY_FUNDS = "pct_cdi_so_fundos"
 PCT_CDI_NOT_SERVED = "referencia_nao_servida"
 PCT_CDI_NOT_POSITIVE = "cdi_nao_positivo"
@@ -240,7 +240,7 @@ def compute_returns(
         "sharpe_drag_note": NOTE_SHARPE,
         "drawdown_note": NOTE_DRAWDOWN,
         "performance_note": NOTE_PERFORMANCE,
-        "pct_of_cdi_note": NOTE_PCT_OF_CDI,  # engine 1.12
+        "pct_of_cdi_note": NOTE_PCT_OF_CDI,  # engine 1.13
         "note": NOT_A_RECOMMENDATION,
         "cdi": cdi.as_dict(),
         "lines": out,
@@ -385,8 +385,8 @@ def _empty_window(code: str | None, reason: str | None) -> dict[str, Any]:
         "cdi_n_rates": None,
         "cdi_reason_code": None,
         "net_minus_cdi_pp": None,
-        "cdi_like": None,  # engine 1.12: the line's filed benchmark is CDI or DI (benchmark.py)
-        "pct_of_cdi": None,  # engine 1.12: net / CDI x 100, only when cdi_like and the CDI is above zero
+        "cdi_like": None,  # engine 1.13: the line's filed benchmark is CDI or DI (benchmark.py)
+        "pct_of_cdi": None,  # engine 1.13: net / CDI x 100, only when cdi_like and the CDI is above zero
         "pct_of_cdi_reason_code": None,
         "volatility_annual_pct": None,
         "volatility_note": None,
@@ -437,7 +437,7 @@ def _line(
         "reason_code": None,
         "reason": None,
         "fee": None,
-        "benchmark": None,  # engine 1.12: the filed benchmark and whether it is CDI-like
+        "benchmark": None,  # engine 1.13: the filed benchmark and whether it is CDI-like
         "performance_fee_filed": False,
         "notes": [],
         "month_ends": [],
@@ -490,7 +490,7 @@ def _no_benchmark(code: str) -> dict[str, Any]:
 
 
 def _benchmark(basis: str, fee_line: dict[str, Any] | None) -> dict[str, Any]:
-    """The filed benchmark the fee block read (catalog v67), classified by the versioned spelling list."""
+    """The filed benchmark the fee block read (catalog v68), classified by the versioned spelling list."""
     if basis != FUND:
         return _no_benchmark(PCT_CDI_ONLY_FUNDS)
     filed = (fee_line or {}).get("benchmark_as_filed")
@@ -725,7 +725,7 @@ def _window(
                 w["sources"].append(cdi.call.src(c_end))
             cdi_period = c
 
-    # engine 1.12 (#606 Q36): "% do CDI" only for a fund whose own filed benchmark is CDI or DI
+    # engine 1.13 (#606 Q36): "% do CDI" only for a fund whose own filed benchmark is CDI or DI
     if bench is not None:
         w["cdi_like"] = bool(bench.get("cdi_like"))
         if not bench.get("cdi_like"):

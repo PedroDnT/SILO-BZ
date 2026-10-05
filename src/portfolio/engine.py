@@ -18,13 +18,14 @@ from typing import Any
 
 from src.portfolio.allocation import compute_allocation
 from src.portfolio.client import SiloClient, utc_now
-from src.portfolio.common import add_months, brl, iso, month_start, statement_source
+from src.portfolio.common import SiloUnavailable, add_months, brl, iso, month_start, statement_source
 from src.portfolio.concentration import compute_concentration
 from src.portfolio.consolidate import merge_same_identity
 from src.portfolio.fees import compute_fees, summarize
 from src.portfolio.fee_peers import compute_fee_peers
 from src.portfolio.identify import LineId, identify
 from src.portfolio.indexer import compute_indexer
+from src.portfolio.investigator.run import not_run_section
 from src.portfolio.liquidity import compute_liquidity
 from src.portfolio.lookthrough import add_portfolio_shares, compute_lookthrough
 from src.portfolio.market_equivalent import compute_equivalents
@@ -40,7 +41,7 @@ from src.portfolio.terms import attach_to_identification, fetch_fund_terms
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.12"
+SCHEMA_VERSION = "1.13"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -180,9 +181,20 @@ ASSUMPTIONS = [
         ),
     },
     {
+        "id": "investigation",
+        "text": (
+            "Investigador de documentos oficiais (esquema 1.12): roda só quando ligado (SILO_INVESTIGATOR=on no servidor). "
+            "Lê Fundos.NET, o RAD da CVM e, quando nada for achado, o Exa (sites oficiais e depois a web aberta), no "
+            "máximo 5 buscas por item e 20 por relatório. Cada fato traz citação, endereço, data do documento e data de "
+            "leitura. Nível A: citação achada no texto; nível B: conferido por um segundo modelo, a conferir; o resto é "
+            "descartado e contado. Nenhum número vem de modelo. Divergência com o registro da CVM é mostrada, nunca "
+            "corrigida. Só identificadores públicos saem do motor, nunca dados do titular ou valores do extrato."
+        ),
+    },
+    {
         "id": "pct_of_cdi",
         "text": (
-            "% do CDI (esquema 1.12): só para fundo cujo índice de referência arquivado é CDI ou DI, lido no Extrato "
+            "% do CDI (esquema 1.13): só para fundo cujo índice de referência arquivado é CDI ou DI, lido no Extrato "
             "(PARAM_TAXA_PERFM, o índice da taxa de performance, a única coluna de referência do Extrato) ou na lâmina "
             "(INDICE_REFER), pela lista versionada de grafias em src/portfolio/rules/benchmark_cdi.yaml; nunca pelo nome ou "
             "pela classe ANBIMA. Retorno líquido dividido pelo CDI das mesmas datas, vezes 100, só com CDI acima de zero; "
@@ -192,7 +204,7 @@ ASSUMPTIONS = [
     {
         "id": "market_equivalent",
         "text": (
-            "Equivalente de mercado (esquema 1.12): o maior ETF ativo por patrimônio líquido (site etfsbrasil.com.br, "
+            "Equivalente de mercado (esquema 1.13): o maior ETF ativo por patrimônio líquido (site etfsbrasil.com.br, "
             "fonte de terceiros, datado) entre os que acompanham um índice ligado à classe ANBIMA do fundo na lista "
             "revisada pelo dono (rules/equivalents/class_index.yaml, pares aprovados). Retorno do ETF pelo fechamento sem "
             "proventos (ou último preço do arquivo consolidado, ETF de renda fixa), nas janelas do bloco de retorno, ao "
@@ -288,6 +300,7 @@ def run_engine(
     client: SiloClient,
     params: EngineParams | None = None,
     clock=utc_now,
+    investigator: Any = None,
 ) -> dict[str, Any]:
     params = params or default_params(stmt.position_date)
     n_read = len(stmt.positions)
@@ -368,15 +381,36 @@ def run_engine(
     doc = _insert_after(doc, "returns", "tax", tax)
     doc["section_status"]["tax"] = {"status": tax["status"], "reason": tax["reason"],
                                     "reason_codes": list(tax.get("reason_codes") or [])}
-    # engine 1.12: the market equivalent reads the fee comparison and the return block; its calls come last
+    # engine 1.13: the market equivalent reads the fee comparison and the return block; its calls come after
+    # every block's but the investigator's, which reads it
     equivalents = compute_equivalents(lines, fees, returns, client, stmt.position_date,
                                       clock().astimezone(dt.timezone.utc).date(), stmt.sum_of_lines)
     doc = _insert_after(doc, "tax", "equivalents", equivalents)
     doc["section_status"]["equivalents"] = {"status": equivalents["status"], "reason": equivalents["reason"],
                                             "reason_codes": list(equivalents.get("reason_codes") or [])}
+    # engine 1.12: the investigator of official documents reads the sections above and runs last, behind a flag
+    investigation = _investigate(investigator, lines, doc, client, clock)
+    doc = _insert_after(doc, "equivalents", "investigation", investigation)
+    doc["section_status"]["investigation"] = {"status": investigation["status"], "reason": investigation["reason"],
+                                              "reason_codes": list(investigation.get("reason_codes") or [])}
     doc["provenance"] = [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance]
     log.info("engine done: %d tool calls", len(client.provenance))
     return doc
+
+
+def _investigate(investigator: Any, lines: list[LineId], doc: dict[str, Any], client: SiloClient, clock) -> dict[str, Any]:
+    """The ``investigation`` section. Off (no investigator) is ``not_applicable``; a failure never fails the report."""
+    if investigator is None:
+        return not_run_section()
+    try:
+        return investigator.run(lines, doc, client, clock)
+    except SiloUnavailable:
+        raise
+    except Exception as exc:  # noqa: BLE001 - the investigator is an add-on: its failure is a section status
+        log.warning("investigator failed: %s", type(exc).__name__)
+        out = not_run_section("investigador_falhou")
+        out.update(status="unknown", reason="O investigador falhou; nenhum fato foi lido.", enabled=True)
+        return out
 
 
 def _fee_totals_as_portfolio_pct(fees: dict[str, Any], total: Decimal) -> None:

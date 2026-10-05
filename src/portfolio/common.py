@@ -94,14 +94,22 @@ REASON_TEXT = {
     "ganho_12m_nao_positivo": "ganho de 12 meses não positivo: nenhum imposto estimado",
     "previdencia_sem_estimativa": "previdência: regime não informado; os dois regimes são mostrados, sem valor em R$",
     "isento_sem_imposto": "isento de imposto de renda",
-    # engine 1.12: "% do CDI" only for a fund whose own filed benchmark is CDI or DI (#606 Q36, benchmark.py)
+    # engine 1.12: the investigator of official documents (src/portfolio/investigator/)
+    "investigador_desligado": "investigador de documentos oficiais desligado nesta execução",
+    "investigador_falhou": "o investigador de documentos oficiais falhou; nenhum fato foi lido",
+    "sem_gatilho_investigador": "nenhum item da carteira aciona o investigador de documentos",
+    "investigacao_parcial": "há itens sem fato citado; cada item diz onde procurou",
+    "limite_buscas": "limite de buscas atingido; a conferir",
+    "busca_web_indisponivel": "busca na web indisponível nesta execução; só Fundos.NET e RAD foram consultados",
+    "nivel_b_desligado": "conferência por segundo modelo (nível B) desligada; só fatos de nível A são mostrados",
+    # engine 1.13: "% do CDI" only for a fund whose own filed benchmark is CDI or DI (#606 Q36, benchmark.py)
     "referencia_nao_informada": "fundo sem índice de referência arquivado no Extrato nem na lâmina: só a diferença para o CDI em p.p.",
     "referencia_nao_cdi": "índice de referência arquivado diferente de CDI ou DI: só a diferença para o CDI em p.p.",
     "referencia_diverge": "índices de referência arquivados divergem (Extrato e lâmina, ou classes da lâmina): só a diferença para o CDI em p.p.",
     "referencia_nao_servida": "o SILO não devolveu o índice de referência arquivado deste fundo: só a diferença para o CDI em p.p.",
     "pct_cdi_so_fundos": "'% do CDI' só para fundo com índice de referência CDI ou DI arquivado: aqui, a diferença para o CDI em p.p.",
     "cdi_nao_positivo": "CDI do período não positivo: '% do CDI' não calculado",
-    # engine 1.12: the market equivalent (#609, market_equivalent.py)
+    # engine 1.13: the market equivalent (#609, market_equivalent.py)
     "equivalente_fora_escopo": "fundo não identificado ou fora da família FI: sem classe ANBIMA para ligar a um índice",
     "equivalente_sem_classe": "classe ANBIMA não informada no Extrato: sem equivalente de mercado",
     "equivalente_sem_comparacao": "a comparação de taxas não leu a classe ANBIMA deste fundo (sem linha ou resposta inconsistente): sem equivalente de mercado",
