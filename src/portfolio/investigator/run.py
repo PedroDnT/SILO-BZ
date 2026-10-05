@@ -58,6 +58,7 @@ log = logging.getLogger(__name__)
 PER_TRIGGER = 5
 PER_REPORT = 20
 MAX_DOCS_PER_TRIGGER = 3
+EXA_CAP_USD = 1.00  # Exa spend per report; the agent runs stop at it (costDollars of each run)
 DEADLINE_S = 180.0  # one report waits for it inside one HTTP request
 
 SOURCE_LABEL = {
@@ -66,7 +67,7 @@ SOURCE_LABEL = {
     "web_cvm": "site oficial: CVM",
     "web_b3": "site oficial: B3",
     "web_snd": "site oficial: SND (debentures.com.br)",
-    "web_site_oficial_declarado": "site do emissor, securitizadora ou gestor (indicado pela busca)",
+    "web_dominio_nao_verificado": "site fora da lista oficial, achado na busca por fontes oficiais (domínio não verificado)",
     "web_busca_aberta": "busca aberta na web",
 }
 TRIED_LABEL = {"fnet": "Fundos.NET", "rad": "RAD", "official": "sites oficiais", "open": "busca aberta"}
@@ -112,9 +113,13 @@ class Budget:
     def start_trigger(self) -> None:
         self.used_trigger = 0
 
-    def charge(self, kind: str) -> None:
+    def check_time(self) -> None:
+        """Raise when the wall clock is spent: checked before every search, download, extraction and judge call."""
         if self.deadline_s is not None and self._started is not None and self.monotonic() - self._started > self.deadline_s:
             raise BudgetExhausted("deadline")
+
+    def charge(self, kind: str) -> None:
+        self.check_time()
         if self.used_report >= self.per_report:
             raise BudgetExhausted("report")
         if self.used_trigger >= self.per_trigger:
@@ -133,6 +138,7 @@ class InvestigatorDeps:
     exa_note: str | None = None
     budget: Budget = field(default_factory=Budget)
     max_docs_per_trigger: int = MAX_DOCS_PER_TRIGGER
+    exa_cap_usd: float = EXA_CAP_USD
 
 
 @dataclass
@@ -229,6 +235,9 @@ class Investigator:
                 self._web(t, tried, notes)
         except BudgetExhausted as b:
             stop = {"report": MSG_LIMIT_REPORT, "trigger": MSG_LIMIT_TRIGGER, "deadline": MSG_DEADLINE}[b.scope]
+        except Exception as e:  # noqa: BLE001 - one item's failure is a note on that item; the others keep their facts
+            log.warning("investigator item failed: %s", type(e).__name__)
+            notes.append(f"falha inesperada nesta consulta ({getattr(e, 'code', None) or type(e).__name__})")
         facts = self._facts[first_fact:]
         n_a = sum(1 for f in facts if f["tier"] == TIER_A)
         n_b = sum(1 for f in facts if f["tier"] == TIER_B)
@@ -297,7 +306,9 @@ class Investigator:
                 notes.append(f"RAD: consulta ao SILO falhou ({type(e).__name__})")
                 return
             rows = sorted(rows, key=lambda r: (str(r.get("delivery_date") or ""), str(r.get("protocol") or "")))
-            picked = rows[:1] + rows[1:][-(self.deps.max_docs_per_trigger - 1):] if rows else []
+            cap = max(1, self.deps.max_docs_per_trigger)
+            # the original escritura, then the newest aditamentos, never more than the cap
+            picked = (rows[:1] + (rows[1:][-(cap - 1):] if cap > 1 else []))[:cap]
             for r in picked:
                 self._read_rad(t, r)
             if not rows:
@@ -310,12 +321,19 @@ class Investigator:
         if not t.fund_cnpj:
             notes.append("Fundos.NET: fundo sem CNPJ identificado; nada a consultar")
             return
+        is_fip = fields == ex.FIP_FIELDS
+        window = _movement_window(t.movement_month) if not is_fip else None
+        if not is_fip and window is None:
+            notes.append("Fundos.NET: mês do movimento ausente; nada a consultar")
+            return
         try:
-            rows = self._fnet.documents(cnpj=t.fund_cnpj, charge=self.deps.budget.charge)
+            # a FIP: the newest 200 deliveries in one search (its latest report is among them); a fund with a
+            # forte month: the full list of the movement month and the two after it, reconciled
+            rows = self._fnet.documents(cnpj=t.fund_cnpj, newest_page_only=is_fip, window=window,
+                                        charge=self.deps.budget.charge)
         except SourceError as e:
             notes.append(f"Fundos.NET: {e.code}")
             return
-        is_fip = fields == ex.FIP_FIELDS
         picked = _pick_fip_docs(rows) if is_fip else _pick_movement_docs(rows, t.movement_month)
         read_ok = 0
         for row in picked:
@@ -369,6 +387,7 @@ class Investigator:
             self._doc_index[d.document_id] = entry
             self._docs.append(entry)
         entry["trigger_ids"].append(t.trigger_id)
+        self.deps.budget.check_time()
         try:
             text, hit = self._text_of(d, fetch)
         except (SourceError, DocumentTextError) as e:
@@ -387,6 +406,7 @@ class Investigator:
         if models.extractor is None:
             return
         meta = {"source": SOURCE_LABEL[d.source_type], "title": d.title, "date": d.document_date}
+        self.deps.budget.check_time()
         try:
             extracted = ex.extract(models.extractor, fields, t.identifiers, meta, text)
         except Exception as e:  # noqa: BLE001 - LLMError, cost cap: the document is read, nothing extracted
@@ -396,6 +416,7 @@ class Investigator:
         nt = normalize(text)
         judge = ex.judge_fn(models.judge) if models.tier_b_enabled and models.judge is not None else None
         for f in extracted:
+            self.deps.budget.check_time()
             v = assess(f.field, f.value, f.quote, text, judge, nt)
             if v.tier == TIER_C:
                 self._discarded[v.reason_code or "outro"] += 1
@@ -435,8 +456,15 @@ class Investigator:
         exa = self.deps.exa
         if exa is None:
             return
+        if not any(t.identifiers.get(k) for k in ("codigo", "isin", "cnpj", "issuer_cnpj", "cnpj_securitizadora")):
+            # a search with no public identifier would attach any fund's or issuer's document to this line
+            notes.append("busca na web não feita: nenhum identificador público (código, ISIN ou CNPJ)")
+            return
         fields = _fields_of(t)
         for phase in ("official", "open"):
+            if exa.cost_usd >= self.deps.exa_cap_usd:
+                notes.append(f"busca na web interrompida: custo do Exa no limite de US${self.deps.exa_cap_usd:.2f}")
+                return
             tried.append(phase)
             self.deps.budget.charge("exa_agent")
             q, sp = exa_request(t, fields, phase)
@@ -474,6 +502,9 @@ class Investigator:
             published.append(pub)
             return text
 
+        self.deps.budget.check_time()
+        if d.document_id in self._doc_index and t.trigger_id not in self._doc_index[d.document_id]["trigger_ids"]:
+            self._doc_index[d.document_id]["trigger_ids"].append(t.trigger_id)
         if d.document_id not in self._doc_index or self._doc_index[d.document_id]["status"] != "lido":
             entry_ok = self._read_web(t, d, fetch)
             if not entry_ok:
@@ -544,6 +575,11 @@ class Investigator:
                                   "(RAD) e execução do Exa Agent; download de documento e leitura de página não contam"},
             "searches_used": b.used_report,
             "searches_by_kind": dict(sorted(b.by_kind.items())),
+            # spend of this section, apart from the report's own LLM cost (X-Silo-Cost-Usd does not include it)
+            "costs": {"llm_usd": round(float(getattr(self.deps.models.meter, "spent_usd", 0.0) or 0.0), 6),
+                      "llm_cap_usd": getattr(self.deps.models.meter, "cap_usd", None),
+                      "exa_usd": round(self.deps.exa.cost_usd, 6) if self.deps.exa is not None else 0.0,
+                      "exa_cap_usd": self.deps.exa_cap_usd},
             "web_search": {"provider": "exa", "available": self.deps.exa is not None,
                            "note": self.deps.exa_note if self.deps.exa is None else None},
             "models": self.deps.models.as_dict(),
@@ -659,14 +695,28 @@ def _pick_fip_docs(rows: list[dict]) -> list[dict]:
     return sorted(per, key=fnet_delivered, reverse=True)[:3]
 
 
-def _pick_movement_docs(rows: list[dict], month: str | None) -> list[dict]:
-    """Fato relevante, comunicado or management report delivered in the movement month or the two after it."""
+def _movement_bounds(month: str | None) -> tuple[dt.date, dt.date] | None:
+    """First day of the movement month and last day of the second month after it."""
     if not month:
-        return []
+        return None
     m0 = dt.date.fromisoformat(month[:10]).replace(day=1)
     end_month = m0.month + 2
     y, mo = m0.year + (end_month - 1) // 12, (end_month - 1) % 12 + 1
-    end = dt.date(y, mo, calendar.monthrange(y, mo)[1]).isoformat()
+    return m0, dt.date(y, mo, calendar.monthrange(y, mo)[1])
+
+
+def _movement_window(month: str | None) -> tuple[str, str] | None:
+    b = _movement_bounds(month)
+    return (b[0].strftime("%d/%m/%Y"), b[1].strftime("%d/%m/%Y")) if b else None
+
+
+def _pick_movement_docs(rows: list[dict], month: str | None) -> list[dict]:
+    """Fato relevante, comunicado or management report delivered in the movement month or the two after it."""
+    b = _movement_bounds(month)
+    if not b:
+        return []
+    m0, end_d = b
+    end = end_d.isoformat()
     wanted = ("fato relevante", "comunicado ao mercado", "relatorio gerencial")
     out = []
     for r in _active(rows):
@@ -792,6 +842,7 @@ def not_run_section(reason_code: str = "investigador_desligado") -> dict[str, An
                    "max_documents_per_trigger": MAX_DOCS_PER_TRIGGER},
         "searches_used": 0,
         "searches_by_kind": {},
+        "costs": {"llm_usd": 0.0, "llm_cap_usd": None, "exa_usd": 0.0, "exa_cap_usd": EXA_CAP_USD},
         "web_search": {"provider": "exa", "available": False, "note": None},
         "models": {"extractor": None, "judge": None, "tier_b_enabled": False, "note": None},
         "tiers": {k: TIER_LABEL[k] for k in (TIER_A, TIER_B, TIER_C)},

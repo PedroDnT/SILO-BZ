@@ -14,6 +14,7 @@ the document's own passage carries it. The judge only answers yes or no; it neve
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -61,7 +62,8 @@ def assess(field: str, value: str | None, quote: str | None, doc_text: str, judg
         nq = normalize(quote)
         if not numbers_within(value, quote):
             return Verdict(TIER_C, "numero_fora_do_trecho")
-        if nv in nq:
+        # on word boundaries: a value "AA" is not in "AAA(bra)", "Banco X" is not in "Banco XP"
+        if re.search(rf"(?<![0-9a-z]){re.escape(nv)}(?![0-9a-z])", nq):
             return Verdict(TIER_A, None, nq, 1.0)
         # the quote is the document's, but the value restates it: only a judge can say it is the same fact
         return _judged(field, value, nq, 1.0, judge, missing_code="valor_fora_da_citacao")

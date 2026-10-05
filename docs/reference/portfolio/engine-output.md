@@ -714,7 +714,7 @@ passage: enforced in `tiers.assess`, never asked of a model. `models`: `extracto
   (the series or investee, as the document names it), `value` (as quoted), `quote`, `passage` and `passage_ratio`
   (tier B only), `url`, `document_id` (`fnet:<id>`, `rad:<protocol>`, `web:<sha256 of the URL, 32 hex>`),
   `document_title`, `document_date` (as the source prints it), `read_at_utc`, `read_date`, `source_type` (`fnet`,
-  `rad`, `web_cvm`, `web_b3`, `web_snd`, `web_site_oficial_declarado`, `web_busca_aberta`, labelled from the URL's
+  `rad`, `web_cvm`, `web_b3`, `web_snd`, `web_dominio_nao_verificado`, `web_busca_aberta`, labelled from the URL's
   domain by code), `source_type_label`, `tier`, `tier_label`, `fnet_id`, `rad_protocol`, `cross_check`.
 - `cross_check` (credit facts with a `credit_match`; else null): `silo_field`, `silo_value`, `agrees` (true or false
   only for a date or a CNPJ of the same series; null for free text or another series), `note`; for `vencimento` also

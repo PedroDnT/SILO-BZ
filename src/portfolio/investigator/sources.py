@@ -52,6 +52,7 @@ CAT_RATING = "Relatório de agência classificadora de risco"
 RAD_CATEGORY = "Escrituras e aditamentos de debêntures"
 PAGE_SIZE = 200
 _MAX_PAGES = 10
+_MAX_WALKS = 3
 _ISIN = re.compile(r"^BR[A-Z0-9]{9}[0-9]$")
 _HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
@@ -97,6 +98,8 @@ class UrllibHttp:
                 return HttpResponse(r.status, r.headers.get("content-type"), r.read())
         except urllib.error.HTTPError as e:
             return HttpResponse(e.code, e.headers.get("content-type") if e.headers else None, e.read() or b"")
+        except (OSError, ValueError) as e:  # URLError, timeouts, TLS, a bad URL: one fixed code, no body
+            raise SourceError("rede_falhou", type(e).__name__) from None
 
     def get(self, url: str, params: dict | None = None, headers: dict | None = None) -> HttpResponse:
         full = url + ("?" + urllib.parse.urlencode(params) if params else "")
@@ -142,12 +145,20 @@ class FnetReader:
         return [x for x in rows if isinstance(x, dict) and isin in str(x.get("text") or "").upper().split()]
 
     def documents(self, *, id_fundo: int | None = None, tipo_fundo: int | None = None, cnpj: str | None = None,
-                  certificados: bool = False, charge: Charge = _noop) -> list[dict]:
-        """Every document FNET lists for one certificate (``id_fundo``) or one fund (``cnpj``), reconciled
-        against ``recordsTotal``: a short list raises, it is never returned as complete."""
+                  certificados: bool = False, window: tuple[str, str] | None = None, newest_page_only: bool = False,
+                  charge: Charge = _noop) -> list[dict]:
+        """The documents FNET lists for one certificate (``id_fundo``) or one fund (``cnpj``).
+
+        Full listing (default): every page, sorted by delivery time, walked again (at most 3 times, keeping the
+        union of ids) while the union is short of ``recordsTotal``, as ``fnet_fetcher.search`` does, because
+        ties in the same minute can reorder between pages; still short after that raises, never returned as
+        complete. ``window`` ('dd/mm/yyyy', 'dd/mm/yyyy') filters on the delivery date. ``newest_page_only``
+        asks for the newest delivery first and returns the first page only: the "latest report" of a fund with
+        a long history in one search, explicitly not the whole list.
+        """
         if (id_fundo is None) == (cnpj is None):
             raise ValueError("pass exactly one of id_fundo or cnpj")
-        params: dict[str, Any] = {"d": 1, "l": PAGE_SIZE, "o[0][dataEntrega]": "asc"}
+        params: dict[str, Any] = {"d": 1, "l": PAGE_SIZE, "o[0][dataEntrega]": "desc" if newest_page_only else "asc"}
         if id_fundo is not None:
             params["idFundo"] = int(id_fundo)
         if cnpj is not None:
@@ -158,26 +169,42 @@ class FnetReader:
             params["tipoFundo"] = int(tipo_fundo)
         if certificados:
             params["paginaCertificados"] = "true"
+        if window is not None:
+            params["dataInicial"], params["dataFinal"] = window
+        if newest_page_only:
+            body = self._page(params, 0, charge)
+            return [r for r in body.get("data") or [] if isinstance(r, dict) and r.get("id") is not None]
         by_id: dict[int, dict] = {}
         total: int | None = None
-        offset = 0
-        for _ in range(_MAX_PAGES):
-            charge("fnet_listagem")
-            body = self._json(self.http.get(f"{self.base}/pesquisarGerenciadorDocumentosDados",
-                                            {**params, "s": offset}, _HEADERS), "fnet_listagem_falhou")
-            if not isinstance(body, dict) or "data" not in body or "recordsTotal" not in body:
-                raise SourceError("fnet_resposta_inesperada")
-            total = int(body["recordsTotal"]) if total is None else total
-            page = body.get("data") or []
-            for row in page:
-                if isinstance(row, dict) and row.get("id") is not None:
-                    by_id[int(row["id"])] = row
-            offset += len(page)
-            if not page or offset >= total:
+        for _walk in range(_MAX_WALKS):
+            offset = 0
+            for _ in range(_MAX_PAGES):
+                body = self._page(params, offset, charge)
+                page_total = int(body["recordsTotal"])
+                if total is None:
+                    total = page_total
+                elif page_total != total:
+                    raise SourceError("fnet_listagem_mudou", f"{total} -> {page_total}")
+                page = body.get("data") or []
+                for row in page:
+                    if isinstance(row, dict) and row.get("id") is not None:
+                        by_id[int(row["id"])] = row
+                offset += len(page)
+                if not page or offset >= total:
+                    break
+            if len(by_id) >= (total or 0):
                 break
         if total is None or len(by_id) != total:
             raise SourceError("fnet_listagem_incompleta", f"{len(by_id)} de {total}")
         return list(by_id.values())
+
+    def _page(self, params: dict[str, Any], offset: int, charge: Charge) -> dict:
+        charge("fnet_listagem")
+        body = self._json(self.http.get(f"{self.base}/pesquisarGerenciadorDocumentosDados",
+                                        {**params, "s": offset}, _HEADERS), "fnet_listagem_falhou")
+        if not isinstance(body, dict) or "data" not in body or "recordsTotal" not in body:
+            raise SourceError("fnet_resposta_inesperada")
+        return body
 
     def download_url(self, fnet_id: int) -> str:
         return f"{self.base}/downloadDocumento?id={int(fnet_id)}"
@@ -237,6 +264,16 @@ class RadReader:
 OFFICIAL_DOMAINS = ("cvm.gov.br", "b3.com.br", "bmfbovespa.com.br", "debentures.com.br")
 
 
+def _json_or_error(r: HttpResponse, code: str) -> Any:
+    try:
+        body = r.json()
+    except ValueError:
+        raise SourceError(code, "corpo não JSON") from None
+    if not isinstance(body, dict):
+        raise SourceError(code, "corpo inesperado")
+    return body
+
+
 def source_type_of(url: str, phase: str) -> str:
     host = (urllib.parse.urlparse(url).hostname or "").lower()
     if host.endswith("cvm.gov.br"):
@@ -245,7 +282,8 @@ def source_type_of(url: str, phase: str) -> str:
         return "web_b3"
     if host.endswith("debentures.com.br"):
         return "web_snd"
-    return "web_site_oficial_declarado" if phase == "official" else "web_busca_aberta"
+    # A host outside the list is labelled by what the code knows: not verified as official, whatever the phase.
+    return "web_dominio_nao_verificado" if phase == "official" else "web_busca_aberta"
 
 
 @dataclass
@@ -275,7 +313,7 @@ class ExaClient:
                                  "outputSchema": output_schema}, self._h())
         if r.status not in (200, 201, 202):
             raise SourceError("exa_falhou", f"HTTP {r.status}")
-        run = r.json()
+        run = _json_or_error(r, "exa_falhou")
         started = self.monotonic()
         while str(run.get("status")) not in ("completed", "failed", "cancelled"):
             if self.monotonic() - started > self.max_wait_s:
@@ -285,7 +323,7 @@ class ExaClient:
                               None, self._h())
             if g.status != 200:
                 raise SourceError("exa_falhou", f"HTTP {g.status}")
-            run = g.json()
+            run = _json_or_error(g, "exa_falhou")
         cost = (run.get("costDollars") or {}).get("total") if isinstance(run.get("costDollars"), dict) else None
         if isinstance(cost, (int, float)):
             self.cost_usd += float(cost)
@@ -299,7 +337,7 @@ class ExaClient:
         r = self.http.post_json(f"{self.base_url}/contents", {"urls": [url], "text": True}, self._h())
         if r.status != 200:
             raise SourceError("exa_conteudo_falhou", f"HTTP {r.status}")
-        results = (r.json() or {}).get("results") or []
+        results = (_json_or_error(r, "exa_conteudo_falhou") or {}).get("results") or []
         if not results or not isinstance(results[0], dict) or not results[0].get("text"):
             raise SourceError("exa_conteudo_vazio")
         return str(results[0]["text"]), results[0].get("publishedDate")

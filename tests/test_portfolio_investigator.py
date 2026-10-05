@@ -328,7 +328,7 @@ def test_exa_fallback_checks_the_page_text_and_labels_the_source_by_domain():
     assert len(created) == 1  # the official phase found a fact: the open web is not asked
     assert created[0]["outputSchema"]["properties"]["facts"]["maxItems"] == 12 and created[0]["effort"] == "low"
     f = sec["facts"][0]
-    assert f["tier"] == "A" and f["source_type"] == "web_site_oficial_declarado" and f["fnet_id"] is None
+    assert f["tier"] == "A" and f["source_type"] == "web_dominio_nao_verificado" and f["fnet_id"] is None
     assert sec["counts"]["discarded"] == 1
     assert source_type_of("https://conteudo.cvm.gov.br/x.pdf", "open") == "web_cvm"
     assert source_type_of("https://blog.example.com/x", "open") == "web_busca_aberta"
@@ -557,6 +557,83 @@ def test_a_maturity_of_another_series_is_not_called_a_divergence():
     same = R._cross_check(t, "vencimento", "15 de fevereiro de 2036", "CRA da Terceira Série")
     assert other["agrees"] is None and "série 1" in other["note"] and same["agrees"] is True
     assert R._series_of("1ª série") == 1 and R._series_of("série 2") == 2 and R._series_of("Emissora") is None
+
+
+def test_tier_a_matches_the_value_on_word_boundaries():
+    text = "(xvii) Classificação de Risco: a emissão recebeu a nota AAA(bra) da agência sintética."
+    quote = "Classificação de Risco: a emissão recebeu a nota AAA(bra)"
+    assert assess("rating", "AA", quote, text, None).tier == TIER_C
+    assert assess("rating", "AAA(bra)", quote, text, None).tier == TIER_A
+
+
+def test_a_network_failure_is_a_note_on_its_item_and_the_others_keep_their_facts():
+    routes = fnet_routes()
+    calls = {"n": 0}
+
+    def flaky_listar(params, payload):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise SourceError("rede_falhou", "TimeoutError")
+        if calls["n"] == 3:
+            raise OSError("socket")
+        return routes["listarFundos"](params, payload)
+
+    http = FakeHttp({**routes, "listarFundos": flaky_listar})
+    sec = run(investigator(http), [credit_line(1), credit_line(2), credit_line(3)])
+    ok, net, boom = sec["triggers"]
+    assert ok["fact_ids"] and not net["fact_ids"] and not boom["fact_ids"]
+    assert net["notes"] == ["Fundos.NET: rede_falhou"] and "OSError" in boom["notes"][0]
+    assert sec["status"] == "partial"
+
+
+def test_no_public_identifier_means_no_web_search():
+    li = fund_line(4, None, "FIP", "fip")
+    li.cnpj = None
+    http = FakeHttp({})
+    exa = ExaClient(http, "k", sleep=lambda s: None)
+    sec = run(investigator(http, exa=exa), [li])
+    assert not http.calls and "nenhum identificador público" in sec["triggers"][0]["notes"][-1]
+
+
+def test_rad_reads_the_original_escritura_and_newest_aditamentos_within_the_cap():
+    rows = [{"protocol": f"P{i}", "delivery_date": f"2026-0{i}-01", "category": "Escrituras e aditamentos de debêntures",
+             "source_url": f"https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?p={i}"} for i in range(1, 8)]
+    client = FakeClient({"company_events": [{"match": {"p_id": "90000000000900"}, "rows": rows}]})
+    li = credit_line(codigo="DEB-EXMP11", status="unknown", flags=(), tipo="debênture")
+    li.issuer_cnpj = "90000000000900"
+    for cap, expected in ((1, ["P1"]), (3, ["P1", "P6", "P7"])):
+        http = FakeHttp({"rad.cvm.gov.br": lambda p, b: HttpResponse(200, "text/plain", TERMO.encode())})
+        inv = investigator(http)
+        inv.deps.max_docs_per_trigger = cap
+        sec = run(inv, [li], client=client)
+        assert [d["rad_protocol"] for d in sec["documents_consulted"]] == expected
+        assert sec["searches_by_kind"] == {"rad_escrituras": 1}
+
+
+def test_a_fip_asks_for_the_newest_page_only_and_a_movement_for_its_window():
+    http = FakeHttp(fnet_routes(fund_rows=[]))
+    doc = {"movement": {"month": "2026-11-01", "investigator_trigger_line_nos": [5]}}
+    run(investigator(http), [fund_line(4, FIP_CNPJ, "FIP", "fip"), fund_line(5, "90000000000800")], doc)
+    fip, mv = [c["params"] for c in http.calls if "pesquisar" in c["url"]]
+    assert fip["o[0][dataEntrega]"] == "desc" and "dataInicial" not in fip
+    assert mv["dataInicial"] == "01/11/2026" and mv["dataFinal"] == "31/01/2027" and mv["o[0][dataEntrega]"] == "asc"
+
+
+def test_fnet_reader_walks_again_when_ties_reorder_a_page():
+    rows = [doc_row(i, "Informes Periódicos") for i in range(1, 401)]
+    walks = {"n": 0}
+
+    def unstable(params, _):
+        s = int(params["s"])
+        if s == 0:
+            walks["n"] += 1
+        page = rows[s:s + 200]
+        if walks["n"] == 1 and s == 200:
+            page = [rows[0]] + page[1:]  # a tie served twice, one id missing: walk again
+        return js({"data": page, "recordsTotal": 400})
+
+    got = FnetReader(FakeHttp({"pesquisarGerenciadorDocumentosDados": unstable})).documents(cnpj=FIP_CNPJ)
+    assert len(got) == 400 and walks["n"] == 2
 
 
 def test_fnet_reader_refuses_a_short_listing():
