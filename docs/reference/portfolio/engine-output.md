@@ -690,8 +690,9 @@ failure of the investigator is `status` `unknown` (`investigador_falhou`), never
 **Sources, in order.** A CRA or CRI: Fundos.NET certificados (`listarFundos?term=<ISIN>&paraCerts=true`, then the
 certificate's list with `paginaCertificados=true`; categories Termo (17) and Aditamento (19) first: the original
 termo and the newest aditamentos, at most 3 documents; else offer (16) and rating (36) documents). Fundos.NET
-matches the ISIN, not the CETIP code, and `portfolio_instruments` serves no ISIN for a CRA or CRI yet, so today
-this path runs only when the statement prints the ISIN; otherwise the trigger says so in `notes`. A debenture:
+matches the ISIN, not the CETIP code: the ISIN is `portfolio_instruments`' `cd_isin` (catalog v67, as filed) when it
+has the shape of an ISIN, else the statement's code when that is one; a filed `00000` or `NÃO TEM` is never sent, and
+without an ISIN the trigger says so in `notes`. A debenture:
 RAD escrituras through `company_events` (category "Escrituras e aditamentos de debêntures") when SILO knows the
 issuer's CNPJ. A FIP: the newest periodic report on Fundos.NET that reads (structured monthly informe and CDA
 skipped). A fund with a `forte` movement: fato relevante, comunicado or relatório gerencial delivered in the
