@@ -474,4 +474,41 @@ BEGIN
     RAISE NOTICE 'ticker lineage OK';
 END $$;
 
+
+-- Futures arm of api.panel (B8 phase B): DI1 contract codes from
+-- b3_futures_settlement. DI1Z99 has three sessions in 2024-08; 08-30 is the
+-- month's last, and 08-29's settlement is marked P (not final), so the day
+-- grain skips it and the month grain still takes 08-30.
+INSERT INTO b3_futures_settlement (trade_date, ticker, open_interest, settlement_price, settlement_rate, settlement_status, raw)
+VALUES ('2024-08-28', 'DI1Z99', 1000, 90000.10, 10.50, 'F', '{}'),
+       ('2024-08-29', 'DI1Z99', 1100, 90010.20, 10.40, 'P', '{}'),
+       ('2024-08-30', 'DI1Z99', 1200, 90020.30, 10.30, 'F', '{}');
+
+DO $$
+DECLARE
+    n   int;
+    got text;
+BEGIN
+    -- Default metrics: settlement_rate, one row a month, the last final session.
+    SELECT string_agg(id || '|' || id_type || '|' || asset_class || '|' || date || '|' || metric || '|' || value || '|' || source, ',')
+    INTO got FROM api.panel(ARRAY['DI1Z99'], NULL, '2024-08-01', '2024-08-31', 'month');
+    ASSERT got = 'DI1Z99|future|derivative|2024-08-01|settlement_rate|10.30|b3_price_report', format('future default: %s', got);
+
+    -- Day grain, explicit metrics: the P session is not served.
+    SELECT string_agg(date || ':' || metric || '=' || value, ',' ORDER BY date, metric)
+    INTO got FROM api.panel(ARRAY['DI1Z99'], ARRAY['settlement_price', 'open_interest'], '2024-08-01', '2024-08-31', 'day');
+    ASSERT got = '2024-08-28:open_interest=1000,2024-08-28:settlement_price=90000.10,'
+              || '2024-08-30:open_interest=1200,2024-08-30:settlement_price=90020.30',
+        format('future day: %s', got);
+
+    -- A cash ticker's default panel gains no futures rows, and close is not
+    -- served for a futures code (it is not on the COTAHIST tape).
+    SELECT count(*) INTO n FROM api.panel(ARRAY['REFR3'], NULL, '2024-08-01', '2024-08-30', 'month') WHERE id_type = 'future';
+    ASSERT n = 0, format('cash ticker future rows: %s', n);
+    SELECT count(*) INTO n FROM api.panel(ARRAY['DI1Z99'], ARRAY['close', 'volume'], '2024-08-01', '2024-08-31', 'day');
+    ASSERT n = 0, format('futures close rows: %s', n);
+
+    RAISE NOTICE 'panel futures OK';
+END $$;
+
 ROLLBACK;

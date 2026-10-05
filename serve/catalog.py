@@ -506,7 +506,15 @@ __all__ = [
 # ticker and ISIN; close_adj is continuous across the seam; close_total_return is
 # NULL before it. coverage_start/coverage_end and isin_change say so. No
 # signature or column change.
-CATALOG_VERSION = 60
+# v61: the panel's futures arm (OPEN_ITEMS item 14, B8 phase B): id_type
+# 'future', B3 contract codes such as DI1F27 from b3_futures_settlement (the
+# B3 Price Report, DI1 from 2018-01-02), asset_class derivative, source
+# b3_price_report. Three metrics: settlement_rate (the default for a future),
+# settlement_price and open_interest. DI1 publishes the settlement twice, as a
+# rate and as a PU, so INSTRUMENTS.md's one `settlement` became two named
+# metrics. Only a settlement B3 marks final (F) is served. No signature or
+# column change.
+CATALOG_VERSION = 61
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -610,6 +618,44 @@ METRICS: Dict[str, Dict[str, Any]] = {
             "Daily: previous session. Monthly: previous calendar month else null."
         ),
         "derived": True,
+    },
+    # v61: B3 futures (b3_futures_settlement, the B3 Price Report). Ids are
+    # B3's contract codes, never decomposed. Only a settlement B3 marks final.
+    "settlement_rate": {
+        "id_type": ["future"],
+        "asset_class": ["derivative"],
+        "grain": ["day", "month"],
+        "source": "b3_price_report",
+        "meaning": (
+            "Futures settlement as a rate, as B3 publishes it: for DI1, % a.a. "
+            "on 252 business days. Ids are B3 contract codes (DI1F27: root, B3 "
+            "month letter, two-digit year; future_curve lists a session's). "
+            "Only a settlement B3 marks final (F) is served; future_series "
+            "carries the status. Nothing is rolled or made continuous: a "
+            "contract stops at maturity. Month = last session. The default for "
+            "a future."
+        ),
+    },
+    "settlement_price": {
+        "id_type": ["future"],
+        "asset_class": ["derivative"],
+        "grain": ["day", "month"],
+        "source": "b3_price_report",
+        "meaning": (
+            "Futures settlement price as B3 publishes it: for DI1 the PU "
+            "(preço unitário). Final (F) settlements only. Month = last session."
+        ),
+    },
+    "open_interest": {
+        "id_type": ["future"],
+        "asset_class": ["derivative"],
+        "grain": ["day", "month"],
+        "source": "b3_price_report",
+        "meaning": (
+            "Open contracts at the session's close, as B3 publishes them, on "
+            "sessions with a final (F) settlement. Month = last session, not "
+            "a sum or an average."
+        ),
     },
     "nav": {
         "id_type": ["cnpj"],
@@ -1249,7 +1295,7 @@ DEFAULTS = {
     "principle": "price by default; every other measure is opt-in",
     "panel": {
         "metrics": ["close", "close_adj", "nav"],
-        "means": "p_metrics omitted: close_adj for share and unit tickers, close for every other ticker, option and termo, nav for cnpj ids; an explicit list is served as asked, and a metric absent for an id type simply yields no rows",
+        "means": "p_metrics omitted: close_adj for share and unit tickers, close for every other ticker, option and termo, settlement_rate for futures, nav for cnpj ids; an explicit list is served as asked, and a metric absent for an id type simply yields no rows",
         "grain": "(id, asset_class, date, metric) — a CNPJ filing under two families yields one row per family; p_entity_type narrows to one",
         "to_widen": "pass p_metrics explicitly, e.g. p_metrics=['close','volume']",
     },
@@ -1826,7 +1872,7 @@ def catalog_payload() -> Dict[str, Any]:
         "regime_breaks": REGIME_BREAKS,
         "screens": SCREENS,
         "examples": EXAMPLES,
-        "id_types": ["ticker", "cnpj", "cd_cvm", "option", "termo"],
+        "id_types": ["ticker", "cnpj", "cd_cvm", "option", "termo", "future"],
         "asset_classes": [
             *B3_CASH_ASSET_CLASSES,
             "fi", "fidc", "fii", "fip", "fiagro", "cia", "derivative",

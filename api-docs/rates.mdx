@@ -18,6 +18,8 @@ rolled or spliced; the one derived column is `contract_month`.
 - **`future_curve(p_root, p_trade_date)`** — every outright DI1 contract on one
   session, nearest maturity first. Default: the newest session held.
 - **`future_series(p_ticker, p_from, p_to)`** — one contract through time.
+  The same contracts are in [`panel`](/api-docs/panel) as `id_type` `future`
+  (`settlement_rate`, `settlement_price`, `open_interest`), next to tickers and funds.
 - **`curve(p_curve, p_trade_date)`** — one reference curve on one session, every
   vertex. Default: `PRE`, the newest session held.
 - **`curve_history(p_curve, p_tenor_days, p_from, p_to)`** — one of B3's fixed
