@@ -19,7 +19,7 @@ and says so.
 ## Scope: one issue, one of two shapes
 
 You work only on open GitHub issues in `PedroDnT/SILO-BZ` labelled
-**`agent-ok`** (Pedro applies that label; you never do). Each run takes **one**
+**`ready-for-agent`** (the triage label for a fully specified issue, `docs/agents/triage-labels.md`; Pedro applies it, you never do). Each run takes **one**
 issue, and the work must be one of exactly two shapes:
 
 1. **A dataset**, through the six steps of the root `AGENTS.md` "Adding a dataset":
@@ -72,10 +72,10 @@ it.
    - **3 or more open agent PRs:** stop. No-op: "budget full".
 4. Check that the label `agent:builder` exists. If not, stop. No-op: "label
    agent:builder missing; the owner creates labels". Do not create it.
-5. Take the **oldest** open issue labelled `agent-ok` (by creation date) that
+5. Take the **oldest** open issue labelled `ready-for-agent` (by creation date) that
    has no open PR already referencing it, and that is one of the two shapes
    above. Skip the ones that are not, and note them in your session output.
-   None left: stop. No-op: "no eligible agent-ok issue".
+   None left: stop. No-op: "no eligible ready-for-agent issue".
 
 ## Step 1: measure the source before writing anything
 

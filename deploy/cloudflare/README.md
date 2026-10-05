@@ -25,6 +25,44 @@ invocation logs off, preview URLs off), `src/index.ts` (routes, token check,
 upload page, egress), `engine/` (the image, see its README). `container/` is the
 health-only image of the first deploy, no longer referenced.
 
+## Run traces in R2 (ADR 0003)
+
+The uploaded statement is never stored: its bytes are only forwarded to the
+Container. What is stored, in the private R2 bucket `silo-diagnosis-traces`
+(binding `TRACES`; only this Worker writes it, no public access, no lifecycle
+rule), is one trace per run that passed the token check, to improve the agents
+later. It holds portfolio data, so treat the bucket as sensitive:
+
+| Key                                  | What                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `traces/YYYY/MM/DD/<trace_id>.json`  | OTLP/JSON trace (`src/portfolio/trace.py`); the date is the write's UTC date               |
+| `artifacts/<sha256>.json`            | the engine JSON, holder, CPF and account already masked by the readers (`[TITULAR]` ...)   |
+| `artifacts/<sha256>.pdf`             | the PDF that was returned (200 runs only)                                                  |
+| `feedback/<trace_id>.json`           | reserved for human labels on a run, written by hand later; no code writes it yet           |
+
+The trace's root span names both artifacts by `app.engine_json.sha256` and
+`app.pdf.sha256`. Spans: `invoke_workflow diagnosis` (status, failing stage,
+files, formats, bytes, engine revision), `engine.run` (section statuses and
+reason codes, identification counts), `invoke_agent redator` / `invoke_agent
+revisor` (GenAI semantic conventions, pinned in `GENAI_SEMCONV`: provider,
+model, token usage, cost; each Revisor removal is an `app.revisor.removed` event
+with a fixed rule code, the section and the SHA-256 of the removed text, never
+the text). An error is span status ERROR with `exception.type` only.
+
+Transport: the Container cannot reach R2 (egress allow-list), and a trace with
+the engine JSON is too large for a response header. So the engine keeps the
+run's bundle in memory and names it in `X-Silo-Trace-Id` (never passed to the
+client); after answering, the Worker, inside `ctx.waitUntil`, calls `GET
+/trace/<id>` on the same instance with the bearer token (answered once, then
+forgotten), writes the objects, and only then stops the instance. The PDF is
+written from the body the Worker already holds, under its own SHA-256 and only
+when it matches the trace's. A Worker-side 503 (no instance) has no trace.
+
+`feedback/<trace_id>.json` convention: one JSON object per labelled run,
+`{"trace_id", "labeled_at" (ISO date), "labeler", "verdict" ("good" | "bad" |
+"mixed"), "findings": [{"finding_id", "label", "note"}], "note"}`. Labels refer
+to findings by id; they never copy portfolio data.
+
 ## Secrets and egress
 
 `DEMO_ACCESS_TOKEN` and `OPENAI_API_KEY` are Worker secrets, copied from the
@@ -50,6 +88,11 @@ sizes, timings and the cost header only: `/health` 200, `/` the page, `/diagnose
 reports from the synthetic template (200, `application/pdf`, `%PDF-`, provider
 `openai`, narrative `complete`), the second one with a marker in the holder name
 and the file name while `wrangler tail` listens; the marker must not appear.
+It then finds that run's trace in R2 (listed through the R2 REST API, matched by
+size and format) and fails if the marker or the upload's bytes are in the trace
+or the engine JSON, if the holder is not `[TITULAR]`, or if any object is stored
+under the upload's own SHA-256. Before deploying it creates the bucket when
+missing (the API token needs Workers R2 Storage: Edit).
 A merge deploys nothing.
 
 Offline check: `npm ci && npx wrangler deploy --dry-run --containers-rollout=none`

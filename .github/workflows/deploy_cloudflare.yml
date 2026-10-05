@@ -63,6 +63,25 @@ jobs:
         working-directory: deploy/cloudflare
         run: npm ci --no-audit --no-fund
 
+      # ADR 0003: the private bucket the Worker writes run traces to (binding TRACES
+      # in wrangler.jsonc). Created once; "already exists" is the normal answer after.
+      - name: Create the trace bucket when missing
+        working-directory: deploy/cloudflare
+        run: |
+          set +e
+          out=$(npx wrangler r2 bucket create silo-diagnosis-traces 2>&1)
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "R2 bucket silo-diagnosis-traces created (private: no public access, no lifecycle rule)"
+          elif grep -qi "already exists" <<<"$out"; then
+            echo "R2 bucket silo-diagnosis-traces already exists"
+          else
+            echo "$out" | grep -v "^\s*$" | head -n 40
+            echo "::error::could not create the R2 bucket silo-diagnosis-traces: R2 must be enabled on the account and CLOUDFLARE_API_TOKEN needs Workers R2 Storage: Edit"
+            exit 1
+          fi
+
       # The LLM key lives in this step's env only, so the smoke step never holds it.
       # Immediate rollout: no request may reach an instance of the previous image.
       - name: Deploy
@@ -228,5 +247,76 @@ jobs:
           if [ "$lines" -eq 0 ] || grep -qiE "error|denied|forbidden|unauthori" "$tmp/tail.err" 2>/dev/null; then
             echo "::warning::privacy probe inconclusive: wrangler tail captured nothing or reported an error (first line: $(grep -m1 -iE 'error|denied|forbidden|unauthori' "$tmp/tail.err" 2>/dev/null | cut -c1-160))"
           fi
+
+          # ADR 0003: the marked run's trace in R2. The holder (with the marker) must
+          # be masked in the engine JSON artifact, the marker must be in no stored
+          # object of the run, and the uploaded file must not be stored at all.
+          # Prints counts, sizes and verdicts only, never the marker or a body.
+          sleep 15  # the Worker writes in waitUntil, after the answer
+          bucket=silo-diagnosis-traces
+          marked="$tmp/$marker.xlsx"
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets/$bucket/objects"
+          : > "$tmp/keys"
+          for day in $(date -u +%Y/%m/%d) $(date -u -d '1 day ago' +%Y/%m/%d); do
+            curl -s --max-time 60 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "$api?prefix=traces/$day/&per_page=1000" > "$tmp/list.json" || true
+            python3 - "$tmp/list.json" >> "$tmp/keys" <<'PY' || { echo "::error::could not list the trace bucket through the R2 REST API (token scope: Workers R2 Storage)"; exit 1; }
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          if not d.get("success"):
+              sys.exit(f"list failed: {[e.get('code') for e in d.get('errors') or []]}")
+          for o in d.get("result") or []:
+              print(o["key"])
+          PY
+          done
+          echo "trace objects listed for today and yesterday (UTC): $(wc -l < "$tmp/keys")"
+          r2get() { (cd deploy/cloudflare && npx wrangler r2 object get "$bucket/$1" --remote --pipe < /dev/null 2>/dev/null); }
+          found=""
+          while IFS= read -r key; do
+            r2get "$key" > "$tmp/trace.json" || continue
+            # The marked run: a multipart xlsx of exactly the marked file's size.
+            if python3 - "$tmp/trace.json" "$(wc -c < "$marked")" <<'PY'
+          import json, sys
+          t = json.load(open(sys.argv[1]))
+          span = t["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+          a = {kv["key"]: next(iter(kv["value"].values())) for kv in span["attributes"]}
+          sys.exit(0 if a.get("app.formats") == "xlsx" and a.get("app.in_bytes") == sys.argv[2] else 1)
+          PY
+            then found="$key"; break; fi
+          done < "$tmp/keys"
+          [ -n "$found" ] || { echo "::error::no trace of the marked run in R2 (Worker binding, bucket or waitUntil)"; exit 1; }
+          engine_sha=$(python3 - "$tmp/trace.json" <<'PY'
+          import json, sys
+          t = json.load(open(sys.argv[1]))
+          span = t["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+          a = {kv["key"]: next(iter(kv["value"].values())) for kv in span["attributes"]}
+          print(a.get("app.engine_json.sha256", ""))
+          PY
+          )
+          [ -n "$engine_sha" ] || { echo "::error::the marked run's trace names no engine JSON artifact"; exit 1; }
+          r2get "artifacts/$engine_sha.json" > "$tmp/engine.json" || { echo "::error::the engine JSON artifact is missing"; exit 1; }
+          python3 - "$tmp/trace.json" "$tmp/engine.json" "$marked" "$marker" <<'PY'
+          import base64, json, sys
+          trace, engine, marked = (open(p, "rb").read() for p in sys.argv[1:4])
+          marker = sys.argv[4].encode()
+          up = open(sys.argv[3], "rb").read()
+          bad = []
+          for name, body in (("trace", trace), ("engine JSON", engine)):
+              if marker in body:
+                  bad.append(f"the marker is in the {name}")
+              if up[:256] in body or base64.b64encode(up)[:256] in body:
+                  bad.append(f"the uploaded file's bytes are in the {name}")
+          holder = json.loads(engine)["statement"]["holder"]
+          if holder.get("titular") != "[TITULAR]":
+              bad.append("the holder is not masked in the engine JSON")
+          print(f"trace {len(trace)} bytes, engine JSON {len(engine)} bytes: " + ("; ".join(bad) or "no marker, no upload bytes, holder masked"))
+          sys.exit(1 if bad else 0)
+          PY
+          up_sha=$(sha256sum "$marked" | cut -d' ' -f1)
+          for ext in json pdf xlsx; do
+            if r2get "artifacts/$up_sha.$ext" > /dev/null; then echo "::error::the uploaded statement is stored in R2 (artifacts/<its sha256>.$ext)"; exit 1; fi
+          done
+          echo "R2: the uploaded statement is not stored under its own hash"
+
           rm -rf "$tmp"
           [ -z "$marked_failed" ] || { echo "::error::the marked report failed (see above); the privacy check above still ran"; exit 1; }

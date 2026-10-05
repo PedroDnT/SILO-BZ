@@ -378,12 +378,16 @@ The inputs added to `backfill.yml` stay, so the loads are repeatable:
 informe `tab_X_7` (AGENTS.md §5) passed: PR #291 merged on 2026-09-24 with 0
 human-edited lines after the agent's commit and a green first CI. The prompt
 files `.claude/agents/scout.md`, `builder.md` and `sentinel.md` exist
-(2026-09-25). Still the owner's: create the `agent-ok` / `agent:<name>`
+(2026-09-25). Still the owner's: create the `agent:<name>`
 labels, schedule the routines one at a time and fill in their ids in the
 AGENTS.md §3a registry, and (optionally) run
 `docs/reference/security/sentinel_readonly_role.sql` so the Sentinel can read
 `cvm_ingest_log` and `fnet_document`; without it the Sentinel runs on the
 public API only.
+
+`bash scripts/setup_agents_wizard.sh` (2026-10-05) walks the owner through the
+labels, the Sentinel role and its own cloud environment; the routines are then
+created from a Claude session, which fills in the §3a registry.
 
 ## 14. The gaps backlog: resolution plan (2026-09-24)
 
