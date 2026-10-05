@@ -42,6 +42,9 @@ from typing import Any, Protocol
 
 FNET_BASE = "https://fnet.bmfbovespa.com.br/fnet/publico"
 EXA_BASE = "https://api.exa.ai"
+# exa.ai/pricing, read 2026-10-05: Agent fixed-effort price per request, Contents per page (text).
+EXA_AGENT_USD = {"minimal": 0.012, "low": 0.025, "medium": 0.10, "high": 0.50, "xhigh": 1.00}
+EXA_CONTENTS_USD = 0.001
 # tipoFundo on the certificados page (abrirGerenciadorDocumentosCertificadosCVM, #604): 6 CRA, 5 CRI.
 CERT_TIPO = {"CRA": 6, "CRI": 5}
 # Categories, in the order the owner asked for them: 17 and 19 first, then 16 and 36 (labels as served).
@@ -274,8 +277,14 @@ def _json_or_error(r: HttpResponse, code: str) -> Any:
     return body
 
 
-def source_type_of(url: str, phase: str) -> str:
+def _on(host: str, domain: str) -> bool:
+    return host == domain or host.endswith("." + domain)
+
+
+def source_type_of(url: str, phase: str, coordinator_domains: tuple[str, ...] | list[str] = ()) -> str:
     host = (urllib.parse.urlparse(url).hostname or "").lower()
+    if any(_on(host, d) for d in coordinator_domains):
+        return "web_coordenador"
     if host.endswith("cvm.gov.br"):
         return "web_cvm"
     if host.endswith("b3.com.br") or host.endswith("bmfbovespa.com.br"):
@@ -299,34 +308,50 @@ class ExaClient:
     monotonic: Callable[[], float] = time.monotonic
     base_url: str = EXA_BASE
     cost_usd: float = field(default=0.0)
+    # the investigator's share of the report's cost meter (extract.ShareMeter): checked before, booked after
+    meter: Any = None
 
     def __repr__(self) -> str:  # never show the key
         return f"ExaClient(effort={self.effort!r}, max_wait_s={self.max_wait_s})"
+
+    def _book(self, model: str, usd: float) -> None:
+        self.cost_usd += usd
+        if self.meter is not None:
+            self.meter.book("investigator_exa", model, usd)
 
     def _h(self) -> dict:
         return {"x-api-key": self.api_key, "Accept": "application/json"}
 
     def agent_run(self, query: str, system_prompt: str, output_schema: dict) -> dict:
-        """One Exa Agent run to a terminal state; ``output.structured`` or raises ``SourceError``."""
+        """One Exa Agent run to a terminal state; ``output.structured`` or raises ``SourceError``.
+
+        Priced at the fixed-effort rate (exa.ai/pricing, read 2026-10-05: low US$0.025 per request) before the
+        call; booked at the run's own ``costDollars.total`` when it reports one, else at that rate.
+        """
+        price = EXA_AGENT_USD.get(self.effort, max(EXA_AGENT_USD.values()))
+        if self.meter is not None:
+            self.meter.check_external(price)
         r = self.http.post_json(f"{self.base_url}/agent/runs",
                                 {"query": query, "systemPrompt": system_prompt, "effort": self.effort,
                                  "outputSchema": output_schema}, self._h())
         if r.status not in (200, 201, 202):
             raise SourceError("exa_falhou", f"HTTP {r.status}")
         run = _json_or_error(r, "exa_falhou")
-        started = self.monotonic()
-        while str(run.get("status")) not in ("completed", "failed", "cancelled"):
-            if self.monotonic() - started > self.max_wait_s:
-                raise SourceError("exa_tempo_esgotado")
-            self.sleep(self.poll_interval_s)
-            g = self.http.get(f"{self.base_url}/agent/runs/{urllib.parse.quote(str(run.get('id') or ''))}",
-                              None, self._h())
-            if g.status != 200:
-                raise SourceError("exa_falhou", f"HTTP {g.status}")
-            run = _json_or_error(g, "exa_falhou")
-        cost = (run.get("costDollars") or {}).get("total") if isinstance(run.get("costDollars"), dict) else None
-        if isinstance(cost, (int, float)):
-            self.cost_usd += float(cost)
+        try:
+            started = self.monotonic()
+            while str(run.get("status")) not in ("completed", "failed", "cancelled"):
+                if self.monotonic() - started > self.max_wait_s:
+                    raise SourceError("exa_tempo_esgotado")
+                self.sleep(self.poll_interval_s)
+                g = self.http.get(f"{self.base_url}/agent/runs/{urllib.parse.quote(str(run.get('id') or ''))}",
+                                  None, self._h())
+                if g.status != 200:
+                    raise SourceError("exa_falhou", f"HTTP {g.status}")
+                run = _json_or_error(g, "exa_falhou")
+        finally:
+            cd = run.get("costDollars") if isinstance(run.get("costDollars"), dict) else {}
+            cost = cd.get("total") if isinstance(cd.get("total"), (int, float)) else price
+            self._book("exa-agent", float(cost))
         if run.get("status") != "completed":
             raise SourceError("exa_falhou", str(run.get("status")))
         structured = (run.get("output") or {}).get("structured")
@@ -338,10 +363,14 @@ class ExaClient:
         ``POST /contents`` with the URL in ``ids`` and ``text: true`` (full page as markdown); ``statuses`` says
         per URL whether it was read (docs.exa.ai, Contents API quickstart, read 2026-10-05).
         """
+        if self.meter is not None:
+            self.meter.check_external(EXA_CONTENTS_USD)
         r = self.http.post_json(f"{self.base_url}/contents", {"ids": [url], "text": True}, self._h())
         if r.status != 200:
             raise SourceError("exa_conteudo_falhou", f"HTTP {r.status}")
         body = _json_or_error(r, "exa_conteudo_falhou")
+        cd = body.get("costDollars") if isinstance(body.get("costDollars"), dict) else {}
+        self._book("exa-contents", float(cd["total"]) if isinstance(cd.get("total"), (int, float)) else EXA_CONTENTS_USD)
         for st in body.get("statuses") or []:
             if isinstance(st, dict) and st.get("status") not in (None, "success"):
                 raise SourceError("exa_conteudo_falhou", str(st.get("status")))

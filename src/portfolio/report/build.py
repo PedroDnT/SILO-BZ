@@ -56,8 +56,11 @@ def build(
     provider_name: str | None = None,
     signature: str | None = None,
     llm_review: bool = True,
+    meter: llm.CostMeter | None = None,
 ) -> tuple[str, Narrative]:
-    meter = llm.CostMeter()
+    # One meter per report (owner, #605 Q37): the server passes the one the investigator already booked on, so
+    # the US$1.00 cap and X-Silo-Cost-Usd cover the report LLM, the investigator LLM and Exa together.
+    meter = meter if meter is not None else llm.CostMeter()
     name = (provider_name or "").strip().lower() or None
     provider = llm.get_provider(name, meter=meter, fake_responses=lambda s, u, sch: redator.template_findings(_engine_from_user(u)))
     narrative = make_narrative(engine, provider, llm_review)

@@ -21335,10 +21335,12 @@
     "searches_used": 0,
     "searches_by_kind": {},
     "costs": {
-      "llm_usd": 0.0,
-      "llm_cap_usd": null,
+      "usd": 0.0,
+      "llm_usd": 0,
       "exa_usd": 0.0,
-      "exa_cap_usd": 1.0
+      "share_cap_usd": 0.3,
+      "report_cap_usd": 1.0,
+      "note": "parte do teto único de US$1,00 do relatório (LLM do relatório, LLM do investigador e Exa); incluído em X-Silo-Cost-Usd"
     },
     "web_search": {
       "provider": "exa",

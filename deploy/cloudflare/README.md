@@ -78,6 +78,9 @@ variables at start with `SILO_LLM_PROVIDER=openai`, `SILO_LLM_MODEL=gpt-5.1`,
 #605) is copied the same way; with `SILO_INVESTIGATOR=on` (a var) the engine's
 investigator reads Fundos.NET, RAD and, as its fallback, Exa, and the public
 documents it read go to R2 with the trace as `docs/<source>/<id>/<sha256>.txt`.
+The var is `off` (owner, #605 Q37): the owner turns it on after one supervised
+live run. Its spend is inside the same US$1.00 cap (at most US$0.30 of it) and in
+`X-Silo-Cost-Usd`.
 
 Egress (`EGRESS` var): `allowlist` (default) starts the Container with internet
 off and lets out only `zcjbtpxuhdekpwcxmepn.supabase.co` (silo-mcp),

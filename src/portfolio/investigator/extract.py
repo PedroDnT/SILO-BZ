@@ -14,6 +14,13 @@ structured-output path as the Redator). Models:
   probe_openai_models.yml, see llm.py); no default for anthropic, so tier B stays off until one is set.
 
 When both name the same model, tier B is refused (``tier_b_enabled`` false): a model cannot check itself.
+
+Cost (owner, #605 Q37): ONE US$1.00 cap per report (``llm.COST_CAP_USD``) covers the report's LLM, the
+investigator's LLM and Exa together, on one ``llm.CostMeter``. The investigator runs first (inside the engine)
+and may book at most ``INVESTIGATOR_SHARE_USD`` (US$0.30) of it, through ``ShareMeter``; the rest, at least
+US$0.70, stays for the Redator and the Revisor (a complete report cost US$0.31, deploy run 37226627623). Both
+models run at low reasoning effort, with a smaller output budget than the Redator's, so a document's worst
+case fits the share.
 """
 
 from __future__ import annotations
@@ -29,15 +36,65 @@ from src.portfolio.report import llm
 
 EXTRACTOR_ENV = "SILO_INVESTIGATOR_EXTRACTOR_MODEL"
 JUDGE_ENV = "SILO_INVESTIGATOR_JUDGE_MODEL"
-COST_CAP_ENV = "SILO_INVESTIGATOR_COST_CAP_USD"
-DEFAULT_COST_CAP_USD = 1.00
 DEFAULT_EXTRACTOR = {"openai": "gpt-5.1", "anthropic": "claude-opus-5-5"}
 DEFAULT_JUDGE = {"openai": "gpt-5-mini"}
-EXTRACTOR_MAX_TOKENS = 16000
-JUDGE_MAX_TOKENS = 4000
-EXCERPT_CHARS = 60000
+INVESTIGATOR_SHARE_USD = 0.30
+EFFORT = "low"
+EXTRACTOR_MAX_TOKENS = 8000
+JUDGE_MAX_TOKENS = 3000
+EXCERPT_CHARS = 40000
 
-CREDIT_FIELDS = ("emissor_cnpj", "lastro", "devedor", "garantias", "indexador", "vencimento", "rating")
+
+class CostShareSpent(Exception):
+    """The investigator's share of the report's cost cap is spent: it stops, the report goes on."""
+
+    stop = True  # tiers.assess re-raises an exception marked ``stop`` instead of discarding the fact
+
+
+class ShareMeter:
+    """The investigator's share of the report's single ``llm.CostMeter``.
+
+    ``check`` refuses a call whose worst case would pass either the share or the report's cap; ``book`` books
+    on the report's meter (so ``X-Silo-Cost-Usd`` and the trace carry it) and counts it against the share.
+    External spend (Exa) goes through ``check_external`` and ``book`` the same way.
+    """
+
+    def __init__(self, parent: llm.CostMeter | None = None, share_usd: float = INVESTIGATOR_SHARE_USD):
+        self.parent = parent if parent is not None else llm.CostMeter()
+        self.cap_usd = min(float(share_usd), float(self.parent.cap_usd))
+        self.spent_usd = 0.0
+        self.by_role: dict[str, float] = {}
+
+    def _room(self, worst: float) -> None:
+        if self.spent_usd + worst > self.cap_usd:
+            raise CostShareSpent(f"investigator share US${self.cap_usd:.2f}: spent US${self.spent_usd:.4f}, "
+                                 f"next could cost US${worst:.4f}")
+
+    def check(self, model: str, prompt_chars: int, max_tokens: int) -> float:
+        try:
+            worst = self.parent.check(model, prompt_chars, max_tokens)
+        except llm.CostCapExceeded as exc:
+            raise CostShareSpent(str(exc)) from None
+        self._room(worst)
+        return worst
+
+    def check_external(self, usd: float) -> None:
+        if self.parent.spent_usd + usd > self.parent.cap_usd:
+            raise CostShareSpent("report cap")
+        self._room(usd)
+
+    def book(self, role: str, model: str | None, cost_usd: float, **tokens: int) -> None:
+        self.spent_usd += cost_usd
+        self.by_role[role] = self.by_role.get(role, 0.0) + cost_usd
+        self.parent.book(role, model, cost_usd, **tokens)
+
+    @property
+    def calls(self) -> list[dict[str, Any]]:
+        return [c for c in self.parent.calls if str(c.get("role") or "").startswith("investigator")]
+
+# "coordenador" (owner's addendum to #605): read from the issue's own documents; an approved coordinator's
+# domain joins the Exa fallback's official domains (src/portfolio/rules/investigator/coordinators.yaml)
+CREDIT_FIELDS = ("emissor_cnpj", "lastro", "devedor", "garantias", "indexador", "vencimento", "rating", "coordenador")
 FIP_FIELDS = ("empresa_investida", "participacao_pct")
 MOVEMENT_FIELDS = ("evento",)
 ALL_FIELDS = CREDIT_FIELDS + FIP_FIELDS + MOVEMENT_FIELDS
@@ -49,6 +106,7 @@ FIELD_LABEL = {
     "indexador": "indexador e taxa",
     "vencimento": "vencimento",
     "rating": "classificação de risco",
+    "coordenador": "coordenador líder da oferta",
     "empresa_investida": "empresa investida",
     "participacao_pct": "participação detida",
     "evento": "evento informado",
@@ -61,6 +119,7 @@ FIELD_HINT = {
     "indexador": "remuneração: indexador e taxa (DI, IPCA, prefixado), por série",
     "vencimento": "data de vencimento, por série",
     "rating": "classificação de risco atribuída, ou a declaração de que não há",
+    "coordenador": "a instituição definida como Coordenador Líder da oferta, nome como impresso (e CNPJ se impresso)",
     "empresa_investida": "nome de cada companhia investida",
     "participacao_pct": "percentual detido em cada investida, como impresso",
     "evento": "o fato que o documento comunica (o que aconteceu), em uma frase do documento",
@@ -73,6 +132,7 @@ KEYWORDS = {
     "indexador": ("Remuneração", "Taxa DI", "IPCA", "Atualização Monetária", "ao ano"),
     "vencimento": ("Data de Vencimento", "vencimento"),
     "rating": ("Classificação de Risco", "rating", "agência"),
+    "coordenador": ("Coordenador Líder",),
     "empresa_investida": ("investida", "Companhia", "participação"),
     "participacao_pct": ("%", "participação"),
     "evento": ("Fato Relevante", "comunica", "informa"),
@@ -144,25 +204,27 @@ def pair(extractor: Any | None, judge: Any | None, meter: Any | None = None) -> 
     return Models(extractor, judge, em, jm, True, None, meter)
 
 
-def models_from_env(provider_name: str | None = None) -> Models:
-    """Extractor and judge from ``SILO_LLM_PROVIDER`` and the two model variables, on one cost meter.
+def models_from_env(provider_name: str | None = None, meter: ShareMeter | None = None) -> Models:
+    """Extractor and judge from ``SILO_LLM_PROVIDER`` and the two model variables, booking on ``meter`` (the
+    investigator's share of the report's meter; a share of a fresh meter when none is given).
 
     A missing key or an unknown provider gives no extractor (the section says so); it never raises.
     """
     name = (provider_name or os.environ.get("SILO_LLM_PROVIDER") or "anthropic").strip().lower()
-    cap = float(os.environ.get(COST_CAP_ENV) or DEFAULT_COST_CAP_USD)
-    meter = llm.CostMeter(cap_usd=cap)
+    meter = meter if meter is not None else ShareMeter()
     em = os.environ.get(EXTRACTOR_ENV) or DEFAULT_EXTRACTOR.get(name)
     jm = os.environ.get(JUDGE_ENV) or DEFAULT_JUDGE.get(name)
     try:
         if name == "openai":
-            ex = llm.OpenAIProvider(meter=meter, model=em, max_tokens=EXTRACTOR_MAX_TOKENS, role="investigator_extractor")
-            jd = (llm.OpenAIProvider(meter=meter, model=jm, max_tokens=JUDGE_MAX_TOKENS, role="investigator_judge")
-                  if jm else None)
+            ex = llm.OpenAIProvider(meter=meter, model=em, effort=EFFORT, max_tokens=EXTRACTOR_MAX_TOKENS,
+                                    role="investigator_extractor")
+            jd = (llm.OpenAIProvider(meter=meter, model=jm, effort=EFFORT, max_tokens=JUDGE_MAX_TOKENS,
+                                     role="investigator_judge") if jm else None)
         elif name == "anthropic":
-            ex = llm.AnthropicProvider(meter=meter, model=em, max_tokens=EXTRACTOR_MAX_TOKENS, role="investigator_extractor")
-            jd = (llm.AnthropicProvider(meter=meter, model=jm, max_tokens=JUDGE_MAX_TOKENS, role="investigator_judge")
-                  if jm else None)
+            ex = llm.AnthropicProvider(meter=meter, model=em, effort=EFFORT, max_tokens=EXTRACTOR_MAX_TOKENS,
+                                       role="investigator_extractor")
+            jd = (llm.AnthropicProvider(meter=meter, model=jm, effort=EFFORT, max_tokens=JUDGE_MAX_TOKENS,
+                                        role="investigator_judge") if jm else None)
         else:
             return Models(None, None, None, None, False, f"provedor {name!r} sem extrator do investigador", meter)
     except llm.LLMConfigError:
@@ -192,6 +254,9 @@ def judge_fn(provider: Any):
     def judge(field: str, value: str, passage: str) -> bool:
         user = json.dumps({"field": field, "field_meaning": FIELD_HINT.get(field), "value": value,
                            "passage": passage}, ensure_ascii=False)
-        return bool(provider.complete(JUDGE_SYSTEM, user, Judgement).supported)
+        try:
+            return bool(provider.complete(JUDGE_SYSTEM, user, Judgement).supported)
+        except llm.CostCapExceeded as exc:
+            raise CostShareSpent(str(exc)) from None
 
     return judge

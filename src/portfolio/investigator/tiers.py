@@ -81,6 +81,8 @@ def _judged(field: str, value: str, passage: str, ratio: float, judge: Judge | N
         return Verdict(TIER_C, missing_code, passage, ratio)
     try:
         ok = bool(judge(field, value, passage))
-    except Exception:  # noqa: BLE001 - a judge that fails confirms nothing; the fact is discarded and counted
+    except Exception as exc:  # noqa: BLE001 - a judge that fails confirms nothing; the fact is discarded and counted
+        if getattr(exc, "stop", False):  # the cost share is spent: the investigator stops, not this fact alone
+            raise
         return Verdict(TIER_C, "juiz_falhou", passage, ratio)
     return Verdict(TIER_B, None, passage, ratio) if ok else Verdict(TIER_C, "juiz_rejeitou", passage, ratio)

@@ -86,6 +86,10 @@ PRICES_USD_PER_MTOK: dict[str, tuple[float, float, float, float]] = {
     # 2026-10-04. "-" means no separate write fee: written tokens are part of
     # input_tokens, so they are priced at the input rate here, never as free.
     "gpt-5.1": (1.25, 10.00, 1.25, 0.125),
+    # gpt-5-mini, the investigator's default judge (engine 1.12, #605): its model page,
+    # https://developers.openai.com/api/docs/models/gpt-5-mini, read 2026-10-05 (input $0.25, cached
+    # input $0.025, output $2.00). No separate cache-write fee: written tokens at the input rate.
+    "gpt-5-mini": (0.25, 2.00, 0.25, 0.025),
 }
 # "Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x
 # output for the full request" (the gpt-6-astra, gpt-6.1-sol and gpt-6-luna model pages,

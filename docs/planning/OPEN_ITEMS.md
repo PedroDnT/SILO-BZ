@@ -526,12 +526,14 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - The disclosed fund fee must be correct, not only the balancete estimate:
   slice A adds the `cad_fi` fee columns (migration 64) and the CVM lâmina.
 - Cost cap US$1.00 per report; investigator cap 20 searches per report. The
-  investigator is built (engine 1.12, #605, branch `demo/investigator`): its own
-  US$1.00 LLM cap and US$1.00 Exa cap, 5 searches per item, 180 s; on in the
-  Worker (`SILO_INVESTIGATOR`), live after the next `deploy_cloudflare.yml`. Still
-  open: the report's HTML section, `portfolio_instruments` serving the CRA/CRI ISIN
-  (Fundos.NET finds certificates only by ISIN), and a read path from R2 for the
-  document cache.
+  investigator is built (engine 1.12, #605, branch `demo/investigator`): inside
+  the same US$1.00 cap (at most US$0.30 of it, LLM and Exa), 5 searches per item,
+  180 s. **Owner action:** it ships `off` (`SILO_INVESTIGATOR` in `wrangler.jsonc`);
+  run it once, supervised, then turn it on. **Owner review:** the coordinator
+  domains in `src/portfolio/rules/investigator/coordinators.yaml` are all
+  `proposta`. Still open: the report's HTML section, `portfolio_instruments`
+  serving the CRA/CRI ISIN (branch `demo/instruments-isin`), and a read path from
+  R2 for the document cache.
 - Report LLM (owner, 2026-10-03): the Anthropic key has no credits, so the Redator and
   Revisor run on OpenAI at medium reasoning (`SILO_LLM_PROVIDER=openai`, branch
   `demo/openai-provider`), `gpt-5.1` since 2026-10-04 (was `gpt-6-luna`); `anthropic` stays selectable, the cap is unchanged.

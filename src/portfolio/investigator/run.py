@@ -31,7 +31,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.portfolio.investigator import coordinators
 from src.portfolio.investigator import extract as ex
+from src.portfolio.report import llm
 from src.portfolio.investigator.cache import DocumentCache
 from src.portfolio.investigator.sources import (
     CAT_ADITAMENTO,
@@ -58,13 +60,13 @@ log = logging.getLogger(__name__)
 PER_TRIGGER = 5
 PER_REPORT = 20
 MAX_DOCS_PER_TRIGGER = 3
-EXA_CAP_USD = 1.00  # Exa spend per report; the agent runs stop at it (costDollars of each run)
 DEADLINE_S = 180.0  # one report waits for it inside one HTTP request
 
 SOURCE_LABEL = {
     "fnet": "Fundos.NET",
     "rad": "RAD (CVM)",
     "web_cvm": "site oficial: CVM",
+    "web_coordenador": "site do coordenador líder da oferta (lista revisada pelo dono)",
     "web_b3": "site oficial: B3",
     "web_snd": "site oficial: SND (debentures.com.br)",
     "web_dominio_nao_verificado": "site fora da lista oficial, achado na busca por fontes oficiais (domínio não verificado)",
@@ -81,6 +83,8 @@ KIND_LABEL = {
 MSG_LIMIT_REPORT = f"limite de {PER_REPORT} buscas atingido; a conferir"
 MSG_LIMIT_TRIGGER = f"limite de {PER_TRIGGER} buscas deste item atingido; a conferir"
 MSG_DEADLINE = "tempo do investigador esgotado; a conferir"
+MSG_LIMIT_COST = ("limite de custo do investigador atingido (US$" + f"{ex.INVESTIGATOR_SHARE_USD:.2f}".replace(".", ",") + " do teto de US$1,00 "
+                  "do relatório); a conferir")
 MSG_NO_EXA = "busca na web indisponível (EXA_API_KEY não configurada)"
 _PREFIX = re.compile(r"^(CRA|CRI|DEB)-", re.IGNORECASE)
 _MONTHS = {m: i for i, m in enumerate(("janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho", "agosto",
@@ -89,7 +93,7 @@ _MONTHS = {m: i for i, m in enumerate(("janeiro", "fevereiro", "marco", "abril",
 
 class BudgetExhausted(Exception):
     def __init__(self, scope: str):
-        self.scope = scope  # report | trigger | deadline
+        self.scope = scope  # report | trigger | deadline | cost
         super().__init__(scope)
 
 
@@ -100,6 +104,7 @@ class Budget:
     deadline_s: float | None = DEADLINE_S
     monotonic: Callable[[], float] = time.monotonic
     used_report: int = 0
+    cost_spent: bool = False
     used_trigger: int = 0
     by_kind: Counter = field(default_factory=Counter)
     _started: float | None = None
@@ -109,6 +114,7 @@ class Budget:
         self._started = self.monotonic()
         self.used_report = self.used_trigger = 0
         self.by_kind = Counter()
+        self.cost_spent = False
 
     def start_trigger(self) -> None:
         self.used_trigger = 0
@@ -120,6 +126,8 @@ class Budget:
 
     def charge(self, kind: str) -> None:
         self.check_time()
+        if self.cost_spent:  # nothing read now could be extracted: stop searching
+            raise BudgetExhausted("cost")
         if self.used_report >= self.per_report:
             raise BudgetExhausted("report")
         if self.used_trigger >= self.per_trigger:
@@ -138,7 +146,7 @@ class InvestigatorDeps:
     exa_note: str | None = None
     budget: Budget = field(default_factory=Budget)
     max_docs_per_trigger: int = MAX_DOCS_PER_TRIGGER
-    exa_cap_usd: float = EXA_CAP_USD
+    coordinators_path: Any = coordinators.PATH
 
 
 @dataclass
@@ -208,6 +216,7 @@ class Investigator:
         self._docs: list[dict[str, Any]] = []
         self._doc_index: dict[str, dict[str, Any]] = {}
         self._discarded: Counter = Counter()
+        self._coord_entries: list[Any] | None = None
         budget = self.deps.budget
         budget.start()
         out_triggers = []
@@ -223,6 +232,8 @@ class Investigator:
         notes: list[str] = []
         stop: str | None = None
         first_fact = len(self._facts)
+        self._trigger_first_fact = first_fact
+        self._coord_domains: tuple[str, ...] = ()
         try:
             if t.kind in ("credito_nao_identificado", "credito_vencimento_diverge") or (
                     t.kind == "consulta_manual" and t.tipo in ("CRA", "CRI", "debênture")):
@@ -231,10 +242,15 @@ class Investigator:
                 self._fund_fnet(t, tried, notes, ex.FIP_FIELDS)
             elif t.kind == "movimento_forte":
                 self._fund_fnet(t, tried, notes, ex.MOVEMENT_FIELDS)
-            if not self._accepted_since(first_fact):
+            # the coordinator alone is not "something found": it only points the web search
+            if not self._accepted_since(first_fact, exclude=("coordenador",)):
                 self._web(t, tried, notes)
         except BudgetExhausted as b:
-            stop = {"report": MSG_LIMIT_REPORT, "trigger": MSG_LIMIT_TRIGGER, "deadline": MSG_DEADLINE}[b.scope]
+            stop = {"report": MSG_LIMIT_REPORT, "trigger": MSG_LIMIT_TRIGGER, "deadline": MSG_DEADLINE,
+                    "cost": MSG_LIMIT_COST}[b.scope]
+        except ex.CostShareSpent:
+            self.deps.budget.cost_spent = True
+            stop = MSG_LIMIT_COST
         except Exception as e:  # noqa: BLE001 - one item's failure is a note on that item; the others keep their facts
             log.warning("investigator item failed: %s", type(e).__name__)
             notes.append(f"falha inesperada nesta consulta ({getattr(e, 'code', None) or type(e).__name__})")
@@ -263,10 +279,32 @@ class Investigator:
             "limit_reached": stop is not None,
             "message": message,
             "fact_ids": [f["fact_id"] for f in facts],
+            "coordinator": self._coordinator(t, first_fact),
         }
 
-    def _accepted_since(self, first: int) -> bool:
-        return any(f["tier"] in (TIER_A, TIER_B) for f in self._facts[first:])
+    def _accepted_since(self, first: int, exclude: tuple[str, ...] = ()) -> bool:
+        return any(f["tier"] in (TIER_A, TIER_B) and f["field"] not in exclude for f in self._facts[first:])
+
+    def _coordinator(self, t: _Trigger, first: int) -> dict[str, Any] | None:
+        """The coordinator the issue's own documents name (an accepted fact), and the approved domains it maps to."""
+        facts = [f for f in self._facts[first:] if f["field"] == "coordenador" and f["tier"] in (TIER_A, TIER_B)]
+        if not facts:
+            return None
+        entries = self._coordinator_entries()
+        domains = sorted({d for f in facts for d in coordinators.approved_domains(f["value"], entries)})
+        status = ("aprovada" if domains else
+                  "proposta, aguarda revisão do dono" if any(coordinators.proposed_match(f["value"], entries) for f in facts)
+                  else "sem entrada na lista revisada")
+        return {"value": facts[0]["value"], "fact_id": facts[0]["fact_id"], "domains": domains, "list_status": status}
+
+    def _coordinator_entries(self) -> list[Any]:
+        if self._coord_entries is None:
+            try:
+                self._coord_entries = coordinators.load(self.deps.coordinators_path)
+            except Exception as e:  # noqa: BLE001 - a bad reviewed file disables the domains, never the report
+                log.warning("coordinators.yaml unreadable: %s", type(e).__name__)
+                self._coord_entries = []
+        return self._coord_entries
 
     # --- credit: Fundos.NET certificados, then RAD -------------------------------------------------
 
@@ -409,7 +447,11 @@ class Investigator:
         self.deps.budget.check_time()
         try:
             extracted = ex.extract(models.extractor, fields, t.identifiers, meta, text)
-        except Exception as e:  # noqa: BLE001 - LLMError, cost cap: the document is read, nothing extracted
+        except ex.CostShareSpent:
+            raise
+        except llm.CostCapExceeded:
+            raise ex.CostShareSpent("report cap") from None
+        except Exception as e:  # noqa: BLE001 - LLMError: the document is read, nothing extracted
             log.warning("investigator extractor failed: %s", type(e).__name__)
             self._doc_index[d.document_id]["error_code"] = f"extrator_{type(e).__name__}"
             return
@@ -461,13 +503,12 @@ class Investigator:
             notes.append("busca na web não feita: nenhum identificador público (código, ISIN ou CNPJ)")
             return
         fields = _fields_of(t)
+        coord = self._coordinator(t, self._trigger_first_fact)
+        self._coord_domains = tuple(coord["domains"]) if coord else ()
         for phase in ("official", "open"):
-            if exa.cost_usd >= self.deps.exa_cap_usd:
-                notes.append(f"busca na web interrompida: custo do Exa no limite de US${self.deps.exa_cap_usd:.2f}")
-                return
             tried.append(phase)
             self.deps.budget.charge("exa_agent")
-            q, sp = exa_request(t, fields, phase)
+            q, sp = exa_request(t, fields, phase, self._coord_domains)
             try:
                 out = exa.agent_run(q, sp, exa_output_schema(fields))
             except SourceError as e:
@@ -490,7 +531,7 @@ class Investigator:
         if not url.startswith("https://"):
             self._discarded["sem_valor_ou_citacao"] += 1
             return
-        stype = source_type_of(url, phase)
+        stype = source_type_of(url, phase, self._coord_domains)
         uid = hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
         d = _Doc(document_id=f"web:{uid}", source="web", source_type=stype, url=url,
                  title=str(raw.get("document_title") or "") or None,
@@ -581,11 +622,7 @@ class Investigator:
                                   "(RAD) e execução do Exa Agent; download de documento e leitura de página não contam"},
             "searches_used": b.used_report,
             "searches_by_kind": dict(sorted(b.by_kind.items())),
-            # spend of this section, apart from the report's own LLM cost (X-Silo-Cost-Usd does not include it)
-            "costs": {"llm_usd": round(float(getattr(self.deps.models.meter, "spent_usd", 0.0) or 0.0), 6),
-                      "llm_cap_usd": getattr(self.deps.models.meter, "cap_usd", None),
-                      "exa_usd": round(self.deps.exa.cost_usd, 6) if self.deps.exa is not None else 0.0,
-                      "exa_cap_usd": self.deps.exa_cap_usd},
+            "costs": _costs(self.deps),
             "web_search": {"provider": "exa", "available": self.deps.exa is not None,
                            "note": self.deps.exa_note if self.deps.exa is None else None},
             "models": self.deps.models.as_dict(),
@@ -806,7 +843,8 @@ def _cross_check(t: _Trigger, fld: str, value: str, subject: str | None = None) 
 
 # --- Exa request (public identifiers only) -----------------------------------------------------------
 
-def exa_request(t: _Trigger, fields: tuple[str, ...], phase: str) -> tuple[str, str]:
+def exa_request(t: _Trigger, fields: tuple[str, ...], phase: str,
+                coordinator_domains: tuple[str, ...] = ()) -> tuple[str, str]:
     """The query and system prompt of one Exa Agent run. Built ONLY from ``t.identifiers`` (public)."""
     ids = t.identifiers
     what = {"CRA": "CRA (Certificado de Recebíveis do Agronegócio)", "CRI": "CRI (Certificado de Recebíveis Imobiliários)",
@@ -819,8 +857,8 @@ def exa_request(t: _Trigger, fields: tuple[str, ...], phase: str) -> tuple[str, 
     want = "; ".join(f"{f}: {ex.FIELD_HINT[f]}" for f in fields)
     query = ", ".join(parts) + f". Encontre o documento de emissão ou o relatório mais recente e extraia: {want}."
     if phase == "official":
-        scope = ("Use somente fontes oficiais: os domínios " + ", ".join(OFFICIAL_DOMAINS) + " e o site da própria "
-                 "emissora, securitizadora ou gestora. Não use ANBIMA Data nem agregadores.")
+        scope = ("Use somente fontes oficiais: os domínios " + ", ".join(tuple(coordinator_domains) + OFFICIAL_DOMAINS)
+                 + " e o site da própria emissora, securitizadora ou gestora. Não use ANBIMA Data nem agregadores.")
     else:
         scope = "Fontes oficiais não trouxeram o documento: busque na web aberta, preferindo documentos primários (PDF)."
     system = (scope + " Para cada fato devolva field, value copiado literalmente do documento, quote (trecho literal de "
@@ -868,7 +906,7 @@ def not_run_section(reason_code: str = "investigador_desligado") -> dict[str, An
                    "max_documents_per_trigger": MAX_DOCS_PER_TRIGGER},
         "searches_used": 0,
         "searches_by_kind": {},
-        "costs": {"llm_usd": 0.0, "llm_cap_usd": None, "exa_usd": 0.0, "exa_cap_usd": EXA_CAP_USD},
+        "costs": _costs(None),
         "web_search": {"provider": "exa", "available": False, "note": None},
         "models": {"extractor": None, "judge": None, "tier_b_enabled": False, "note": None},
         "tiers": {k: TIER_LABEL[k] for k in (TIER_A, TIER_B, TIER_C)},
@@ -889,7 +927,22 @@ INVESTIGATOR_ENV = "SILO_INVESTIGATOR"
 EXA_KEY_ENV = "EXA_API_KEY"
 
 
-def from_env(environ: dict[str, str] | None = None) -> Investigator | None:
+def _costs(deps: InvestigatorDeps | None) -> dict[str, Any]:
+    """The section's spend, all of it on the report's one meter (owner, #605 Q37): it is in X-Silo-Cost-Usd."""
+    meter = getattr(getattr(deps, "models", None), "meter", None)
+    roles = dict(getattr(meter, "by_role", {}) or {})
+    llm_usd = sum(v for k, v in roles.items() if k != "investigator_exa")
+    parent = getattr(meter, "parent", None)
+    return {"usd": round(float(getattr(meter, "spent_usd", 0.0) or 0.0), 6),
+            "llm_usd": round(llm_usd, 6),
+            "exa_usd": round(roles.get("investigator_exa", 0.0), 6),
+            "share_cap_usd": getattr(meter, "cap_usd", ex.INVESTIGATOR_SHARE_USD),
+            "report_cap_usd": getattr(parent, "cap_usd", llm.COST_CAP_USD),
+            "note": ("parte do teto único de US$1,00 do relatório (LLM do relatório, LLM do investigador e Exa); "
+                     "incluído em X-Silo-Cost-Usd")}
+
+
+def from_env(environ: dict[str, str] | None = None, meter: Any = None) -> Investigator | None:
     """The investigator the server runs when ``SILO_INVESTIGATOR=on``; ``None`` (section off) otherwise.
 
     Without ``EXA_API_KEY`` it degrades to Fundos.NET and RAD and says so; without an LLM key it reads the
@@ -905,7 +958,9 @@ def from_env(environ: dict[str, str] | None = None) -> Investigator | None:
         return None
     http = UrllibHttp(timeout=60.0)
     key = (env.get(EXA_KEY_ENV) or "").strip()
-    exa = ExaClient(http, key, max_wait_s=90.0) if key else None
-    deps = InvestigatorDeps(http=http, cache=BundleDocumentCache(), models=ex.models_from_env(env.get("SILO_LLM_PROVIDER")),
+    share = ex.ShareMeter(meter)  # the investigator's share of the report's one meter (``meter``)
+    exa = ExaClient(http, key, max_wait_s=90.0, meter=share) if key else None
+    deps = InvestigatorDeps(http=http, cache=BundleDocumentCache(),
+                            models=ex.models_from_env(env.get("SILO_LLM_PROVIDER"), share),
                             exa=exa, exa_note=None if exa else MSG_NO_EXA)
     return Investigator(deps)

@@ -134,6 +134,8 @@ class RunRecord:
     extra: dict[str, Any] = field(default_factory=dict)
     # engine 1.12: the investigator's read-once cache entries (public documents only), for the Worker to write
     documents: dict[str, bytes] = field(default_factory=dict)
+    # engine 1.12: the investigator's calls on the report's cost meter (role, model, tokens, cost; no content)
+    investigator_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _span(trace_id: str, span_id: str, parent: str | None, name: str, start: int, end: int,
@@ -189,11 +191,61 @@ def _agent_role(call: Mapping[str, Any]) -> str:
     return "revisor" if role == "revisor" else "redator"
 
 
+def _is_investigator(call: Mapping[str, Any]) -> bool:
+    return str(call.get("role") or "").startswith("investigator")
+
+
+# engine 1.12 (#605): the investigator's roles on the report's one cost meter, by span. Exa runs and page reads
+# (role investigator_exa) belong to the investigator's span, priced like the LLM calls (app.cost_usd).
+_INVESTIGATOR_SPANS = (("investigator", ("investigator_extractor", "investigator_exa")),
+                       ("investigator_judge", ("investigator_judge",)))
+
+
+def _investigator_spans(rec: RunRecord, trace_id: str, parent: str) -> list[dict[str, Any]]:
+    """``invoke_agent investigator`` (extractor and Exa) and ``invoke_agent investigator_judge``, when they ran.
+
+    The calls come from ``rec.investigator_calls`` (set by the server right after the engine, so a report that
+    fails later keeps them), else from the narrative's meter. Only roles, models, tokens and cost: never a
+    prompt, a document or a fact.
+    """
+    calls = list(rec.investigator_calls or [])
+    if not calls and rec.narrative is not None:
+        calls = [c for c in list(getattr(rec.narrative, "calls", None) or []) if _is_investigator(c)]
+    if not calls:
+        return []
+    start = rec.engine_start_ns or rec.start_ns
+    spans = []
+    for name, roles in _INVESTIGATOR_SPANS:
+        cs = [c for c in calls if str(c.get("role") or "") in roles]
+        if not cs:
+            continue
+        ts = [int(c["ended_unix_nano"]) for c in cs if isinstance(c.get("ended_unix_nano"), int)]
+        end = max(ts) if ts else (rec.engine_end_ns or rec.end_ns)
+        llm_cs = [c for c in cs if c.get("role") != "investigator_exa"]
+        exa_cs = [c for c in cs if c.get("role") == "investigator_exa"]
+        attrs: dict[str, Any] = {
+            "gen_ai.operation.name": "invoke_agent",
+            "gen_ai.agent.name": name,
+            "gen_ai.request.model": next((str(c["model"]) for c in llm_cs if c.get("model")), None),
+            "gen_ai.response.model": next((str(c["model"]) for c in reversed(llm_cs) if c.get("model")), None),
+            "gen_ai.usage.input_tokens": sum(int(c.get("input_tokens") or 0) for c in llm_cs) if llm_cs else None,
+            "gen_ai.usage.output_tokens": sum(int(c.get("output_tokens") or 0) for c in llm_cs) if llm_cs else None,
+            "app.llm.calls": len(llm_cs),
+            "app.llm.reasoning_tokens": sum(int(c.get("reasoning_tokens") or 0) for c in llm_cs) if llm_cs else None,
+            "app.exa.calls": len(exa_cs) if name == "investigator" else None,
+            "app.exa.cost_usd": round(sum(float(c.get("cost_usd") or 0.0) for c in exa_cs), 6) if exa_cs else None,
+            "app.cost_usd": round(sum(float(c.get("cost_usd") or 0.0) for c in cs), 6),
+        }
+        spans.append(_span(trace_id, new_span_id(), parent, f"invoke_agent {name}", start, end, attrs))
+    return spans
+
+
 def _agent_spans(rec: RunRecord, trace_id: str, parent: str) -> list[dict[str, Any]]:
     n = rec.narrative
     if n is None or rec.report_start_ns is None:
         return []
-    calls = list(getattr(n, "calls", None) or [])
+    # the investigator's calls are on the same meter (engine 1.12) but get their own spans (_investigator_spans)
+    calls = [c for c in list(getattr(n, "calls", None) or []) if not _is_investigator(c)]
     report_end = rec.report_end_ns or rec.end_ns
     by_role: dict[str, list[Mapping[str, Any]]] = {"redator": [], "revisor": []}
     for c in calls:
@@ -269,7 +321,10 @@ def build_trace(rec: RunRecord, trace_id: str | None = None) -> dict[str, Any]:
         "app.pdf.bytes": len(rec.pdf) if rec.pdf is not None else None,
         "app.engine_json.sha256": sha256_hex(rec.engine_json) if rec.engine_json is not None else None,
         "app.engine_json.bytes": len(rec.engine_json) if rec.engine_json is not None else None,
-        "app.cost_usd": float(getattr(rec.narrative, "cost_usd", 0.0) or 0.0) if rec.narrative is not None else None,
+        # the report's one meter (engine 1.12: investigator included); without a narrative, what the investigator spent
+        "app.cost_usd": (float(getattr(rec.narrative, "cost_usd", 0.0) or 0.0) if rec.narrative is not None
+                         else round(sum(float(c.get("cost_usd") or 0.0) for c in rec.investigator_calls), 6)
+                         if rec.investigator_calls else None),
         "error.type": rec.exc_type if failed else None,
         **rec.extra,
     }
@@ -286,6 +341,7 @@ def build_trace(rec: RunRecord, trace_id: str | None = None) -> dict[str, Any]:
                            STATUS_ERROR if engine_failed else (STATUS_OK if rec.engine_end_ns else STATUS_UNSET),
                            [_event("exception", rec.end_ns, {"exception.type": rec.exc_type})]
                            if engine_failed and rec.exc_type else []))
+    spans.extend(_investigator_spans(rec, trace_id, root_id))
     spans.extend(_agent_spans(rec, trace_id, root_id))
     return {
         "resourceSpans": [{
