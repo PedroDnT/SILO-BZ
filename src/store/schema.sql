@@ -1980,16 +1980,25 @@ CREATE TABLE IF NOT EXISTS b3_corporate_event (
     -- Cash events only: per-share amount.
     rate              NUMERIC(28, 12),
     payment_date      DATE,
+    -- assetIssued: the asset the event delivers. A stock dividend can pay
+    -- the holders of one ISIN in another class, an ON holder receiving PN,
+    -- and in two at once: migration 72, #353.
+    asset_issued      TEXT,
     raw               JSONB       NOT NULL,
     source            TEXT        NOT NULL DEFAULT 'b3_listed_companies',
     fetched_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- A database created before migration 72 has the table without the column.
+ALTER TABLE b3_corporate_event ADD COLUMN IF NOT EXISTS asset_issued TEXT;
 
 -- Idempotency. An event is identified by what B3 publishes about it; NULLS NOT
 -- DISTINCT so rows with a missing date or factor still collide instead of
--- duplicating on every re-fetch.
+-- duplicating on every re-fetch. payment_date and asset_issued are in it since
+-- migration 72 (#353): a JCP paid in installments and a stock dividend paid in
+-- two assets are several published rows that agree on everything else.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_b3_corporate_event
-    ON b3_corporate_event (isin, label, last_date_prior, approved_on, factor, rate)
+    ON b3_corporate_event (isin, label, last_date_prior, approved_on, factor, rate,
+                           payment_date, asset_issued)
     NULLS NOT DISTINCT;
 
 CREATE INDEX IF NOT EXISTS idx_b3_corporate_event_isin_date

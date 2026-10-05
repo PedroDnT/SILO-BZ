@@ -52,7 +52,10 @@ def _columns_by_table(sql: str) -> dict[str, set[str]]:
     cols: dict[str, set[str]] = {}
 
     for m in re.finditer(
-        r"CREATE TABLE(?:\s+IF NOT EXISTS)?\s+(\w+)\s*\((.*?)\n\)\s*;", sql, re.S
+        # A partitioned table ends ") PARTITION BY ...;": without that branch
+        # the match ran on into the next table and hid its columns.
+        r"CREATE TABLE(?:\s+IF NOT EXISTS)?\s+(\w+)\s*\((.*?)\n\)\s*(?:PARTITION BY[^;]*)?;",
+        sql, re.S,
     ):
         table, body = m.group(1), m.group(2)
         found = set()

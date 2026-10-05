@@ -91,6 +91,9 @@ def test_every_stock_label_that_is_not_adjusted_blocks():
     assert "'unsupported corporate event '" in status
     assert "'unreadable factor on '" in status
     assert "published with two factors" in status
+    # One label on one date paid in two assets is refused too (#353).
+    assert "SELECT DISTINCT e.label, e.last_date_prior, e.factor, e.asset_issued" in status
+    assert "' paid in two assets'" in status
 
 
 def test_the_anchor_and_the_proof_are_the_isins():

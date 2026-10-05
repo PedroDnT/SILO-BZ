@@ -24,7 +24,12 @@ logger = logging.getLogger(__name__)
 TABLE = "b3_corporate_event"
 # upsert_rows takes a COMMA-SEPARATED STRING, not a list (src/store/pg_client.py:230).
 # Passing a list makes its dedup key iterate the characters of the string.
-CONFLICT_COLS = "isin,label,last_date_prior,approved_on,factor,rate"
+# payment_date and asset_issued since migration 72 (#353): a JCP paid in
+# installments and a stock dividend paid in two assets are several rows that
+# agree on everything before them.
+CONFLICT_COLS = (
+    "isin,label,last_date_prior,approved_on,factor,rate,payment_date,asset_issued"
+)
 
 # B3 uses these as "no date": a subscription with tradingPeriod
 # "01/01/1900 a 01/01/1900" and subscriptionDate "31/12/9999" is not a
@@ -68,6 +73,14 @@ def _parse_decimal(value: Any) -> Optional[Decimal]:
         return None
 
 
+def _asset_issued(row: Dict[str, Any]) -> Optional[str]:
+    """B3's assetIssued, the asset the event delivers, as published (upper-cased
+    like the ISIN). NULL when B3 leaves it blank."""
+    raw = row.get("raw") or {}
+    value = (raw.get("assetIssued") or "").strip().upper()
+    return value or None
+
+
 def parse_events(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Turn fetcher rows into upsertable records.
 
@@ -93,6 +106,7 @@ def parse_events(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "factor": _parse_decimal(row.get("factor")),
                 "rate": _parse_decimal(row.get("rate")),
                 "payment_date": _parse_date(row.get("payment_date")),
+                "asset_issued": _asset_issued(row),
                 "raw": row.get("raw") or {},
                 "source": "b3_listed_companies",
             }
