@@ -132,6 +132,7 @@ Five notes answer the research tickets of the diagnosis map:
   comparable fee within their ANBIMA class as filed in the Extrato.
 - [`tax-rules-by-instrument.md`](tax-rules-by-instrument.md) (#611): IR and IOF
   per instrument for an individual on 2026-09-30, from primary sources, and a
-  draft YAML rule file per instrument.
+  draft YAML rule file per instrument; its 2026-10-05 addendum closes ADC 96,
+  IN RFB 1.585, Lei 14.801, Cosit 28/2026 and the 2026 acts (MP 1.391 on IOF).
 - [`pension-plan-data.md`](pension-plan-data.md) (#612): what public data says
   about a PGBL or VGBL plan, its loading fee, its FIE and its tax regime.
