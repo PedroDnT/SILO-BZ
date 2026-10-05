@@ -1830,6 +1830,10 @@ COMMENT ON FUNCTION api.portfolio_movement(TEXT[], DATE) IS
 --      classe), the highest versao, then occurrence, then id. A code can
 --      match several series and all are returned. instrument_type is as
 --      stored (cra_mensal | cri_mensal); the series columns are as filed.
+--      cd_isin (v67) is that row's codigo_isin as filed, not validated, NULL
+--      when the series filed none: B3 Fundos.NET finds a CRA / CRI document
+--      by ISIN, never by CETIP code. issuer_code stays NULL here: characters
+--      3-6 of a CRA / CRI ISIN name the securitizer, not the debtor.
 --   2. else 'cda_ticker': a debenture in CDA block 4 (cvm_fi_cda_acoes,
 --      tp_aplic 'Debêntures', the exact value checked 2026-10-05). The month
 --      is the NEWEST period in which the code appears in block 4 at all,
@@ -1879,7 +1883,7 @@ RETURNS TABLE (
     classificacao_risco_atual TEXT,     -- securit_cetip, as filed
     valor_total_integralizado NUMERIC,  -- securit_cetip, as filed
     data_referencia           DATE,     -- securit_cetip: the newest informe holding the code
-    cd_isin                   TEXT,     -- cda_ticker: the most common ISIN of the month's debenture rows
+    cd_isin                   TEXT,     -- securit_cetip: codigo_isin as filed (v67); cda_ticker: the most common ISIN of the month's debenture rows
     issuer_code               TEXT,     -- cda_ticker: ISIN characters 3-6, never a CNPJ
     n_fundos                  INT,      -- cda_ticker: distinct funds holding it that month
     preco_marcacao_fundos     NUMERIC,  -- cda_ticker: sum(vl_merc_pos_final) / sum(qt_pos_final), 6 places
@@ -1942,7 +1946,7 @@ BEGIN
                x.data_vencimento AS s_venc, x.situacao AS s_sit,
                x.taxa_juros AS s_taxa, x.classificacao_risco_atual AS s_rating,
                x.valor_total_integralizado AS s_integr, x.data_referencia AS s_ref,
-               x.versao AS s_versao
+               x.versao AS s_versao, x.codigo_isin AS s_isin
         FROM lines l
         JOIN sec_rows x ON x.codigo_cetip = l.code
         WHERE x.data_referencia = (SELECT max(y.data_referencia)
@@ -1995,7 +1999,8 @@ BEGIN
                     WHEN c.c_rows > 0 THEN 'debenture' END,
                s.s_cnpj, s.s_serie, s.s_classe, s.s_venc, s.s_sit, s.s_taxa,
                s.s_rating, s.s_integr, s.s_ref,
-               CASE WHEN c.c_rows > 0 THEN c.c_isin END,
+               CASE WHEN s.line_no IS NOT NULL THEN s.s_isin
+                    WHEN c.c_rows > 0 THEN c.c_isin END,
                CASE WHEN c.c_rows > 0 THEN substring(c.c_isin FROM 3 FOR 4) END,
                CASE WHEN c.c_rows > 0 THEN c.c_funds END,
                CASE WHEN c.c_rows > 0 THEN c.c_preco END,
@@ -2047,7 +2052,7 @@ GRANT EXECUTE ON FUNCTION api.portfolio_instruments(TEXT[]) TO anon, authenticat
 GRANT EXECUTE ON FUNCTION api.portfolio_instruments(TEXT[]) TO silo_api;
 
 COMMENT ON FUNCTION api.portfolio_instruments(TEXT[]) IS
-    'CRA, CRI and debenture codes from a statement (catalog v62). Per code (trimmed, upper-cased, a leading CRA-, CRI- or DEB- stripped; the hyphen is required, so CRA0260025T keeps its CRA): match_kind securit_cetip returns every series of cvm_securit_serie whose codigo_cetip is the code, at the code''s newest data_referencia, one row per (numero_serie, classe) at its highest versao, with the series columns as filed and instrument_type as stored (cra_mensal, cri_mensal); a code can match several series. Else match_kind cda_ticker: the newest month the code appears in CDA block 4 (cvm_fi_cda_acoes, any tp_aplic) and that month''s rows with tp_aplic Debêntures: cd_isin (the most common ISIN), issuer_code (ISIN characters 3-6, never a CNPJ), n_fundos (distinct holding funds), preco_marcacao_fundos (sum of market value over sum of quantity, 6 places: the funds'' own marks, not a trade price) and cda_period (the newest CDA month may still be filling, so n_fundos can be low). A code held that month as something other than a debenture is no match, and the reason says what it was held as. Else one row with match_kind NULL and the reason in words (Portuguese). Nothing is inferred from a code''s letters. More than 200 codes RAISES 22023; the result is at most one 1000-row page, refused above it, never trimmed.';
+    'CRA, CRI and debenture codes from a statement (catalog v62; securit cd_isin v67). Per code (trimmed, upper-cased, a leading CRA-, CRI- or DEB- stripped; the hyphen is required, so CRA0260025T keeps its CRA): match_kind securit_cetip returns every series of cvm_securit_serie whose codigo_cetip is the code, at the code''s newest data_referencia, one row per (numero_serie, classe) at its highest versao, with the series columns as filed and instrument_type as stored (cra_mensal, cri_mensal), and (v67) cd_isin the series'' codigo_isin as filed, not validated, NULL when not filed (issuer_code stays NULL: a CRA or CRI ISIN''s characters 3-6 name the securitizer, not the debtor); a code can match several series. Else match_kind cda_ticker: the newest month the code appears in CDA block 4 (cvm_fi_cda_acoes, any tp_aplic) and that month''s rows with tp_aplic Debêntures: cd_isin (the most common ISIN), issuer_code (ISIN characters 3-6, never a CNPJ), n_fundos (distinct holding funds), preco_marcacao_fundos (sum of market value over sum of quantity, 6 places: the funds'' own marks, not a trade price) and cda_period (the newest CDA month may still be filling, so n_fundos can be low). A code held that month as something other than a debenture is no match, and the reason says what it was held as. Else one row with match_kind NULL and the reason in words (Portuguese). Nothing is inferred from a code''s letters. More than 200 codes RAISES 22023; the result is at most one 1000-row page, refused above it, never trimmed.';
 
 -- ---------------------------------------------------------------------------
 -- portfolio_fund_terms - who runs a fund, and how long a redemption takes

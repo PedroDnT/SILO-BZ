@@ -276,7 +276,9 @@ lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titu
 - `credit_match` (1.9): `matched`, `reason_code`, `reason`, `input_code`, `code`, `match_kind` (`securit_cetip` |
   `cda_ticker` | null). For a CRA or CRI the series columns of `cvm_securit_serie` as filed (`instrument_type`,
   `cnpj_securit`, `numero_serie`, `classe`, `data_vencimento`, `situacao`, `taxa_juros`, `classificacao_risco_atual`,
-  `valor_total_integralizado_brl`, `data_referencia`), `n_series` and `series[]` when the code has several; the
+  `valor_total_integralizado_brl`, `data_referencia`, and since catalog v67 `cd_isin`, the series' `codigo_isin` as
+  filed, also served as `identity.isin`; its `issuer_code` stays null and the direct exposure carries neither, because a
+  CRA or CRI ISIN names the securitizer), `n_series` and `series[]` when the code has several; the
   series chosen is the one whose maturity equals the statement's, else the only one, else the lowest number
   (`serie_sem_vencimento`). For a debenture `cd_isin`, `issuer_code` (ISIN characters 3-6), `n_fundos`,
   `preco_marcacao_fundos_brl` and `cda_period`, and `price_gap_pct` / `price_gap_abs_pct` / `price_gap_label` (the
