@@ -117,3 +117,21 @@ data carries each fee and the fund-of-funds flag, and checks an external fee
 proposal against the warehouse. For FICs with a fee range, the Extrato fee usually
 equals the lâmina maximum. Adding the master's fee double counts only when the
 master is unlisted and run by a related manager, which the open data does not state.
+
+## Portfolio diagnosis research (map #510, 2026-10-05)
+
+Five notes answer the research tickets of the diagnosis map:
+
+- [`credit-issue-documents.md`](credit-issue-documents.md) (#604): where an agent
+  reads the official CRA, CRI and debenture documents (CVM RAD, B3 Fundos.NET
+  certificados), with three public examples read by hand.
+- [`portfolio-return-coverage.md`](portfolio-return-coverage.md) (#606): which
+  lines have a 12-month return in SILO, the CDI over the same dates, and how the
+  report shows them.
+- [`fee-peer-coverage.md`](fee-peer-coverage.md) (#608): how many funds have a
+  comparable fee within their ANBIMA class as filed in the Extrato.
+- [`tax-rules-by-instrument.md`](tax-rules-by-instrument.md) (#611): IR and IOF
+  per instrument for an individual on 2026-09-30, from primary sources, and a
+  draft YAML rule file per instrument.
+- [`pension-plan-data.md`](pension-plan-data.md) (#612): what public data says
+  about a PGBL or VGBL plan, its loading fee, its FIE and its tax regime.
