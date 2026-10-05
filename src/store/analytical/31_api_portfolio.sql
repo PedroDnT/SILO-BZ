@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 31_api_portfolio.sql
--- The portfolio-diagnosis engine's four set-based reads, served through schema
+-- The portfolio-diagnosis engine's six set-based reads, served through schema
 -- `api` (catalog v51, portfolio_fees v52, v55 and v56; map #510, research note
 -- docs/reference/research/portfolio-diagnosis-phase0.md §2, §4, §8 slice 2-3).
 --
@@ -14,8 +14,15 @@
 --                              assets of CDA blocks 1, 4 and 6.
 --   api.portfolio_movement     per CNPJ and month: the fund's monthly quota
 --                              return against its own ANBIMA class (winsorized
---                              mean and sd, +-2 / +-3 sd), catalog v54; see the
---                              section before the closing COMMIT.
+--                              mean and sd, +-2 / +-3 sd), catalog v54; see its
+--                              section after portfolio_lookthrough.
+--   api.portfolio_instruments  per statement code (v62): a CRA / CRI by its
+--                              CETIP code (cvm_securit_serie), else a debenture
+--                              by its ticker in CDA block 4, with the funds'
+--                              own mark; see its section near the end.
+--   api.portfolio_fund_terms   per CNPJ (v62): manager and administrator as
+--                              filed in the registry, and the redemption terms
+--                              of the Extrato, else of the lâmina.
 --
 -- RESOLVER (portfolio_resolve). Measured on production 2026-10-03: exact
 -- current names are unique (24,794 funds named since 2026-05, 0 duplicated),
@@ -185,7 +192,8 @@
 -- ROW CAP. The api.assert_row_cap pattern from 19: fetch one page plus one row
 -- (LIMIT 1001) and REFUSE with 22023 above 1000, never trim. No cursor. The
 -- resolver also refuses above 200 lines up front (200 lines x 5 candidates is
--- exactly one page), the other two above 200 CNPJs.
+-- exactly one page), portfolio_instruments above 200 codes and the others
+-- above 200 CNPJs.
 --
 -- PRIVILEGES. Same model as 19 and 24: SECURITY DEFINER with an empty pinned
 -- search_path, every relation and pg_trgm operator schema-qualified (pg_trgm
@@ -1801,5 +1809,445 @@ GRANT EXECUTE ON FUNCTION api.portfolio_movement(TEXT[], DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.portfolio_movement(TEXT[], DATE) IS
     'Is a fund''s month unusual for its own class (movimento incomum). Per CNPJ, for one month (p_month, or the last complete FI month): the fund''s monthly QUOTA RETURN, own_value_pct = (month-end vl_quota / previous month''s - 1) x 100 from fact_fund_monthly (the one stable quota subclass; a NAV change is not used), set against the same return over every FI fund of its ANBIMA class AS FILED in the CVM Extrato (class_as_filed, the newest Extrato filing, not the class on the month''s date; class and subclass split that label at its first '' - '' for display). class_mean_pct and class_sd_pct are the mean and sample standard deviation of the peers'' returns winsorized at the class''s own 1st and 99th percentile that month (class_p01_pct, class_p99_pct); the fund''s own value is not winsorized. z = (own - mean) / sd. level: forte when |z| > 3 (investigator_trigger TRUE), atencao when |z| > 2, normal otherwise (strictly greater: exactly 2 is normal); nao_avaliado with a Portuguese reason when the class has fewer than min_peers (30) peers with a return, its standard deviation is 0, the fund has no class (outside the Extrato, or no classe_anbima), no return (no quota in both months, a quota subclass change), is an ETF, FIDC, FII, FIP or FIAGRO, or the month is not complete; never skipped and never a zero. No fallback to a wider class. Measured on production 2026-10-03 over monthly FI funds in classes of 30 or more: |z| > 2 flags 5.2% to 5.7% of fund-months and |z| > 3 2.4% to 2.9% over six months from 2025-12 to 2026-09 (5.6% and 2.7% in 2026-09). It states a number, a class, a sample size and a month: not a forecast, a verdict or a recommendation. One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
+
+-- ---------------------------------------------------------------------------
+-- portfolio_instruments - CRA, CRI and debenture codes from a statement
+-- ---------------------------------------------------------------------------
+-- Catalog v62. A statement lists a credit instrument by its code (a CETIP code
+-- such as CRA0260025T or 23K1775123, or a debenture ticker such as ENAT11),
+-- often with a 'CRA-', 'CRI-' or 'DEB-' prefix. Per code, in order:
+--   code       = the input trimmed, upper-cased, a leading 'CRA-', 'CRI-' or
+--                'DEB-' stripped (the hyphen is required: CRA0260025T keeps
+--                its CRA, which is part of the CETIP code itself).
+--   1. 'securit_cetip': every row of cvm_securit_serie with codigo_cetip =
+--      code at that code's newest data_referencia; one row per (numero_serie,
+--      classe), the highest versao, then occurrence, then id. A code can
+--      match several series and all are returned. instrument_type is as
+--      stored (cra_mensal | cri_mensal); the series columns are as filed.
+--   2. else 'cda_ticker': a debenture in CDA block 4 (cvm_fi_cda_acoes,
+--      tp_aplic 'Debêntures', the exact value checked 2026-10-05). The month
+--      is the NEWEST period in which the code appears in block 4 at all,
+--      whatever its tp_aplic, and only that month's debenture rows count. A
+--      deliberate bound: walking idx_fi_cda_acoes_ativo with the tp_aplic
+--      filter would read every month of a stock code (PETR4) before it gave
+--      up. A code held in that month under another tp_aplic is no match, and
+--      the reason names what it was held as. From that month's debenture
+--      rows: cd_isin = the most common ISIN (ties: the smallest), issuer_code
+--      = its characters 3-6 (never a CNPJ), n_fundos = distinct holding
+--      CNPJs, preco_marcacao_fundos = sum(vl_merc_pos_final) /
+--      sum(qt_pos_final), 6 places: the funds' own marks, not a trade price.
+--      The newest CDA month can be one CVM is still filling (#476), so
+--      n_fundos may be low for it; cda_period says which month it is.
+--      instrument_type 'debenture' comes from that tp_aplic, nothing else.
+--   3. else one row with match_kind NULL and the reason in words.
+-- Measured on production 2026-10-05 for the 15 codes of the pinned statement
+-- (CRA0260025T, CRA02500001, CRA0250005M, 23K1775123, 26H4371872, 25F0010603,
+-- CRA0240066G, CRA0250018H, CRA02400AYL, 24I1980390, BTGL12, BTGL22, ORIG21,
+-- ENAT11, CUTI11): 9 match one series each in cvm_securit_serie, ORIG21, ENAT11
+-- and CUTI11 are block-4 debentures at 2026-08 (22, 60 and 20 funds, one ISIN
+-- each), and 26H4371872, BTGL12 and BTGL22 are in neither table. The CDA read
+-- is an index probe on idx_fi_cda_acoes_ativo (cd_ativo, period DESC): 22 ms
+-- cold for the six non-securit codes, PETR4 included (1,005 buffers).
+-- cvm_securit_serie has no index on codigo_cetip before migration 73: one
+-- sequential scan per code took the body to 2.87 s for these 16 codes, so the
+-- codes are read ONCE with = ANY (one 248 MB scan: 1.1 s cold, 228 ms warm for
+-- the whole body), and migration 73 adds idx_securit_serie_cetip
+-- (codigo_cetip, data_referencia DESC), which makes that read an index probe.
+-- At most 200 codes; a code with many series could still pass one page, so
+-- the row cap refuses above 1000 rows, never trims.
+CREATE OR REPLACE FUNCTION api.portfolio_instruments(
+    p_codes TEXT[]   -- one instrument code per statement line, as printed; NULL entries allowed; at most 200
+)
+RETURNS TABLE (
+    line_no                   INT,      -- 1-based position in p_codes
+    input_code                TEXT,     -- the code as sent
+    code                      TEXT,     -- trimmed, upper-cased, a leading CRA- / CRI- / DEB- stripped
+    match_kind                TEXT,     -- securit_cetip | cda_ticker | NULL (no match)
+    instrument_type           TEXT,     -- cra_mensal | cri_mensal as stored; 'debenture' for cda_ticker
+    cnpj_securit              TEXT,     -- the securitizer (securit_cetip)
+    numero_serie              INT,      -- securit_cetip, as filed
+    classe                    TEXT,     -- securit_cetip, as filed (Sênior, Subordinada...)
+    data_vencimento           DATE,     -- securit_cetip, as filed
+    situacao                  TEXT,     -- securit_cetip, as filed (Adimplente...)
+    taxa_juros                TEXT,     -- securit_cetip, as filed (text in the source)
+    classificacao_risco_atual TEXT,     -- securit_cetip, as filed
+    valor_total_integralizado NUMERIC,  -- securit_cetip, as filed
+    data_referencia           DATE,     -- securit_cetip: the newest informe holding the code
+    cd_isin                   TEXT,     -- cda_ticker: the most common ISIN of the month's debenture rows
+    issuer_code               TEXT,     -- cda_ticker: ISIN characters 3-6, never a CNPJ
+    n_fundos                  INT,      -- cda_ticker: distinct funds holding it that month
+    preco_marcacao_fundos     NUMERIC,  -- cda_ticker: sum(vl_merc_pos_final) / sum(qt_pos_final), 6 places
+    cda_period                DATE,     -- cda_ticker: the CDA month read
+    reason                    TEXT      -- why this row, or why no match, in words (Portuguese)
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+#variable_conflict use_column
+DECLARE
+    v_n     INT := COALESCE(cardinality(p_codes), 0);
+    v_codes TEXT[];
+BEGIN
+    IF v_n = 0 THEN
+        RAISE EXCEPTION
+            'portfolio_instruments needs p_codes (one CRA, CRI or debenture code per statement line): there is nothing to look up'
+            USING ERRCODE = '22023';
+    END IF;
+    IF v_n > 200 THEN
+        RAISE EXCEPTION
+            'portfolio_instruments: refused, % codes is more than 200. SILO never returns a silently truncated result and one call is one 1000-row page. To fix: send at most 200 codes per call and split the statement.',
+            v_n
+            USING ERRCODE = '22023',
+                  DETAIL  = 'Every response is one page of at most 1000 rows; a code can match several series.',
+                  HINT    = 'Send at most 200 codes per call.';
+    END IF;
+
+    -- The normalised codes of the call, read once below by = ANY.
+    SELECT array_agg(DISTINCT z.c)
+      INTO v_codes
+    FROM (SELECT NULLIF(btrim(regexp_replace(upper(btrim(COALESCE(x, ''))),
+                                             '^(CRA|CRI|DEB)-', '')), '') AS c
+          FROM unnest(p_codes) AS u(x)) z
+    WHERE z.c IS NOT NULL;
+
+    RETURN QUERY
+    WITH lines AS (
+        SELECT g.i AS line_no,
+               p_codes[g.i] AS input_code,
+               NULLIF(btrim(regexp_replace(upper(btrim(COALESCE(p_codes[g.i], ''))),
+                                           '^(CRA|CRI|DEB)-', '')), '') AS code
+        FROM generate_series(1, v_n) AS g(i)
+    ),
+    -- 1. CRA / CRI by CETIP code, at the code's newest informe. One read for
+    --    every code of the call (= ANY on idx_securit_serie_cetip; without the
+    --    index it is still ONE scan, not one per code).
+    sec_rows AS (
+        SELECT x.*
+        FROM public.cvm_securit_serie x
+        WHERE x.codigo_cetip = ANY (v_codes)
+    ),
+    sec AS (
+        SELECT DISTINCT ON (l.line_no, x.numero_serie, x.classe)
+               l.line_no,
+               x.instrument_type AS s_type, x.cnpj_securit AS s_cnpj,
+               x.numero_serie AS s_serie, x.classe AS s_classe,
+               x.data_vencimento AS s_venc, x.situacao AS s_sit,
+               x.taxa_juros AS s_taxa, x.classificacao_risco_atual AS s_rating,
+               x.valor_total_integralizado AS s_integr, x.data_referencia AS s_ref,
+               x.versao AS s_versao
+        FROM lines l
+        JOIN sec_rows x ON x.codigo_cetip = l.code
+        WHERE x.data_referencia = (SELECT max(y.data_referencia)
+                                   FROM sec_rows y
+                                   WHERE y.codigo_cetip = l.code)
+        ORDER BY l.line_no, x.numero_serie, x.classe, x.versao DESC NULLS LAST,
+                 x.occurrence DESC, x.id DESC
+    ),
+    -- 2. A debenture in CDA block 4, at the newest month the code appears in.
+    cda AS (
+        SELECT l.line_no, lp.period AS c_period, agg.*
+        FROM lines l
+        CROSS JOIN LATERAL (
+            SELECT a.period
+            FROM public.cvm_fi_cda_acoes a
+            WHERE a.cd_ativo = l.code
+            ORDER BY a.period DESC
+            LIMIT 1
+        ) lp
+        CROSS JOIN LATERAL (
+            SELECT count(*) FILTER (WHERE a.tp_aplic = 'Debêntures')::int AS c_rows,
+                   count(DISTINCT a.cnpj) FILTER (WHERE a.tp_aplic = 'Debêntures')::int AS c_funds,
+                   count(DISTINCT a.cd_isin) FILTER (WHERE a.tp_aplic = 'Debêntures')::int AS c_n_isin,
+                   round(sum(a.vl_merc_pos_final) FILTER (WHERE a.tp_aplic = 'Debêntures')
+                         / NULLIF(sum(a.qt_pos_final) FILTER (WHERE a.tp_aplic = 'Debêntures'), 0),
+                         6) AS c_preco,
+                   string_agg(DISTINCT a.tp_aplic, ' | ') FILTER (WHERE a.tp_aplic IS DISTINCT FROM 'Debêntures') AS c_other,
+                   (SELECT b.cd_isin
+                    FROM public.cvm_fi_cda_acoes b
+                    WHERE b.cd_ativo = l.code AND b.period = lp.period
+                      AND b.tp_aplic = 'Debêntures' AND b.cd_isin IS NOT NULL
+                    GROUP BY b.cd_isin
+                    ORDER BY count(*) DESC, b.cd_isin
+                    LIMIT 1) AS c_isin
+            FROM public.cvm_fi_cda_acoes a
+            WHERE a.cd_ativo = l.code AND a.period = lp.period
+        ) agg
+        WHERE l.code IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM sec s WHERE s.line_no = l.line_no)
+    ),
+    page (line_no, input_code, code, match_kind, instrument_type, cnpj_securit,
+          numero_serie, classe, data_vencimento, situacao, taxa_juros,
+          classificacao_risco_atual, valor_total_integralizado, data_referencia,
+          cd_isin, issuer_code, n_fundos, preco_marcacao_fundos, cda_period,
+          reason) AS (
+        SELECT l.line_no, l.input_code, l.code,
+               CASE WHEN s.line_no IS NOT NULL THEN 'securit_cetip'
+                    WHEN c.c_rows > 0 THEN 'cda_ticker' END,
+               CASE WHEN s.line_no IS NOT NULL THEN s.s_type
+                    WHEN c.c_rows > 0 THEN 'debenture' END,
+               s.s_cnpj, s.s_serie, s.s_classe, s.s_venc, s.s_sit, s.s_taxa,
+               s.s_rating, s.s_integr, s.s_ref,
+               CASE WHEN c.c_rows > 0 THEN c.c_isin END,
+               CASE WHEN c.c_rows > 0 THEN substring(c.c_isin FROM 3 FOR 4) END,
+               CASE WHEN c.c_rows > 0 THEN c.c_funds END,
+               CASE WHEN c.c_rows > 0 THEN c.c_preco END,
+               CASE WHEN c.c_rows > 0 THEN c.c_period END,
+               CASE
+                   WHEN l.code IS NULL THEN
+                       'linha vazia: nenhum código informado'
+                   WHEN s.line_no IS NOT NULL THEN
+                       'CRA/CRI: código CETIP no informe de securitização (cvm_securit_serie) de '
+                       || to_char(s.s_ref, 'YYYY-MM') || ', série '
+                       || COALESCE(s.s_serie::text, 'não informada') || ', classe '
+                       || COALESCE(s.s_classe, 'não informada')
+                       || COALESCE(', versão ' || s.s_versao::text, '')
+                   WHEN c.c_rows > 0 THEN
+                       'debênture: cd_ativo na CDA bloco 4 de ' || to_char(c.c_period, 'YYYY-MM')
+                       || ', ' || c.c_funds::text || ' fundo(s); preço = valor de mercado / quantidade, '
+                       || 'somados nas carteiras (marcação dos fundos, não preço de negociação)'
+                       || CASE WHEN c.c_n_isin > 1
+                               THEN '; ' || c.c_n_isin::text || ' ISINs no mês, cd_isin é o mais frequente'
+                               ELSE '' END
+                   WHEN c.c_period IS NOT NULL THEN
+                       'sem correspondência: o código não é CETIP de CRA/CRI em cvm_securit_serie; na CDA bloco 4 de '
+                       || to_char(c.c_period, 'YYYY-MM') || ' aparece como '
+                       || COALESCE(c.c_other, 'outro tipo') || ', não como debênture'
+                   ELSE
+                       'sem correspondência: nem código CETIP de CRA/CRI (cvm_securit_serie) nem cd_ativo de '
+                       || 'debênture na CDA bloco 4 (cvm_fi_cda_acoes)'
+               END
+        FROM lines l
+        LEFT JOIN sec s ON s.line_no = l.line_no
+        LEFT JOIN cda c ON c.line_no = l.line_no
+        ORDER BY l.line_no, s.s_serie NULLS FIRST, s.s_classe NULLS FIRST
+        LIMIT 1001
+    )
+    SELECT g.line_no, g.input_code, g.code, g.match_kind, g.instrument_type, g.cnpj_securit,
+           g.numero_serie, g.classe, g.data_vencimento, g.situacao, g.taxa_juros,
+           g.classificacao_risco_atual, g.valor_total_integralizado, g.data_referencia,
+           g.cd_isin, g.issuer_code, g.n_fundos, g.preco_marcacao_fundos, g.cda_period,
+           g.reason
+    FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_instruments')
+    ORDER BY g.line_no, g.numero_serie NULLS FIRST, g.classe NULLS FIRST
+    LIMIT 1000;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.portfolio_instruments(TEXT[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.portfolio_instruments(TEXT[]) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.portfolio_instruments(TEXT[]) TO silo_api;
+
+COMMENT ON FUNCTION api.portfolio_instruments(TEXT[]) IS
+    'CRA, CRI and debenture codes from a statement (catalog v62). Per code (trimmed, upper-cased, a leading CRA-, CRI- or DEB- stripped; the hyphen is required, so CRA0260025T keeps its CRA): match_kind securit_cetip returns every series of cvm_securit_serie whose codigo_cetip is the code, at the code''s newest data_referencia, one row per (numero_serie, classe) at its highest versao, with the series columns as filed and instrument_type as stored (cra_mensal, cri_mensal); a code can match several series. Else match_kind cda_ticker: the newest month the code appears in CDA block 4 (cvm_fi_cda_acoes, any tp_aplic) and that month''s rows with tp_aplic Debêntures: cd_isin (the most common ISIN), issuer_code (ISIN characters 3-6, never a CNPJ), n_fundos (distinct holding funds), preco_marcacao_fundos (sum of market value over sum of quantity, 6 places: the funds'' own marks, not a trade price) and cda_period (the newest CDA month may still be filling, so n_fundos can be low). A code held that month as something other than a debenture is no match, and the reason says what it was held as. Else one row with match_kind NULL and the reason in words (Portuguese). Nothing is inferred from a code''s letters. More than 200 codes RAISES 22023; the result is at most one 1000-row page, refused above it, never trimmed.';
+
+-- ---------------------------------------------------------------------------
+-- portfolio_fund_terms - who runs a fund, and how long a redemption takes
+-- ---------------------------------------------------------------------------
+-- Catalog v62. One row per input CNPJ (punctuation stripped, left-padded to 14
+-- digits; an entry with no digits or more than 14 is returned with cnpj NULL
+-- and a reason, never guessed).
+--   MANAGER AND ADMINISTRATOR, as filed, from cvm_fund_registry. The registry
+--   is keyed (cnpj, entity_type), so one CNPJ can have several rows (a fund
+--   cancelled as FI and active as FIDC: 20441301000168 on 2026-10-05). ONE row
+--   is picked, deterministically: is_active TRUE first, then a row with no
+--   dt_cancel, then the newest dt_cancel, then the newest fetched_at, then
+--   entity_type alphabetically. The reason names the entity_type and status
+--   of the row used. gestor_id is TEXT and can be a CPF (a PF manager): it is
+--   never padded or read as a CNPJ.
+--   REDEMPTION TERMS, as filed, never rescaled and never a zero for a missing
+--   value (NULL = not filed):
+--     * the CVM Extrato das Informacoes first (vw_fi_extrato_latest, the
+--       newest version per CNPJ, migration 66): terms_source 'extrato',
+--       terms_dt_comptc its DT_COMPTC (the date of the filed version, not of
+--       the information). qt_dia_conversao_cota, qt_dia_pagto_resgate,
+--       tp_dia_pagto_resgate and qt_dia_resgate_cotas (lock-up) are its own
+--       columns;
+--     * only when the CNPJ has no Extrato row, the lâmina (vw_fi_lamina_latest,
+--       migration 65): terms_source 'lamina', terms_dt_comptc its reference
+--       month. The lâmina's columns of the same CVM meaning (per the column
+--       comments of migrations 65 and 66) are mapped by name only:
+--       QT_DIA_CONVERSAO_COTA_RESGATE -> qt_dia_conversao_cota,
+--       QT_DIA_PAGTO_RESGATE and TP_DIA_PAGTO_RESGATE as they are,
+--       QT_DIA_CAREN (lock-up) -> qt_dia_resgate_cotas. The lâmina is filed per
+--       (cnpj, subclass): the row with no subclass is used, else the newest,
+--       then the smallest id_subclasse, and the reason says when subclasses
+--       file different terms;
+--     * neither: every term NULL, reason 'fundo sem Extrato nem lâmina (fechado
+--       ou não informado)', with the registry's entity_type: a FII, FIDC, FIP
+--       or FIAGRO is outside both documents (cvm_fi_extrato holds only
+--       tp_fundo_classe 'FI' and 'CLASSES - FIF', checked 2026-10-05).
+-- Measured on production 2026-10-05 with the 12 CNPJs of the pinned statement:
+-- 8 have an Extrato (the oldest from 2020-05-27), none falls to the lâmina, 4
+-- (a FII, a FIP, a FIAGRO and a FIDC by the pick rule) have neither, and the
+-- three reads are index probes (uq_fi_extrato, uq_fi_lamina,
+-- idx_fund_registry_cnpj): 24 ms together. At most 200 CNPJs.
+CREATE OR REPLACE FUNCTION api.portfolio_fund_terms(
+    p_cnpjs TEXT[]   -- one fund CNPJ per statement line (punctuation ignored); NULL entries allowed; at most 200
+)
+RETURNS TABLE (
+    line_no               INT,      -- 1-based position in p_cnpjs
+    input_cnpj            TEXT,     -- the CNPJ as sent
+    cnpj                  TEXT,     -- 14 digits; NULL when the entry is not a CNPJ
+    gestor_id             TEXT,     -- the manager's CNPJ or CPF as filed in cvm_fund_registry
+    gestor_name           TEXT,     -- as filed
+    admin_cnpj            TEXT,     -- the administrator's CNPJ as filed
+    admin_name            TEXT,     -- as filed
+    terms_source          TEXT,     -- extrato | lamina | NULL (neither filed)
+    terms_dt_comptc       DATE,     -- DT_COMPTC of the Extrato version, or the lâmina's reference month
+    qt_dia_conversao_cota NUMERIC,  -- days from the redemption request to quota conversion, as filed
+    qt_dia_pagto_resgate  NUMERIC,  -- days from the request to payment, as filed
+    tp_dia_pagto_resgate  TEXT,     -- the kind of day those count (úteis / corridos), as filed
+    qt_dia_resgate_cotas  NUMERIC,  -- lock-up days (carência), as filed
+    reason                TEXT      -- where each part came from, and why a part is NULL (Portuguese)
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+#variable_conflict use_column
+DECLARE
+    v_n   INT := COALESCE(cardinality(p_cnpjs), 0);
+    v_ids TEXT[];
+BEGIN
+    IF v_n = 0 THEN
+        RAISE EXCEPTION
+            'portfolio_fund_terms needs p_cnpjs (one fund CNPJ per statement line): there is nothing to look up'
+            USING ERRCODE = '22023';
+    END IF;
+    IF v_n > 200 THEN
+        RAISE EXCEPTION
+            'portfolio_fund_terms: refused, % CNPJs is more than 200. SILO never returns a silently truncated result and one call is one 1000-row page. To fix: send at most 200 CNPJs per call and split the portfolio.',
+            v_n
+            USING ERRCODE = '22023',
+                  DETAIL  = 'Every response is one page of at most 1000 rows.',
+                  HINT    = 'Send at most 200 CNPJs per call.';
+    END IF;
+
+    -- The CNPJ set first, so each view is filtered by = ANY on its DISTINCT ON
+    -- key and read by index (uq_fi_extrato, uq_fi_lamina), never sorted whole.
+    SELECT array_agg(DISTINCT lpad(d, 14, '0'))
+      INTO v_ids
+    FROM (SELECT regexp_replace(COALESCE(x, ''), '\D', '', 'g') AS d
+          FROM unnest(p_cnpjs) AS u(x)) z
+    WHERE z.d <> '' AND length(z.d) <= 14;
+
+    RETURN QUERY
+    WITH lines AS (
+        SELECT g.i AS line_no,
+               p_cnpjs[g.i] AS input_cnpj,
+               CASE WHEN length(regexp_replace(COALESCE(p_cnpjs[g.i], ''), '\D', '', 'g')) BETWEEN 1 AND 14
+                    THEN lpad(regexp_replace(p_cnpjs[g.i], '\D', '', 'g'), 14, '0')
+               END AS cnpj
+        FROM generate_series(1, v_n) AS g(i)
+    ),
+    reg AS (
+        SELECT DISTINCT ON (r.cnpj)
+               r.cnpj AS r_cnpj, r.entity_type AS r_type, r.status AS r_status,
+               r.gestor_id AS r_gestor_id, r.gestor_name AS r_gestor_name,
+               r.admin_cnpj AS r_admin_cnpj, r.admin_name AS r_admin_name
+        FROM public.cvm_fund_registry r
+        WHERE r.cnpj = ANY (v_ids)
+        ORDER BY r.cnpj, r.is_active DESC NULLS LAST, (r.dt_cancel IS NULL) DESC,
+                 r.dt_cancel DESC NULLS LAST, r.fetched_at DESC, r.entity_type
+    ),
+    ext AS (
+        SELECT x.cnpj AS e_cnpj, x.dt_comptc AS e_dt,
+               x.qt_dia_conversao_cota AS e_conv, x.qt_dia_pagto_resgate AS e_pag,
+               x.tp_dia_pagto_resgate AS e_tp, x.qt_dia_resgate_cotas AS e_car
+        FROM public.vw_fi_extrato_latest x
+        WHERE x.cnpj = ANY (v_ids)
+    ),
+    lam_all AS (
+        SELECT m.cnpj AS m_cnpj, m.id_subclasse AS m_sub, m.dt_comptc AS m_dt,
+               m.qt_dia_conversao_cota_resgate AS m_conv, m.qt_dia_pagto_resgate AS m_pag,
+               m.tp_dia_pagto_resgate AS m_tp, m.qt_dia_caren AS m_car
+        FROM public.vw_fi_lamina_latest m
+        WHERE m.cnpj = ANY (v_ids)
+    ),
+    lam AS (
+        SELECT DISTINCT ON (a.m_cnpj) a.*,
+               count(*) OVER (PARTITION BY a.m_cnpj)::int AS m_n,
+               (SELECT count(DISTINCT (b.m_conv, b.m_pag, b.m_tp, b.m_car))::int
+                FROM lam_all b WHERE b.m_cnpj = a.m_cnpj) AS m_n_terms
+        FROM lam_all a
+        ORDER BY a.m_cnpj, (a.m_sub IS NULL) DESC, a.m_dt DESC, a.m_sub
+    ),
+    page (line_no, input_cnpj, cnpj, gestor_id, gestor_name, admin_cnpj, admin_name,
+          terms_source, terms_dt_comptc, qt_dia_conversao_cota, qt_dia_pagto_resgate,
+          tp_dia_pagto_resgate, qt_dia_resgate_cotas, reason) AS (
+        SELECT l.line_no, l.input_cnpj, l.cnpj,
+               r.r_gestor_id, r.r_gestor_name, r.r_admin_cnpj, r.r_admin_name,
+               CASE WHEN e.e_cnpj IS NOT NULL THEN 'extrato'
+                    WHEN m.m_cnpj IS NOT NULL THEN 'lamina' END,
+               COALESCE(e.e_dt, m.m_dt),
+               CASE WHEN e.e_cnpj IS NOT NULL THEN e.e_conv ELSE m.m_conv END,
+               CASE WHEN e.e_cnpj IS NOT NULL THEN e.e_pag  ELSE m.m_pag  END,
+               CASE WHEN e.e_cnpj IS NOT NULL THEN e.e_tp   ELSE m.m_tp   END,
+               CASE WHEN e.e_cnpj IS NOT NULL THEN e.e_car  ELSE m.m_car  END,
+               CASE
+                   WHEN l.cnpj IS NULL THEN
+                       'entrada sem CNPJ: vazia ou com mais de 14 dígitos'
+                   ELSE
+                       CASE
+                           WHEN r.r_cnpj IS NULL THEN
+                               'CNPJ fora do cadastro CVM (cvm_fund_registry): gestor e administrador não informados'
+                           ELSE
+                               'gestor e administrador do cadastro CVM (' || r.r_type
+                               || COALESCE(', ' || r.r_status, '') || ')'
+                               || CASE WHEN r.r_gestor_id IS NULL AND r.r_gestor_name IS NULL
+                                       THEN '; gestor não informado no cadastro' ELSE '' END
+                               || CASE WHEN r.r_admin_cnpj IS NULL AND r.r_admin_name IS NULL
+                                       THEN '; administrador não informado no cadastro' ELSE '' END
+                       END
+                       || '; '
+                       || CASE
+                           WHEN e.e_cnpj IS NOT NULL THEN
+                               'prazos do Extrato das Informações de ' || to_char(e.e_dt, 'YYYY-MM-DD')
+                               || CASE WHEN e.e_conv IS NULL OR e.e_pag IS NULL OR e.e_tp IS NULL
+                                       THEN ' (campo vazio = não informado no Extrato, nunca zero)' ELSE '' END
+                           WHEN m.m_cnpj IS NOT NULL THEN
+                               'fundo sem Extrato; prazos da lâmina de ' || to_char(m.m_dt, 'YYYY-MM')
+                               || CASE WHEN m.m_n > 1 AND m.m_n_terms > 1 THEN
+                                           ' (' || m.m_n::text || ' subclasses com prazos diferentes; '
+                                           || COALESCE('subclasse ' || m.m_sub, 'linha sem subclasse')
+                                           || ')'
+                                       ELSE '' END
+                               || CASE WHEN m.m_conv IS NULL OR m.m_pag IS NULL OR m.m_tp IS NULL
+                                       THEN ' (campo vazio = não informado na lâmina, nunca zero)' ELSE '' END
+                           ELSE
+                               'fundo sem Extrato nem lâmina (fechado ou não informado)'
+                               || CASE WHEN r.r_type IS NOT NULL AND r.r_type <> 'fi'
+                                       THEN '; cadastro CVM como ' || upper(r.r_type)
+                                            || ': o Extrato e a lâmina cobrem só fundos e classes FI'
+                                       ELSE '' END
+                       END
+               END
+        FROM lines l
+        LEFT JOIN reg r ON r.r_cnpj = l.cnpj
+        LEFT JOIN ext e ON e.e_cnpj = l.cnpj
+        LEFT JOIN lam m ON m.m_cnpj = l.cnpj
+        ORDER BY l.line_no
+        LIMIT 1001
+    )
+    SELECT g.line_no, g.input_cnpj, g.cnpj, g.gestor_id, g.gestor_name, g.admin_cnpj,
+           g.admin_name, g.terms_source, g.terms_dt_comptc, g.qt_dia_conversao_cota,
+           g.qt_dia_pagto_resgate, g.tp_dia_pagto_resgate, g.qt_dia_resgate_cotas, g.reason
+    FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_fund_terms')
+    ORDER BY g.line_no
+    LIMIT 1000;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.portfolio_fund_terms(TEXT[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.portfolio_fund_terms(TEXT[]) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.portfolio_fund_terms(TEXT[]) TO silo_api;
+
+COMMENT ON FUNCTION api.portfolio_fund_terms(TEXT[]) IS
+    'Who runs a fund and how long a redemption takes (catalog v62). One row per input CNPJ (punctuation stripped, padded to 14 digits; an entry that is not a CNPJ comes back with cnpj NULL and a reason). gestor_id, gestor_name, admin_cnpj and admin_name are as filed in cvm_fund_registry; a CNPJ with several registry rows (one per entity_type) uses one, picked by is_active first, then no dt_cancel, then the newest dt_cancel, then the newest fetched_at, then entity_type, and the reason names it. gestor_id can be a CPF and is never read as a CNPJ. The redemption terms (qt_dia_conversao_cota, qt_dia_pagto_resgate, tp_dia_pagto_resgate, qt_dia_resgate_cotas = lock-up) come from the CVM Extrato das Informacoes (vw_fi_extrato_latest, terms_source extrato, terms_dt_comptc = the filed version''s DT_COMPTC), and only when the CNPJ has no Extrato from the lamina (vw_fi_lamina_latest, terms_source lamina: QT_DIA_CONVERSAO_COTA_RESGATE and QT_DIA_CAREN mapped by name to the same meanings; the row with no subclass, else the newest). Values are as filed, never rescaled; NULL is not filed, never zero. A fund in neither document (a FII, FIDC, FIP or FIAGRO, a closed fund) has every term NULL and the reason says so (Portuguese). More than 200 CNPJs RAISES 22023; the result is one row per input, at most one 1000-row page.';
 
 COMMIT;

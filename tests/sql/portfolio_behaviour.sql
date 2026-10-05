@@ -1,6 +1,6 @@
 -- Executed checks for the portfolio-diagnosis reads (31_api_portfolio.sql:
 -- api.portfolio_resolve, api.portfolio_fees, api.portfolio_lookthrough, catalog
--- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56; ETF cotistas and PL, v57). Regex tests pin the SQL text; this proves it DOES the right thing on
+-- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56; ETF cotistas and PL, v57; api.portfolio_instruments and api.portfolio_fund_terms, v61). Regex tests pin the SQL text; this proves it DOES the right thing on
 -- rows. Synthetic CNPJs, inside a transaction that is rolled back, so it runs
 -- on any database with the schema and the analytical layer applied (CI's
 -- sql-compile job, or a scratch copy):
@@ -957,6 +957,196 @@ BEGIN
 END $$;
 
 -- ===========================================================================
+-- portfolio_instruments and portfolio_fund_terms (catalog v61). The shapes
+-- measured 2026-10-05: a CRA's CETIP code starts with CRA itself, a statement
+-- may prefix it 'CRA-'; a series can be refiled (versao 2 beside versao 1);
+-- a debenture ticker is in CDA block 4 under tp_aplic 'Debêntures'; a stock
+-- ticker is there too, under 'Ações'; one CNPJ can be cancelled as FI and
+-- active as FIDC (20441301000168); the lâmina is filed per subclass.
+-- The lâmina stand-in above carries only the fee columns, so the four
+-- redemption columns portfolio_fund_terms reads are added to it here.
+-- ===========================================================================
+ALTER TABLE public.zz_lamina_stub
+    ADD COLUMN qt_dia_conversao_cota_resgate numeric,
+    ADD COLUMN qt_dia_pagto_resgate numeric,
+    ADD COLUMN tp_dia_pagto_resgate text,
+    ADD COLUMN qt_dia_caren numeric;
+CREATE OR REPLACE VIEW public.vw_fi_lamina_latest AS SELECT * FROM public.zz_lamina_stub;
+
+INSERT INTO cvm_securit_serie
+    (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, classe, numero_serie,
+     codigo_cetip, data_vencimento, situacao, valor_total_integralizado, taxa_juros,
+     classificacao_risco_atual, versao, occurrence)
+VALUES
+    -- an older informe: never served once a newer one holds the code
+    ('cra_mensal', '87000000000101', 'BRZZZZCRA001', '2026-06-01', 'Sênior', 3, 'CRAZZ00001T',
+     '2031-04-16', 'Inadimplente', 900, 'IPCA + 7%', 'brA', 1, 1),
+    -- the newest informe, refiled: versao 2 wins over versao 1
+    ('cra_mensal', '87000000000101', 'BRZZZZCRA001', '2026-07-01', 'Sênior', 3, 'CRAZZ00001T',
+     '2031-04-16', 'Adimplente', 1000, 'IPCA + 7%', 'brA', 1, 1),
+    ('cra_mensal', '87000000000101', 'BRZZZZCRA001', '2026-07-01', 'Sênior', 3, 'CRAZZ00001T',
+     '2031-04-16', 'Adimplente', 1100, 'IPCA + 7%', 'brAA', 2, 2),
+    -- one CETIP code, two series: both returned
+    ('cri_mensal', '87000000000102', 'BRZZZZCRI001', '2026-07-01', 'Sênior', 1, '26ZZ000001',
+     '2033-11-16', 'Adimplente', 500, 'CDI + 2%', NULL, 1, 1),
+    ('cri_mensal', '87000000000102', 'BRZZZZCRI001', '2026-07-01', 'Subordinada', 2, '26ZZ000001',
+     '2033-11-16', 'Adimplente', 100, 'CDI + 5%', NULL, 1, 1);
+
+INSERT INTO cvm_fi_cda_acoes (cnpj, period, tp_aplic, tp_ativo, cd_ativo, cd_isin, qt_pos_final, vl_merc_pos_final, raw) VALUES
+    -- ZZDB11 a debenture: an older month, then three funds in the newest, two ISINs
+    ('87000000000201', '2026-07-01', 'Debêntures', 'Debênture simples', 'ZZDB11', 'BRZZDBDBS001', 10, 9000, '{}'),
+    ('87000000000201', '2026-08-01', 'Debêntures', 'Debênture simples', 'ZZDB11', 'BRZZDBDBS001', 10, 10000, '{}'),
+    ('87000000000202', '2026-08-01', 'Debêntures', 'Debênture simples', 'ZZDB11', 'BRZZDBDBS001', 20, 21000, '{}'),
+    ('87000000000203', '2026-08-01', 'Debêntures', 'Debênture simples', 'ZZDB11', 'BRZZDBDBS002', 30, 30500, '{}'),
+    -- ZZST3 a stock: in block 4, never a debenture
+    ('87000000000201', '2026-08-01', 'Ações', 'Ação ordinária', 'ZZST3', 'BRZZSTACNOR0', 100, 2500, '{}');
+
+INSERT INTO cvm_fund_registry (cnpj, entity_type, fund_name, status, is_active, dt_cancel, gestor_id, gestor_name, admin_cnpj, admin_name) VALUES
+    -- cancelled as FI, active as FIDC: the FIDC row is used
+    ('87000000000301', 'fi',   'FUNDO ZZ A', 'Cancelado', FALSE, '2025-05-12', '11111111000101', 'GESTORA VELHA', '22222222000101', 'ADMIN VELHO'),
+    ('87000000000301', 'fidc', 'FUNDO ZZ A', 'Em Funcionamento Normal', TRUE, NULL, '11111111000102', 'GESTORA ZZ', '22222222000102', 'ADMIN ZZ'),
+    -- an FI with an Extrato; a PF manager (an 11-digit CPF, never padded)
+    ('87000000000302', 'fi',   'FUNDO ZZ B', 'Em Funcionamento Normal', TRUE, NULL, '12345678901', 'GESTOR PESSOA FÍSICA', '22222222000102', 'ADMIN ZZ'),
+    -- an FI with only a lâmina
+    ('87000000000303', 'fi',   'FUNDO ZZ C', 'Em Funcionamento Normal', TRUE, NULL, '11111111000102', 'GESTORA ZZ', NULL, NULL);
+
+INSERT INTO cvm_fi_extrato (cnpj, dt_comptc, source_file, qt_dia_conversao_cota, qt_dia_pagto_resgate,
+                            tp_dia_pagto_resgate, qt_dia_resgate_cotas, raw) VALUES
+    ('87000000000302', '2024-01-10', 'extrato_fi_2024.csv', 30, 31, 'DIAS CORRIDOS', NULL, '{}'),
+    ('87000000000302', '2025-07-03', 'extrato_fi.csv', 9, 10, 'DIAS ÚTEIS', 180, '{}'),
+    -- an Extrato with a term not filed: NULL, never zero
+    ('87000000000304', '2025-01-02', 'extrato_fi.csv', 0, NULL, NULL, NULL, '{}');
+
+INSERT INTO public.zz_lamina_stub (cnpj, id_subclasse, dt_comptc, qt_dia_conversao_cota_resgate,
+                                   qt_dia_pagto_resgate, tp_dia_pagto_resgate, qt_dia_caren) VALUES
+    ('87000000000303', 'SUB2', '2026-08-01', 30, 32, 'Dias Corridos', 90),
+    ('87000000000303', 'SUB1', '2026-08-01', 1, 2, 'Dias Úteis', NULL),
+    -- the Extrato wins: this lâmina is never read for 87000000000302
+    ('87000000000302', NULL, '2026-08-01', 99, 99, 'Dias Úteis', 99);
+
+DO $$
+DECLARE
+    r RECORD;
+    n INT;
+BEGIN
+    -- CRA with a CRA- prefix, lower case and spaces: the prefix goes, the code's own CRA stays.
+    SELECT * INTO r FROM api.portfolio_instruments(ARRAY[' cra-crazz00001t ']);
+    IF r.code IS DISTINCT FROM 'CRAZZ00001T' OR r.match_kind IS DISTINCT FROM 'securit_cetip' OR r.instrument_type IS DISTINCT FROM 'cra_mensal'
+       OR r.data_referencia IS DISTINCT FROM DATE '2026-07-01' OR r.valor_total_integralizado IS DISTINCT FROM 1100
+       OR r.classificacao_risco_atual IS DISTINCT FROM 'brAA' OR r.situacao IS DISTINCT FROM 'Adimplente' OR r.numero_serie IS DISTINCT FROM 3
+       OR r.cnpj_securit IS DISTINCT FROM '87000000000101' OR r.cd_isin IS NOT NULL OR r.n_fundos IS NOT NULL
+       OR r.line_no IS DISTINCT FROM 1 OR r.input_code IS DISTINCT FROM ' cra-crazz00001t ' OR COALESCE(r.reason, '') NOT LIKE '%versão 2%' THEN
+        RAISE EXCEPTION 'securit_cetip: % % % % % % %', r.code, r.match_kind, r.data_referencia,
+            r.valor_total_integralizado, r.classificacao_risco_atual, r.numero_serie, r.reason;
+    END IF;
+    SELECT count(*) INTO n FROM api.portfolio_instruments(ARRAY['CRAZZ00001T']);
+    IF n <> 1 THEN RAISE EXCEPTION 'securit_cetip: one row per (numero_serie, classe), got %', n; END IF;
+    -- No prefix is stripped without its hyphen.
+    SELECT * INTO r FROM api.portfolio_instruments(ARRAY['CRAZZ00001T']);
+    IF r.code IS DISTINCT FROM 'CRAZZ00001T' OR r.match_kind IS DISTINCT FROM 'securit_cetip' THEN
+        RAISE EXCEPTION 'no hyphen, no strip: % %', r.code, r.match_kind;
+    END IF;
+    -- One code, two series: both, in series order.
+    SELECT count(*), string_agg(classe, ',' ORDER BY numero_serie) INTO r
+    FROM api.portfolio_instruments(ARRAY['CRI-26ZZ000001']);
+    IF r.count IS DISTINCT FROM 2 OR r.string_agg IS DISTINCT FROM 'Sênior,Subordinada' THEN
+        RAISE EXCEPTION 'two series: % %', r.count, r.string_agg;
+    END IF;
+
+    -- Debenture: the newest month, three funds, the most common ISIN, the funds' mark.
+    SELECT * INTO r FROM api.portfolio_instruments(ARRAY['DEB-ZZDB11']);
+    IF r.match_kind IS DISTINCT FROM 'cda_ticker' OR r.instrument_type IS DISTINCT FROM 'debenture' OR r.cda_period IS DISTINCT FROM DATE '2026-08-01'
+       OR r.n_fundos IS DISTINCT FROM 3 OR r.cd_isin IS DISTINCT FROM 'BRZZDBDBS001' OR r.issuer_code IS DISTINCT FROM 'ZZDB'
+       OR r.preco_marcacao_fundos IS DISTINCT FROM round(61500::numeric / 60, 6)
+       OR r.cnpj_securit IS NOT NULL OR r.data_referencia IS NOT NULL
+       OR COALESCE(r.reason, '') NOT LIKE '%2 ISINs no mês%' THEN
+        RAISE EXCEPTION 'cda_ticker: % % % % % % % %', r.match_kind, r.cda_period, r.n_fundos, r.cd_isin,
+            r.issuer_code, r.preco_marcacao_fundos, r.instrument_type, r.reason;
+    END IF;
+    -- A stock in block 4 is no match, and the reason says what it was held as.
+    SELECT * INTO r FROM api.portfolio_instruments(ARRAY['ZZST3']);
+    IF r.match_kind IS NOT NULL OR r.n_fundos IS NOT NULL OR r.cda_period IS NOT NULL
+       OR COALESCE(r.reason, '') NOT LIKE '%aparece como Ações, não como debênture%' THEN
+        RAISE EXCEPTION 'stock: % % %', r.match_kind, r.n_fundos, r.reason;
+    END IF;
+    -- Unknown and empty codes: one row each, NULL match, a reason; parallel line numbers kept.
+    SELECT count(*) INTO n FROM api.portfolio_instruments(ARRAY['NOPE99', NULL, '  ', 'CRAZZ00001T']);
+    IF n <> 4 THEN RAISE EXCEPTION 'one row per unmatched line: %', n; END IF;
+    SELECT * INTO r FROM api.portfolio_instruments(ARRAY['NOPE99', NULL]) WHERE line_no = 1;
+    IF r.match_kind IS NOT NULL OR COALESCE(r.reason, '') NOT LIKE 'sem correspondência: nem código CETIP%' THEN
+        RAISE EXCEPTION 'no match: % %', r.match_kind, r.reason;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_instruments(ARRAY['NOPE99', NULL]) WHERE line_no = 2;
+    IF r.code IS NOT NULL OR COALESCE(r.reason, '') NOT LIKE 'linha vazia%' THEN
+        RAISE EXCEPTION 'empty line: % %', r.code, r.reason;
+    END IF;
+    -- 201 codes are refused, never trimmed.
+    BEGIN
+        PERFORM api.portfolio_instruments(ARRAY(SELECT 'X' || g FROM generate_series(1, 201) g));
+        RAISE EXCEPTION 'portfolio_instruments accepted 201 codes';
+    EXCEPTION WHEN sqlstate '22023' THEN
+        IF SQLERRM NOT LIKE '%more than 200%To fix%' THEN RAISE; END IF;
+    END;
+    BEGIN
+        PERFORM api.portfolio_instruments(ARRAY[]::text[]);
+        RAISE EXCEPTION 'portfolio_instruments accepted no codes';
+    EXCEPTION WHEN sqlstate '22023' THEN NULL;
+    END;
+    RAISE NOTICE 'portfolio_instruments OK';
+
+    -- Registry pick: the active FIDC row over the cancelled FI row; no terms anywhere.
+    SELECT * INTO r FROM api.portfolio_fund_terms(ARRAY['87.000.000/0003-01']);
+    IF r.cnpj IS DISTINCT FROM '87000000000301' OR r.gestor_id IS DISTINCT FROM '11111111000102' OR r.admin_name IS DISTINCT FROM 'ADMIN ZZ'
+       OR r.terms_source IS NOT NULL OR r.qt_dia_conversao_cota IS NOT NULL OR r.terms_dt_comptc IS NOT NULL
+       OR COALESCE(r.reason, '') NOT LIKE '%(fidc, Em Funcionamento Normal)%'
+       OR COALESCE(r.reason, '') NOT LIKE '%fundo sem Extrato nem lâmina (fechado ou não informado)%'
+       OR COALESCE(r.reason, '') NOT LIKE '%como FIDC%' THEN
+        RAISE EXCEPTION 'registry pick: % % % % %', r.cnpj, r.gestor_id, r.admin_name, r.terms_source, r.reason;
+    END IF;
+    -- Extrato: its newest version, as filed; a CPF manager untouched; the lâmina ignored.
+    SELECT * INTO r FROM api.portfolio_fund_terms(ARRAY['87000000000302']);
+    IF r.terms_source IS DISTINCT FROM 'extrato' OR r.terms_dt_comptc IS DISTINCT FROM DATE '2025-07-03' OR r.qt_dia_conversao_cota IS DISTINCT FROM 9
+       OR r.qt_dia_pagto_resgate IS DISTINCT FROM 10 OR r.tp_dia_pagto_resgate IS DISTINCT FROM 'DIAS ÚTEIS' OR r.qt_dia_resgate_cotas IS DISTINCT FROM 180
+       OR r.gestor_id IS DISTINCT FROM '12345678901' OR COALESCE(r.reason, '') NOT LIKE '%Extrato das Informações de 2025-07-03%' THEN
+        RAISE EXCEPTION 'extrato: % % % % % %', r.terms_source, r.terms_dt_comptc, r.qt_dia_conversao_cota,
+            r.qt_dia_resgate_cotas, r.gestor_id, r.reason;
+    END IF;
+    -- Lâmina only, two subclasses with different terms: the first by id, mapped columns, and said so.
+    SELECT * INTO r FROM api.portfolio_fund_terms(ARRAY['87000000000303']);
+    IF r.terms_source IS DISTINCT FROM 'lamina' OR r.terms_dt_comptc IS DISTINCT FROM DATE '2026-08-01' OR r.qt_dia_conversao_cota IS DISTINCT FROM 1
+       OR r.qt_dia_pagto_resgate IS DISTINCT FROM 2 OR r.tp_dia_pagto_resgate IS DISTINCT FROM 'Dias Úteis' OR r.qt_dia_resgate_cotas IS NOT NULL
+       OR r.admin_cnpj IS NOT NULL OR COALESCE(r.reason, '') NOT LIKE '%fundo sem Extrato; prazos da lâmina de 2026-08%'
+       OR COALESCE(r.reason, '') NOT LIKE '%2 subclasses com prazos diferentes; subclasse SUB1%'
+       OR COALESCE(r.reason, '') NOT LIKE '%administrador não informado no cadastro%' THEN
+        RAISE EXCEPTION 'lamina: % % % % %', r.terms_source, r.terms_dt_comptc, r.qt_dia_conversao_cota,
+            r.qt_dia_resgate_cotas, r.reason;
+    END IF;
+    -- An Extrato term not filed is NULL, never zero; a filed 0 stays 0; no registry row is said so.
+    SELECT * INTO r FROM api.portfolio_fund_terms(ARRAY['87000000000304']);
+    IF r.terms_source IS DISTINCT FROM 'extrato' OR r.qt_dia_conversao_cota IS DISTINCT FROM 0 OR r.qt_dia_pagto_resgate IS NOT NULL
+       OR r.gestor_id IS NOT NULL OR COALESCE(r.reason, '') NOT LIKE 'CNPJ fora do cadastro CVM%'
+       OR COALESCE(r.reason, '') NOT LIKE '%nunca zero%' THEN
+        RAISE EXCEPTION 'extrato NULL: % % % %', r.terms_source, r.qt_dia_conversao_cota, r.qt_dia_pagto_resgate, r.reason;
+    END IF;
+    -- One row per input, in order, a bad entry included; a short CNPJ is left-padded.
+    SELECT count(*) INTO n FROM api.portfolio_fund_terms(ARRAY['87000000000302', 'abc', NULL, '123456789012345', '87000000000302']);
+    IF n <> 5 THEN RAISE EXCEPTION 'one row per input: %', n; END IF;
+    SELECT * INTO r FROM api.portfolio_fund_terms(ARRAY['x', '123456789012345']) WHERE line_no = 2;
+    IF r.cnpj IS NOT NULL OR COALESCE(r.reason, '') NOT LIKE 'entrada sem CNPJ%' THEN
+        RAISE EXCEPTION 'bad entry: % %', r.cnpj, r.reason;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fund_terms(ARRAY['1']);
+    IF r.cnpj IS DISTINCT FROM '00000000000001' THEN RAISE EXCEPTION 'padding: %', r.cnpj; END IF;
+    BEGIN
+        PERFORM api.portfolio_fund_terms(ARRAY(SELECT lpad(g::text, 14, '0') FROM generate_series(1, 201) g));
+        RAISE EXCEPTION 'portfolio_fund_terms accepted 201 CNPJs';
+    EXCEPTION WHEN sqlstate '22023' THEN
+        IF SQLERRM NOT LIKE '%more than 200%To fix%' THEN RAISE; END IF;
+    END;
+    RAISE NOTICE 'portfolio_fund_terms OK';
+END $$;
+
+-- ===========================================================================
 -- Privileges: anon can call all three (the public silo-mcp reads as anon) and
 -- cannot read the resolver's internal matview.
 -- ===========================================================================
@@ -971,6 +1161,10 @@ BEGIN
     IF n <> 1 THEN RAISE EXCEPTION 'anon portfolio_fees: %', n; END IF;
     SELECT count(*) INTO n FROM api.portfolio_lookthrough(ARRAY['55555555000191'], DATE '2026-05-01');
     IF n <> 1 THEN RAISE EXCEPTION 'anon portfolio_lookthrough: %', n; END IF;
+    SELECT count(*) INTO n FROM api.portfolio_instruments(ARRAY['CRAZZ00001T', 'ZZDB11']);
+    IF n <> 2 THEN RAISE EXCEPTION 'anon portfolio_instruments: %', n; END IF;
+    SELECT count(*) INTO n FROM api.portfolio_fund_terms(ARRAY['87000000000302']);
+    IF n <> 1 THEN RAISE EXCEPTION 'anon portfolio_fund_terms: %', n; END IF;
     IF has_table_privilege('anon', 'public.mv_fund_name_history', 'SELECT') THEN
         RAISE EXCEPTION 'anon can read mv_fund_name_history';
     END IF;

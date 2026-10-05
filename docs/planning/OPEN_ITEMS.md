@@ -554,6 +554,13 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   static SVG charts beside their tables, the fee headline "Quanto a carteira paga em taxas" (`fees.summary`) and
   "Principais riscos" (`risks`, fixed thresholds in `src/portfolio/risks.py`). Open: the liquidity risk row stays
   "não avaliado" for the same missing `api` path as above.
+- **Catalog v61** (branch `feat/api-portfolio-instruments-terms`, migration 73): the two `api` paths the items
+  above were waiting for. `api.portfolio_instruments` maps a statement's CRA/CRI code to its series in
+  `cvm_securit_serie` and a debenture ticker to CDA block 4 (ISIN, issuer code, funds holding it, their mark);
+  `api.portfolio_fund_terms` serves the manager and administrator from `cvm_fund_registry` and the redemption
+  terms from the Extrato, else the lâmina. Live after the schema apply (index), an analytical apply and a
+  `deploy_mcp.yml` dispatch. Open: the engine side (identification by code, concentration by manager, the
+  liquidity risk row) is a separate branch.
 - **CVM 175 levels** (#543, branch `claude/cvm175-levels-543`, migration 67):
   `cvm_registro_fundo` / `_classe` / `_subclasse` let a class reach its fund by
   `ID_Registro_Fundo` and a subclass its class by `ID_Registro_Classe`. Empty until

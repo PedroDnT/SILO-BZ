@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "61";
+export const CONTRACT_VERSION = "62";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -3134,6 +3134,58 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_cnpjs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_fund_terms": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_fund_terms",
+    "description": "Who runs a fund and how long a redemption takes (catalog v62). One row per input CNPJ (punctuation stripped, padded to 14 digits; an entry that is not a CNPJ comes back with cnpj NULL and a reason). gestor_id, gestor_name, admin_cnpj and admin_name are as filed in cvm_fund_registry; a CNPJ with several registry rows (one per entity_type) uses one, picked by is_active first, then no dt_cancel, then the newest dt_cancel, then the newest fetched_at, then entity_type, and the reason names it. gestor_id can be a CPF and is never read as a CNPJ. The redemption terms (qt_dia_conversao_cota, qt_dia_pagto_resgate, tp_dia_pagto_resgate, qt_dia_resgate_cotas = lock-up) come from the CVM Extrato das Informacoes (vw_fi_extrato_latest, terms_source extrato, terms_dt_comptc = the filed version's DT_COMPTC), and only when the CNPJ has no Extrato from the lamina (vw_fi_lamina_latest, terms_source lamina: QT_DIA_CONVERSAO_COTA_RESGATE and QT_DIA_CAREN mapped by name to the same meanings; the row with no subclass, else the newest). Values are as filed, never rescaled; NULL is not filed, never zero. A fund in neither document (a FII, FIDC, FIP or FIAGRO, a closed fund) has every term NULL and the reason says so (Portuguese). More than 200 CNPJs RAISES 22023; the result is one row per input, at most one 1000-row page.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpjs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "required": [
+        "p_cnpjs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_instruments": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_instruments",
+    "description": "CRA, CRI and debenture codes from a statement (catalog v62). Per code (trimmed, upper-cased, a leading CRA-, CRI- or DEB- stripped; the hyphen is required, so CRA0260025T keeps its CRA): match_kind securit_cetip returns every series of cvm_securit_serie whose codigo_cetip is the code, at the code's newest data_referencia, one row per (numero_serie, classe) at its highest versao, with the series columns as filed and instrument_type as stored (cra_mensal, cri_mensal); a code can match several series. Else match_kind cda_ticker: the newest month the code appears in CDA block 4 (cvm_fi_cda_acoes, any tp_aplic) and that month's rows with tp_aplic Debêntures: cd_isin (the most common ISIN), issuer_code (ISIN characters 3-6, never a CNPJ), n_fundos (distinct holding funds), preco_marcacao_fundos (sum of market value over sum of quantity, 6 places: the funds' own marks, not a trade price) and cda_period (the newest CDA month may still be filling, so n_fundos can be low). A code held that month as something other than a debenture is no match, and the reason says what it was held as. Else one row with match_kind NULL and the reason in words (Portuguese). Nothing is inferred from a code's letters. More than 200 codes RAISES 22023; the result is at most one 1000-row page, refused above it, never trimmed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_codes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "required": [
+        "p_codes"
       ],
       "additionalProperties": false
     }

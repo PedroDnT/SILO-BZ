@@ -142,7 +142,10 @@ def test_row_cap_and_the_200_cnpj_refusal():
     assert "api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_movement')" in body
     assert "v_n > 200" in body and "To fix" in body and "ERRCODE = '22023'" in body
     assert "CASE WHEN p_fn IN ('portfolio_fees', 'portfolio_lookthrough', 'portfolio_movement')" not in SQL19  # sanity: shape below
-    assert "WHEN p_fn IN ('portfolio_fees', 'portfolio_lookthrough', 'portfolio_movement') THEN" in SQL19
+    assert re.search(
+        r"WHEN p_fn IN \('portfolio_fees', 'portfolio_lookthrough', 'portfolio_movement',\s*'portfolio_fund_terms'\) THEN",
+        SQL19,
+    )
 
 
 def test_columns_are_the_documented_ones_in_order():
