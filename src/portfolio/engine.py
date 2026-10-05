@@ -34,11 +34,12 @@ from src.portfolio.risks import compute_risks
 from src.portfolio.sector import compute_sector
 from src.portfolio.signals import compute_signals
 from src.portfolio.statement import Position, Statement
+from src.portfolio.tax import compute_tax
 from src.portfolio.terms import attach_to_identification, fetch_fund_terms
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.10"
+SCHEMA_VERSION = "1.11"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -168,6 +169,16 @@ ASSUMPTIONS = [
         ),
     },
     {
+        "id": "tax",
+        "text": (
+            "Taxa e imposto por posição (esquema 1.11): regras dos arquivos versionados em src/portfolio/rules/tax/, "
+            "copiadas da nota #611 com artigo e citação. A taxa paga por ano é a do bloco de taxas (taxa divulgada x valor "
+            "da posição), estimativa. O imposto em R$ é estimativa: alíquota de hoje x ganho de 12 meses do bloco de "
+            "retorno, só com a data de aplicação impressa no extrato; sem ela, a faixa de alíquotas e nenhum valor. Nenhuma "
+            "data é suposta; condições que o extrato não mostra ficam a conferir; nada é recomendação."
+        ),
+    },
+    {
         "id": "movement_class",
         "text": (
             "A classe do movimento é a do arquivo mais recente do Extrato da CVM, não a classe vigente na data do mês; o "
@@ -193,6 +204,7 @@ def _position_dict(p: Position, total: Decimal) -> dict[str, Any]:
         "data_posicao": iso(p.data_posicao),
         "vencimento": iso(p.vencimento),
         "taxa_texto": p.taxa_texto,
+        "data_aplicacao": iso(p.data_aplicacao),  # engine 1.11: as printed, never assumed
         "estrategia_corretora": p.estrategia_corretora,
         "classe_corretora": p.classe_corretora,
         "conta_ref": p.conta_ref,
@@ -330,6 +342,11 @@ def run_engine(
     doc = _insert_after(doc, "risks", "returns", returns)
     doc["section_status"]["returns"] = {"status": returns["status"], "reason": returns["reason"],
                                         "reason_codes": list(returns.get("reason_codes") or [])}
+    # engine 1.11: fee paid and tax per position; reads the fee and return blocks and makes no call
+    tax = compute_tax(lines, fees, returns, stmt.position_date)
+    doc = _insert_after(doc, "returns", "tax", tax)
+    doc["section_status"]["tax"] = {"status": tax["status"], "reason": tax["reason"],
+                                    "reason_codes": list(tax.get("reason_codes") or [])}
     doc["provenance"] = [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance]
     log.info("engine done: %d tool calls", len(client.provenance))
     return doc

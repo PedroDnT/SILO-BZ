@@ -1,0 +1,35 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+schema: silo.tax_rule/0.1
+instrument: cra
+label: CRA
+version: 1
+valid_from: "2006"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: l11033_art3_iv
+    act: Lei 11.033/2004
+    article: art. 3º, IV (redação da Lei 11.311/2006)
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm
+    accessed: "2026-10-05"
+    quote: "a remuneração produzida por Certificado de Depósito Agropecuário - CDA, Warrant Agropecuário - WA, Certificado de Direitos Creditórios do Agronegócio - CDCA, Letra de Crédito do Agronegócio - LCA e Certificado de Recebíveis do Agronegócio - CRA"
+ir:
+  events:
+    - event: redemption
+      primary: true
+      withheld_at_source: false
+      definitive: true
+      base: income
+      rate: { table: fixed, rate: 0.0 }
+      exempt: true
+      source: l11033_art3_iv
+  periodic: null
+  exemptions: []
+iof:
+  applies: false
+  rule: zero_rate
+engine_cannot_observe: []
+not_verified:
+  - "valid_from: a nota dá só o ano (2006, Lei 11.311)"

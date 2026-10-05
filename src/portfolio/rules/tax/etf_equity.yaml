@@ -1,0 +1,70 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+schema: silo.tax_rule/0.1
+instrument: etf_equity
+label: ETF de ações
+version: 1
+valid_from: "2024-01-01"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: l11033_art2
+    act: Lei 11.033/2004
+    article: art. 2º, I e II
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm
+    accessed: "2026-10-05"
+    quote: "I - 20% (vinte por cento), no caso de operação daytrade ; ... II - 15% (quinze por cento), nas demais hipóteses."
+  - id: pr2026_q707
+    act: Receita Federal, Perguntas e Respostas IRPF 2026
+    article: pergunta 707
+    url: https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/perguntas-e-respostas/dirpf/p-r-irpf-2026-v1-00-2026-04-23.pdf
+    accessed: "2026-10-05"
+    quote: "A isenção não se aplica, entre outras, às operações de day trade, às negociações de quotas dos fundos de investimento em índice de ações, aos resgates de quotas de fundos ou clubes de investimento em ações"
+  - id: l14754_art24
+    act: Lei 14.754/2023
+    article: art. 24
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm
+    accessed: "2026-10-05"
+    quote: "ficarão sujeitos à retenção na fonte do IRRF à alíquota de 15% (quinze por cento), na data da distribuição de rendimentos, da amortização ou do resgate de cotas."
+  - id: l14754_art26
+    act: Lei 14.754/2023
+    article: art. 26
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm
+    accessed: "2026-10-05"
+    quote: "Os rendimentos das aplicações nos FIPs, nos ETFs e nos FIDCs que não forem classificados como entidades de investimentos ficarão sujeitos à retenção na fonte do IRRF à alíquota de 15% (quinze por cento), nas datas previstas nos incisos I e II do caput do art. 17"
+ir:
+  events:
+    - event: sale
+      primary: true
+      withheld_at_source: false
+      definitive: true
+      base: net_gain_month
+      rate: { table: fixed, rate: 0.15 }
+      source: l11033_art2
+    - event: redemption_or_distribution
+      withheld_at_source: true
+      definitive: true
+      base: income
+      rate: { table: fixed, rate: 0.15 }
+      source: l14754_art24
+  periodic: conditional
+  periodic_source: l14754_art26
+  exemptions: []
+  no_exemption:
+    label: "sem a isenção de R$ 20.000 das ações"
+    source: pr2026_q707
+iof:
+  applies: false
+  rule: zero_rate
+engine_cannot_observe:
+  - id: entidade_de_investimento
+    text: "se o ETF é classificado como entidade de investimento: se não for, há come-cotas de 15% (Lei 14.754, art. 26)"
+    decides_rate: false
+  - id: etf_indice_de_acoes
+    text: "se o ETF segue um índice de ações: o ETF está na fita à vista da B3 (não é ETF de renda fixa), mas ETFs de outros índices não estão na nota #611"
+    decides_rate: false
+  - id: day_trade
+    text: "operação de day trade: 20% (Lei 11.033, art. 2º, I)"
+    decides_rate: false
+not_verified: []

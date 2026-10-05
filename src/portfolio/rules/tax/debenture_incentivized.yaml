@@ -1,0 +1,52 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+schema: silo.tax_rule/0.1
+instrument: debenture_incentivized
+label: debênture incentivada (Lei 12.431)
+version: 1
+valid_from: "2011"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: l12431_art2
+    act: Lei 12.431/2011
+    article: art. 2º, I (redação da Lei 13.043/2014)
+    url: https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12431.htm
+    accessed: "2026-10-05"
+    quote: "I - 0% (zero por cento), quando auferidos por pessoa física"
+  - id: l12431_art2_p1
+    act: Lei 12.431/2011
+    article: art. 2º §1º
+    url: https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12431.htm
+    accessed: "2026-10-05"
+    quote: "emitidos entre a data da publicação da regulamentação mencionada no § 2º do art. 1º e 31 de dezembro de 2030."
+ir:
+  events:
+    - event: redemption
+      primary: true
+      withheld_at_source: true
+      definitive: true
+      base: income
+      rate: { table: fixed, rate: 0.0 }
+      exempt: true
+      source: l12431_art2
+  periodic: null
+  exemptions:
+    - applies_to: redemption
+      condition: issued_up_to
+      value: "2030-12-31"
+      source: l12431_art2_p1
+iof:
+  applies: false
+  rule: zero_rate
+engine_cannot_observe:
+  - id: debenture_lei_12431
+    text: "se a debênture é incentivada (Lei 12.431, art. 2º) ou comum (inclusive a de infraestrutura da Lei 14.801): a escritura ou o prospecto dizem qual"
+    decides_rate: true
+  - id: data_emissao
+    text: "data de emissão do ativo: a alíquota zero vale só para emissões até 2030-12-31"
+    decides_rate: true
+not_verified:
+  - "condições do art. 1º §1º-B e §1º-C e o ato ministerial de projeto prioritário não foram lidos (nota #611, seção 6)"
+  - "valid_from: a nota dá só o ano (2011)"

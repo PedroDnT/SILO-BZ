@@ -30,6 +30,7 @@ position.
 | `data_posicao`                 | yes      | `YYYY-MM-DD` or `DD/MM/YYYY`, or a date cell                                                                                               |
 | `vencimento`                   | no       | the maturity as printed, same formats as `data_posicao`; feeds the maturity ladder. A value that is not a date makes the row unreadable     |
 | `taxa`                         | no       | the rate exactly as printed (`CDI + 1,80%`, `105,00% do CDI`, `IPCA + 8,74%`, `15,41% a.a.`), kept as text; read only by the indexer rules |
+| `data_aplicacao`               | no       | the application date as printed, same formats as `data_posicao` (engine 1.11); the tax block's holding period; never assumed when blank, and a value that is not a date makes the row unreadable |
 
 Numbers are numeric cells, or text as `1.234,56` or `1234.56`.
 

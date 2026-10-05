@@ -1,0 +1,35 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+schema: silo.tax_rule/0.1
+instrument: lci
+label: LCI
+version: 1
+valid_from: "2005-01-01"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: l11033_art3_ii
+    act: Lei 11.033/2004
+    article: art. 3º, II
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm
+    accessed: "2026-10-05"
+    quote: "na fonte e na declaração de ajuste anual das pessoas físicas, a remuneração produzida por letras hipotecárias, certificados de recebíveis imobiliários e letras de crédito imobiliário"
+ir:
+  events:
+    - event: redemption
+      primary: true
+      withheld_at_source: false
+      definitive: true
+      base: income
+      rate: { table: fixed, rate: 0.0 }
+      exempt: true
+      source: l11033_art3_ii
+  periodic: null
+  exemptions: []
+iof:
+  applies: true
+  rule: iof_30_day_table
+engine_cannot_observe: []
+not_verified:
+  - "IOF: a LCI não está na lista de alíquota zero do art. 32 §2º, então a tabela de 30 dias se aplica pelo texto; um prazo mínimo do CMN que torne isso irrelevante não foi verificado (nota #611, seção 6)"

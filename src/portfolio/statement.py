@@ -40,6 +40,8 @@ POSITION_COLUMNS = (
     # optional (engine 1.7): the maturity and the rate exactly as the statement prints them
     "vencimento",
     "taxa",
+    # optional (engine 1.11): the application date as the statement prints it; the tax block's holding period
+    "data_aplicacao",
 )
 REQUIRED_COLUMNS = ("linha_extrato", "tipo", "valor", "data_posicao")
 HOLDER_KEYS = ("titular", "cpf", "conta")
@@ -143,6 +145,9 @@ class Position:
     codigo_conferido: bool | None = None
     taxa_conferida: bool | None = None
     ajustes_ocr: tuple[str, ...] = ()
+    # engine 1.11: the application (purchase) date exactly as the statement prints it, from the spreadsheet's
+    # optional column 'data_aplicacao'. None when not printed: the tax block never assumes one.
+    data_aplicacao: dt.date | None = None
 
 
 @dataclass(frozen=True)
@@ -400,6 +405,11 @@ def _parse_body(
         except ValueError:
             vencimento = None
             problems.append("vencimento is not a date")
+        try:
+            data_aplicacao = parse_date(cell(row, "data_aplicacao"))
+        except ValueError:
+            data_aplicacao = None
+            problems.append("data_aplicacao is not a date")
         if problems:
             unreadable.append(UnreadableRow(source_row, "; ".join(problems)))
             continue
@@ -417,6 +427,7 @@ def _parse_body(
                 data_posicao=data,
                 vencimento=vencimento,
                 taxa_texto=_text(cell(row, "taxa")),
+                data_aplicacao=data_aplicacao,
             )
         )
 

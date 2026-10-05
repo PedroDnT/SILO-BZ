@@ -83,6 +83,17 @@ REASON_TEXT = {
     "retorno_total_nulo": "retorno total sem valor no fechamento usado; sem recurso à variação de preço",
     "sem_taxa_utilizavel": "sem taxa de administração única divulgada utilizável: retorno bruto, taxa por ponto e perda de Sharpe não calculados",
     "taxa_nao_aplicavel": "ação: sem taxa de administração; retorno bruto e taxa por ponto não se aplicam",
+    # engine 1.11: fee paid and tax per position (tax.py)
+    "imposto_sem_regra": "tipo de linha sem regra de imposto na nota #611 (Tesouro Direto, FIDC, FIP ou outro); a conferir",
+    "imposto_linhas_sem_regra": "há linhas sem regra de imposto; cada linha informa o motivo",
+    "data_aplicacao_nao_informada": "data de aplicação não informada no extrato: faixa de alíquotas, sem valor em R$",
+    "aliquota_depende_de_condicao": "a alíquota depende de condição que o extrato não mostra; a conferir, sem valor em R$",
+    "mais_de_uma_regra": "mais de uma regra de imposto possível para a linha; a conferir, sem valor em R$",
+    "ganho_12m_indisponivel": "sem retorno de 12 meses avaliado: imposto em R$ não estimado",
+    "aplicacao_dentro_da_janela": "aplicação depois do início da janela de 12 meses: imposto em R$ não estimado",
+    "ganho_12m_nao_positivo": "ganho de 12 meses não positivo: nenhum imposto estimado",
+    "previdencia_sem_estimativa": "previdência: regime não informado; os dois regimes são mostrados, sem valor em R$",
+    "isento_sem_imposto": "isento de imposto de renda",
     # identification, per line
     "cnpj_extrato": "CNPJ do extrato; nome não conferido",
     "sem_candidato": "nome e CNPJ sem correspondência nos dados do SILO",
