@@ -8,6 +8,11 @@ verdict (each row carries ``screen`` and ``params``).
   it is called twice, pinned: ``p_dormancy='empty_shell'`` (every empty shell)
   and ``p_min_nav=1e9`` (parked funds above R$1bn only). A parked fund below
   R$1bn is NOT covered; the output says so.
+* ``screen_delinquency_drivers`` refuses with defaults too (above 1000 rows on
+  2026-10-05), so it is called once per worsening driver, pinned:
+  ``consistent_worsening`` (304 rows) and ``value_up_rate_masked`` (78). The
+  ``improvement``, ``stable`` and ``denominator_only`` drivers are not a risk
+  signal and are not asked.
 * ``screen_overdue_securit`` (rows keyed by securitizer) and
   ``screen_dormant_trend`` (an industry series) carry no fund CNPJ and are not
   matched.
@@ -25,11 +30,12 @@ from src.portfolio.client import SiloClient
 from src.portfolio.common import STATUS_NOT_APPLICABLE, Section, call_tool
 from src.portfolio.identify import LineId
 
+DELINQUENCY_DRIVERS = ("consistent_worsening", "value_up_rate_masked")
+
 CNPJ_SCREENS = (
     "screen_zombie_growth",
     "screen_captive_vehicles",
     "screen_evergreen_aging",
-    "screen_delinquency_drivers",
     "screen_restatements",
     "screen_late_filers",
     "screen_silent_filers",
@@ -86,6 +92,8 @@ def compute_signals(lines: list[LineId], client: SiloClient) -> dict[str, Any]:
 
     for tool in CNPJ_SCREENS:
         run(tool, tool, {})
+    for driver in DELINQUENCY_DRIVERS:
+        run(f"screen_delinquency_drivers[{driver}]", "screen_delinquency_drivers", {"p_driver": driver})
     for label, extra in DORMANT_CALLS:
         run(f"screen_dormant_funds[{label}]", "screen_dormant_funds", {"p_lookback_months": 3, **extra})
     for tool, why in NOT_MATCHABLE.items():

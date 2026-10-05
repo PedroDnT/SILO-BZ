@@ -75,7 +75,7 @@ def _identity_key(p: Position) -> tuple | None:
     return None
 
 
-FUND_TIPOS_BY_NAME = ("fundo", "FIDC", "FII", "ETF")
+FUND_TIPOS_BY_NAME = ("fundo", "FIDC", "FII", "ETF", "FIP")
 
 
 def merge_same_identity(stmt: Statement) -> tuple[Statement, int]:

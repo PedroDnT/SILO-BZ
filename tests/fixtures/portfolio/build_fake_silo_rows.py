@@ -331,10 +331,10 @@ canned["fund_restatement_diff"] = [
 canned["screen_zombie_growth"] = [dict(match={}, rows=[dict(cnpj="00000000000191", fund_name="FUNDO ESTRANHO A", period="2026-08-01", nav_mm=12.5, delinquency_pct=31.2, screen="zombie_growth", params={"p_min_delinq_pct": 5, "p_min_aum": 1000000})])]
 canned["screen_captive_vehicles"] = [dict(match={}, rows=[dict(cnpj="00000000000272", fund_name="FUNDO ESTRANHO B", latest_period="2026-08-01", max_nav_mm=80.0, min_quotaholders=1, screen="captive_vehicles", params={"p_lookback_months": 3})])]
 canned["screen_evergreen_aging"] = [dict(match={}, rows=[])]
-canned["screen_delinquency_drivers"] = [dict(match={}, rows=[
+canned["screen_delinquency_drivers"] = [dict(match={"p_driver": "value_up_rate_masked"}, rows=[]), dict(match={"p_driver": "consistent_worsening"}, rows=[
     dict(cnpj="32113885000121", fund_name="MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS", status="complete", window_from="2025-09-01", window_to="2026-08-01", n_months=12, months_missing=0,
          first_month="2025-09-01", last_month="2026-08-01", delinquency_start=0.0, delinquency_end=255281411.73, delta_brl=255281411.73, nav_start=506043487.89, nav_end=96794048.98,
-         delta_nav=-409249438.91, rate_start=0.0, rate_end=263.7, delta_pp=263.7, stopped_reporting=False, driver="delinquency_up", screen="delinquency_drivers", params={"p_months": 12})])]
+         delta_nav=-409249438.91, rate_start=0.0, rate_end=263.7, delta_pp=263.7, stopped_reporting=False, driver="consistent_worsening", screen="delinquency_drivers", params={"p_months": 12, "p_driver": "consistent_worsening"})])]
 canned["screen_restatements"] = [dict(match={}, rows=[
     dict(cnpj="32113885000121", tipo_fundo="FIDC", fund_name="MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS", window_from="2025-09-01", window_to="2026-08-01", documents=12,
          restatements=3, restatements_re=3, restatements_rc=0, restatement_pct=25.0, last_restated_at="2026-08-21 13:04:00", screen="restatements", params={"p_months": 12, "p_min_restatements": 3, "p_min_rate_pct": 20})])]
@@ -344,6 +344,45 @@ canned["screen_dormant_funds"] = [
     dict(match={"p_dormancy": "empty_shell"}, rows=[dict(cnpj="00000000000353", fund_name="FUNDO ESTRANHO C", administrator="ADM X", window_from="2026-05-01", window_to="2026-07-01", months_observed=3, max_quotaholders=0, last_nav=1000.0, dormancy="empty_shell", screen="dormant_funds", params={"p_dormancy": "empty_shell"})]),
     dict(match={"p_min_nav": 1000000000}, rows=[dict(cnpj="00000000000434", fund_name="FUNDO ESTRANHO D", administrator="ADM Y", window_from="2026-05-01", window_to="2026-07-01", months_observed=3, max_quotaholders=5, last_nav=2.5e9, dormancy="parked", screen="dormant_funds", params={"p_min_nav": 1000000000})]),
 ]
+
+# --- engine 1.9: direct credit by its registry code (api.portfolio_instruments), synthetic. One call for the demo's CRA and
+# debênture, the codes as the statement prints them (the API strips the CRA-/CRI-/DEB- prefix). The CRA's single series
+# matures on another date than the statement prints (vencimento_diverge); the debênture's funds' mark is below the
+# statement's price (different dates). The ISIN's issuer code (ENEV) is one the XP master holds in block 6.
+def inst(line_no, input_code, code, kind, **kw):
+    base = dict(line_no=line_no, input_code=input_code, code=code, match_kind=kind, instrument_type=None, cnpj_securit=None,
+                numero_serie=None, classe=None, data_vencimento=None, situacao=None, taxa_juros=None, classificacao_risco_atual=None,
+                valor_total_integralizado=None, data_referencia=None, cd_isin=None, issuer_code=None, n_fundos=None,
+                preco_marcacao_fundos=None, cda_period=None, reason=None)
+    base.update(kw)
+    return base
+
+
+canned["portfolio_instruments"] = [dict(match={"p_codes": ["CRA-0260000X", "DEB-EXEM12"]}, rows=[
+    inst(1, "CRA-0260000X", "0260000X", "securit_cetip", instrument_type="cra_mensal", cnpj_securit="90000000000500", numero_serie="1",
+         classe="Sênior", data_vencimento="2032-04-15", situacao="Adimplente", taxa_juros="IPCA+ 8,7400% a.a", classificacao_risco_atual="brAA (sf)",
+         valor_total_integralizado=250000000.0, data_referencia="2026-08-31", reason="exact CETIP code in cvm_securit_serie (synthetic)"),
+    inst(2, "DEB-EXEM12", "EXEM12", "cda_ticker", instrument_type="debenture", cd_isin="BRENEVDBS0Z1", issuer_code="ENEV", n_fundos=14,
+         preco_marcacao_fundos=53571.43, cda_period="2026-05-01", reason="cd_ativo in CDA block 4, funds' weighted mark (synthetic)"),
+])]
+
+# --- engine 1.9: managers and redemption terms (api.portfolio_fund_terms), synthetic: one row per fund CNPJ, in line order.
+def terms(line_no, cnpj, gid, gname, src=None, asof=None, conv=None, pagto=None, tp=None, lock=None, reason=None):
+    return dict(line_no=line_no, input_cnpj=cnpj, cnpj=cnpj, gestor_id=gid, gestor_name=gname, admin_cnpj="90000000000900",
+                admin_name="ADMINISTRADORA EXEMPLO", terms_source=src, terms_dt_comptc=asof, qt_dia_conversao_cota=conv,
+                qt_dia_pagto_resgate=pagto, tp_dia_pagto_resgate=tp, qt_dia_resgate_cotas=lock, reason=reason)
+
+
+TERMS_CNPJS = ["08935128000159", "50088190000119", "51488342000133", "32113885000121", "42592315000115", "11728688000147"]
+NO_TERMS = "no redemption terms in the Extrato or the lâmina: NULL is not filed, never zero (closed-end funds file none)"
+canned["portfolio_fund_terms"] = [dict(match={"p_cnpjs": TERMS_CNPJS}, rows=[
+    terms(1, TERMS_CNPJS[0], "90000000000101", "GESTORA EXEMPLO ALFA", "extrato", "2026-07-31", 30, 32, "DIAS ÚTEIS", 0),
+    terms(2, TERMS_CNPJS[1], "90000000000202", "GESTORA EXEMPLO BETA", "extrato", "2026-06-30", 0, 1, "DIAS ÚTEIS", 0),
+    terms(3, TERMS_CNPJS[2], "90000000000202", "GESTORA EXEMPLO BETA", "extrato", "2026-06-30", 0, 0, "DIAS ÚTEIS", 0),
+    terms(4, TERMS_CNPJS[3], "90000000000303", "GESTORA EXEMPLO GAMA", reason=NO_TERMS),
+    terms(5, TERMS_CNPJS[4], "90000000000404", "GESTORA EXEMPLO DELTA", "lamina", "2024-03-31", 0, 0, "DIAS CORRIDOS", None),
+    terms(6, TERMS_CNPJS[5], "90000000000505", "GESTORA EXEMPLO EPSILON", reason=NO_TERMS),
+])]
 
 canned = {"_note": "Synthetic canned rows for FakeClient. Shapes follow the silo-mcp contract; values are modelled on production measurements of 2026-10-03 (CDA 2026-05) but "
                    "names marked FIF / EXEMPLO / ESTRANHO, aggregate 'linha agregada sintética' LFT rows, fee, sector and screen rows are invented. Never read as data."} | canned

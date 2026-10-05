@@ -25,6 +25,7 @@ SHARED_GROUPS_SHOWN = 12
 SOURCE_BY_TOOL = {
     "lookup": "CVM", "company_financials": "CVM", "portfolio_resolve": "CVM", "portfolio_fees": "CVM",
     "portfolio_lookthrough": "CVM", "portfolio_movement": "CVM", "fidc_portfolio": "CVM", "quote_latest": "B3", "short_interest": "B3",
+    "portfolio_instruments": "CVM", "portfolio_fund_terms": "CVM",
     "fund_restatements": "FNET", "fund_restatement_diff": "FNET", "screen_restatements": "FNET",
     "screen_late_filers": "FNET",
 }
@@ -48,8 +49,16 @@ SECTION_TITLES_PT = {
     "identification": "Identificação", "fees": "Taxas", "lookthrough": "Look-through (carteira dos fundos)",
     "indexer": "Indexador", "sector": "Setor", "restatements": "Reapresentações", "risk_screens": "Telas de risco",
     "abnormal_movement": "Movimento incomum", "concentration": "Concentração", "allocation": "Alocação por classe",
-    "risks": "Principais riscos",
+    "risks": "Principais riscos", "liquidity": "Liquidez",
 }
+# engine 1.9: what the identification table marks on a line, from the position's own flags and the credit match
+BADGES = (
+    ("ocr", "lido por OCR"),
+    ("codigo_nao_conferido", "código não conferido"),
+    ("taxa_nao_conferida", "taxa não conferida"),
+    ("vencimento_diverge", "vencimento diverge do registro CVM"),
+)
+BADGE_LABEL = dict(BADGES)
 
 
 def reason_text(code: str | None) -> str:
@@ -78,7 +87,7 @@ def _asset_type(pos: dict, ident: dict) -> str:
         return "caixa"
     if tipo == "FIDC":
         return "fidc"
-    if tipo in ("FII", "ETF"):
+    if tipo in ("FII", "ETF", "FIP"):
         return tipo.lower()
     if tipo == "ação" or asset_class == "equity":
         return "acao"
@@ -106,6 +115,8 @@ def _line_view(pos: dict, ident: dict) -> dict:
         method = "linha_do_extrato"
     elif identity.get("kind") == "ticker":
         method = "ticker"
+    elif identity.get("kind") == "credito":
+        method = (ident.get("credit_match") or {}).get("match_kind") or "codigo_registro"
     else:
         method = chosen.get("match_kind") or ("nome_abreviado_desempate_por_cota" if tiebreak else None)
     code = ident.get("reason_code")
@@ -144,6 +155,7 @@ def _line_view(pos: dict, ident: dict) -> dict:
         "vencimento": pos.get("vencimento"),
         "taxa_texto": pos.get("taxa_texto"),
         "n_source_lines": len(pos.get("contas") or []) or 1,
+        "badges": _badges(pos, ident),
         "identification": ident_view,
         "provenance": _prov(
             (ident.get("valuation") or {}).get("sources"),
@@ -151,6 +163,109 @@ def _line_view(pos: dict, ident: dict) -> dict:
             ((ident.get("ticker_match") or {}).get("lookup") or {}).get("sources"),
             ((ident.get("ticker_match") or {}).get("reference_quote") or {}).get("sources"),
         ),
+    }
+
+
+def _badges(pos: dict, ident: dict) -> list[dict]:
+    """Engine 1.9: the marks of the identification table, from flags the engine already carries (fixed labels)."""
+    codes = []
+    if pos.get("fonte_texto") == "ocr":
+        codes.append("ocr")
+    if pos.get("codigo_conferido") is False:
+        codes.append("codigo_nao_conferido")
+    if pos.get("taxa_conferida") is False:
+        codes.append("taxa_nao_conferida")
+    if any(f.get("code") == "vencimento_diverge" for f in (ident.get("credit_match") or {}).get("flags") or []):
+        codes.append("vencimento_diverge")
+    return [{"code": c, "label": BADGE_LABEL[c]} for c in codes]
+
+
+def _credit_view(eng: dict) -> dict | None:
+    """Engine 1.9: the CRA, CRI and debênture lines sent to the registry, with the statement's facts beside the
+    registry's, copied (the price gap is the engine's ``price_gap_pct``). None for an older document."""
+    positions = {p["line_no"]: p for p in eng["statement"]["positions"]}
+    rows = []
+    for ln in eng["identification"].get("lines") or []:
+        cm = ln.get("credit_match")
+        if not isinstance(cm, dict):
+            continue
+        st = cm.get("statement") or {}
+        pos = positions.get(ln["line_no"]) or {}
+        rows.append({
+            "line_id": f"L{ln['line_no']}",
+            "tipo": ln.get("tipo"),
+            "input_code": cm.get("input_code"),
+            "code": cm.get("code"),
+            "matched": cm.get("matched"),
+            "status_label": "encontrado" if cm.get("matched") else "não encontrado no SILO",
+            "not_found_reason": None if cm.get("matched") else reason_text(cm.get("reason_code")),
+            "issuer_as_printed": st.get("issuer_as_printed"),
+            "cnpj_securit": cm.get("cnpj_securit"),
+            "numero_serie": cm.get("numero_serie"),
+            "classe": cm.get("classe"),
+            "n_series": cm.get("n_series"),
+            "statement_vencimento": st.get("vencimento"),
+            "registry_vencimento": cm.get("data_vencimento"),
+            "statement_taxa": st.get("taxa_texto"),
+            "registry_taxa": cm.get("taxa_juros"),
+            "situacao": cm.get("situacao"),
+            "rating": cm.get("classificacao_risco_atual"),
+            "registry_as_of": cm.get("data_referencia"),
+            "statement_preco_brl": st.get("preco_brl"),
+            "statement_date": st.get("data_posicao"),
+            "fund_mark_brl": cm.get("preco_marcacao_fundos_brl"),
+            "fund_mark_period": cm.get("cda_period"),
+            "fund_mark_cda": {"month": cm.get("cda_period")},  # printed as the CDA's month (values.py: key "month")
+            "n_fundos": cm.get("n_fundos"),
+            "price_gap_pct": cm.get("price_gap_pct"),
+            "price_gap_abs_pct": cm.get("price_gap_abs_pct"),
+            "price_gap_label": cm.get("price_gap_label"),
+            "value_brl": pos.get("valor_brl"),
+            "weight_pct": pos.get("portfolio_pct"),
+            "flags": [{"code": f.get("code"), "label": BADGE_LABEL.get(f.get("code"), reason_text(f.get("code")))}
+                      for f in cm.get("flags") or []],
+            "provenance": _prov(cm.get("sources")),
+        })
+    if not rows and not any("credit_match" in ln for ln in eng["identification"].get("lines") or []):
+        return None
+    return {
+        "label": "emissor como impresso no extrato; registro da CVM (CRA, CRI) e marcação dos fundos (CDA bloco 4, debêntures)",
+        "price_note": "preço do extrato e marcação média ponderada dos fundos em datas diferentes: informativo, não é veredito de preço",
+        "rate_note": ("a taxa do extrato é a que a corretora imprime para a posição; a do registro é a remuneração da série "
+                      "como arquivada na CVM: as duas podem diferir e nenhuma é corrigida"),
+        "lines": rows,
+    }
+
+
+def _liquidity_view(eng: dict) -> dict | None:
+    """Engine 1.9: the liquidity ladder, copied (every figure is the engine's), line numbers as ``L<n>``."""
+    lq = eng.get("liquidity")
+    if not isinstance(lq, dict):
+        return None
+    buckets = []
+    for b in lq.get("buckets") or []:
+        buckets.append({
+            "bucket_id": b.get("bucket_id"), "bucket": b.get("bucket"), "value_brl": b.get("value_brl"),
+            "weight_pct": b.get("portfolio_pct"), "line_ids": [f"L{n}" for n in b.get("line_nos") or []],
+            "lines": [{"line_id": f"L{x['line_no']}", "tipo": x.get("tipo"), "value_brl": x.get("value_brl"),
+                       "qt_dia_pagto_resgate": x.get("qt_dia_pagto_resgate"), "tp_dia_pagto_resgate": x.get("tp_dia_pagto_resgate"),
+                       "qt_dia_conversao_cota": x.get("qt_dia_conversao_cota"), "qt_dia_resgate_cotas": x.get("qt_dia_resgate_cotas"),
+                       "terms_source": x.get("terms_source"), "terms_dt_comptc": x.get("terms_dt_comptc"),
+                       "estrategia_corretora": x.get("estrategia_corretora"), "vencimento": x.get("vencimento"),
+                       "provenance": _prov(x.get("sources"))}
+                      for x in b.get("lines") or []],
+        })
+    return {
+        "status": lq.get("status"),
+        "reason": _codes_text(lq.get("reason_codes")) if lq.get("status") in ("partial", "unknown") else None,
+        "basis": lq.get("basis"),
+        "days_note": lq.get("days_note"),
+        "note": lq.get("note"),
+        "evaluated": lq.get("evaluated"),
+        "buckets": buckets,
+        "above_d30_parts": lq.get("above_d30_parts"),
+        "above_d30_total_brl": lq.get("above_d30_total_brl"),
+        "above_d30_total_pct": lq.get("above_d30_total_pct"),
     }
 
 
@@ -561,7 +676,7 @@ def _sections_view(eng: dict, lines: list[dict]) -> dict:
     ss = eng["section_status"]
     mapping = {"identification": "identification", "fees": "fees", "lookthrough": "look_through", "indexer": "indexer",
                "sector": "sector", "restatements": "restatements", "risk_screens": "risk_signals"}
-    for key in ("concentration", "allocation", "risks"):
+    for key in ("concentration", "allocation", "liquidity", "risks"):
         if key in ss:
             mapping[key] = key
     out: dict[str, Any] = {k: _section_entry(ss[v]) for k, v in mapping.items()}
@@ -620,10 +735,28 @@ def _concentration_view(eng: dict) -> dict | None:
                          "eligible_value_brl": g.get("eligible_value_brl"), "above_limit": g.get("above_limit"),
                          "excess_brl": g.get("excess_brl")} for g in fgc.get("issuers") or []],
         },
-        "manager": {"status": (c.get("manager") or {}).get("status"), "reason": reason_text((c.get("manager") or {}).get("reason_code"))},
+        "manager": _manager_view(c.get("manager") or {}),
         "fund_liquidity": {"status": (c.get("fund_liquidity") or {}).get("status"),
                            "reason": reason_text((c.get("fund_liquidity") or {}).get("reason_code"))},
     }
+
+
+def _manager_view(m: dict) -> dict:
+    """Engine 1.9: the fund value by manager (``gestor_id``, the filed value), copied; 1.8 had only a status."""
+    out = {"status": m.get("status"), "reason": reason_text(m.get("reason_code")) if m.get("reason_code") else None}
+    if "groups" not in m:
+        out["reason"] = reason_text(m.get("reason_code"))
+        return out
+    out.update({
+        "label": m.get("label"), "basis": m.get("basis"),
+        "fund_value_brl": m.get("fund_value_brl"), "fund_value_weight_pct": m.get("fund_value_portfolio_pct"),
+        "groups": [{"gestor_id": g.get("gestor_id"), "gestor_name": g.get("gestor_name"), "line_ids": [f"L{n}" for n in g.get("line_nos") or []],
+                    "value_brl": g.get("value_brl"), "weight_pct": g.get("portfolio_pct"), "share_of_funds_pct": g.get("fund_value_pct"),
+                    "provenance": _prov(g.get("sources"))} for g in m.get("groups") or []],
+        "without_gestor_line_ids": [f"L{n}" for n in m.get("without_gestor_line_nos") or []],
+        "without_gestor_value_brl": m.get("without_gestor_value_brl"),
+    })
+    return out
 
 
 def _gaps_view(eng: dict, sections: dict, fees: dict, risk: dict, movement: dict | None) -> list[dict]:
@@ -661,7 +794,7 @@ def _gaps_view(eng: dict, sections: dict, fees: dict, risk: dict, movement: dict
     if movement and (movement.get("counts") or {}).get("nao_avaliado"):
         add("Movimento incomum", reason_text("fundos_nao_avaliados"),
             [x["line_id"] for x in movement.get("not_evaluated") or []])
-    for key in ("fees", "lookthrough", "restatements", "risk_screens", "abnormal_movement", "concentration"):
+    for key in ("fees", "lookthrough", "restatements", "risk_screens", "abnormal_movement", "concentration", "liquidity"):
         sec = sections.get(key) or {}
         if key == "risk_screens" and failed_screens:
             continue  # the screens that did not run are a line above
@@ -679,7 +812,7 @@ def _gaps_view(eng: dict, sections: dict, fees: dict, risk: dict, movement: dict
 
 COVERED_ABOVE = ("sem_taxa_divulgada", "taxa_a_conferir", "fundos_nao_avaliados", "linhas_nao_identificadas",
                  "riscos_nao_avaliados")
-FUND_ASSET_TYPES = ("fundo", "fidc", "fii", "etf", "cota_listada")
+FUND_ASSET_TYPES = ("fundo", "fidc", "fii", "fip", "etf", "cota_listada")
 
 
 def _chart_and_risk_gaps(eng: dict, view: dict) -> list[dict]:
@@ -704,6 +837,10 @@ def _chart_and_risk_gaps(eng: dict, view: dict) -> list[dict]:
     by_line = (view.get("fees") or {}).get("by_line") or []
     if by_line and not any(b.get("disclosed_brl_year") is not None for b in by_line):
         add("Gráfico do custo em taxas", reason_text("sem_taxa_em_reais"))
+    # engine 1.9: the manager chart and the liquidity ladder
+    m = c.get("manager") or {}
+    if fund_lines and "groups" in m and not m.get("groups"):
+        add("Gráfico por gestora", reason_text("sem_gestor"), fund_lines)
     return out
 EXTRA_GAP_TITLES = {
     "material_restatement": "Materialidade das reapresentações",
@@ -804,6 +941,12 @@ def to_view(eng: dict) -> dict:
     risks = _risks_view(eng)
     if risks is not None:
         view["risks"] = risks
+    credit = _credit_view(eng)
+    if credit is not None:
+        view["credit"] = credit
+    liquidity = _liquidity_view(eng)
+    if liquidity is not None:
+        view["liquidity"] = liquidity
     view["gaps"] = _gaps_view(eng, view["sections"], view["fees"], view["risk_screens"], movement)
     view["gaps"] += _chart_and_risk_gaps(eng, view)
     return view

@@ -49,7 +49,7 @@ SOURCE_LABELS = {
 ASSET_LABELS = {
     "titulo_publico": "título público", "acao": "ação", "fundo": "fundo", "fidc": "FIDC",
     "fii": "FII", "etf": "ETF", "desconhecido": "não identificado", "caixa": "conta corrente",
-    "cota_listada": "cota de fundo listada", "credito_privado": "crédito privado direto",
+    "cota_listada": "cota de fundo listada", "credito_privado": "crédito privado direto", "fip": "FIP",
 }
 SECTION_STATUS_LABELS = {"complete": "avaliada", "partial": "avaliada em parte", "unknown": "não avaliada"}
 
@@ -80,6 +80,12 @@ class Narrative:
     cost_usd: float = 0.0
     cost_cap_usd: float = 0.0
 
+
+
+# engine 1.9 liquidity table: where the filed terms came from, and the broker label kept only for a pension wrapper
+TERMS_SOURCE_LABEL = {"extrato": "Extrato da CVM", "lamina": "lâmina"}
+PREV_WRAPPER = re.compile(r"previd|pgbl|vgbl", re.I)
+RATING_NOT_FILED = ("0", "-", "—")
 
 def signature(cli_value: str | None = None) -> str:
     return cli_value or os.environ.get(SIGNATURE_ENV) or DEFAULT_SIGNATURE
@@ -166,6 +172,8 @@ def _ident_section(engine: dict) -> str:
         if facts:
             note += f"<br><span class=cit>{' · '.join(facts)}</span>"
         tag = "unk" if status != "identified" else ""
+        badges = "".join(f' <span class="tag unk">{v(engine, f"{p}.badges[{j}].label")}</span>'
+                         for j in range(len(ln.get("badges") or [])))
         rows.append([
             v(engine, f"{p}.line_id"),
             v(engine, f"{p}.instrument") + (f"<br><span class=cit>{v(engine, f'{p}.fund_name')}</span>" if ln.get("fund_name") else ""),
@@ -173,7 +181,7 @@ def _ident_section(engine: dict) -> str:
             code,
             v(engine, f"{p}.value_brl"),
             v(engine, f"{p}.weight_pct"),
-            f'<span class="tag {tag}">{e(STATUS_LABELS.get(status, status))}</span>{note}',
+            f'<span class="tag {tag}">{e(STATUS_LABELS.get(status, status))}</span>{badges}{note}',
         ])
     return _table(
         [("Linha", False), ("Ativo", False), ("Tipo", False), ("CNPJ / código", False),
@@ -447,9 +455,131 @@ def _concentration_section(engine: dict) -> str:
                            ("Limite", False)], rows))
     else:
         out.append("<p>Nenhum CDB, LCI ou LCA na carteira.</p>")
-    for key, title in (("manager", "Concentração por gestor"), ("fund_liquidity", "Liquidez dos fundos")):
-        if (c.get(key) or {}).get("status") not in (None, "complete"):
-            out.append(f'<p><span class="tag unk">{e(title)}: não avaliada</span> {v(engine, f"concentration.{key}.reason")}.</p>')
+    out.append(_manager_html(engine))
+    if not engine.get("liquidity") and (c.get("fund_liquidity") or {}).get("status") not in (None, "complete"):
+        out.append(f'<p><span class="tag unk">Liquidez dos fundos: não avaliada</span> {v(engine, "concentration.fund_liquidity.reason")}.</p>')
+    return "\n".join(out)
+
+
+def _manager_html(engine: dict) -> str:
+    """Engine 1.9: fund value by manager (the filed gestor_id), with the chart; a 1.8 document says "não avaliada"."""
+    m = (engine.get("concentration") or {}).get("manager") or {}
+    if not m:
+        return ""
+    if "groups" not in m:
+        if m.get("status") not in (None, "complete"):
+            return f'<p><span class="tag unk">Concentração por gestor: não avaliada</span> {v(engine, "concentration.manager.reason")}.</p>'
+        return ""
+    out = ["<h3>Concentração por gestora</h3>"]
+    if m.get("groups"):
+        out.append(f"<p class=cit>{_cap(v(engine, 'concentration.manager.label'))}. Valor em fundos com CNPJ: "
+                   f"{v(engine, 'concentration.manager.fund_value_brl')} ({v(engine, 'concentration.manager.fund_value_weight_pct')}).</p>")
+        rows = []
+        for i, g in enumerate(m["groups"]):
+            q = f"concentration.manager.groups[{i}]"
+            rows.append([v(engine, f"{q}.gestor_name"), v(engine, f"{q}.gestor_id"), e(", ".join(g.get("line_ids") or [])),
+                         v(engine, f"{q}.value_brl"), v(engine, f"{q}.weight_pct"), v(engine, f"{q}.share_of_funds_pct")])
+        out.append(_table([("Gestora (como arquivada)", False), ("Identificador arquivado", False), ("Linhas", False),
+                           ("Valor", True), ("Peso na carteira", True), ("Peso nos fundos", True)], rows))
+        out.append(charts.manager_chart(engine))
+    if m.get("without_gestor_line_ids"):
+        out.append(f'<p><span class="tag unk">sem gestor informado</span> Linhas: {e(", ".join(m["without_gestor_line_ids"]))}; '
+                   f'valor {v(engine, "concentration.manager.without_gestor_value_brl")}.</p>')
+    if m.get("status") in ("partial", "unknown") and m.get("reason"):
+        out.append(f'<p><span class="tag unk">{e(SECTION_STATUS_LABELS.get(m["status"], m["status"]))}</span> '
+                   f'{v(engine, "concentration.manager.reason")}.</p>')
+    return "\n".join(out)
+
+
+def _cap(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def _credit_section(engine: dict) -> str:
+    """Engine 1.9: CRA, CRI and debêntures held directly, the statement beside the CVM registry and the funds' mark."""
+    cr = engine.get("credit") or {}
+    rows = []
+
+    def pair(q: str, a: str, b: str, b_label: str = "registro") -> str:
+        return (f"<span class=cit>extrato:</span> {v(engine, f'{q}.{a}')}<br>"
+                f"<span class=cit>{b_label}:</span> {v(engine, f'{q}.{b}')}")
+
+    for i, x in enumerate(cr.get("lines") or []):
+        q = f"credit.lines[{i}]"
+        code = v(engine, f"{q}.input_code")
+        if not x.get("matched"):
+            rows.append([v(engine, f"{q}.line_id"), code, v(engine, f"{q}.issuer_as_printed"),
+                         f'<span class="tag unk">{v(engine, f"{q}.status_label")}</span><br><span class=cit>{v(engine, f"{q}.not_found_reason")}</span>',
+                         "—", "—", f"<span class=cit>extrato:</span> {v(engine, f'{q}.statement_preco_brl')}"])
+            continue
+        code += f"<br><span class=cit>registro: {v(engine, f'{q}.code')}</span>"
+        serie = " / ".join(t for t in (v(engine, f"{q}.numero_serie") if x.get("numero_serie") is not None else "",
+                                        v(engine, f"{q}.classe") if x.get("classe") else "") if t)
+        if serie:
+            code += f"<br><span class=cit>série: {serie}</span>"
+        if x.get("cnpj_securit"):
+            code += f"<br><span class=cit>securitizadora: {v(engine, f'{q}.cnpj_securit')}</span>"
+        code += "".join(f'<br><span class="tag unk">{v(engine, f"{q}.flags[{j}].label")}</span>' for j in range(len(x.get("flags") or [])))
+        rating = v(engine, f'{q}.rating')
+        if str(x.get("rating") or "").strip() in RATING_NOT_FILED:  # a filed "0" is no rating, shown as filed
+            rating = f"não informado (arquivado: {rating})"
+        situ = f"{v(engine, f'{q}.situacao')}<br><span class=cit>rating:</span> {rating}"
+        price = (f"<span class=cit>extrato ({v(engine, f'{q}.statement_date')}):</span> {v(engine, f'{q}.statement_preco_brl')}<br>"
+                 f"<span class=cit>fundos")
+        if x.get("fund_mark_brl") is not None:
+            price += (f" (CDA de {v(engine, f'{q}.fund_mark_cda.month')}"
+                      f"{', ' + v(engine, f'{q}.n_fundos') + ' fundos' if x.get('n_fundos') is not None else ''}):</span> "
+                      f"{v(engine, f'{q}.fund_mark_brl')}")
+            if x.get("price_gap_pct") is not None:
+                price += (f"<br><span class=cit>diferença {v(engine, f'{q}.price_gap_pct')}; "
+                          f"{v(engine, f'{q}.price_gap_label')}</span>")
+        else:
+            price += ":</span> —"
+        rows.append([v(engine, f"{q}.line_id"), code, v(engine, f"{q}.issuer_as_printed"),
+                     pair(q, "statement_vencimento", "registry_vencimento"), pair(q, "statement_taxa", "registry_taxa"),
+                     situ, price])
+    head = (f"<p class=cit>{_cap(v(engine, 'credit.label'))}. Vencimento, taxa e preço como informados no extrato, no registro "
+            f"da CVM e nas carteiras dos fundos. {_cap(v(engine, 'credit.price_note'))}. {_cap(v(engine, 'credit.rate_note'))}.</p>")
+    return head + _table([("Linha", False), ("Código, série e securitizadora", False), ("Emissor (como impresso)", False),
+                          ("Vencimento", False), ("Taxa", False), ("Situação e rating", False),
+                          ("Preço (extrato | marcação dos fundos)", False)], rows)
+
+
+def _liquidity_section(engine: dict) -> str:
+    """Engine 1.9: the liquidity ladder, every line in one bucket, with the filed redemption terms of each fund."""
+    lq = engine.get("liquidity") or {}
+    out = [f"<p class=cit>Base: {v(engine, 'liquidity.basis')}; {v(engine, 'liquidity.days_note')}. {v(engine, 'liquidity.note')}</p>"]
+    rows = []
+    for i, b in enumerate(lq.get("buckets") or []):
+        q = f"liquidity.buckets[{i}]"
+        terms = []
+        for j, x in enumerate(b.get("lines") or []):
+            lq_ = f"{q}.lines[{j}]"
+            if x.get("qt_dia_pagto_resgate") is None and x.get("qt_dia_resgate_cotas") is None:
+                continue
+            t = f"{v(engine, f'{lq_}.line_id')}: D+{v(engine, f'{lq_}.qt_dia_pagto_resgate')}"
+            if x.get("tp_dia_pagto_resgate"):
+                t += f" {v(engine, f'{lq_}.tp_dia_pagto_resgate').lower()}"
+            if x.get("qt_dia_resgate_cotas"):
+                t += f", carência {v(engine, f'{lq_}.qt_dia_resgate_cotas')} dias"
+            if x.get("terms_source"):
+                # "Extrato da CVM", never a bare "extrato": the reader holds the broker's extrato in the other hand
+                t += f" ({e(TERMS_SOURCE_LABEL.get(x['terms_source'], x['terms_source']))}"
+                t += f" de {v(engine, f'{lq_}.terms_dt_comptc')})" if x.get("terms_dt_comptc") else ")"
+            if PREV_WRAPPER.search(x.get("estrategia_corretora") or ""):
+                t += f" · {v(engine, f'{lq_}.estrategia_corretora')}"
+            terms.append(t)
+        rows.append([v(engine, f"{q}.bucket"), e(", ".join(b.get("line_ids") or [])) or "—",
+                     "<br>".join(f"<span class=cit>{t}</span>" for t in terms) or "—",
+                     v(engine, f"{q}.value_brl"), v(engine, f"{q}.weight_pct")])
+    out.append(_table([("Faixa", False), ("Linhas", False), ("Prazo como arquivado", False), ("Valor", True), ("Peso", True)], rows))
+    if lq.get("above_d30_total_pct") is not None:
+        out.append(f"<p>Acima de D+30 (fundos acima de D+30, com carência, sem prazo informado e crédito direto): "
+                   f"<span class=v>{v(engine, 'liquidity.above_d30_total_brl')}</span> "
+                   f"(<span class=v>{v(engine, 'liquidity.above_d30_total_pct')}</span> da carteira).</p>")
+    if lq.get("status") in ("partial", "unknown") and lq.get("reason"):
+        out.append(f'<p><span class="tag unk">{e(SECTION_STATUS_LABELS.get(lq["status"], lq["status"]))}</span> {v(engine, "liquidity.reason")}.</p>')
+    out.append(charts.liquidity_chart(engine))
     return "\n".join(out)
 
 
@@ -481,7 +611,13 @@ def _risks_section(engine: dict) -> str:
             if r.get("value_brl_detail") is not None:
                 lab = f"{v(engine, f'{q}.value_brl_detail_label')}: " if r.get("value_brl_detail_label") else ""
                 value += f"<br><span class=cit>{lab}{v(engine, f'{q}.value_brl_detail')}</span>"
-            if r.get("id") == "indexador":
+            if r.get("id") == "credito_preco_marcacao" and r.get("statement_preco_brl") is not None:
+                value += (f"<br><span class=cit>extrato {v(engine, f'{q}.statement_preco_brl')} ({v(engine, f'{q}.statement_date')}) | "
+                          f"fundos {v(engine, f'{q}.preco_marcacao_fundos_brl')} (CDA de {e(format_value({'month': resolve(engine, f'{q}.cda_period')}, 'month'))})</span>")
+            if r.get("id") == "credito_vencimento_diverge" and r.get("registry_vencimento"):
+                value += (f"<br><span class=cit>extrato {v(engine, f'{q}.statement_vencimento')} | "
+                          f"registro {v(engine, f'{q}.registry_vencimento')}</span>")
+            if r.get("id") in ("indexador", "liquidez"):
                 value += "<br><span class=cit>" + " · ".join(
                     f"{v(engine, f'{q}.parts[{j}].group')} {v(engine, f'{q}.parts[{j}].portfolio_pct')}"
                     for j, p in enumerate(r.get("parts") or [])
@@ -667,6 +803,7 @@ def _method_section(engine: dict, narrative: Narrative) -> str:
         "Grupo econômico não avaliado: não há fonte pública arquivada da estrutura de grupo, e o SILO não infere grupo por nome.",
         "Sem previsão de retorno e sem recomendação de compra, venda ou manutenção de qualquer ativo.",
         "Classificações por indexador e setor seguem regras versionadas; o que não tem regra aparece como \"sem classificação\".",
+        *_v19_method(engine),
         *_risk_method(engine),
         "Os gráficos são desenhados a partir dos mesmos campos das tabelas ao lado, que continuam sendo o registro preciso; "
         "um gráfico sem dado não é desenhado, e a seção do que não foi possível avaliar diz por quê.",
@@ -676,6 +813,24 @@ def _method_section(engine: dict, narrative: Narrative) -> str:
     # The Revisor's notes (what it removed and why) stay in the Narrative for the logs and the JSON; the client's
     # PDF does not carry them (engine 1.7).
     return "<ul>" + "".join(f"<li>{x}</li>" for x in lines) + "</ul>"
+
+
+def _v19_method(engine: dict) -> list[str]:
+    """Engine 1.9: how direct credit, the managers and the liquidity ladder are read (fixed texts)."""
+    out = []
+    if engine.get("credit"):
+        out.append("Crédito direto: CRA e CRI são procurados pelo código exato no registro da CVM; a série é a de vencimento "
+                   "igual ao do extrato, senão a única, senão a de menor número, marcada \"vencimento diverge do registro CVM\" "
+                   "(a conferir). Debêntures são procuradas pelo código nas carteiras dos fundos (CDA bloco 4); a marcação é a "
+                   "média ponderada dos fundos, em outra data, e a diferença para o preço do extrato é informativa, não um "
+                   "veredito de preço. Nada é procurado por semelhança de nome, e o emissor fica como impresso no extrato. "
+                   "Situação e rating aparecem como arquivados.")
+    if engine.get("liquidity"):
+        out.append("Gestora e liquidez: a gestora e os prazos de resgate são os arquivados no Extrato da CVM ou na lâmina. "
+                   "A concentração agrupa pelo identificador da gestora, nunca pelo nome. O prazo de pagamento do resgate é "
+                   "lido como arquivado (D+N), sem converter dias úteis e corridos; carência acima de zero é lock-up; um "
+                   "prazo não informado é \"fundo sem prazo de resgate informado\", nunca zero.")
+    return out
 
 
 def _risk_method(engine: dict) -> list[str]:
@@ -727,9 +882,12 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
         *([section("Quanto a carteira paga em taxas", _fee_headline_section(engine))]
           if (engine.get("fees") or {}).get("summary") else []),
         section("Identificação linha a linha", _ident_section(engine) + _findings_html(engine, narrative, "identificacao")),
+        *([section("Crédito direto no registro da CVM", _credit_section(engine))]
+          if (engine.get("credit") or {}).get("lines") else []),
         section("Custo em taxas", _fees_section(engine) + _findings_html(engine, narrative, "taxas")),
         section("Exposição", _exposure_section(engine) + _findings_html(engine, narrative, "exposicao")),
         *([section("Concentração e vencimentos", _concentration_section(engine))] if engine.get("concentration") else []),
+        *([section("Liquidez", _liquidity_section(engine))] if engine.get("liquidity") else []),
         section("Reapresentações", _restatements_section(engine) + _findings_html(engine, narrative, "reapresentacoes")),
         section("Sinais de risco", _risk_section(engine) + _findings_html(engine, narrative, "sinais_de_risco")),
         section("O que não foi possível avaliar", _unknowns_section(engine, narrative)),

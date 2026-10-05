@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.8",
+  "schema_version": "1.9",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -439,15 +439,15 @@
   },
   "identification": {
     "status": "partial",
-    "reason": "0 linha(s) ambígua(s) e 4 desconhecida(s).",
+    "reason": "0 linha(s) ambígua(s) e 2 desconhecida(s).",
     "errors": [],
     "reason_codes": [
       "linhas_nao_identificadas"
     ],
     "counts": {
-      "identified": 8,
+      "identified": 10,
       "ambiguous": 0,
-      "unknown": 4
+      "unknown": 2
     },
     "lines": [
       {
@@ -469,7 +469,8 @@
           "issuer_cnpj": null,
           "tesouro_title": "NTN-B",
           "tesouro_maturity": "2035-05-15",
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -482,6 +483,7 @@
         "fund_match": null,
         "ticker_match": null,
         "etf_match": null,
+        "credit_match": null,
         "valuation": {
           "value_brl": 412351.0,
           "basis": "statement",
@@ -497,7 +499,8 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": null
       },
       {
         "line_no": 2,
@@ -518,7 +521,8 @@
           "issuer_cnpj": "33000167000101",
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -588,6 +592,7 @@
           }
         },
         "etf_match": null,
+        "credit_match": null,
         "valuation": {
           "value_brl": 988000.0,
           "basis": "statement",
@@ -603,7 +608,8 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": null
       },
       {
         "line_no": 3,
@@ -624,7 +630,8 @@
           "issuer_cnpj": null,
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -699,6 +706,7 @@
         },
         "ticker_match": null,
         "etf_match": null,
+        "credit_match": null,
         "valuation": {
           "value_brl": 264615.0,
           "basis": "statement",
@@ -714,7 +722,38 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": {
+          "answered": true,
+          "gestor_id": "90000000000101",
+          "gestor_name": "GESTORA EXEMPLO ALFA",
+          "admin_cnpj": "90000000000900",
+          "admin_name": "ADMINISTRADORA EXEMPLO",
+          "terms_source": "extrato",
+          "terms_dt_comptc": "2026-07-31",
+          "qt_dia_conversao_cota": 30,
+          "qt_dia_pagto_resgate": 32,
+          "tp_dia_pagto_resgate": "DIAS ÚTEIS",
+          "qt_dia_resgate_cotas": 0,
+          "tool_note": null,
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        }
       },
       {
         "line_no": 4,
@@ -735,7 +774,8 @@
           "issuer_cnpj": null,
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -824,6 +864,7 @@
         },
         "ticker_match": null,
         "etf_match": null,
+        "credit_match": null,
         "valuation": {
           "value_brl": 1387809.9,
           "basis": "statement",
@@ -839,7 +880,38 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": {
+          "answered": true,
+          "gestor_id": "90000000000202",
+          "gestor_name": "GESTORA EXEMPLO BETA",
+          "admin_cnpj": "90000000000900",
+          "admin_name": "ADMINISTRADORA EXEMPLO",
+          "terms_source": "extrato",
+          "terms_dt_comptc": "2026-06-30",
+          "qt_dia_conversao_cota": 0,
+          "qt_dia_pagto_resgate": 1,
+          "tp_dia_pagto_resgate": "DIAS ÚTEIS",
+          "qt_dia_resgate_cotas": 0,
+          "tool_note": null,
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        }
       },
       {
         "line_no": 5,
@@ -860,7 +932,8 @@
           "issuer_cnpj": null,
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -931,6 +1004,7 @@
         },
         "ticker_match": null,
         "etf_match": null,
+        "credit_match": null,
         "valuation": {
           "value_brl": 902591.9,
           "basis": "statement",
@@ -946,7 +1020,38 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": {
+          "answered": true,
+          "gestor_id": "90000000000202",
+          "gestor_name": "GESTORA EXEMPLO BETA",
+          "admin_cnpj": "90000000000900",
+          "admin_name": "ADMINISTRADORA EXEMPLO",
+          "terms_source": "extrato",
+          "terms_dt_comptc": "2026-06-30",
+          "qt_dia_conversao_cota": 0,
+          "qt_dia_pagto_resgate": 0,
+          "tp_dia_pagto_resgate": "DIAS ÚTEIS",
+          "qt_dia_resgate_cotas": 0,
+          "tool_note": null,
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        }
       },
       {
         "line_no": 6,
@@ -967,7 +1072,8 @@
           "issuer_cnpj": null,
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -1038,6 +1144,7 @@
         },
         "ticker_match": null,
         "etf_match": null,
+        "credit_match": null,
         "valuation": {
           "value_brl": 750000.0,
           "basis": "statement",
@@ -1053,7 +1160,38 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": {
+          "answered": true,
+          "gestor_id": "90000000000303",
+          "gestor_name": "GESTORA EXEMPLO GAMA",
+          "admin_cnpj": "90000000000900",
+          "admin_name": "ADMINISTRADORA EXEMPLO",
+          "terms_source": null,
+          "terms_dt_comptc": null,
+          "qt_dia_conversao_cota": null,
+          "qt_dia_pagto_resgate": null,
+          "tp_dia_pagto_resgate": null,
+          "qt_dia_resgate_cotas": null,
+          "tool_note": "no redemption terms in the Extrato or the lâmina: NULL is not filed, never zero (closed-end funds file none)",
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        }
       },
       {
         "line_no": 7,
@@ -1074,7 +1212,8 @@
           "issuer_cnpj": null,
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -1149,6 +1288,7 @@
         },
         "ticker_match": null,
         "etf_match": null,
+        "credit_match": null,
         "valuation": {
           "value_brl": 770616.5,
           "basis": "statement",
@@ -1201,7 +1341,38 @@
               }
             ]
           }
-        ]
+        ],
+        "fund_terms": {
+          "answered": true,
+          "gestor_id": "90000000000404",
+          "gestor_name": "GESTORA EXEMPLO DELTA",
+          "admin_cnpj": "90000000000900",
+          "admin_name": "ADMINISTRADORA EXEMPLO",
+          "terms_source": "lamina",
+          "terms_dt_comptc": "2024-03-31",
+          "qt_dia_conversao_cota": 0,
+          "qt_dia_pagto_resgate": 0,
+          "tp_dia_pagto_resgate": "DIAS CORRIDOS",
+          "qt_dia_resgate_cotas": null,
+          "tool_note": null,
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        }
       },
       {
         "line_no": 8,
@@ -1222,7 +1393,8 @@
           "issuer_cnpj": null,
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -1329,6 +1501,7 @@
           }
         },
         "etf_match": null,
+        "credit_match": null,
         "valuation": {
           "value_brl": 175440.0,
           "basis": "statement",
@@ -1344,7 +1517,38 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": {
+          "answered": true,
+          "gestor_id": "90000000000505",
+          "gestor_name": "GESTORA EXEMPLO EPSILON",
+          "admin_cnpj": "90000000000900",
+          "admin_name": "ADMINISTRADORA EXEMPLO",
+          "terms_source": null,
+          "terms_dt_comptc": null,
+          "qt_dia_conversao_cota": null,
+          "qt_dia_pagto_resgate": null,
+          "tp_dia_pagto_resgate": null,
+          "qt_dia_resgate_cotas": null,
+          "tool_note": "no redemption terms in the Extrato or the lâmina: NULL is not filed, never zero (closed-end funds file none)",
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        }
       },
       {
         "line_no": 9,
@@ -1365,7 +1569,8 @@
           "issuer_cnpj": null,
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": "2028-03-15",
@@ -1378,6 +1583,7 @@
         "fund_match": null,
         "ticker_match": null,
         "etf_match": null,
+        "credit_match": null,
         "valuation": {
           "value_brl": 270000.0,
           "basis": "statement",
@@ -1393,7 +1599,8 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": null
       },
       {
         "line_no": 10,
@@ -1414,7 +1621,8 @@
           "issuer_cnpj": null,
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": "2027-06-15",
@@ -1427,6 +1635,7 @@
         "fund_match": null,
         "ticker_match": null,
         "etf_match": null,
+        "credit_match": null,
         "valuation": {
           "value_brl": 120000.0,
           "basis": "statement",
@@ -1442,18 +1651,19 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": null
       },
       {
         "line_no": 11,
         "linha_extrato": "CRA AGRO EXEMPLO",
         "tipo": "CRA",
         "codigo": "CRA-0260000X",
-        "status": "unknown",
-        "reason": "CRA detido diretamente: identificação por código ainda não implementada nesta versão. Código do registro lido do extrato: CRA-0260000X.",
-        "reason_code": "credito_sem_fonte",
+        "status": "identified",
+        "reason": "CRA identificado pelo código 0260000X no registro da CVM (série 1).",
+        "reason_code": null,
         "identity": {
-          "kind": null,
+          "kind": "credito",
           "cnpj": null,
           "name": null,
           "entity_type": null,
@@ -1463,7 +1673,8 @@
           "issuer_cnpj": null,
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": null
         },
         "statement_facts": {
           "vencimento": "2031-10-15",
@@ -1476,6 +1687,64 @@
         "fund_match": null,
         "ticker_match": null,
         "etf_match": null,
+        "credit_match": {
+          "matched": true,
+          "reason_code": null,
+          "reason": "CRA identificado pelo código 0260000X no registro da CVM (série 1).",
+          "input_code": "CRA-0260000X",
+          "code": "0260000X",
+          "match_kind": "securit_cetip",
+          "instrument_type": "cra_mensal",
+          "cnpj_securit": "90000000000500",
+          "numero_serie": "1",
+          "classe": "Sênior",
+          "data_vencimento": "2032-04-15",
+          "situacao": "Adimplente",
+          "taxa_juros": "IPCA+ 8,7400% a.a",
+          "classificacao_risco_atual": "brAA (sf)",
+          "valor_total_integralizado_brl": 250000000.0,
+          "data_referencia": "2026-08-31",
+          "cd_isin": null,
+          "issuer_code": null,
+          "n_fundos": null,
+          "preco_marcacao_fundos_brl": null,
+          "cda_period": null,
+          "tool_note": "exact CETIP code in cvm_securit_serie (synthetic)",
+          "n_series": 1,
+          "series": [],
+          "statement": {
+            "issuer_as_printed": "AGRO EXEMPLO",
+            "vencimento": "2031-10-15",
+            "taxa_texto": "IPCA + 8,74%",
+            "preco_brl": 95000.0,
+            "preco_implicito": false,
+            "data_posicao": "2026-09-30"
+          },
+          "price_gap_pct": null,
+          "price_gap_abs_pct": null,
+          "price_gap_label": null,
+          "flags": [
+            {
+              "code": "vencimento_diverge",
+              "text": "vencimento do extrato difere do registro da CVM; a conferir",
+              "statement_vencimento": "2031-10-15",
+              "registry_vencimento": "2032-04-15"
+            }
+          ],
+          "sources": [
+            {
+              "tool": "portfolio_instruments",
+              "call_id": 9,
+              "args": {
+                "p_codes": [
+                  "CRA-0260000X",
+                  "DEB-EXEM12"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        },
         "valuation": {
           "value_brl": 95000.0,
           "basis": "statement",
@@ -1491,28 +1760,30 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": null
       },
       {
         "line_no": 12,
         "linha_extrato": "DEB ENERGIA EXEMPLO",
         "tipo": "debênture",
         "codigo": "DEB-EXEM12",
-        "status": "unknown",
-        "reason": "Debênture detida diretamente: o SILO não tem cadastro nem preço de debêntures. Código do registro lido do extrato: DEB-EXEM12.",
-        "reason_code": "credito_sem_fonte",
+        "status": "identified",
+        "reason": "Debênture identificada pelo código EXEM12 nas carteiras dos fundos (CDA bloco 4).",
+        "reason_code": null,
         "identity": {
-          "kind": null,
+          "kind": "credito",
           "cnpj": null,
           "name": null,
           "entity_type": null,
           "ticker": null,
-          "isin": null,
+          "isin": "BRENEVDBS0Z1",
           "asset_class": null,
           "issuer_cnpj": null,
           "tesouro_title": null,
           "tesouro_maturity": null,
-          "etf_cnpj": null
+          "etf_cnpj": null,
+          "issuer_code": "ENEV"
         },
         "statement_facts": {
           "vencimento": "2030-09-15",
@@ -1525,6 +1796,57 @@
         "fund_match": null,
         "ticker_match": null,
         "etf_match": null,
+        "credit_match": {
+          "matched": true,
+          "reason_code": null,
+          "reason": "Debênture identificada pelo código EXEM12 nas carteiras dos fundos (CDA bloco 4).",
+          "input_code": "DEB-EXEM12",
+          "code": "EXEM12",
+          "match_kind": "cda_ticker",
+          "instrument_type": "debenture",
+          "cnpj_securit": null,
+          "numero_serie": null,
+          "classe": null,
+          "data_vencimento": null,
+          "situacao": null,
+          "taxa_juros": null,
+          "classificacao_risco_atual": null,
+          "valor_total_integralizado_brl": null,
+          "data_referencia": null,
+          "cd_isin": "BRENEVDBS0Z1",
+          "issuer_code": "ENEV",
+          "n_fundos": 14,
+          "preco_marcacao_fundos_brl": 53571.43,
+          "cda_period": "2026-05-01",
+          "tool_note": "cd_ativo in CDA block 4, funds' weighted mark (synthetic)",
+          "n_series": 1,
+          "series": [],
+          "statement": {
+            "issuer_as_printed": "ENERGIA EXEMPLO",
+            "vencimento": "2030-09-15",
+            "taxa_texto": "15,41% a.a.",
+            "preco_brl": 60000.0,
+            "preco_implicito": false,
+            "data_posicao": "2026-09-30"
+          },
+          "price_gap_pct": 12.0,
+          "price_gap_abs_pct": 12.0,
+          "price_gap_label": "informativo, não é veredito de preço",
+          "flags": [],
+          "sources": [
+            {
+              "tool": "portfolio_instruments",
+              "call_id": 9,
+              "args": {
+                "p_codes": [
+                  "CRA-0260000X",
+                  "DEB-EXEM12"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        },
         "valuation": {
           "value_brl": 60000.0,
           "basis": "statement",
@@ -1540,7 +1862,8 @@
             }
           ]
         },
-        "findings": []
+        "findings": [],
+        "fund_terms": null
       }
     ],
     "unknown_groups": [
@@ -1553,16 +1876,6 @@
         "n_lines": 2,
         "value_brl": 390000.0,
         "portfolio_pct": 6.294
-      },
-      {
-        "reason_code": "credito_sem_fonte",
-        "line_nos": [
-          11,
-          12
-        ],
-        "n_lines": 2,
-        "value_brl": 155000.0,
-        "portfolio_pct": 2.5014
       }
     ],
     "cnpj_extrato_line_nos": [],
@@ -1673,7 +1986,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -1703,7 +2016,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -1734,7 +2047,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -1762,7 +2075,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -1835,7 +2148,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -1866,7 +2179,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -1897,7 +2210,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -1999,7 +2312,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -2031,7 +2344,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -2062,7 +2375,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -2106,7 +2419,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -2135,7 +2448,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 15,
+                "call_id": 17,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159",
@@ -2159,7 +2472,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 15,
+                "call_id": 17,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159",
@@ -2262,7 +2575,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -2292,7 +2605,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -2323,7 +2636,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 15,
+              "call_id": 17,
               "args": {
                 "p_cnpjs": [
                   "08935128000159",
@@ -2363,7 +2676,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 15,
+                "call_id": 17,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159",
@@ -2388,7 +2701,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 15,
+                "call_id": 17,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159",
@@ -2492,7 +2805,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -2522,7 +2835,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -2551,7 +2864,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -2588,7 +2901,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 16,
+                "call_id": 18,
                 "args": {
                   "p_cnpjs": [
                     "35377390000106",
@@ -2675,7 +2988,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -2703,7 +3016,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -2732,7 +3045,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -2833,7 +3146,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -2868,7 +3181,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -2905,7 +3218,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 16,
+                "call_id": 18,
                 "args": {
                   "p_cnpjs": [
                     "35377390000106",
@@ -2991,7 +3304,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3019,7 +3332,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3048,7 +3361,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3148,7 +3461,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3183,7 +3496,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3220,7 +3533,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 16,
+                "call_id": 18,
                 "args": {
                   "p_cnpjs": [
                     "35377390000106",
@@ -3285,7 +3598,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3315,7 +3628,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3344,7 +3657,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3381,7 +3694,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 16,
+                "call_id": 18,
                 "args": {
                   "p_cnpjs": [
                     "35377390000106",
@@ -3468,7 +3781,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3496,7 +3809,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3525,7 +3838,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3626,7 +3939,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3661,7 +3974,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3698,7 +4011,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 16,
+                "call_id": 18,
                 "args": {
                   "p_cnpjs": [
                     "35377390000106",
@@ -3784,7 +4097,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3812,7 +4125,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3841,7 +4154,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3941,7 +4254,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -3976,7 +4289,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -4013,7 +4326,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 16,
+                "call_id": 18,
                 "args": {
                   "p_cnpjs": [
                     "35377390000106",
@@ -4078,7 +4391,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -4106,7 +4419,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -4135,7 +4448,7 @@
           "sources": [
             {
               "tool": "portfolio_fees",
-              "call_id": 16,
+              "call_id": 18,
               "args": {
                 "p_cnpjs": [
                   "35377390000106",
@@ -4173,7 +4486,7 @@
             "sources": [
               {
                 "tool": "portfolio_fees",
-                "call_id": 16,
+                "call_id": 18,
                 "args": {
                   "p_cnpjs": [
                     "35377390000106",
@@ -4308,6 +4621,7 @@
         "n_rows": 8,
         "n_cycle_rows_skipped": 0,
         "max_depth_seen": 0,
+        "max_depth_used": 4,
         "explained_weight": 0.9032402,
         "unexplained_weight": 0.0967598,
         "unexplained_note": "Parte do valor do fundo que nenhum bloco da CDA ingerido explica (caixa, derivativos, blocos 3, 5, 7 e 8 não ingeridos; negativo = passivos e derivativos somados). Não preenchida.",
@@ -4336,7 +4650,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 9,
+                "call_id": 11,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159"
@@ -4373,7 +4687,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 9,
+                "call_id": 11,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159"
@@ -4410,7 +4724,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 9,
+                "call_id": 11,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159"
@@ -4447,7 +4761,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 9,
+                "call_id": 11,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159"
@@ -4484,7 +4798,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 9,
+                "call_id": 11,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159"
@@ -4521,7 +4835,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 9,
+                "call_id": 11,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159"
@@ -4558,7 +4872,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 9,
+                "call_id": 11,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159"
@@ -4595,7 +4909,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 9,
+                "call_id": 11,
                 "args": {
                   "p_cnpjs": [
                     "08935128000159"
@@ -4613,7 +4927,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -4634,6 +4948,7 @@
         "n_rows": 34,
         "n_cycle_rows_skipped": 0,
         "max_depth_seen": 3,
+        "max_depth_used": 4,
         "explained_weight": 1.00356737,
         "unexplained_weight": -0.00356737,
         "unexplained_note": "Parte do valor do fundo que nenhum bloco da CDA ingerido explica (caixa, derivativos, blocos 3, 5, 7 e 8 não ingeridos; negativo = passivos e derivativos somados). Não preenchida.",
@@ -4662,7 +4977,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -4699,7 +5014,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -4736,7 +5051,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -4773,7 +5088,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -4810,7 +5125,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -4847,7 +5162,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -4884,7 +5199,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -4921,7 +5236,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -4958,7 +5273,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -4995,7 +5310,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5032,7 +5347,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5069,7 +5384,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5106,7 +5421,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5143,7 +5458,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5180,7 +5495,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5217,7 +5532,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5254,7 +5569,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5291,7 +5606,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5328,7 +5643,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5365,7 +5680,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5402,7 +5717,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5439,7 +5754,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5476,7 +5791,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5513,7 +5828,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5550,7 +5865,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5587,7 +5902,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5624,7 +5939,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5661,7 +5976,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5698,7 +6013,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5728,7 +6043,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5756,7 +6071,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5785,7 +6100,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5812,7 +6127,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5840,7 +6155,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 10,
+                "call_id": 12,
                 "args": {
                   "p_cnpjs": [
                     "50088190000119"
@@ -5856,7 +6171,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -5877,6 +6192,7 @@
         "n_rows": 34,
         "n_cycle_rows_skipped": 0,
         "max_depth_seen": 3,
+        "max_depth_used": 4,
         "explained_weight": 1.00356388,
         "unexplained_weight": -0.00356388,
         "unexplained_note": "Parte do valor do fundo que nenhum bloco da CDA ingerido explica (caixa, derivativos, blocos 3, 5, 7 e 8 não ingeridos; negativo = passivos e derivativos somados). Não preenchida.",
@@ -5905,7 +6221,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -5942,7 +6258,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -5979,7 +6295,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6016,7 +6332,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6053,7 +6369,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6090,7 +6406,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6127,7 +6443,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6164,7 +6480,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6201,7 +6517,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6238,7 +6554,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6275,7 +6591,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6312,7 +6628,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6349,7 +6665,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6386,7 +6702,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6423,7 +6739,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6460,7 +6776,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6497,7 +6813,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6534,7 +6850,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6571,7 +6887,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6608,7 +6924,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6645,7 +6961,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6682,7 +6998,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6719,7 +7035,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6756,7 +7072,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6793,7 +7109,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6830,7 +7146,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6867,7 +7183,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6904,7 +7220,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6941,7 +7257,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6971,7 +7287,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -6999,7 +7315,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -7028,7 +7344,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -7055,7 +7371,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -7083,7 +7399,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 11,
+                "call_id": 13,
                 "args": {
                   "p_cnpjs": [
                     "51488342000133"
@@ -7099,7 +7415,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -7121,7 +7437,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 12,
+            "call_id": 14,
             "args": {
               "p_cnpjs": [
                 "32113885000121"
@@ -7142,6 +7458,7 @@
         "n_rows": 6,
         "n_cycle_rows_skipped": 0,
         "max_depth_seen": 1,
+        "max_depth_used": 4,
         "explained_weight": 0.99695046,
         "unexplained_weight": 0.00304954,
         "unexplained_note": "Parte do valor do fundo que nenhum bloco da CDA ingerido explica (caixa, derivativos, blocos 3, 5, 7 e 8 não ingeridos; negativo = passivos e derivativos somados). Não preenchida.",
@@ -7170,7 +7487,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 13,
+                "call_id": 15,
                 "args": {
                   "p_cnpjs": [
                     "42592315000115"
@@ -7207,7 +7524,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 13,
+                "call_id": 15,
                 "args": {
                   "p_cnpjs": [
                     "42592315000115"
@@ -7244,7 +7561,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 13,
+                "call_id": 15,
                 "args": {
                   "p_cnpjs": [
                     "42592315000115"
@@ -7281,7 +7598,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 13,
+                "call_id": 15,
                 "args": {
                   "p_cnpjs": [
                     "42592315000115"
@@ -7318,7 +7635,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 13,
+                "call_id": 15,
                 "args": {
                   "p_cnpjs": [
                     "42592315000115"
@@ -7348,7 +7665,7 @@
             "sources": [
               {
                 "tool": "portfolio_lookthrough",
-                "call_id": 13,
+                "call_id": 15,
                 "args": {
                   "p_cnpjs": [
                     "42592315000115"
@@ -7364,7 +7681,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -7386,7 +7703,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 14,
+            "call_id": 16,
             "args": {
               "p_cnpjs": [
                 "11728688000147"
@@ -7447,7 +7764,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 9,
+              "call_id": 11,
               "args": {
                 "p_cnpjs": [
                   "08935128000159"
@@ -7485,7 +7802,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7497,7 +7814,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7535,7 +7852,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7547,7 +7864,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7559,7 +7876,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7571,7 +7888,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7583,7 +7900,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7595,7 +7912,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7633,7 +7950,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7645,7 +7962,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7657,7 +7974,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7669,7 +7986,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7681,7 +7998,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7693,7 +8010,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7738,7 +8055,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7750,7 +8067,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7762,7 +8079,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 13,
+              "call_id": 15,
               "args": {
                 "p_cnpjs": [
                   "42592315000115"
@@ -7800,7 +8117,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7812,7 +8129,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7850,7 +8167,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7862,7 +8179,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7900,7 +8217,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7912,7 +8229,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -7950,7 +8267,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -7962,7 +8279,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8007,7 +8324,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8019,7 +8336,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8031,7 +8348,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8043,7 +8360,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8055,7 +8372,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8067,7 +8384,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8112,7 +8429,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8124,7 +8441,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8136,7 +8453,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8148,7 +8465,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8160,7 +8477,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8172,7 +8489,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8210,7 +8527,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8222,7 +8539,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8234,7 +8551,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8246,7 +8563,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8258,7 +8575,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8270,7 +8587,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8308,7 +8625,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8320,7 +8637,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8332,7 +8649,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8344,7 +8661,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8407,7 +8724,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8419,7 +8736,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8438,7 +8755,8 @@
           "label": "código de emissor B3 ENEV",
           "line_nos": [
             4,
-            5
+            5,
+            12
           ],
           "lines": [
             {
@@ -8452,13 +8770,19 @@
               "linha_extrato": "XP LIQUIDEZ FIC",
               "exposure_brl": 13532.43,
               "direct": false
+            },
+            {
+              "line_no": 12,
+              "linha_extrato": "DEB ENERGIA EXEMPLO",
+              "exposure_brl": 60000.0,
+              "direct": true
             }
           ],
-          "total_exposure_brl": 34272.53,
+          "total_exposure_brl": 94272.53,
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8470,7 +8794,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8479,10 +8803,18 @@
                 "p_max_depth": 4
               },
               "data_date": "2026-05-01"
+            },
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 12
+              },
+              "data_date": "2026-09-30"
             }
           ],
           "issuer_code": "ENEV",
-          "total_exposure_portfolio_pct": 0.5531
+          "total_exposure_portfolio_pct": 1.5214
         },
         {
           "kind": "mesmo_codigo_emissor_b3",
@@ -8534,7 +8866,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8546,7 +8878,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8585,7 +8917,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8597,7 +8929,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8636,7 +8968,7 @@
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8648,7 +8980,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8670,23 +9002,26 @@
             4,
             5
           ],
+          "direct_line_nos": [],
           "lines": [
             {
               "line_no": 4,
               "linha_extrato": "XP BANCOS FIC",
-              "exposure_brl": 1382639.4
+              "exposure_brl": 1382639.4,
+              "direct": false
             },
             {
               "line_no": 5,
               "linha_extrato": "XP LIQUIDEZ FIC",
-              "exposure_brl": 902139.55
+              "exposure_brl": 902139.55,
+              "direct": false
             }
           ],
           "total_exposure_brl": 2284778.95,
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8698,7 +9033,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8719,23 +9054,26 @@
             4,
             5
           ],
+          "direct_line_nos": [],
           "lines": [
             {
               "line_no": 4,
               "linha_extrato": "XP BANCOS FIC",
-              "exposure_brl": 26955.64
+              "exposure_brl": 26955.64,
+              "direct": false
             },
             {
               "line_no": 5,
               "linha_extrato": "XP LIQUIDEZ FIC",
-              "exposure_brl": 16078.12
+              "exposure_brl": 16078.12,
+              "direct": false
             }
           ],
           "total_exposure_brl": 43033.76,
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8747,7 +9085,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8759,7 +9097,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8771,7 +9109,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8792,23 +9130,26 @@
             4,
             5
           ],
+          "direct_line_nos": [],
           "lines": [
             {
               "line_no": 4,
               "linha_extrato": "XP BANCOS FIC",
-              "exposure_brl": 52637.16
+              "exposure_brl": 52637.16,
+              "direct": false
             },
             {
               "line_no": 5,
               "linha_extrato": "XP LIQUIDEZ FIC",
-              "exposure_brl": 31396.26
+              "exposure_brl": 31396.26,
+              "direct": false
             }
           ],
           "total_exposure_brl": 84033.42,
           "sources": [
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8820,7 +9161,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 10,
+              "call_id": 12,
               "args": {
                 "p_cnpjs": [
                   "50088190000119"
@@ -8832,7 +9173,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8844,7 +9185,7 @@
             },
             {
               "tool": "portfolio_lookthrough",
-              "call_id": 11,
+              "call_id": 13,
               "args": {
                 "p_cnpjs": [
                   "51488342000133"
@@ -8874,7 +9215,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -8886,7 +9227,7 @@
           },
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -8898,7 +9239,7 @@
           },
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -8910,7 +9251,7 @@
           },
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -8953,7 +9294,7 @@
           },
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -9017,7 +9358,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -9042,7 +9383,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9054,7 +9395,7 @@
           },
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -9099,7 +9440,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9111,7 +9452,7 @@
           },
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9123,7 +9464,7 @@
           },
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9135,7 +9476,7 @@
           },
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -9161,7 +9502,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9173,7 +9514,7 @@
           },
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -9185,7 +9526,7 @@
           },
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -9522,7 +9863,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -9545,7 +9886,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -9568,7 +9909,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -9591,7 +9932,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -9614,7 +9955,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -9637,7 +9978,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -9660,7 +10001,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -9683,7 +10024,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -9706,7 +10047,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9729,7 +10070,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9752,7 +10093,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9775,7 +10116,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9798,7 +10139,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9821,7 +10162,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9844,7 +10185,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9867,7 +10208,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9890,7 +10231,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9913,7 +10254,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9936,7 +10277,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9959,7 +10300,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -9982,7 +10323,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10005,7 +10346,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10028,7 +10369,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10051,7 +10392,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10074,7 +10415,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10097,7 +10438,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10120,7 +10461,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10143,7 +10484,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10166,7 +10507,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10189,7 +10530,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10212,7 +10553,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10235,7 +10576,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10258,7 +10599,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10281,7 +10622,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10304,7 +10645,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10327,7 +10668,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10350,7 +10691,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -10373,7 +10714,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10396,7 +10737,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10419,7 +10760,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10442,7 +10783,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10465,7 +10806,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10488,7 +10829,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10511,7 +10852,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10534,7 +10875,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10557,7 +10898,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10580,7 +10921,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10603,7 +10944,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10626,7 +10967,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10649,7 +10990,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10672,7 +11013,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10695,7 +11036,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10718,7 +11059,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10741,7 +11082,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10764,7 +11105,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10787,7 +11128,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10810,7 +11151,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10833,7 +11174,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10856,7 +11197,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10879,7 +11220,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10902,7 +11243,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10925,7 +11266,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10948,7 +11289,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10971,7 +11312,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -10994,7 +11335,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -11017,7 +11358,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -11040,7 +11381,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -11063,7 +11404,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -11086,7 +11427,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -11109,7 +11450,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -11132,7 +11473,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -11383,7 +11724,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -11395,7 +11736,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 17,
+            "call_id": 19,
             "args": {
               "p_id": "AXIA7",
               "p_from": "2025-03-31",
@@ -11416,7 +11757,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -11449,7 +11790,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -11461,7 +11802,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 18,
+            "call_id": 20,
             "args": {
               "p_id": "BRAP4",
               "p_from": "2025-03-31",
@@ -11482,7 +11823,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -11494,7 +11835,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 19,
+            "call_id": 21,
             "args": {
               "p_id": "VALE3",
               "p_from": "2025-03-31",
@@ -11515,7 +11856,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -11527,7 +11868,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 19,
+            "call_id": 21,
             "args": {
               "p_id": "VALE3",
               "p_from": "2025-03-31",
@@ -11548,7 +11889,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -11560,7 +11901,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 20,
+            "call_id": 22,
             "args": {
               "p_id": "USIM5",
               "p_from": "2025-03-31",
@@ -11581,7 +11922,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -11593,7 +11934,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 21,
+            "call_id": 23,
             "args": {
               "p_id": "CLSC4",
               "p_from": "2025-03-31",
@@ -11614,7 +11955,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 9,
+            "call_id": 11,
             "args": {
               "p_cnpjs": [
                 "08935128000159"
@@ -11626,7 +11967,7 @@
           },
           {
             "tool": "company_financials",
-            "call_id": 22,
+            "call_id": 24,
             "args": {
               "p_id": "HYPE3",
               "p_from": "2025-03-31",
@@ -11657,7 +11998,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11680,7 +12021,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11703,7 +12044,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11726,7 +12067,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11749,7 +12090,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11772,7 +12113,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11795,7 +12136,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11818,7 +12159,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11841,7 +12182,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11864,7 +12205,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11887,7 +12228,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11910,7 +12251,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11933,7 +12274,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11956,7 +12297,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -11979,7 +12320,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12002,7 +12343,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12025,7 +12366,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12048,7 +12389,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12071,7 +12412,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12094,7 +12435,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12117,7 +12458,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12140,7 +12481,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12163,7 +12504,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12186,7 +12527,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12209,7 +12550,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12232,7 +12573,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12255,7 +12596,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12278,7 +12619,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12301,7 +12642,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 10,
+            "call_id": 12,
             "args": {
               "p_cnpjs": [
                 "50088190000119"
@@ -12334,7 +12675,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12357,7 +12698,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12380,7 +12721,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12403,7 +12744,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12426,7 +12767,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12449,7 +12790,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12472,7 +12813,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12495,7 +12836,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12518,7 +12859,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12541,7 +12882,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12564,7 +12905,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12587,7 +12928,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12610,7 +12951,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12633,7 +12974,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12656,7 +12997,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12679,7 +13020,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12702,7 +13043,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12725,7 +13066,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12748,7 +13089,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12771,7 +13112,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12794,7 +13135,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12817,7 +13158,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12840,7 +13181,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12863,7 +13204,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12886,7 +13227,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12909,7 +13250,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12932,7 +13273,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12955,7 +13296,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -12978,7 +13319,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 11,
+            "call_id": 13,
             "args": {
               "p_cnpjs": [
                 "51488342000133"
@@ -13011,7 +13352,7 @@
         "sources": [
           {
             "tool": "fidc_portfolio",
-            "call_id": 23,
+            "call_id": 25,
             "args": {
               "p_cnpj": "32113885000121",
               "p_kind": "sector",
@@ -13033,7 +13374,7 @@
         "sources": [
           {
             "tool": "fidc_portfolio",
-            "call_id": 23,
+            "call_id": 25,
             "args": {
               "p_cnpj": "32113885000121",
               "p_kind": "sector",
@@ -13055,7 +13396,7 @@
         "sources": [
           {
             "tool": "fidc_portfolio",
-            "call_id": 23,
+            "call_id": 25,
             "args": {
               "p_cnpj": "32113885000121",
               "p_kind": "sector",
@@ -13077,7 +13418,7 @@
         "sources": [
           {
             "tool": "fidc_portfolio",
-            "call_id": 23,
+            "call_id": 25,
             "args": {
               "p_cnpj": "32113885000121",
               "p_kind": "sector",
@@ -13099,7 +13440,7 @@
         "sources": [
           {
             "tool": "fidc_portfolio",
-            "call_id": 23,
+            "call_id": 25,
             "args": {
               "p_cnpj": "32113885000121",
               "p_kind": "sector",
@@ -13121,7 +13462,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -13144,7 +13485,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -13167,7 +13508,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -13190,7 +13531,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -13213,7 +13554,7 @@
         "sources": [
           {
             "tool": "portfolio_lookthrough",
-            "call_id": 13,
+            "call_id": 15,
             "args": {
               "p_cnpjs": [
                 "42592315000115"
@@ -13397,7 +13738,7 @@
             "sources": [
               {
                 "tool": "fund_restatements",
-                "call_id": 24,
+                "call_id": 26,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_from": "2025-09-01",
@@ -13407,7 +13748,7 @@
               },
               {
                 "tool": "fund_restatement_diff",
-                "call_id": 25,
+                "call_id": 27,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_fnet_id": 1298163
@@ -13473,7 +13814,7 @@
             "sources": [
               {
                 "tool": "fund_restatements",
-                "call_id": 24,
+                "call_id": 26,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_from": "2025-09-01",
@@ -13483,7 +13824,7 @@
               },
               {
                 "tool": "fund_restatement_diff",
-                "call_id": 26,
+                "call_id": 28,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_fnet_id": 1120221
@@ -13549,7 +13890,7 @@
             "sources": [
               {
                 "tool": "fund_restatements",
-                "call_id": 24,
+                "call_id": 26,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_from": "2025-09-01",
@@ -13559,7 +13900,7 @@
               },
               {
                 "tool": "fund_restatement_diff",
-                "call_id": 27,
+                "call_id": 29,
                 "args": {
                   "p_cnpj": "32113885000121",
                   "p_fnet_id": 1086024
@@ -13613,14 +13954,6 @@
         "n_rows": 0
       },
       {
-        "screen": "screen_delinquency_drivers",
-        "tool": "screen_delinquency_drivers",
-        "args": {},
-        "status": "complete",
-        "reason": null,
-        "n_rows": 1
-      },
-      {
         "screen": "screen_restatements",
         "tool": "screen_restatements",
         "args": {},
@@ -13640,6 +13973,26 @@
         "screen": "screen_silent_filers",
         "tool": "screen_silent_filers",
         "args": {},
+        "status": "complete",
+        "reason": null,
+        "n_rows": 0
+      },
+      {
+        "screen": "screen_delinquency_drivers[consistent_worsening]",
+        "tool": "screen_delinquency_drivers",
+        "args": {
+          "p_driver": "consistent_worsening"
+        },
+        "status": "complete",
+        "reason": null,
+        "n_rows": 1
+      },
+      {
+        "screen": "screen_delinquency_drivers[value_up_rate_masked]",
+        "tool": "screen_delinquency_drivers",
+        "args": {
+          "p_driver": "value_up_rate_masked"
+        },
         "status": "complete",
         "reason": null,
         "n_rows": 0
@@ -13716,45 +14069,6 @@
         "n_signals": 2,
         "signals": [
           {
-            "screen": "screen_delinquency_drivers",
-            "tool": "screen_delinquency_drivers",
-            "row": {
-              "cnpj": "32113885000121",
-              "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
-              "status": "complete",
-              "window_from": "2025-09-01",
-              "window_to": "2026-08-01",
-              "n_months": 12,
-              "months_missing": 0,
-              "first_month": "2025-09-01",
-              "last_month": "2026-08-01",
-              "delinquency_start": 0.0,
-              "delinquency_end": 255281411.73,
-              "delta_brl": 255281411.73,
-              "nav_start": 506043487.89,
-              "nav_end": 96794048.98,
-              "delta_nav": -409249438.91,
-              "rate_start": 0.0,
-              "rate_end": 263.7,
-              "delta_pp": 263.7,
-              "stopped_reporting": false,
-              "driver": "delinquency_up",
-              "screen": "delinquency_drivers",
-              "params": {
-                "p_months": 12
-              }
-            },
-            "note": "Sinal, não veredito: o fundo cruzou um limiar declarado em informes públicos.",
-            "sources": [
-              {
-                "tool": "screen_delinquency_drivers",
-                "call_id": 32,
-                "args": {},
-                "data_date": null
-              }
-            ]
-          },
-          {
             "screen": "screen_restatements",
             "tool": "screen_restatements",
             "row": {
@@ -13780,8 +14094,50 @@
             "sources": [
               {
                 "tool": "screen_restatements",
-                "call_id": 33,
+                "call_id": 34,
                 "args": {},
+                "data_date": null
+              }
+            ]
+          },
+          {
+            "screen": "screen_delinquency_drivers[consistent_worsening]",
+            "tool": "screen_delinquency_drivers",
+            "row": {
+              "cnpj": "32113885000121",
+              "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+              "status": "complete",
+              "window_from": "2025-09-01",
+              "window_to": "2026-08-01",
+              "n_months": 12,
+              "months_missing": 0,
+              "first_month": "2025-09-01",
+              "last_month": "2026-08-01",
+              "delinquency_start": 0.0,
+              "delinquency_end": 255281411.73,
+              "delta_brl": 255281411.73,
+              "nav_start": 506043487.89,
+              "nav_end": 96794048.98,
+              "delta_nav": -409249438.91,
+              "rate_start": 0.0,
+              "rate_end": 263.7,
+              "delta_pp": 263.7,
+              "stopped_reporting": false,
+              "driver": "consistent_worsening",
+              "screen": "delinquency_drivers",
+              "params": {
+                "p_months": 12,
+                "p_driver": "consistent_worsening"
+              }
+            },
+            "note": "Sinal, não veredito: o fundo cruzou um limiar declarado em informes públicos.",
+            "sources": [
+              {
+                "tool": "screen_delinquency_drivers",
+                "call_id": 37,
+                "args": {
+                  "p_driver": "consistent_worsening"
+                },
                 "data_date": null
               }
             ]
@@ -13876,7 +14232,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 38,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -13927,7 +14283,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 38,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -13978,7 +14334,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 38,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14029,7 +14385,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 38,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14080,7 +14436,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 38,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14131,7 +14487,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 38,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14182,25 +14538,22 @@
         "linha_extrato": "CRA AGRO EXEMPLO",
         "level": "nao_avaliado",
         "level_label": "não avaliado",
-        "reason": "linha não identificada: sem CNPJ de fundo para comparar com a classe"
+        "reason": "sem CNPJ de fundo para comparar com a classe"
       },
       {
         "line_no": 12,
         "linha_extrato": "DEB ENERGIA EXEMPLO",
         "level": "nao_avaliado",
         "level_label": "não avaliado",
-        "reason": "linha não identificada: sem CNPJ de fundo para comparar com a classe"
+        "reason": "sem CNPJ de fundo para comparar com a classe"
       }
     ]
   },
   "concentration": {
-    "status": "partial",
-    "reason": "Concentração por gestor não avaliada: nenhuma função ou visão pública do SILO (schema api) serve o CNPJ do gestor arquivado na CVM. Liquidez dos fundos não avaliada: nenhuma função ou visão pública do SILO (schema api) serve o prazo de pagamento do resgate da lâmina (qt_dia_pagto_resgate).",
+    "status": "complete",
+    "reason": null,
     "errors": [],
-    "reason_codes": [
-      "gestor_sem_api",
-      "liquidez_sem_api"
-    ],
+    "reason_codes": [],
     "source": "statement",
     "issuer": {
       "label": "emissor como impresso no extrato; grupo econômico não avaliado",
@@ -14417,14 +14770,180 @@
       "not_printed_line_nos": []
     },
     "manager": {
-      "status": "unknown",
-      "reason_code": "gestor_sem_api",
-      "reason": "Concentração por gestor não avaliada: nenhuma função ou visão pública do SILO (schema api) serve o CNPJ do gestor arquivado na CVM."
+      "label": "gestora como arquivada na CVM; agrupada pelo identificador arquivado (gestor_id), nunca pelo nome",
+      "basis": "valor do extrato das linhas de fundo com CNPJ, somado por gestor_id de portfolio_fund_terms (Extrato da CVM ou lâmina); fundo sem gestor informado fica à parte",
+      "status": "complete",
+      "reason_code": null,
+      "reason": null,
+      "groups": [
+        {
+          "gestor_id": "90000000000202",
+          "gestor_name": "GESTORA EXEMPLO BETA",
+          "names_as_filed": [
+            "GESTORA EXEMPLO BETA"
+          ],
+          "line_nos": [
+            4,
+            5
+          ],
+          "n_lines": 2,
+          "value_brl": 2290401.8,
+          "portfolio_pct": 36.9633,
+          "fund_value_pct": 53.8782,
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        },
+        {
+          "gestor_id": "90000000000404",
+          "gestor_name": "GESTORA EXEMPLO DELTA",
+          "names_as_filed": [
+            "GESTORA EXEMPLO DELTA"
+          ],
+          "line_nos": [
+            7
+          ],
+          "n_lines": 1,
+          "value_brl": 770616.5,
+          "portfolio_pct": 12.4365,
+          "fund_value_pct": 18.1276,
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        },
+        {
+          "gestor_id": "90000000000303",
+          "gestor_name": "GESTORA EXEMPLO GAMA",
+          "names_as_filed": [
+            "GESTORA EXEMPLO GAMA"
+          ],
+          "line_nos": [
+            6
+          ],
+          "n_lines": 1,
+          "value_brl": 750000.0,
+          "portfolio_pct": 12.1038,
+          "fund_value_pct": 17.6426,
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        },
+        {
+          "gestor_id": "90000000000101",
+          "gestor_name": "GESTORA EXEMPLO ALFA",
+          "names_as_filed": [
+            "GESTORA EXEMPLO ALFA"
+          ],
+          "line_nos": [
+            3
+          ],
+          "n_lines": 1,
+          "value_brl": 264615.0,
+          "portfolio_pct": 4.2704,
+          "fund_value_pct": 6.2247,
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        },
+        {
+          "gestor_id": "90000000000505",
+          "gestor_name": "GESTORA EXEMPLO EPSILON",
+          "names_as_filed": [
+            "GESTORA EXEMPLO EPSILON"
+          ],
+          "line_nos": [
+            8
+          ],
+          "n_lines": 1,
+          "value_brl": 175440.0,
+          "portfolio_pct": 2.8313,
+          "fund_value_pct": 4.127,
+          "sources": [
+            {
+              "tool": "portfolio_fund_terms",
+              "call_id": 10,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "50088190000119",
+                  "51488342000133",
+                  "32113885000121",
+                  "42592315000115",
+                  "11728688000147"
+                ]
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        }
+      ],
+      "fund_value_brl": 4251073.3,
+      "fund_value_portfolio_pct": 68.6053,
+      "without_gestor_line_nos": [],
+      "without_gestor_value_brl": 0.0,
+      "unanswered_line_nos": []
     },
     "fund_liquidity": {
-      "status": "unknown",
-      "reason_code": "liquidez_sem_api",
-      "reason": "Liquidez dos fundos não avaliada: nenhuma função ou visão pública do SILO (schema api) serve o prazo de pagamento do resgate da lâmina (qt_dia_pagto_resgate)."
+      "status": "complete",
+      "reason_code": null,
+      "reason": "Liquidez dos fundos: seção liquidity (prazo de resgate como arquivado).",
+      "section": "liquidity"
     }
   },
   "allocation": {
@@ -14506,13 +15025,442 @@
     ],
     "sum_check_brl": 0.0
   },
-  "risks": {
-    "status": "partial",
-    "reason": "Há riscos não avaliados por falta de dado.",
+  "liquidity": {
+    "status": "complete",
+    "reason": null,
     "errors": [],
-    "reason_codes": [
-      "riscos_nao_avaliados"
+    "reason_codes": [],
+    "title": "Liquidez",
+    "source": "statement",
+    "basis": "prazo de pagamento do resgate (qt_dia_pagto_resgate) como arquivado no Extrato da CVM ou na lâmina, contado do pedido; carência (qt_dia_resgate_cotas) maior que zero é lock-up; valores do extrato",
+    "days_note": "prazos como arquivados: dias úteis e dias corridos não são convertidos; um D+N em dias corridos fica na faixa do seu N",
+    "note": "Prazo de resgate como arquivado; não avalia preço de venda, deságio nem profundidade de mercado.",
+    "thresholds_days": {
+      "d5": 5,
+      "d30": 30
+    },
+    "portfolio_value_brl": 6196424.3,
+    "buckets": [
+      {
+        "bucket_id": "d0_d5",
+        "bucket": "D+0 a D+5",
+        "value_brl": 3061018.3,
+        "portfolio_pct": 49.3998,
+        "n_lines": 3,
+        "line_nos": [
+          4,
+          5,
+          7
+        ],
+        "lines": [
+          {
+            "line_no": 4,
+            "tipo": "fundo",
+            "value_brl": 1387809.9,
+            "portfolio_pct": 22.3969,
+            "qt_dia_pagto_resgate": 1,
+            "tp_dia_pagto_resgate": "DIAS ÚTEIS",
+            "qt_dia_conversao_cota": 0,
+            "qt_dia_resgate_cotas": 0,
+            "terms_source": "extrato",
+            "terms_dt_comptc": "2026-06-30",
+            "estrategia_corretora": null,
+            "vencimento": null,
+            "reason_code": null,
+            "sources": [
+              {
+                "tool": "portfolio_fund_terms",
+                "call_id": 10,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "50088190000119",
+                    "51488342000133",
+                    "32113885000121",
+                    "42592315000115",
+                    "11728688000147"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          },
+          {
+            "line_no": 5,
+            "tipo": "fundo",
+            "value_brl": 902591.9,
+            "portfolio_pct": 14.5663,
+            "qt_dia_pagto_resgate": 0,
+            "tp_dia_pagto_resgate": "DIAS ÚTEIS",
+            "qt_dia_conversao_cota": 0,
+            "qt_dia_resgate_cotas": 0,
+            "terms_source": "extrato",
+            "terms_dt_comptc": "2026-06-30",
+            "estrategia_corretora": null,
+            "vencimento": null,
+            "reason_code": null,
+            "sources": [
+              {
+                "tool": "portfolio_fund_terms",
+                "call_id": 10,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "50088190000119",
+                    "51488342000133",
+                    "32113885000121",
+                    "42592315000115",
+                    "11728688000147"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          },
+          {
+            "line_no": 7,
+            "tipo": "fundo",
+            "value_brl": 770616.5,
+            "portfolio_pct": 12.4365,
+            "qt_dia_pagto_resgate": 0,
+            "tp_dia_pagto_resgate": "DIAS CORRIDOS",
+            "qt_dia_conversao_cota": 0,
+            "qt_dia_resgate_cotas": null,
+            "terms_source": "lamina",
+            "terms_dt_comptc": "2024-03-31",
+            "estrategia_corretora": null,
+            "vencimento": null,
+            "reason_code": null,
+            "sources": [
+              {
+                "tool": "portfolio_fund_terms",
+                "call_id": 10,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "50088190000119",
+                    "51488342000133",
+                    "32113885000121",
+                    "42592315000115",
+                    "11728688000147"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "bucket_id": "d6_d30",
+        "bucket": "D+6 a D+30",
+        "value_brl": 0.0,
+        "portfolio_pct": 0.0,
+        "n_lines": 0,
+        "line_nos": [],
+        "lines": []
+      },
+      {
+        "bucket_id": "acima_d30",
+        "bucket": "acima de D+30",
+        "value_brl": 264615.0,
+        "portfolio_pct": 4.2704,
+        "n_lines": 1,
+        "line_nos": [
+          3
+        ],
+        "lines": [
+          {
+            "line_no": 3,
+            "tipo": "fundo",
+            "value_brl": 264615.0,
+            "portfolio_pct": 4.2704,
+            "qt_dia_pagto_resgate": 32,
+            "tp_dia_pagto_resgate": "DIAS ÚTEIS",
+            "qt_dia_conversao_cota": 30,
+            "qt_dia_resgate_cotas": 0,
+            "terms_source": "extrato",
+            "terms_dt_comptc": "2026-07-31",
+            "estrategia_corretora": null,
+            "vencimento": null,
+            "reason_code": null,
+            "sources": [
+              {
+                "tool": "portfolio_fund_terms",
+                "call_id": 10,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "50088190000119",
+                    "51488342000133",
+                    "32113885000121",
+                    "42592315000115",
+                    "11728688000147"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "bucket_id": "lockup",
+        "bucket": "lock-up",
+        "value_brl": 0.0,
+        "portfolio_pct": 0.0,
+        "n_lines": 0,
+        "line_nos": [],
+        "lines": []
+      },
+      {
+        "bucket_id": "fundo_sem_prazo",
+        "bucket": "fundo sem prazo de resgate informado",
+        "value_brl": 925440.0,
+        "portfolio_pct": 14.9351,
+        "n_lines": 2,
+        "line_nos": [
+          6,
+          8
+        ],
+        "lines": [
+          {
+            "line_no": 6,
+            "tipo": "FIDC",
+            "value_brl": 750000.0,
+            "portfolio_pct": 12.1038,
+            "qt_dia_pagto_resgate": null,
+            "tp_dia_pagto_resgate": null,
+            "qt_dia_conversao_cota": null,
+            "qt_dia_resgate_cotas": null,
+            "terms_source": null,
+            "terms_dt_comptc": null,
+            "estrategia_corretora": null,
+            "vencimento": null,
+            "reason_code": "prazo_nao_informado",
+            "sources": [
+              {
+                "tool": "portfolio_fund_terms",
+                "call_id": 10,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "50088190000119",
+                    "51488342000133",
+                    "32113885000121",
+                    "42592315000115",
+                    "11728688000147"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          },
+          {
+            "line_no": 8,
+            "tipo": "FII",
+            "value_brl": 175440.0,
+            "portfolio_pct": 2.8313,
+            "qt_dia_pagto_resgate": null,
+            "tp_dia_pagto_resgate": null,
+            "qt_dia_conversao_cota": null,
+            "qt_dia_resgate_cotas": null,
+            "terms_source": null,
+            "terms_dt_comptc": null,
+            "estrategia_corretora": null,
+            "vencimento": null,
+            "reason_code": "prazo_nao_informado",
+            "sources": [
+              {
+                "tool": "portfolio_fund_terms",
+                "call_id": 10,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "50088190000119",
+                    "51488342000133",
+                    "32113885000121",
+                    "42592315000115",
+                    "11728688000147"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "bucket_id": "credito_direto",
+        "bucket": "crédito direto sem liquidez antes do vencimento",
+        "value_brl": 545000.0,
+        "portfolio_pct": 8.7954,
+        "n_lines": 4,
+        "line_nos": [
+          9,
+          10,
+          11,
+          12
+        ],
+        "lines": [
+          {
+            "line_no": 9,
+            "tipo": "CDB",
+            "value_brl": 270000.0,
+            "portfolio_pct": 4.3574,
+            "qt_dia_pagto_resgate": null,
+            "tp_dia_pagto_resgate": null,
+            "qt_dia_conversao_cota": null,
+            "qt_dia_resgate_cotas": null,
+            "terms_source": null,
+            "terms_dt_comptc": null,
+            "estrategia_corretora": null,
+            "vencimento": "2028-03-15",
+            "reason_code": null,
+            "sources": []
+          },
+          {
+            "line_no": 10,
+            "tipo": "LCA",
+            "value_brl": 120000.0,
+            "portfolio_pct": 1.9366,
+            "qt_dia_pagto_resgate": null,
+            "tp_dia_pagto_resgate": null,
+            "qt_dia_conversao_cota": null,
+            "qt_dia_resgate_cotas": null,
+            "terms_source": null,
+            "terms_dt_comptc": null,
+            "estrategia_corretora": null,
+            "vencimento": "2027-06-15",
+            "reason_code": null,
+            "sources": []
+          },
+          {
+            "line_no": 11,
+            "tipo": "CRA",
+            "value_brl": 95000.0,
+            "portfolio_pct": 1.5331,
+            "qt_dia_pagto_resgate": null,
+            "tp_dia_pagto_resgate": null,
+            "qt_dia_conversao_cota": null,
+            "qt_dia_resgate_cotas": null,
+            "terms_source": null,
+            "terms_dt_comptc": null,
+            "estrategia_corretora": null,
+            "vencimento": "2031-10-15",
+            "reason_code": null,
+            "sources": []
+          },
+          {
+            "line_no": 12,
+            "tipo": "debênture",
+            "value_brl": 60000.0,
+            "portfolio_pct": 0.9683,
+            "qt_dia_pagto_resgate": null,
+            "tp_dia_pagto_resgate": null,
+            "qt_dia_conversao_cota": null,
+            "qt_dia_resgate_cotas": null,
+            "terms_source": null,
+            "terms_dt_comptc": null,
+            "estrategia_corretora": null,
+            "vencimento": "2030-09-15",
+            "reason_code": null,
+            "sources": []
+          }
+        ]
+      },
+      {
+        "bucket_id": "titulos_publicos",
+        "bucket": "títulos públicos (Tesouro)",
+        "value_brl": 412351.0,
+        "portfolio_pct": 6.6547,
+        "n_lines": 1,
+        "line_nos": [
+          1
+        ],
+        "lines": [
+          {
+            "line_no": 1,
+            "tipo": "tesouro",
+            "value_brl": 412351.0,
+            "portfolio_pct": 6.6547,
+            "qt_dia_pagto_resgate": null,
+            "tp_dia_pagto_resgate": null,
+            "qt_dia_conversao_cota": null,
+            "qt_dia_resgate_cotas": null,
+            "terms_source": null,
+            "terms_dt_comptc": null,
+            "estrategia_corretora": null,
+            "vencimento": null,
+            "reason_code": null,
+            "sources": []
+          }
+        ]
+      },
+      {
+        "bucket_id": "bolsa",
+        "bucket": "ETF/ações (negociados em bolsa)",
+        "value_brl": 988000.0,
+        "portfolio_pct": 15.9447,
+        "n_lines": 1,
+        "line_nos": [
+          2
+        ],
+        "lines": [
+          {
+            "line_no": 2,
+            "tipo": "ação",
+            "value_brl": 988000.0,
+            "portfolio_pct": 15.9447,
+            "qt_dia_pagto_resgate": null,
+            "tp_dia_pagto_resgate": null,
+            "qt_dia_conversao_cota": null,
+            "qt_dia_resgate_cotas": null,
+            "terms_source": null,
+            "terms_dt_comptc": null,
+            "estrategia_corretora": null,
+            "vencimento": null,
+            "reason_code": null,
+            "sources": []
+          }
+        ]
+      },
+      {
+        "bucket_id": "caixa",
+        "bucket": "caixa",
+        "value_brl": 0.0,
+        "portfolio_pct": 0.0,
+        "n_lines": 0,
+        "line_nos": [],
+        "lines": []
+      },
+      {
+        "bucket_id": "sem_classificacao",
+        "bucket": "sem classificação",
+        "value_brl": 0.0,
+        "portfolio_pct": 0.0,
+        "n_lines": 0,
+        "line_nos": [],
+        "lines": []
+      }
     ],
+    "above_d30_parts": [
+      "acima_d30",
+      "lockup",
+      "fundo_sem_prazo",
+      "credito_direto"
+    ],
+    "above_d30_total_brl": 1735055.0,
+    "above_d30_total_pct": 28.0009,
+    "evaluated": true,
+    "unanswered_line_nos": [],
+    "sum_check_brl": 0.0
+  },
+  "risks": {
+    "status": "complete",
+    "reason": null,
+    "errors": [],
+    "reason_codes": [],
     "title": "Principais riscos",
     "note": "Fatos da carteira com um limite fixo; não é previsão de mercado nem recomendação de compra, venda ou manutenção.",
     "severity_rule": "semáforo fixo: atenção quando o valor é estritamente maior que o limite de atenção; moderado quando é estritamente maior que o limite moderado; baixo nos demais casos. Os limites estão no código do motor (src/portfolio/risks.py) e são os mesmos para toda carteira",
@@ -14553,13 +15501,32 @@
         "atencao_above_count": 0,
         "moderado_above_count": null
       },
-      "liquidez": {}
+      "credito_situacao": {
+        "atencao_above_count": 0,
+        "moderado_above_count": null
+      },
+      "credito_vencimento_diverge": {
+        "atencao_above_count": null,
+        "moderado_above_count": 0
+      },
+      "credito_preco_marcacao": {
+        "atencao_above_pct": null,
+        "moderado_above_pct": 5.0
+      },
+      "concentracao_gestor": {
+        "atencao_above_pct": 40.0,
+        "moderado_above_pct": 25.0
+      },
+      "liquidez": {
+        "atencao_above_pct": 50.0,
+        "moderado_above_pct": 30.0
+      }
     },
     "counts": {
       "atencao": 2,
-      "moderado": 3,
-      "baixo": 4,
-      "nao_avaliado": 1,
+      "moderado": 6,
+      "baixo": 6,
+      "nao_avaliado": 0,
       "nao_se_aplica": 0
     },
     "rows": [
@@ -14637,7 +15604,7 @@
         "sources": [
           {
             "tool": "portfolio_movement",
-            "call_id": 38,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14653,7 +15620,7 @@
           },
           {
             "tool": "portfolio_movement",
-            "call_id": 38,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14669,7 +15636,7 @@
           },
           {
             "tool": "portfolio_movement",
-            "call_id": 38,
+            "call_id": 41,
             "args": {
               "p_cnpjs": [
                 "08935128000159",
@@ -14801,7 +15768,7 @@
         "sources": [
           {
             "tool": "fund_restatements",
-            "call_id": 24,
+            "call_id": 26,
             "args": {
               "p_cnpj": "32113885000121",
               "p_from": "2025-09-01",
@@ -14811,7 +15778,7 @@
           },
           {
             "tool": "fund_restatement_diff",
-            "call_id": 25,
+            "call_id": 27,
             "args": {
               "p_cnpj": "32113885000121",
               "p_fnet_id": 1298163
@@ -14820,7 +15787,7 @@
           },
           {
             "tool": "fund_restatements",
-            "call_id": 24,
+            "call_id": 26,
             "args": {
               "p_cnpj": "32113885000121",
               "p_from": "2025-09-01",
@@ -14830,7 +15797,7 @@
           },
           {
             "tool": "fund_restatement_diff",
-            "call_id": 26,
+            "call_id": 28,
             "args": {
               "p_cnpj": "32113885000121",
               "p_fnet_id": 1120221
@@ -14839,7 +15806,7 @@
           },
           {
             "tool": "fund_restatements",
-            "call_id": 24,
+            "call_id": 26,
             "args": {
               "p_cnpj": "32113885000121",
               "p_from": "2025-09-01",
@@ -14849,7 +15816,7 @@
           },
           {
             "tool": "fund_restatement_diff",
-            "call_id": 27,
+            "call_id": 29,
             "args": {
               "p_cnpj": "32113885000121",
               "p_fnet_id": 1086024
@@ -14858,6 +15825,168 @@
           }
         ],
         "assessment": "Limiares de materialidade estacionados pelo dono: nenhum julgamento; tudo é 'reapresentado, não avaliado'."
+      },
+      {
+        "id": "credito_vencimento_diverge",
+        "risk": "Vencimento diverge do registro CVM",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "count",
+        "value_pct": null,
+        "value_brl": null,
+        "value_count": 1,
+        "subject": "0260000X",
+        "source_path": "identification.lines[].credit_match.flags[code=vencimento_diverge]",
+        "severity": "moderado",
+        "severity_label": "moderado",
+        "thresholds": {
+          "atencao_above_count": null,
+          "moderado_above_count": 0
+        },
+        "explanation": "CRA e CRI cujo vencimento impresso no extrato difere do vencimento da série no registro da CVM; a conferir",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          11
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "portfolio_instruments",
+            "call_id": 9,
+            "args": {
+              "p_codes": [
+                "CRA-0260000X",
+                "DEB-EXEM12"
+              ]
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "value_brl_detail": 95000.0,
+        "n_evaluated": 1,
+        "n_not_found": 0,
+        "check_label": "a conferir",
+        "statement_vencimento": "2031-10-15",
+        "registry_vencimento": "2032-04-15",
+        "value_brl_detail_label": "valor desses títulos"
+      },
+      {
+        "id": "credito_preco_marcacao",
+        "risk": "Preço do extrato vs marcação dos fundos (debêntures)",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "pct",
+        "value_pct": 12.0,
+        "value_brl": null,
+        "value_count": null,
+        "subject": "EXEM12",
+        "source_path": "identification.lines[11].credit_match.price_gap_abs_pct",
+        "severity": "moderado",
+        "severity_label": "moderado",
+        "thresholds": {
+          "atencao_above_pct": null,
+          "moderado_above_pct": 5.0
+        },
+        "explanation": "maior diferença entre o preço unitário do extrato e a marcação média ponderada dos fundos que têm a debênture (CDA bloco 4), em datas diferentes; informativo, não é veredito de preço",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          12
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "portfolio_instruments",
+            "call_id": 9,
+            "args": {
+              "p_codes": [
+                "CRA-0260000X",
+                "DEB-EXEM12"
+              ]
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 12
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "check_label": "informativo, não é veredito de preço",
+        "price_gap_pct": 12.0,
+        "statement_preco_brl": 60000.0,
+        "statement_date": "2026-09-30",
+        "preco_marcacao_fundos_brl": 53571.43,
+        "cda_period": "2026-05-01",
+        "n_evaluated": 1
+      },
+      {
+        "id": "concentracao_gestor",
+        "risk": "Maior gestora",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "pct",
+        "value_pct": 36.9633,
+        "value_brl": null,
+        "value_count": null,
+        "subject": "GESTORA EXEMPLO BETA",
+        "source_path": "concentration.manager.groups[0].portfolio_pct",
+        "severity": "moderado",
+        "severity_label": "moderado",
+        "thresholds": {
+          "atencao_above_pct": 40.0,
+          "moderado_above_pct": 25.0
+        },
+        "explanation": "parte da carteira nos fundos da maior gestora, agrupados pelo identificador da gestora arquivado na CVM, nunca pelo nome",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          4,
+          5
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "portfolio_fund_terms",
+            "call_id": 10,
+            "args": {
+              "p_cnpjs": [
+                "08935128000159",
+                "50088190000119",
+                "51488342000133",
+                "32113885000121",
+                "42592315000115",
+                "11728688000147"
+              ]
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 4
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 5
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "value_brl_detail": 2290401.8,
+        "gestor_id": "90000000000202",
+        "fund_value_pct": 53.8782,
+        "without_gestor_line_nos": [],
+        "value_brl_detail_label": "valor nos fundos da gestora"
       },
       {
         "id": "credito_privado",
@@ -15087,25 +16216,148 @@
         ]
       },
       {
-        "id": "liquidez",
-        "risk": "Liquidez",
-        "status": "nao_avaliado",
-        "status_label": "não avaliado",
-        "unit": "pct",
+        "id": "credito_situacao",
+        "risk": "CRA/CRI fora de 'Adimplente'",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "count",
         "value_pct": null,
+        "value_brl": null,
+        "value_count": 0,
+        "subject": null,
+        "source_path": "identification.lines[].credit_match.flags[code=situacao_fora_adimplente]",
+        "severity": "baixo",
+        "severity_label": "baixo",
+        "thresholds": {
+          "atencao_above_count": 0,
+          "moderado_above_count": null
+        },
+        "explanation": "CRA e CRI da carteira cuja situação no registro da CVM não é 'Adimplente', como arquivada; uma situação não informada não conta",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [],
+        "text_allowed": true,
+        "sources": [],
+        "value_brl_detail": null,
+        "n_evaluated": 1,
+        "n_not_found": 0
+      },
+      {
+        "id": "liquidez",
+        "risk": "Liquidez acima de D+30",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "pct",
+        "value_pct": 28.0009,
         "value_brl": null,
         "value_count": null,
         "subject": null,
-        "source_path": null,
-        "severity": null,
-        "severity_label": null,
-        "thresholds": {},
-        "explanation": "prazo para resgatar os fundos e para vender o crédito direto",
-        "reason_code": "liquidez_sem_api",
-        "reason": "o SILO ainda não serve o prazo de resgate da lâmina por uma API pública, e a coluna de liquidez do extrato para o crédito direto ainda não é lida",
-        "line_nos": [],
+        "source_path": "liquidity.above_d30_total_pct",
+        "severity": "baixo",
+        "severity_label": "baixo",
+        "thresholds": {
+          "atencao_above_pct": 50.0,
+          "moderado_above_pct": 30.0
+        },
+        "explanation": "parte da carteira que não se resgata em até D+30: fundos com prazo de pagamento acima de D+30, com carência (lock-up), sem prazo de resgate informado e o crédito direto, que não tem liquidez antes do vencimento; prazos como arquivados, dias úteis e corridos sem conversão",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          3,
+          6,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
         "text_allowed": true,
-        "sources": []
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 3
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 6
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 8
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 9
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 10
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 11
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 12
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "value_brl_detail": 1735055.0,
+        "parts": [
+          {
+            "group": "acima de D+30",
+            "bucket_id": "acima_d30",
+            "value_brl": 264615.0,
+            "portfolio_pct": 4.2704
+          },
+          {
+            "group": "lock-up",
+            "bucket_id": "lockup",
+            "value_brl": 0.0,
+            "portfolio_pct": 0.0
+          },
+          {
+            "group": "fundo sem prazo de resgate informado",
+            "bucket_id": "fundo_sem_prazo",
+            "value_brl": 925440.0,
+            "portfolio_pct": 14.9351
+          },
+          {
+            "group": "crédito direto sem liquidez antes do vencimento",
+            "bucket_id": "credito_direto",
+            "value_brl": 545000.0,
+            "portfolio_pct": 8.7954
+          }
+        ],
+        "value_brl_detail_label": "valor acima de D+30"
       }
     ]
   },
@@ -15143,6 +16395,14 @@
       "text": "Principais riscos (esquema 1.8): cada linha lê um campo de outra seção, ou uma soma de valores do extrato, contra limites fixos do código (src/portfolio/risks.py); o semáforo é atenção, moderado ou baixo. O crédito sem cobertura do FGC supõe um só titular e trata o emissor impresso como a instituição: fica a conferir."
     },
     {
+      "id": "credit_registry",
+      "text": "Crédito direto (esquema 1.9): CRA e CRI são procurados pelo código exato no registro da CVM, e a série é a de vencimento igual ao do extrato (senão a única, senão a de menor número, marcada 'vencimento diverge'); debêntures, pelo código nas carteiras dos fundos (CDA bloco 4). O emissor continua o impresso no extrato. A marcação dos fundos é a média ponderada da CDA, em outra data: a diferença para o preço do extrato é informativa, não um veredito de preço."
+    },
+    {
+      "id": "fund_terms",
+      "text": "Gestora e prazos de resgate (esquema 1.9): como arquivados no Extrato da CVM ou na lâmina. A concentração por gestora agrupa pelo identificador arquivado, nunca pelo nome. O prazo de pagamento do resgate é lido como arquivado, sem converter dias úteis e corridos; carência acima de zero é lock-up; um prazo não informado nunca é lido como zero."
+    },
+    {
       "id": "abnormal_movement",
       "text": "Movimento incomum (esquema 1.3): o retorno mensal da cota do fundo é comparado com o da sua classe ANBIMA conforme arquivada no Extrato da CVM, nos limiares do dono (atenção acima de 2 desvios padrão, só em tabela; forte acima de 3, no texto). Os limiares de materialidade de reapresentação seguem estacionados pelo dono."
     },
@@ -15154,7 +16414,7 @@
   "section_status": {
     "identification": {
       "status": "partial",
-      "reason": "0 linha(s) ambígua(s) e 4 desconhecida(s).",
+      "reason": "0 linha(s) ambígua(s) e 2 desconhecida(s).",
       "reason_codes": [
         "linhas_nao_identificadas"
       ]
@@ -15202,24 +16462,24 @@
       ]
     },
     "concentration": {
-      "status": "partial",
-      "reason": "Concentração por gestor não avaliada: nenhuma função ou visão pública do SILO (schema api) serve o CNPJ do gestor arquivado na CVM. Liquidez dos fundos não avaliada: nenhuma função ou visão pública do SILO (schema api) serve o prazo de pagamento do resgate da lâmina (qt_dia_pagto_resgate).",
-      "reason_codes": [
-        "gestor_sem_api",
-        "liquidez_sem_api"
-      ]
+      "status": "complete",
+      "reason": null,
+      "reason_codes": []
     },
     "allocation": {
       "status": "complete",
       "reason": null,
       "reason_codes": []
     },
+    "liquidity": {
+      "status": "complete",
+      "reason": null,
+      "reason_codes": []
+    },
     "risks": {
-      "status": "partial",
-      "reason": "Há riscos não avaliados por falta de dado.",
-      "reason_codes": [
-        "riscos_nao_avaliados"
-      ]
+      "status": "complete",
+      "reason": null,
+      "reason_codes": []
     }
   },
   "provenance": [
@@ -15360,6 +16620,38 @@
     },
     {
       "call_id": 9,
+      "tool": "portfolio_instruments",
+      "args": {
+        "p_codes": [
+          "CRA-0260000X",
+          "DEB-EXEM12"
+        ]
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 2,
+      "error": null,
+      "id": "p9"
+    },
+    {
+      "call_id": 10,
+      "tool": "portfolio_fund_terms",
+      "args": {
+        "p_cnpjs": [
+          "08935128000159",
+          "50088190000119",
+          "51488342000133",
+          "32113885000121",
+          "42592315000115",
+          "11728688000147"
+        ]
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 6,
+      "error": null,
+      "id": "p10"
+    },
+    {
+      "call_id": 11,
       "tool": "portfolio_lookthrough",
       "args": {
         "p_cnpjs": [
@@ -15371,10 +16663,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 8,
       "error": null,
-      "id": "p9"
+      "id": "p11"
     },
     {
-      "call_id": 10,
+      "call_id": 12,
       "tool": "portfolio_lookthrough",
       "args": {
         "p_cnpjs": [
@@ -15386,10 +16678,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 34,
       "error": null,
-      "id": "p10"
+      "id": "p12"
     },
     {
-      "call_id": 11,
+      "call_id": 13,
       "tool": "portfolio_lookthrough",
       "args": {
         "p_cnpjs": [
@@ -15401,10 +16693,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 34,
       "error": null,
-      "id": "p11"
+      "id": "p13"
     },
     {
-      "call_id": 12,
+      "call_id": 14,
       "tool": "portfolio_lookthrough",
       "args": {
         "p_cnpjs": [
@@ -15416,10 +16708,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 0,
       "error": null,
-      "id": "p12"
+      "id": "p14"
     },
     {
-      "call_id": 13,
+      "call_id": 15,
       "tool": "portfolio_lookthrough",
       "args": {
         "p_cnpjs": [
@@ -15431,10 +16723,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 6,
       "error": null,
-      "id": "p13"
+      "id": "p15"
     },
     {
-      "call_id": 14,
+      "call_id": 16,
       "tool": "portfolio_lookthrough",
       "args": {
         "p_cnpjs": [
@@ -15446,10 +16738,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 0,
       "error": null,
-      "id": "p14"
+      "id": "p16"
     },
     {
-      "call_id": 15,
+      "call_id": 17,
       "tool": "portfolio_fees",
       "args": {
         "p_cnpjs": [
@@ -15465,10 +16757,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 4,
       "error": null,
-      "id": "p15"
+      "id": "p17"
     },
     {
-      "call_id": 16,
+      "call_id": 18,
       "tool": "portfolio_fees",
       "args": {
         "p_cnpjs": [
@@ -15482,39 +16774,13 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 4,
       "error": null,
-      "id": "p16"
-    },
-    {
-      "call_id": 17,
-      "tool": "company_financials",
-      "args": {
-        "p_id": "AXIA7",
-        "p_from": "2025-03-31",
-        "p_to": "2026-09-30"
-      },
-      "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
-      "error": null,
-      "id": "p17"
-    },
-    {
-      "call_id": 18,
-      "tool": "company_financials",
-      "args": {
-        "p_id": "BRAP4",
-        "p_from": "2025-03-31",
-        "p_to": "2026-09-30"
-      },
-      "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
-      "error": null,
       "id": "p18"
     },
     {
       "call_id": 19,
       "tool": "company_financials",
       "args": {
-        "p_id": "VALE3",
+        "p_id": "AXIA7",
         "p_from": "2025-03-31",
         "p_to": "2026-09-30"
       },
@@ -15527,7 +16793,7 @@
       "call_id": 20,
       "tool": "company_financials",
       "args": {
-        "p_id": "USIM5",
+        "p_id": "BRAP4",
         "p_from": "2025-03-31",
         "p_to": "2026-09-30"
       },
@@ -15540,7 +16806,7 @@
       "call_id": 21,
       "tool": "company_financials",
       "args": {
-        "p_id": "CLSC4",
+        "p_id": "VALE3",
         "p_from": "2025-03-31",
         "p_to": "2026-09-30"
       },
@@ -15553,7 +16819,7 @@
       "call_id": 22,
       "tool": "company_financials",
       "args": {
-        "p_id": "HYPE3",
+        "p_id": "USIM5",
         "p_from": "2025-03-31",
         "p_to": "2026-09-30"
       },
@@ -15564,6 +16830,32 @@
     },
     {
       "call_id": 23,
+      "tool": "company_financials",
+      "args": {
+        "p_id": "CLSC4",
+        "p_from": "2025-03-31",
+        "p_to": "2026-09-30"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 1,
+      "error": null,
+      "id": "p23"
+    },
+    {
+      "call_id": 24,
+      "tool": "company_financials",
+      "args": {
+        "p_id": "HYPE3",
+        "p_from": "2025-03-31",
+        "p_to": "2026-09-30"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 1,
+      "error": null,
+      "id": "p24"
+    },
+    {
+      "call_id": 25,
       "tool": "fidc_portfolio",
       "args": {
         "p_cnpj": "32113885000121",
@@ -15574,10 +16866,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 6,
       "error": null,
-      "id": "p23"
+      "id": "p25"
     },
     {
-      "call_id": 24,
+      "call_id": 26,
       "tool": "fund_restatements",
       "args": {
         "p_cnpj": "32113885000121",
@@ -15587,10 +16879,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 3,
       "error": null,
-      "id": "p24"
+      "id": "p26"
     },
     {
-      "call_id": 25,
+      "call_id": 27,
       "tool": "fund_restatement_diff",
       "args": {
         "p_cnpj": "32113885000121",
@@ -15599,10 +16891,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 2,
       "error": null,
-      "id": "p25"
+      "id": "p27"
     },
     {
-      "call_id": 26,
+      "call_id": 28,
       "tool": "fund_restatement_diff",
       "args": {
         "p_cnpj": "32113885000121",
@@ -15611,10 +16903,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 2,
       "error": null,
-      "id": "p26"
+      "id": "p28"
     },
     {
-      "call_id": 27,
+      "call_id": 29,
       "tool": "fund_restatement_diff",
       "args": {
         "p_cnpj": "32113885000121",
@@ -15623,10 +16915,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 2,
       "error": null,
-      "id": "p27"
+      "id": "p29"
     },
     {
-      "call_id": 28,
+      "call_id": 30,
       "tool": "fund_restatements",
       "args": {
         "p_cnpj": "11728688000147",
@@ -15636,38 +16928,20 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 0,
       "error": null,
-      "id": "p28"
+      "id": "p30"
     },
     {
-      "call_id": 29,
+      "call_id": 31,
       "tool": "screen_zombie_growth",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 1,
       "error": null,
-      "id": "p29"
-    },
-    {
-      "call_id": 30,
-      "tool": "screen_captive_vehicles",
-      "args": {},
-      "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
-      "error": null,
-      "id": "p30"
-    },
-    {
-      "call_id": 31,
-      "tool": "screen_evergreen_aging",
-      "args": {},
-      "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 0,
-      "error": null,
       "id": "p31"
     },
     {
       "call_id": 32,
-      "tool": "screen_delinquency_drivers",
+      "tool": "screen_captive_vehicles",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 1,
@@ -15676,25 +16950,25 @@
     },
     {
       "call_id": 33,
-      "tool": "screen_restatements",
+      "tool": "screen_evergreen_aging",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
+      "row_count": 0,
       "error": null,
       "id": "p33"
     },
     {
       "call_id": 34,
-      "tool": "screen_late_filers",
+      "tool": "screen_restatements",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 0,
+      "row_count": 1,
       "error": null,
       "id": "p34"
     },
     {
       "call_id": 35,
-      "tool": "screen_silent_filers",
+      "tool": "screen_late_filers",
       "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 0,
@@ -15703,22 +16977,18 @@
     },
     {
       "call_id": 36,
-      "tool": "screen_dormant_funds",
-      "args": {
-        "p_lookback_months": 3,
-        "p_dormancy": "empty_shell"
-      },
+      "tool": "screen_silent_filers",
+      "args": {},
       "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 1,
+      "row_count": 0,
       "error": null,
       "id": "p36"
     },
     {
       "call_id": 37,
-      "tool": "screen_dormant_funds",
+      "tool": "screen_delinquency_drivers",
       "args": {
-        "p_lookback_months": 3,
-        "p_min_nav": 1000000000
+        "p_driver": "consistent_worsening"
       },
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 1,
@@ -15727,6 +16997,41 @@
     },
     {
       "call_id": 38,
+      "tool": "screen_delinquency_drivers",
+      "args": {
+        "p_driver": "value_up_rate_masked"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 0,
+      "error": null,
+      "id": "p38"
+    },
+    {
+      "call_id": 39,
+      "tool": "screen_dormant_funds",
+      "args": {
+        "p_lookback_months": 3,
+        "p_dormancy": "empty_shell"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 1,
+      "error": null,
+      "id": "p39"
+    },
+    {
+      "call_id": 40,
+      "tool": "screen_dormant_funds",
+      "args": {
+        "p_lookback_months": 3,
+        "p_min_nav": 1000000000
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 1,
+      "error": null,
+      "id": "p40"
+    },
+    {
+      "call_id": 41,
       "tool": "portfolio_movement",
       "args": {
         "p_cnpjs": [
@@ -15742,7 +17047,7 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 6,
       "error": null,
-      "id": "p38"
+      "id": "p41"
     }
   ]
 }

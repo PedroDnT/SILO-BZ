@@ -36,6 +36,7 @@ from typing import Any
 from src.portfolio.client import SiloClient
 from src.portfolio.common import (
     STATUS_NOT_APPLICABLE,
+    Call,
     Section,
     as_date,
     b3_issuer_code,
@@ -49,7 +50,7 @@ from src.portfolio.common import (
 )
 from src.portfolio.identify import LineId
 
-LOOKTHROUGH_TIPOS = ("fundo", "FIDC", "FII", "ETF")
+LOOKTHROUGH_TIPOS = ("fundo", "FIDC", "FII", "ETF", "FIP")
 ECONOMIC_GROUP_NOTE = (
     "Grupo econômico NÃO avaliado: o SILO compara emissor por raiz de CNPJ (8 dígitos) e por código de "
     "emissor da B3, não por controle societário."
@@ -128,13 +129,15 @@ def compute_lookthrough(
 
     roots = [li for li in lines if li.kind == "fund" and li.cnpj and li.position.tipo in LOOKTHROUGH_TIPOS]
     refused = 0
+    depth_reduced: list[int] = []
 
     for li in lines:
         exposures[li.line_no] = _direct_exposures(li)
 
     for li in roots:
-        args = {"p_cnpjs": [li.cnpj], "p_month": cda_month.isoformat(), "p_max_depth": max_depth}
-        res = call_tool(client, "portfolio_lookthrough", args, sec.errors)
+        res, depth_used = _lookthrough_call(client, li.cnpj, cda_month, max_depth, sec.errors)
+        if depth_used < max_depth:
+            depth_reduced.append(li.line_no)
         if not res.ok:
             refused += 1
             out_lines.append(
@@ -205,6 +208,7 @@ def compute_lookthrough(
                 "n_rows": len(all_rows),
                 "n_cycle_rows_skipped": len(cycles),
                 "max_depth_seen": max((int(r.get("depth") or 0) for r in rows), default=0),
+                "max_depth_used": depth_used,
                 "explained_weight": ratio(weight_sum),
                 "unexplained_weight": ratio(Decimal(1) - weight_sum),
                 "unexplained_note": (
@@ -224,6 +228,12 @@ def compute_lookthrough(
         sec.fail("portfolio_lookthrough falhou para todos os fundos (erros literais em errors).", code="consulta_falhou")
     elif refused:
         sec.degrade(f"portfolio_lookthrough falhou para {refused} de {len(roots)} fundos; essas linhas ficaram sem look-through.", code="consulta_falhou")
+    if depth_reduced and sec.status == "complete":
+        sec.degrade(
+            f"{len(depth_reduced)} fundo(s) aberto(s) com profundidade menor que {max_depth}: a resposta passava de "
+            "1000 linhas (22023); os fundos abaixo do limite ficam como limite de profundidade.",
+            code="profundidade_reduzida",
+        )
     empty = [o for o in out_lines if o["status"] == "no_holdings"]
     if empty and sec.status == "complete":
         sec.degrade(f"{len(empty)} fundo(s) sem carteira na CDA do mês.", code="sem_carteira_cda")
@@ -240,6 +250,26 @@ def compute_lookthrough(
         "shared_exposure": shared,
     }
     return section, exposures
+
+
+_ROW_CAP = re.compile(r"more than 1000 rows")  # 22023 alone is also a bad argument: only the page cap steps down
+
+
+def _lookthrough_call(client: SiloClient, cnpj: str, cda_month: dt.date, max_depth: int, errors: list[dict]) -> tuple[Call, int]:
+    """One fund's look-through. A fund of funds can pass the API's one-page cap (22023, more than 1000 rows) at the
+    requested depth: retry one level shallower, down to 1, and say which depth answered. A refusal followed by an
+    answer is not an error of the section; when no depth answers, every refusal goes to ``errors``."""
+    depth = max_depth
+    tried: list[dict] = []
+    while True:
+        args = {"p_cnpjs": [cnpj], "p_month": cda_month.isoformat(), "p_max_depth": depth}
+        res = call_tool(client, "portfolio_lookthrough", args, tried)
+        if res.ok or depth <= 1 or res.transient or not _ROW_CAP.search(res.error or ""):
+            break
+        depth -= 1
+    if not res.ok:
+        errors.extend(tried)
+    return res, depth
 
 
 def add_portfolio_shares(section: dict[str, Any], exposures: dict[int, list[Exposure]], total: Decimal, top_n: int = 10) -> None:
@@ -350,12 +380,17 @@ def _direct_exposures(li: LineId) -> list[Exposure]:
                 period=p.data_posicao.isoformat(), sources=src,
             )
         ]
-    if li.kind is None and p.taxa_texto and p.tipo in ("CRI", "CRA", "CDB", "LCI", "LCA", "debênture", "outro"):
-        # a direct credit line: not identified in SILO, but the statement prints its rate and maturity
+    credit_tipo = p.tipo in ("CRI", "CRA", "CDB", "LCI", "LCA", "debênture", "outro")
+    if credit_tipo and (li.kind == "credito" or (li.kind is None and p.taxa_texto)):
+        # a direct credit line: identified by its registry code (engine 1.9) or not, the statement prints its rate and
+        # maturity. An identified debênture carries its ISIN and B3 issuer code, so the issuer-code overlap check finds
+        # the same issuer held inside the funds; a CRA or CRI keeps none (its ISIN code is the securitizadora's).
+        deb = li.kind == "credito" and p.tipo == "debênture"
         return [
             Exposure(
                 line_no=li.line_no, via="direto", depth=0, block=None, asset_kind="credito_direto", asset_key=p.codigo,
-                asset_name=p.linha_extrato, isin=None, issuer_cnpj=None, issuer_code=None, tp_aplic=None, tp_ativo=None,
+                asset_name=p.linha_extrato, isin=li.isin if deb else None, issuer_cnpj=None,
+                issuer_code=(li.issuer_code or b3_issuer_code(li.isin)) if deb else None, tp_aplic=None, tp_ativo=None,
                 tp_titpub=None, indexer_code=None, maturity=p.vencimento.isoformat() if p.vencimento else None,
                 weight=Decimal(1), value_brl=p.valor, period=p.data_posicao.isoformat(), sources=src, taxa_texto=p.taxa_texto,
             )
@@ -523,10 +558,19 @@ def shared_exposure(
         for n in nodes:
             if n.get("fund_cnpj"):
                 by_fund[str(n["fund_cnpj"])].append((ln, n))
+    # A fund or ETF held directly is the same fund when another line holds it underneath (real statement,
+    # 2026-10-05: an ETF bought directly and also inside a credit fund's master). Only with at least one
+    # look-through leg: two direct lines of one fund are one position in two accounts, not an overlap.
+    for li in lines:
+        c = li.cnpj if li.kind == "fund" else li.etf_cnpj
+        if c and str(c) in by_fund:
+            by_fund[str(c)].append((li.line_no, {"fund_cnpj": c, "fund_name": li.name or li.position.linha_extrato,
+                                                 "value_brl": float(li.position.valor), "direct": True, "sources": []}))
     for cnpj, members in sorted(by_fund.items()):
         line_nos = sorted({ln for ln, _ in members})
-        if len(line_nos) < 2:
+        if len(line_nos) < 2 or all(n.get("direct") for _, n in members):
             continue
+        direct = sorted({ln for ln, n in members if n.get("direct")})
         per_line: dict[int, Decimal] = defaultdict(Decimal)
         for ln, n in members:
             per_line[ln] += dec(n.get("value_brl")) or Decimal("0")
@@ -536,8 +580,9 @@ def shared_exposure(
                 "label": f"fundo {cnpj} ({members[0][1].get('fund_name')})",
                 "fund_cnpj": cnpj,
                 "line_nos": line_nos,
+                "direct_line_nos": direct,
                 "lines": [
-                    {"line_no": ln, "linha_extrato": names[ln], "exposure_brl": brl(v)}
+                    {"line_no": ln, "linha_extrato": names[ln], "exposure_brl": brl(v), "direct": ln in direct}
                     for ln, v in sorted(per_line.items())
                 ],
                 "total_exposure_brl": brl(sum(per_line.values(), Decimal("0"))),

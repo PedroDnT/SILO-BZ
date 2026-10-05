@@ -893,6 +893,8 @@ def _fund_tipo(name: str) -> str:
         return "FIDC"
     if re.search(r"\bFII\b", up):
         return "FII"
+    if re.search(r"\bFIP\b", up) or "PARTICIP" in up:  # engine 1.9: a Fundo de Investimento em Participações
+        return "FIP"
     return "fundo"
 
 
@@ -1819,7 +1821,7 @@ def describe(stmt: Statement, diag: Diagnostics) -> list[str]:
     """Counts, subtotals, checks and coverage. Never a name, account, CPF, address, certificate or asset name."""
     ps = stmt.positions
     n = len(ps)
-    funds = [p for p in ps if p.tipo in ("fundo", "FIDC", "FII")]
+    funds = [p for p in ps if p.tipo in ("fundo", "FIDC", "FII", "FIP")]
     rf = [p for p in ps if p.classe_corretora == "Renda Fixa"]
     out = [
         f"layout: extrato da conta investimento; data da posição: {stmt.position_date.isoformat()}; "

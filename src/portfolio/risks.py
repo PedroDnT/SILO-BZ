@@ -9,6 +9,10 @@ or FII) is ``nao_se_aplica``. None is omitted. No row is a forecast or a recomme
 The movement row keeps the owner's rule: a fund at the attention level is a table row, never text. Its count of such
 funds sits under ``table_only`` (a key the Redator never sees) and the row has ``text_allowed = false`` when that is
 what sets its severity, so the Revisor removes any sentence that cites it.
+
+Engine 1.9 adds the direct credit identified by its registry code (CRA/CRI outside "Adimplente", a maturity that
+differs from the CVM registry, the statement's price against the funds' mark for debêntures), the largest fund manager
+and the liquidity above D+30, which replaces the "não avaliado" liquidity row when the funds' terms came back.
 """
 
 from __future__ import annotations
@@ -16,7 +20,17 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from src.portfolio.common import REASON_TEXT, STATUS_COMPLETE, STATUS_UNKNOWN, UNCLASSIFIED, Section, brl, dec, pct
+from src.portfolio.common import (
+    REASON_TEXT,
+    STATUS_COMPLETE,
+    STATUS_NOT_APPLICABLE as STATUS_NOT_APPLICABLE_SECTION,
+    STATUS_UNKNOWN,
+    UNCLASSIFIED,
+    Section,
+    brl,
+    dec,
+    pct,
+)
 
 TITLE = "Principais riscos"
 EVALUATED, NOT_EVALUATED, NOT_APPLICABLE = "avaliado", "nao_avaliado", "nao_se_aplica"
@@ -41,7 +55,12 @@ THRESHOLDS: dict[str, dict[str, float | int | None]] = {
     "indexador": {"atencao_above_pct": 80.0, "moderado_above_pct": 60.0},
     "reapresentacoes": {"atencao_above_count": None, "moderado_above_count": 0},
     "movimento_anormal": {"atencao_above_count": 0, "moderado_above_count": None},
-    "liquidez": {},
+    # engine 1.9
+    "credito_situacao": {"atencao_above_count": 0, "moderado_above_count": None},
+    "credito_vencimento_diverge": {"atencao_above_count": None, "moderado_above_count": 0},
+    "credito_preco_marcacao": {"atencao_above_pct": None, "moderado_above_pct": 5.0},
+    "concentracao_gestor": {"atencao_above_pct": 40.0, "moderado_above_pct": 25.0},
+    "liquidez": {"atencao_above_pct": 50.0, "moderado_above_pct": 30.0},
 }
 RISK_NAMES = {
     "concentracao_emissor": "Concentração: maior emissor de crédito direto",
@@ -53,7 +72,11 @@ RISK_NAMES = {
     "indexador": "Indexador",
     "reapresentacoes": "Reapresentações (FIDC e FII)",
     "movimento_anormal": "Movimento anormal de cota",
-    "liquidez": "Liquidez",
+    "credito_situacao": "CRA/CRI fora de 'Adimplente'",
+    "credito_vencimento_diverge": "Vencimento diverge do registro CVM",
+    "credito_preco_marcacao": "Preço do extrato vs marcação dos fundos (debêntures)",
+    "concentracao_gestor": "Maior gestora",
+    "liquidez": "Liquidez acima de D+30",
 }
 EXPLANATION = {
     "concentracao_emissor": (
@@ -78,7 +101,26 @@ EXPLANATION = {
         "fundos com retorno de cota a mais de 3 desvios padrão da média da sua classe ANBIMA no mês (nível forte); "
         "um sinal sobre um mês passado"
     ),
-    "liquidez": "prazo para resgatar os fundos e para vender o crédito direto",
+    "credito_situacao": (
+        "CRA e CRI da carteira cuja situação no registro da CVM não é 'Adimplente', como arquivada; uma situação não "
+        "informada não conta"
+    ),
+    "credito_vencimento_diverge": (
+        "CRA e CRI cujo vencimento impresso no extrato difere do vencimento da série no registro da CVM; a conferir"
+    ),
+    "credito_preco_marcacao": (
+        "maior diferença entre o preço unitário do extrato e a marcação média ponderada dos fundos que têm a debênture "
+        "(CDA bloco 4), em datas diferentes; informativo, não é veredito de preço"
+    ),
+    "concentracao_gestor": (
+        "parte da carteira nos fundos da maior gestora, agrupados pelo identificador da gestora arquivado na CVM, "
+        "nunca pelo nome"
+    ),
+    "liquidez": (
+        "parte da carteira que não se resgata em até D+30: fundos com prazo de pagamento acima de D+30, com carência "
+        "(lock-up), sem prazo de resgate informado e o crédito direto, que não tem liquidez antes do vencimento; prazos "
+        "como arquivados, dias úteis e corridos sem conversão"
+    ),
 }
 NOT_EVALUATED_TEXT = {
     "sem_vencimento": REASON_TEXT["sem_vencimento"],
@@ -89,15 +131,30 @@ NOT_EVALUATED_TEXT = {
         "para o crédito direto ainda não é lida"
     ),
     "sem_indexador": "nenhuma parte da carteira tem indexador classificado",
+    "cra_cri_sem_registro": REASON_TEXT["cra_cri_sem_registro"],
+    "sem_marcacao_fundos": REASON_TEXT["sem_marcacao_fundos"],
+    "sem_gestor": REASON_TEXT["sem_gestor"],
+    "gestor_sem_api": REASON_TEXT["gestor_sem_api"],
 }
 NOT_APPLICABLE_TEXT = {
     "sem_credito_direto": REASON_TEXT["sem_credito_direto"],
     "sem_fundos": REASON_TEXT["sem_fundos"],
     "sem_fidc_fii": "nenhum FIDC ou FII identificado na carteira",
     "sem_cdb_lci_lca": "nenhum CDB, LCI ou LCA na carteira",
+    "sem_cra_cri": REASON_TEXT["sem_cra_cri"],
+    "sem_debenture": REASON_TEXT["sem_debenture"],
 }
-DETAIL_LABEL = {"credito_sem_fgc": "valor sem cobertura", "fgc_acima_limite": "excedente somado"}
-FUND_TIPOS = ("fundo", "FIDC", "FII", "ETF")
+DETAIL_LABEL = {"credito_sem_fgc": "valor sem cobertura", "fgc_acima_limite": "excedente somado",
+                "credito_situacao": "valor desses títulos", "credito_vencimento_diverge": "valor desses títulos",
+                "concentracao_gestor": "valor nos fundos da gestora", "liquidez": "valor acima de D+30"}
+CHECK_LABEL = {"credito_vencimento_diverge": "a conferir", "credito_preco_marcacao": "informativo, não é veredito de preço",
+               "indexador": "leitura parcial: mais de 25% da carteira sem indexador classificado (partes ao lado)"}
+# Above this share of the portfolio without an indexer, the indexer row's largest group may not be the largest one:
+# the row keeps its value and severity and carries CHECK_LABEL["indexador"] (real statement, 2026-10-05, replayed with
+# a sample of each fund's look-through: a large unclassified share, the funds' part the ingested CDA blocks do not
+# explain, printed beside "baixo").
+INDEXER_UNCLASSIFIED_CHECK_PCT = 25.0
+FUND_TIPOS = ("fundo", "FIDC", "FII", "ETF", "FIP")
 INDEXER_GROUPS = (
     ("inflação", lambda c: c.startswith("inflação")),
     ("pré-fixado", lambda c: c == "pré-fixado"),
@@ -211,21 +268,37 @@ def _issuer_rows(doc: dict) -> list[dict]:
 
 
 def _fund_row(doc: dict) -> dict:
+    """The largest fund, summed over every line that identifies as it (same CNPJ, else same code): a fund held in
+    two accounts is one exposure (real statement, 2026-10-05: one fund in two accounts, 3.65% + 6.10%)."""
     idents = {ln["line_no"]: ln for ln in doc["identification"]["lines"]}
-    best = None
+    groups: dict[str, dict] = {}
     for i, p in enumerate(doc["statement"]["positions"]):
         ident = idents.get(p["line_no"]) or {}
         identity = ident.get("identity") or {}
         is_fund = p.get("tipo") in FUND_TIPOS or identity.get("kind") == "fund" or identity.get("asset_class") == "fund_quota"
-        if is_fund and (best is None or (p.get("valor_brl") or 0) > (best[1].get("valor_brl") or 0)):
-            best = (i, p, identity)
-    if best is None:
+        if not is_fund:
+            continue
+        key = identity.get("cnpj") or p.get("codigo") or f"L{p['line_no']}"
+        g = groups.setdefault(key, {"value": Decimal("0"), "pct": Decimal("0"), "line_nos": [], "idx": [], "sources": [],
+                                    "subject": identity.get("name") or p.get("linha_extrato")})
+        g["value"] += dec(p.get("valor_brl")) or Decimal("0")
+        g["pct"] += dec(p.get("portfolio_pct")) or Decimal("0")
+        g["line_nos"].append(p["line_no"])
+        g["idx"].append(i)
+        if p.get("source"):
+            g["sources"].append(p["source"])
+    if not groups:
         return _row("concentracao_fundo", status=NOT_APPLICABLE, unit="pct", code="sem_fundos")
-    i, p, identity = best
-    return _row("concentracao_fundo", status=EVALUATED, unit="pct", value=p.get("portfolio_pct"),
-                subject=identity.get("name") or p.get("linha_extrato"), source_path=f"statement.positions[{i}].portfolio_pct",
-                line_nos=[p["line_no"]], sources=[p["source"]] if p.get("source") else [],
-                extra={"value_brl_detail": p.get("valor_brl")})
+    g = max(groups.values(), key=lambda x: (x["value"], -x["line_nos"][0]))
+    if len(g["idx"]) == 1:
+        path, value = f"statement.positions[{g['idx'][0]}].portfolio_pct", doc["statement"]["positions"][g["idx"][0]].get("portfolio_pct")
+    else:
+        total = dec(doc["statement"].get("sum_of_lines_brl")) or Decimal("0")
+        path = "statement.positions[" + ", ".join(str(i) for i in g["idx"]) + "].valor_brl, somados (mesmo fundo), sobre statement.sum_of_lines_brl"
+        value = pct(g["value"], total)
+    return _row("concentracao_fundo", status=EVALUATED, unit="pct", value=value,
+                subject=g["subject"], source_path=path, line_nos=g["line_nos"], sources=g["sources"],
+                extra={"value_brl_detail": brl(g["value"])})
 
 
 def _maturity_row(doc: dict) -> dict:
@@ -256,9 +329,13 @@ def _indexer_row(doc: dict) -> dict:
     if not factors:
         return _row("indexador", status=NOT_EVALUATED, unit="pct", code="sem_indexador", extra={"parts": parts})
     top = max(factors, key=lambda p: p["value_brl"])
+    extra: dict = {"parts": parts}
+    unclassified = next(p for p in parts if p["group"] == UNCLASSIFIED)["portfolio_pct"] or 0
+    if unclassified > INDEXER_UNCLASSIFIED_CHECK_PCT:
+        extra["check_label"] = CHECK_LABEL["indexador"]
     return _row("indexador", status=EVALUATED, unit="pct", value=top["portfolio_pct"], subject=top["group"],
                 source_path="indexer.classes[].value_brl, somados por grupo sobre indexer.portfolio_value_brl",
-                extra={"parts": parts})
+                extra=extra)
 
 
 def _restatement_row(doc: dict) -> dict:
@@ -299,17 +376,114 @@ def _movement_row(doc: dict) -> dict:
 
 
 def _liquidity_row(doc: dict) -> dict:
-    liq = (doc.get("concentration") or {}).get("fund_liquidity") or {}
-    if liq.get("status") == STATUS_COMPLETE:  # not served yet (engine 1.7); kept honest if it ever is
-        return _row("liquidez", status=NOT_EVALUATED, unit="pct", code="sem_fonte_api")
-    return _row("liquidez", status=NOT_EVALUATED, unit="pct", code=liq.get("reason_code") or "liquidez_sem_api")
+    lq = doc.get("liquidity")
+    if not isinstance(lq, dict):  # an engine document before 1.9: the redemption terms were not served
+        liq = (doc.get("concentration") or {}).get("fund_liquidity") or {}
+        return _row("liquidez", status=NOT_EVALUATED, unit="pct", code=liq.get("reason_code") or "liquidez_sem_api")
+    if not lq.get("evaluated"):
+        # the terms call did not answer for some fund: never computed with those funds put in "sem prazo"
+        return _row("liquidez", status=NOT_EVALUATED, unit="pct", code="consulta_falhou")
+    by_id = {b.get("bucket_id"): (k, b) for k, b in enumerate(lq.get("buckets") or [])}
+    parts = []
+    nos: list[int] = []
+    for bid in lq.get("above_d30_parts") or []:
+        k, b = by_id.get(bid, (None, {}))
+        parts.append({"group": b.get("bucket"), "bucket_id": bid, "value_brl": b.get("value_brl"),
+                      "portfolio_pct": b.get("portfolio_pct")})
+        nos += b.get("line_nos") or []
+    return _row("liquidez", status=EVALUATED, unit="pct", value=lq.get("above_d30_total_pct"),
+                source_path="liquidity.above_d30_total_pct", line_nos=sorted(nos), sources=_statement_sources(doc, sorted(nos)),
+                extra={"value_brl_detail": lq.get("above_d30_total_brl"), "parts": parts})
+
+
+def _ident_lines(doc: dict) -> list[tuple[int, dict, dict]]:
+    """(index in identification.lines, the line, its statement position)."""
+    by_no = {p["line_no"]: p for p in doc["statement"]["positions"]}
+    return [(i, ln, by_no.get(ln["line_no"]) or {}) for i, ln in enumerate((doc.get("identification") or {}).get("lines") or [])]
+
+
+def _credit_rows(doc: dict) -> list[dict]:
+    """Engine 1.9: CRA/CRI outside "Adimplente", maturities that differ from the registry, debênture price vs mark."""
+    lines = _ident_lines(doc)
+    rows: list[dict] = []
+    cra = [(i, ln, p) for i, ln, p in lines if ln.get("tipo") in ("CRA", "CRI")]
+    matched = [(i, ln, p) for i, ln, p in cra if (ln.get("credit_match") or {}).get("matched")]
+    if not cra:
+        rows += [_row(rid, status=NOT_APPLICABLE, unit="count", code="sem_cra_cri")
+                 for rid in ("credito_situacao", "credito_vencimento_diverge")]
+    elif not matched:
+        failed = any((ln.get("credit_match") or {}).get("reason_code") == "consulta_falhou" or ln.get("reason_code") == "consulta_falhou"
+                     for _, ln, _ in cra)
+        code = "consulta_falhou" if failed else "cra_cri_sem_registro"
+        rows += [_row(rid, status=NOT_EVALUATED, unit="count", code=code)
+                 for rid in ("credito_situacao", "credito_vencimento_diverge")]
+    else:
+        for rid, flag in (("credito_situacao", "situacao_fora_adimplente"), ("credito_vencimento_diverge", "vencimento_diverge")):
+            hit = [(i, ln, p) for i, ln, p in matched if any(f.get("code") == flag for f in ln["credit_match"].get("flags") or [])]
+            nos = [ln["line_no"] for _, ln, _ in hit]
+            value = sum((dec(p.get("valor_brl")) or Decimal("0") for _, _, p in hit), Decimal("0"))
+            subject = hit[0][1]["credit_match"].get("code") if hit else None
+            extra: dict[str, Any] = {"value_brl_detail": brl(value) if hit else None,
+                                     "n_evaluated": len(matched), "n_not_found": len(cra) - len(matched)}
+            if rid in CHECK_LABEL:
+                extra["check_label"] = CHECK_LABEL[rid]
+            if rid == "credito_situacao" and hit:
+                extra["situacao"] = hit[0][1]["credit_match"].get("situacao")
+            if rid == "credito_vencimento_diverge" and hit:
+                f0 = next(f for f in hit[0][1]["credit_match"]["flags"] if f.get("code") == flag)
+                extra["statement_vencimento"] = f0.get("statement_vencimento")
+                extra["registry_vencimento"] = f0.get("registry_vencimento")
+            srcs = [s for _, ln, _ in hit for s in ln["credit_match"].get("sources") or []]
+            rows.append(_row(rid, status=EVALUATED, unit="count", value=len(hit), subject=subject,
+                             source_path=f"identification.lines[].credit_match.flags[code={flag}]", line_nos=nos,
+                             sources=srcs[:6] or _statement_sources(doc, nos), extra=extra))
+    deb = [(i, ln, p) for i, ln, p in lines if ln.get("tipo") == "debênture"]
+    priced = [(i, ln, p) for i, ln, p in deb if (ln.get("credit_match") or {}).get("price_gap_abs_pct") is not None]
+    if not deb:
+        rows.append(_row("credito_preco_marcacao", status=NOT_APPLICABLE, unit="pct", code="sem_debenture"))
+    elif not priced:
+        failed = any((ln.get("credit_match") or {}).get("reason_code") == "consulta_falhou" for _, ln, _ in deb)
+        rows.append(_row("credito_preco_marcacao", status=NOT_EVALUATED, unit="pct",
+                         code="consulta_falhou" if failed else "sem_marcacao_fundos"))
+    else:
+        i, ln, p = max(priced, key=lambda t: (t[1]["credit_match"]["price_gap_abs_pct"], -t[1]["line_no"]))
+        cm = ln["credit_match"]
+        st = cm.get("statement") or {}
+        rows.append(_row("credito_preco_marcacao", status=EVALUATED, unit="pct", value=cm["price_gap_abs_pct"],
+                         subject=cm.get("code") or cm.get("input_code"),
+                         source_path=f"identification.lines[{i}].credit_match.price_gap_abs_pct", line_nos=[ln["line_no"]],
+                         sources=(cm.get("sources") or [])[:2] + _statement_sources(doc, [ln["line_no"]]),
+                         extra={"check_label": CHECK_LABEL["credito_preco_marcacao"], "price_gap_pct": cm.get("price_gap_pct"),
+                                "statement_preco_brl": st.get("preco_brl"), "statement_date": st.get("data_posicao"),
+                                "preco_marcacao_fundos_brl": cm.get("preco_marcacao_fundos_brl"),
+                                "cda_period": cm.get("cda_period"), "n_evaluated": len(priced)}))
+    return rows
+
+
+def _manager_row(doc: dict) -> dict:
+    m = (doc.get("concentration") or {}).get("manager") or {}
+    st = m.get("status")
+    if st == STATUS_NOT_APPLICABLE_SECTION:
+        return _row("concentracao_gestor", status=NOT_APPLICABLE, unit="pct", code="sem_fundos")
+    groups = m.get("groups") or []
+    if st == STATUS_UNKNOWN or m.get("unanswered_line_nos"):
+        return _row("concentracao_gestor", status=NOT_EVALUATED, unit="pct", code=m.get("reason_code") or "gestor_sem_api")
+    if not groups:
+        return _row("concentracao_gestor", status=NOT_EVALUATED, unit="pct", code="sem_gestor")
+    g = groups[0]
+    return _row("concentracao_gestor", status=EVALUATED, unit="pct", value=g.get("portfolio_pct"), subject=g.get("gestor_name"),
+                source_path="concentration.manager.groups[0].portfolio_pct", line_nos=g.get("line_nos"),
+                sources=(g.get("sources") or [])[:4] + _statement_sources(doc, g.get("line_nos") or []),
+                extra={"value_brl_detail": g.get("value_brl"), "gestor_id": g.get("gestor_id"),
+                       "fund_value_pct": g.get("fund_value_pct"),
+                       "without_gestor_line_nos": m.get("without_gestor_line_nos") or []})
 
 
 def compute_risks(doc: dict[str, Any]) -> dict[str, Any]:
     """The ``risks`` section from an engine document whose other sections are built."""
     sec = Section()
     rows = [*_issuer_rows(doc), _fund_row(doc), _maturity_row(doc), _indexer_row(doc), _restatement_row(doc),
-            _movement_row(doc), _liquidity_row(doc)]
+            _movement_row(doc), *_credit_rows(doc), _manager_row(doc), _liquidity_row(doc)]
     order = {rid: k for k, rid in enumerate(THRESHOLDS)}
     status_rank = {EVALUATED: 0, NOT_EVALUATED: 1, NOT_APPLICABLE: 2}
     rows.sort(key=lambda r: (status_rank[r["status"]], SEVERITY_RANK.get(r["severity"] or "", 3), order[r["id"]]))

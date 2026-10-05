@@ -22,6 +22,13 @@ Input: a masked ``Statement`` and a ``SiloClient``. Output: the
   block only (``etf_cnpj``): the line stays a ticker for look-through, movement and sector.
 * Tesouro: title and maturity parsed from ``codigo``; SILO has no price series,
   so the value is the statement's, labelled.
+* Direct credit by its registry code (engine 1.9): the CRA, CRI and debênture lines that print a ``codigo`` go in
+  one ``portfolio_instruments`` call (the code as read, no prefix added: the API normalises it), on the same
+  retry path as ``portfolio_resolve``. A CRA or CRI is the ``securit_cetip`` row of that exact code, and of its series
+  the one whose ``data_vencimento`` equals the statement's maturity; else the only series, else the lowest
+  ``numero_serie``, flagged ``vencimento_diverge`` with both dates. A debênture is the ``cda_ticker`` row (CDA block 4).
+  Never a fuzzy match; an OCR code not checked (``codigo_conferido`` false) is sent as read. The printed issuer
+  stays as printed. A code SILO does not know stays unknown (``credito_sem_registro``).
 * Everything else: unknown, with the reason.
 """
 
@@ -37,12 +44,14 @@ from typing import Any
 from src.portfolio.client import SiloClient
 from src.portfolio.common import (
     R_TOOL_FAILED,
+    REASON_TEXT,
     STATUS_COMPLETE,
     STATUS_NOT_APPLICABLE,
     Call,
     Section,
     SiloUnavailable,
     as_date,
+    b3_issuer_code,
     brl,
     call_tool,
     dec,
@@ -53,7 +62,7 @@ from src.portfolio.common import (
 )
 from src.portfolio.statement import Position, Statement, codigo_cnpj
 
-FUND_TIPOS = ("fundo", "FIDC", "FII", "ETF")
+FUND_TIPOS = ("fundo", "FIDC", "FII", "ETF", "FIP")
 RESOLVE_CHUNK = 3  # lines without a CNPJ per portfolio_resolve call: the fuzzy name path is the slow one (57014, 2026-10-04)
 CNPJ_EXTRATO_REASON = "CNPJ do extrato; nome não conferido."
 TICKER_TIPOS = ("ação", "FII", "ETF")
@@ -98,15 +107,19 @@ UNSUPPORTED_REASON = {
     "CDB": "O SILO não tem fonte para CDB (bloco 5 da CDA e registros de emissão bancária não ingeridos).",
     "LCI": "O SILO não tem fonte para LCI.",
     "LCA": "O SILO não tem fonte para LCA.",
-    "debênture": "Debênture detida diretamente: o SILO não tem cadastro nem preço de debêntures.",
-    "CRI": "CRI detido diretamente: identificação por código ainda não implementada nesta versão.",
-    "CRA": "CRA detido diretamente: identificação por código ainda não implementada nesta versão.",
+    "debênture": "Debênture detida diretamente sem código de registro no extrato: o SILO identifica debêntures só pelo código.",
+    "CRI": "CRI detido diretamente sem código de registro no extrato: o SILO identifica CRI só pelo código.",
+    "CRA": "CRA detido diretamente sem código de registro no extrato: o SILO identifica CRA só pelo código.",
     "outro": "Tipo 'outro' sem ticker: o SILO não identifica pelo nome nem pelo código do registro.",
 }
 UNSUPPORTED_CODE = {
     "CDB": "bancario_sem_fonte", "LCI": "bancario_sem_fonte", "LCA": "bancario_sem_fonte",
-    "debênture": "credito_sem_fonte", "CRI": "credito_sem_fonte", "CRA": "credito_sem_fonte", "outro": "outro_sem_ticker",
+    "debênture": "credito_sem_codigo", "CRI": "credito_sem_codigo", "CRA": "credito_sem_codigo", "outro": "outro_sem_ticker",
 }
+# engine 1.9: the direct credit SILO identifies by its registry code (portfolio_instruments), and the match each accepts
+INSTRUMENT_TIPOS = ("CRA", "CRI", "debênture")
+INSTRUMENT_MATCH_KIND = {"CRA": "securit_cetip", "CRI": "securit_cetip", "debênture": "cda_ticker"}
+ADIMPLENTE = "adimplente"
 CREDIT_TIPOS = ("CRI", "CRA", "CDB", "LCI", "LCA", "debênture", "outro")
 
 
@@ -132,6 +145,8 @@ class LineId:
     tesouro_maturity: str | None = None
     tesouro_tp_titpub: str | None = None
     etf_cnpj: str | None = None  # engine 1.5: the ETF's CNPJ from the ETF registry, read by the fee block only
+    issuer_code: str | None = None  # engine 1.9: a debênture's B3 issuer code (ISIN characters 3 to 6), from the API
+    credit: dict[str, Any] | None = None  # engine 1.9: the credit_match block of a CRA, CRI or debênture line
     statement_facts: dict[str, Any] = field(default_factory=dict)
     findings: list[dict] = field(default_factory=list)
 
@@ -228,6 +243,9 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
     # --- ETFs by ticker: the CNPJ for the fee block (engine 1.5). -------------------
     etf_out = _identify_etfs(lines, client, sec, stmt.position_date, resolve_out)
 
+    # --- Direct credit by registry code: portfolio_instruments (engine 1.9). --------
+    credit_out = _identify_credit(lines, client, sec)
+
     # --- Tesouro and unsupported types. ---------------------------------------------
     for li in lines:
         p = li.position
@@ -257,7 +275,7 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
             li.tesouro_tp_titpub = TESOURO_TP_TITPUB.get(fam)
             li.name = f"{fam} {mat}"
             li.reason = "Identificado por título e vencimento; o SILO não tem série de preços do Tesouro."
-        elif p.tipo in UNSUPPORTED_REASON and li.status != "identified":
+        elif p.tipo in UNSUPPORTED_REASON and li.status != "identified" and li.line_no not in credit_out:
             li.status, li.reason = "unknown", UNSUPPORTED_REASON[p.tipo]
             li.reason_code = UNSUPPORTED_CODE[p.tipo]
             if p.tipo in CREDIT_TIPOS and p.codigo:
@@ -293,11 +311,13 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
                     "tesouro_title": li.tesouro_title,
                     "tesouro_maturity": li.tesouro_maturity,
                     "etf_cnpj": li.etf_cnpj,
+                    "issuer_code": li.issuer_code,
                 },
                 "statement_facts": li.statement_facts,
                 "fund_match": resolve_out.get(li.line_no),
                 "ticker_match": ticker_out.get(li.line_no),
                 "etf_match": etf_out.get(li.line_no),
+                "credit_match": credit_out.get(li.line_no),
                 "valuation": {
                     "value_brl": brl(p.valor),
                     "basis": "statement",
@@ -374,24 +394,197 @@ def _resolve_args(group: list[LineId]) -> dict[str, Any]:
 
 
 def _resolve(client: SiloClient, sec: Section, group: list[LineId]) -> tuple[list[tuple[list[LineId], Call]], list[tuple[list[LineId], Call]]]:
-    """One portfolio_resolve call for ``group``: ``(answered, failed)`` as (lines, call) pairs.
+    """One portfolio_resolve call for ``group``: ``(answered, failed)`` as (lines, call) pairs."""
+    return call_halving(client, "portfolio_resolve", group, _resolve_args, sec.errors)
 
-    A transient failure (timeout, 5xx, network) is retried once with the chunk halved (a single line is retried as
-    is); a refusal or any other error is not retried. A failure costs only the lines of the call that failed.
+
+def call_halving(client: SiloClient, tool: str, group: list[Any], args_of, errors: list[dict]) -> tuple[list[tuple[list[Any], Call]], list[tuple[list[Any], Call]]]:
+    """One ``tool`` call for ``group`` (args from ``args_of(group)``): ``(answered, failed)`` as (items, call) pairs.
+
+    A transient failure (timeout, 5xx, network) is retried once with the chunk halved (a single item is retried as
+    is); a refusal or any other error is not retried. A failure costs only the items of the call that failed.
     """
-    res = call_tool(client, "portfolio_resolve", _resolve_args(group), sec.errors)
+    res = call_tool(client, tool, args_of(group), errors)
     if res.ok:
         return [(group, res)], []
     if not res.transient:
         return [], [(group, res)]
     half = len(group) // 2
     parts = [group[:half], group[half:]] if half else [group]
-    answered: list[tuple[list[LineId], Call]] = []
-    failed: list[tuple[list[LineId], Call]] = []
+    answered: list[tuple[list[Any], Call]] = []
+    failed: list[tuple[list[Any], Call]] = []
     for part in parts:
-        r = call_tool(client, "portfolio_resolve", _resolve_args(part), sec.errors)
+        r = call_tool(client, tool, args_of(part), errors)
         (answered if r.ok else failed).append((part, r))
     return answered, failed
+
+
+def rows_by_input(res: Call, sent: list[str], code_key: str) -> tuple[dict[int, list[dict]], set[int]]:
+    """The rows of one call grouped by the 1-based index of the input they answer (``line_no`` is the index into the
+    call's own input array), and the indexes whose echoed input (``code_key``) is not what was sent there."""
+    grouped: dict[int, list[dict]] = {}
+    inconsistent: set[int] = set()
+    for row in res.rows or []:
+        try:
+            k = int(row.get("line_no"))
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= k <= len(sent):
+            continue
+        echoed = row.get(code_key)
+        if echoed is not None and str(echoed).strip() != str(sent[k - 1]).strip():
+            inconsistent.add(k)
+            continue
+        grouped.setdefault(k, []).append(row)
+    return grouped, inconsistent
+
+
+def _serie_key(r: dict) -> tuple:
+    n = str(r.get("numero_serie") if r.get("numero_serie") is not None else "")
+    return (0, int(n), n) if n.strip().isdigit() else (1, 0, n)
+
+
+def _credit_args(group: list[LineId]) -> dict[str, Any]:
+    return {"p_codes": [str(li.position.codigo).strip() for li in group]}
+
+
+def _identify_credit(lines: list[LineId], client: SiloClient, sec: Section) -> dict[int, dict[str, Any]]:
+    """Engine 1.9: CRA, CRI and debênture lines by their registry code, one ``portfolio_instruments`` batch."""
+    out: dict[int, dict[str, Any]] = {}
+    group = [li for li in lines if li.position.tipo in INSTRUMENT_TIPOS and str(li.position.codigo or "").strip()]
+    if not group:
+        return out
+    answered, failed = call_halving(client, "portfolio_instruments", group, _credit_args, sec.errors)
+    if any(res.transient for _, res in failed):
+        # SILO did not answer even after the retry: a retryable failure, not a data gap. No document is produced.
+        raise SiloUnavailable()
+    for grp, res in failed:
+        for li in grp:
+            li.status, li.reason_code = "unknown", R_TOOL_FAILED
+            li.reason = ("Identificação do crédito indisponível: portfolio_instruments falhou (erro literal em errors). "
+                         f"Código do registro lido do extrato: {str(li.position.codigo).strip()}.")
+            out[li.line_no] = _credit_block(li, None, [], [res.src(li.position.data_posicao)], R_TOOL_FAILED)
+        sec.degrade("portfolio_instruments falhou para as linhas de crédito direto; elas ficaram desconhecidas.",
+                    code=R_TOOL_FAILED)
+    for grp, res in answered:
+        sent = _credit_args(grp)["p_codes"]
+        grouped, inconsistent = rows_by_input(res, sent, "input_code")
+        for idx, li in enumerate(grp, start=1):
+            src = [res.src(li.position.data_posicao)]
+            if idx in inconsistent:
+                li.status, li.reason_code = "unknown", "resposta_inconsistente"
+                li.reason = "portfolio_instruments devolveu outro código para esta linha; a linha não foi avaliada."
+                out[li.line_no] = _credit_block(li, None, [], src, "resposta_inconsistente")
+                sec.degrade("Resposta inconsistente de portfolio_instruments para uma linha de crédito.", code="resposta_inconsistente")
+                continue
+            kind = INSTRUMENT_MATCH_KIND[li.position.tipo]
+            cands = [r for r in grouped.get(idx, []) if r.get("match_kind") == kind]
+            if not cands:
+                # an OCR code that did not pass its check and matches nothing is a reading problem first, not a gap in
+                # SILO (real statement, 2026-10-05: a debenture ticker read as a word): say so, never "sem registro"
+                unchecked = li.position.codigo_conferido is False
+                code = "codigo_nao_conferido" if unchecked else "credito_sem_registro"
+                li.status, li.reason_code = "unknown", code
+                li.reason = (f"{li.position.tipo} com código {sent[idx - 1]}: o código não foi encontrado nos dados do SILO "
+                             f"({'registro de CRA e CRI da CVM' if kind == 'securit_cetip' else 'carteiras dos fundos, CDA bloco 4'})"
+                             + ("; o código foi lido por OCR e não conferido." if unchecked else "."))
+                flags = [{"code": "codigo_nao_conferido", "text": REASON_TEXT["codigo_nao_conferido"]}] if unchecked else None
+                out[li.line_no] = _credit_block(li, None, [], src, code, flags)
+                continue
+            out[li.line_no] = _apply_credit(li, cands, src)
+    return out
+
+
+def _apply_credit(li: LineId, cands: list[dict], src: list[dict]) -> dict[str, Any]:
+    p = li.position
+    flags: list[dict[str, Any]] = []
+    stmt_mat = iso(p.vencimento)
+    if p.tipo in ("CRA", "CRI"):
+        ordered = sorted(cands, key=_serie_key)
+        same = [r for r in ordered if stmt_mat and str(r.get("data_vencimento") or "")[:10] == stmt_mat]
+        chosen = same[0] if same else ordered[0]
+        reg_mat = str(chosen.get("data_vencimento") or "")[:10] or None
+        if not same and stmt_mat and reg_mat and reg_mat != stmt_mat:
+            flags.append({"code": "vencimento_diverge", "text": REASON_TEXT["vencimento_diverge"],
+                          "statement_vencimento": stmt_mat, "registry_vencimento": reg_mat})
+        if not stmt_mat and len(ordered) > 1:
+            flags.append({"code": "serie_sem_vencimento", "text": REASON_TEXT["serie_sem_vencimento"]})
+        situacao = chosen.get("situacao")
+        # a NULL situação is "not filed": it is never read as outside Adimplente
+        if situacao is not None and str(situacao).strip().lower() != ADIMPLENTE:
+            flags.append({"code": "situacao_fora_adimplente", "text": REASON_TEXT["situacao_fora_adimplente"],
+                          "situacao": situacao})
+    else:
+        ordered = list(cands)
+        chosen = ordered[0]
+    if p.codigo_conferido is False:
+        flags.append({"code": "codigo_nao_conferido", "text": REASON_TEXT["codigo_nao_conferido"]})
+    li.status, li.kind, li.reason_code = "identified", "credito", None
+    li.isin = chosen.get("cd_isin")
+    if p.tipo == "debênture":
+        # the B3 issuer code joins a debênture held directly to the same issuer inside the funds (look-through)
+        li.issuer_code = chosen.get("issuer_code") or b3_issuer_code(li.isin)
+        li.reason = f"Debênture identificada pelo código {chosen.get('code') or p.codigo} nas carteiras dos fundos (CDA bloco 4)."
+    else:
+        li.reason = (f"{p.tipo} identificado pelo código {chosen.get('code') or p.codigo} no registro da CVM"
+                     + (f" (série {chosen.get('numero_serie')})." if chosen.get("numero_serie") is not None else "."))
+    block = _credit_block(li, chosen, ordered, src, None, flags)
+    li.credit = block
+    return block
+
+
+def _credit_block(li: LineId, row: dict | None, series: list[dict], src: list[dict], code: str | None,
+                  flags: list[dict] | None = None) -> dict[str, Any]:
+    """The ``credit_match`` block of one line: the API's fields as served (money with ``_brl``), the statement's own
+    maturity, rate and price beside them, and the flags. Nothing is converted or corrected."""
+    from src.portfolio.concentration import issuer_as_printed  # concentration imports this module
+
+    p = li.position
+    r = row or {}
+    price = dec(p.preco_unitario) if p.preco_unitario is not None else None
+    mark = dec(r.get("preco_marcacao_fundos"))
+    gap = (price / mark - 1) * 100 if price is not None and mark else None
+    return {
+        "matched": row is not None,
+        "reason_code": code,
+        "reason": REASON_TEXT.get(code or "") if code else li.reason,
+        "input_code": str(p.codigo or "").strip() or None,
+        "code": r.get("code"),
+        "match_kind": r.get("match_kind"),
+        "instrument_type": r.get("instrument_type"),
+        "cnpj_securit": r.get("cnpj_securit"),
+        "numero_serie": r.get("numero_serie"),
+        "classe": r.get("classe"),
+        "data_vencimento": str(r["data_vencimento"])[:10] if r.get("data_vencimento") else None,
+        "situacao": r.get("situacao"),
+        "taxa_juros": r.get("taxa_juros"),
+        "classificacao_risco_atual": r.get("classificacao_risco_atual"),
+        "valor_total_integralizado_brl": brl(dec(r.get("valor_total_integralizado"))),
+        "data_referencia": str(r["data_referencia"])[:10] if r.get("data_referencia") else None,
+        "cd_isin": r.get("cd_isin"),
+        "issuer_code": r.get("issuer_code"),
+        "n_fundos": r.get("n_fundos"),
+        "preco_marcacao_fundos_brl": ratio(mark, 6) if mark is not None else None,
+        "cda_period": str(r["cda_period"])[:10] if r.get("cda_period") else None,
+        "tool_note": r.get("reason"),
+        "n_series": len(series),
+        "series": [{"numero_serie": s.get("numero_serie"), "data_vencimento": str(s.get("data_vencimento") or "")[:10] or None}
+                   for s in series] if len(series) > 1 else [],
+        "statement": {
+            "issuer_as_printed": issuer_as_printed(li),
+            "vencimento": iso(p.vencimento),
+            "taxa_texto": p.taxa_texto,
+            "preco_brl": ratio(price, 6) if price is not None else None,
+            "preco_implicito": p.preco_implicito,
+            "data_posicao": iso(p.data_posicao),
+        },
+        # the statement's price against the funds' weighted mark: informative, different dates, never a price verdict
+        "price_gap_pct": float(round(gap, 4)) if gap is not None else None,
+        "price_gap_abs_pct": float(round(abs(gap), 4)) if gap is not None else None,
+        "price_gap_label": "informativo, não é veredito de preço" if gap is not None else None,
+        "flags": list(flags or []),
+        "sources": src,
+    }
 
 
 def _from_statement_cnpj(li: LineId, out: dict[str, Any]) -> dict[str, Any]:
@@ -399,7 +592,7 @@ def _from_statement_cnpj(li: LineId, out: dict[str, Any]) -> dict[str, Any]:
     portfolio_resolve did not (an error, or no candidate). The name is not checked and not filled in."""
     given = codigo_cnpj(li.position.codigo)
     li.status, li.kind, li.cnpj = "identified", "fund", given
-    li.entity_type = {"FIDC": "fidc", "FII": "fii"}.get(li.position.tipo)
+    li.entity_type = {"FIDC": "fidc", "FII": "fii", "FIP": "fip"}.get(li.position.tipo)
     li.reason, li.reason_code = CNPJ_EXTRATO_REASON, "cnpj_extrato"
     out["chosen"] = {
         "rank": None, "cnpj": given, "name": None, "matched_name": None, "matched_period": None,
@@ -468,7 +661,10 @@ def _apply_resolve(li: LineId, cands: list[dict], src: dict) -> dict[str, Any]:
     li.reason = top.get("reason")
     out["chosen"] = cand(top)
     matched = top.get("matched_name")
-    if matched and li.name and _norm(matched) != _norm(li.name):
+    # A rename is a finding only when the name led the identification: a line resolved by the CNPJ the statement
+    # prints never depended on any name, and CVM 175 renamed almost every fund (FI to FIF, "RESPONSABILIDADE
+    # LIMITADA"), so flagging it there is noise (real statement, 2026-10-05: five such findings, none useful).
+    if matched and li.name and _norm(matched) != _norm(li.name) and top.get("match_kind") != "cnpj":
         li.findings.append(
             {
                 "kind": "renamed",

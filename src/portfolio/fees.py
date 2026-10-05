@@ -93,7 +93,7 @@ from src.portfolio.identify import LineId
 ESTIMATE_LABEL = "estimativa, não divulgada"
 NOT_FOUND = "taxa divulgada não encontrada"
 NOT_ADDED = "não somada"
-FEE_TIPOS = ("fundo", "FIDC", "FII", "ETF")
+FEE_TIPOS = ("fundo", "FIDC", "FII", "ETF", "FIP")
 STALE_MONTHS = 24  # lâmina; the schema's historical top-level key
 STALE_MONTHS_BY_ORIGIN = {"extrato": 36, "lamina": 24, "cad_fi": None}
 ORIGIN_FROM_SOURCE = {"cvm_fi_extrato": "extrato", "cvm_fi_lamina": "lamina", "cvm_fund_registry (cad_fi)": "cad_fi"}

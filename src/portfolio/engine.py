@@ -24,6 +24,7 @@ from src.portfolio.consolidate import merge_same_identity
 from src.portfolio.fees import compute_fees, summarize
 from src.portfolio.identify import LineId, identify
 from src.portfolio.indexer import compute_indexer
+from src.portfolio.liquidity import compute_liquidity
 from src.portfolio.lookthrough import add_portfolio_shares, compute_lookthrough
 from src.portfolio.movement import compute_movement, default_movement_month
 from src.portfolio.restatements import compute_restatements
@@ -31,10 +32,11 @@ from src.portfolio.risks import compute_risks
 from src.portfolio.sector import compute_sector
 from src.portfolio.signals import compute_signals
 from src.portfolio.statement import Position, Statement
+from src.portfolio.terms import attach_to_identification, fetch_fund_terms
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.8"
+SCHEMA_VERSION = "1.9"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -124,6 +126,25 @@ ASSUMPTIONS = [
             "Principais riscos (esquema 1.8): cada linha lê um campo de outra seção, ou uma soma de valores do extrato, "
             "contra limites fixos do código (src/portfolio/risks.py); o semáforo é atenção, moderado ou baixo. O crédito "
             "sem cobertura do FGC supõe um só titular e trata o emissor impresso como a instituição: fica a conferir."
+        ),
+    },
+    {
+        "id": "credit_registry",
+        "text": (
+            "Crédito direto (esquema 1.9): CRA e CRI são procurados pelo código exato no registro da CVM, e a série é a "
+            "de vencimento igual ao do extrato (senão a única, senão a de menor número, marcada 'vencimento diverge'); "
+            "debêntures, pelo código nas carteiras dos fundos (CDA bloco 4). O emissor continua o impresso no extrato. "
+            "A marcação dos fundos é a média ponderada da CDA, em outra data: a diferença para o preço do extrato é "
+            "informativa, não um veredito de preço."
+        ),
+    },
+    {
+        "id": "fund_terms",
+        "text": (
+            "Gestora e prazos de resgate (esquema 1.9): como arquivados no Extrato da CVM ou na lâmina. A concentração por "
+            "gestora agrupa pelo identificador arquivado, nunca pelo nome. O prazo de pagamento do resgate é lido como "
+            "arquivado, sem converter dias úteis e corridos; carência acima de zero é lock-up; um prazo não informado "
+            "nunca é lido como zero."
         ),
     },
     {
@@ -229,6 +250,8 @@ def run_engine(
     log.info("engine start: %d lines (%d read), client=%s", len(stmt.positions), n_read, client.kind)
 
     ident, lines = identify(stmt, client)
+    terms = fetch_fund_terms(lines, client)  # engine 1.9: managers and redemption terms, one batch
+    attach_to_identification(ident, terms)
     look, exposures = compute_lookthrough(lines, client, params.cda_month, params.max_depth)
     add_portfolio_shares(look, exposures, stmt.sum_of_lines)
     fund_nodes = {ln["line_no"]: ln.get("fund_nodes", []) for ln in look["lines"]}
@@ -244,7 +267,8 @@ def run_engine(
     )
     signals = compute_signals(lines, client)
     movement = compute_movement(lines, client, params.movement_month)
-    concentration = compute_concentration(lines, stmt.position_date)
+    liquidity = compute_liquidity(lines, terms)  # engine 1.9
+    concentration = compute_concentration(lines, stmt.position_date, terms, liquidity)
     allocation = compute_allocation(lines)  # engine 1.8
     fees["summary"] = summarize(fees, stmt.sum_of_lines, concentration.get("issuer"))  # engine 1.8
 
@@ -263,6 +287,7 @@ def run_engine(
         "movement": movement,
         "concentration": concentration,
         "allocation": allocation,
+        "liquidity": liquidity,
         "assumptions": ASSUMPTIONS,
         "section_status": {
             k: {"status": v["status"], "reason": v["reason"], "reason_codes": list(v.get("reason_codes") or [])}
@@ -277,13 +302,14 @@ def run_engine(
                 ("movement", movement),
                 ("concentration", concentration),
                 ("allocation", allocation),
+                ("liquidity", liquidity),
             )
         },
         "provenance": [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance],
     }
     # engine 1.8: the main risks read the sections above, so they are built last and placed after them
     risks = compute_risks(doc)
-    doc = _insert_after(doc, "allocation", "risks", risks)
+    doc = _insert_after(doc, "liquidity", "risks", risks)
     doc["section_status"]["risks"] = {"status": risks["status"], "reason": risks["reason"],
                                       "reason_codes": list(risks.get("reason_codes") or [])}
     log.info("engine done: %d tool calls", len(client.provenance))

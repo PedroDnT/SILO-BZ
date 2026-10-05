@@ -52,6 +52,7 @@ TIPOS = {
     "fii": "FII",
     "etf": "ETF",
     "fidc": "FIDC",
+    "fip": "FIP",
     "tesouro": "tesouro",
     "debenture": "debênture",
     "cri": "CRI",
