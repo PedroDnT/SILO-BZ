@@ -1841,6 +1841,14 @@ class CVMIngestor:
         parsed. Otherwise it upserts the new headers and only the statement
         lines of those documents. CVM's statement CSVs carry the latest
         version of each document, so a new version's lines are in the file.
+
+        A document's header is written only AFTER its lines, and only when
+        lines were found: a header in cia_filing is what marks the document
+        held, so a statement member that came back empty (the concurrency
+        failure noted in backfill) must not mark it held. The latest version of
+        a document with no lines is left out, logged, and compared again on
+        the next run; a superseded version has no lines by construction and
+        its header is written as published.
         """
         from src.fetchers.cia_fetcher import CIAMember
         from src.parsers.field_maps import cia_filing as _filing_map
@@ -1861,18 +1869,20 @@ class CVMIngestor:
                 doc_type, year, include_summary=True
             )
             new_docs: Optional[Set[Tuple[Any, Any, Any]]] = None
+            with_lines: Set[Tuple[Any, Any, Any]] = set()
+            header: List[Dict[str, Any]] = []
             for m in members:
                 if m.is_summary:
                     published = {doc_key(r) for r in m.rows}
                     held = self._held_cia_documents(
                         doc_type, sorted({k[1] for k in published if k[1] is not None})
                     )
+                    if not m.rows:
+                        raise ValueError(f"cia_aberta/{doc_type} {year}: the header CSV is empty")
                     new_docs = {k for k in published if k[0] and k[1] is not None} - held
                     if not new_docs:
                         break
                     header = [r for r in m.rows if doc_key(r) in new_docs]
-                    fetched += len(header)
-                    rows_inserted += ingest_cia_filing(self._supabase, header, doc_type)
                 elif m.is_account_data:
                     if new_docs is None:
                         # The header member sorts first in every published ZIP;
@@ -1884,6 +1894,7 @@ class CVMIngestor:
                     lines = [r for r in m.rows if doc_key(r) in new_docs]
                     if lines:
                         fetched += len(lines)
+                        with_lines.update(doc_key(r) for r in lines)
                         rows_inserted += ingest_cia_account(
                             self._supabase,
                             [CIAMember(m.member_name, m.grupo, m.escopo, lines)],
@@ -1891,6 +1902,32 @@ class CVMIngestor:
                         )
             if new_docs is None:
                 raise ValueError(f"cia_aberta/{doc_type} {year}: no header CSV in the ZIP")
+            if new_docs:
+                # A version the header lists with a newer one beside it has no
+                # lines by construction (the statement CSVs carry only the
+                # latest), so its header is written as published. Only the
+                # latest version of a document without lines is suspect.
+                latest: Dict[Tuple[Any, Any], int] = {}
+                for k in published:
+                    if k[2] is not None:
+                        latest[(k[0], k[1])] = max(latest.get((k[0], k[1]), k[2]), k[2])
+                superseded = {
+                    k for k in new_docs
+                    if k[2] is not None and k[2] < latest.get((k[0], k[1]), k[2])
+                }
+                with_lines |= superseded
+                lineless = new_docs - with_lines
+                if lineless:
+                    logger.warning(
+                        "cia_aberta/%s %d: %d new document(s) have no statement lines in "
+                        "the ZIP; their headers are not written, so the next run "
+                        "compares them again (first: %s)",
+                        doc_type, year, len(lineless), sorted(lineless, key=str)[0],
+                    )
+                done = [r for r in header if doc_key(r) in with_lines]
+                fetched += len(done)
+                if done:
+                    rows_inserted += ingest_cia_filing(self._supabase, done, doc_type)
         except Exception as exc:
             logger.warning(
                 "ingest_cia_itr_dfp_new_versions %s %d failed: %s", doc_type, year, _describe(exc)
