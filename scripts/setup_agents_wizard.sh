@@ -196,6 +196,32 @@ ROLE_SQL="docs/reference/security/sentinel_readonly_role.sql"
 
 TOTAL_STAGES=6
 
+# try_login URL: a login attempt. On failure it shows the first line of the
+# Postgres message and the usual cause, so a failed connection is not a guessing
+# game. libpq's connection errors do not carry the password; the one message that
+# quotes a piece of the URL (a bad percent-encoding) is replaced, since that piece
+# may be part of it.
+try_login() {
+  local url="$1" err
+  if err=$(psql "$url" -X -At -v ON_ERROR_STOP=1 -c "select 1" 2>&1 >/dev/null); then return 0; fi
+  err=$(printf '%s' "$err" | head -n1 | cut -c1-220)
+  case "$err" in
+    *"invalid percent"*) err="invalid percent-encoded token in the URL (not shown: it may be part of the password)" ;;
+  esac
+  note "Postgres said: $err"
+  case "$err" in
+    *"password authentication failed"*)
+      say "Cause: wrong password, or one with @ / : # ? that is not percent-encoded in the URL." ;;
+    *"Tenant or user not found"*)
+      say "Cause: the user must be postgres.<project-ref>, and the host the one in Supabase → Connect → Session pooler." ;;
+    *"translate host name"*|*"Name or service not known"*)
+      say "Cause: the host in the URL is mistyped (or there is no network)." ;;
+    *"invalid"*URI*|*"invalid percent"*)
+      say "Cause: the URL is malformed: no quotes or spaces, special characters percent-encoded." ;;
+  esac
+  return 1
+}
+
 banner "SILO-BZ: agent labels and the Sentinel's read-only database role"
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
@@ -218,7 +244,7 @@ if [[ -z "$OWNER_URL" ]]; then
   OWNER_URL="$SUPABASE_POOLER_URL"
   write_env SUPABASE_POOLER_URL "$OWNER_URL"
 fi
-if ! psql "$OWNER_URL" -X -At -v ON_ERROR_STOP=1 -c "select 1" >/dev/null 2>&1; then
+if ! try_login "$OWNER_URL"; then
   warn "could not connect with SUPABASE_POOLER_URL from $ENV_FILE: fix it there and re-run"
   exit 1
 fi

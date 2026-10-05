@@ -205,6 +205,32 @@ finish() {
 
 TOTAL_STAGES=4
 
+# try_login URL: a login attempt. On failure it shows the first line of the
+# Postgres message and the usual cause, so a failed connection is not a guessing
+# game. libpq's connection errors do not carry the password; the one message that
+# quotes a piece of the URL (a bad percent-encoding) is replaced, since that piece
+# may be part of it.
+try_login() {
+  local url="$1" err
+  if err=$(psql "$url" -X -At -v ON_ERROR_STOP=1 -c "select 1" 2>&1 >/dev/null); then return 0; fi
+  err=$(printf '%s' "$err" | head -n1 | cut -c1-220)
+  case "$err" in
+    *"invalid percent"*) err="invalid percent-encoded token in the URL (not shown: it may be part of the password)" ;;
+  esac
+  note "Postgres said: $err"
+  case "$err" in
+    *"password authentication failed"*)
+      say "Cause: wrong password, or one with @ / : # ? that is not percent-encoded in the URL." ;;
+    *"Tenant or user not found"*)
+      say "Cause: the user must be postgres.<project-ref>, and the host the one in Supabase → Connect → Session pooler." ;;
+    *"translate host name"*|*"Name or service not known"*)
+      say "Cause: the host in the URL is mistyped (or there is no network)." ;;
+    *"invalid"*URI*|*"invalid percent"*)
+      say "Cause: the URL is malformed: no quotes or spaces, special characters percent-encoded." ;;
+  esac
+  return 1
+}
+
 banner "SILO-BZ: rotate the database password"
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
@@ -252,7 +278,7 @@ print(u.urlunsplit((p.scheme, f"{p.username}:{u.quote(os.environ['PW'], safe='')
 PY
 }
 NEW_POOLER=$(with_password "$OLD_POOLER") || { warn "could not rebuild the pooler URL"; exit 1; }
-if psql "$NEW_POOLER" -X -At -v ON_ERROR_STOP=1 -c "select current_user" >/dev/null 2>&1; then
+if try_login "$NEW_POOLER"; then
   say "The new password logs in through the session pooler."
 else
   warn "the new password did NOT log in through the pooler."
