@@ -393,7 +393,18 @@ def _fees_view(eng: dict, names: dict[int, str]) -> dict:
         "findings": findings,
         "underlying": underlying,
         "summary": _fee_summary_view(fees.get("summary")),
+        "comparison": _fee_comparison_view(fees.get("comparison")),
     }
+
+
+def _fee_comparison_view(sm: dict | None) -> dict | None:
+    if not isinstance(sm, dict):
+        return None
+    out = {k: v for k, v in sm.items() if k not in ("lines", "errors", "reason_codes")}
+    out["by_line"] = [{**{k: v for k, v in r.items() if k not in ("line_no", "sources")},
+                       "line_id": f"L{r['line_no']}", "provenance": _prov(r.get("sources"))}
+                      for r in sm.get("lines") or []]
+    return out
 
 
 def _fee_summary_view(sm: dict | None) -> dict | None:

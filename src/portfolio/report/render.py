@@ -332,7 +332,7 @@ def _fees_section(engine: dict) -> str:
             parts.append(f"Estimativa do balancete, à parte e nunca somada à divulgada: <span class=v>{v(engine, 'fees.total_estimated_brl_year')}</span> por ano "
                          f"(<span class=v>{v(engine, 'fees.weighted_estimated_pct_year')}</span> a.a. sobre a carteira).")
         head = f"<p>{' '.join(parts)} <span class=cit>Base: {v(engine, 'fees.basis')}</span></p>"
-    out = head + _table(_FEE_HEADERS, rows) + charts.fee_chart(engine)
+    out = head + _table(_FEE_HEADERS, rows) + charts.fee_chart(engine) + _fee_comparison_html(engine)
     und = fees.get("underlying") or []
     if und:
         urows = []
@@ -343,6 +343,36 @@ def _fees_section(engine: dict) -> str:
         out += ("<h3>Fundos por baixo (taxa própria de cada um, não somada à do fundo de cima)</h3>"
                 + _table([("Linha", False), ("Fundo investido", False), ("Taxa divulgada", False), ("Origem e data", False),
                           ("Estimativa do balancete (à parte)", False), ("Despesa declarada (lâmina)", True), ("Soma", False)], urows))
+    return out
+
+
+def _fee_comparison_html(engine: dict) -> str:
+    comp = (engine.get("fees") or {}).get("comparison")
+    if not comp:
+        return ""
+    base = "fees.comparison"
+    out = ("<h3>Taxas versus fundos comparáveis</h3>"
+           f"<p>{v(engine, base + '.basis')}</p>"
+           f"<p>Comparação em {v(engine, base + '.as_of')}. Cobertura: "
+           f"{v(engine, base + '.coverage_fund_value_pct')} do valor em fundos e "
+           f"{v(engine, base + '.coverage_portfolio_value_pct')} da carteira.</p>")
+    for i, row in enumerate(comp.get("by_line") or []):
+        q = f"{base}.by_line[{i}]"
+        out += "<h4>" + v(engine, q + '.fund_name') + "</h4>"
+        if row.get("status") != "compared":
+            out += "<p>não comparado: " + v(engine, q + '.reason') + "</p>"
+            continue
+        cohort = (v(engine, q + '.classe_anbima') + "; fundo de fundos: " + v(engine, q + '.fundo_cotas')
+                  + "; " + v(engine, q + '.tp_fundo_classe'))
+        out += "<p>Grupo comparável: " + cohort + ". Data da taxa: " + v(engine, q + '.fee_as_of') + ".</p>"
+        out += _table([("Taxa a.a.", True), ("Mediana a.a.", True), ("p25 / p75 a.a.", True),
+                       ("Diferença", True), ("Percentil", True)],
+                      [[v(engine, q + '.own_fee_pct_year'), v(engine, q + '.median_pct_year'),
+                        v(engine, q + '.p25_pct_year') + " / " + v(engine, q + '.p75_pct_year'),
+                        v(engine, q + '.difference_pp') + " p.p.", v(engine, q + '.percentile_pct')]])
+        out += ("<p>Pares utilizáveis: " + v(engine, q + '.n_peers') + "; excluídos: " + v(engine, q + '.n_excluded')
+                + ". Datas dos pares: " + v(engine, q + '.peer_fee_oldest') + " a "
+                + v(engine, q + '.peer_fee_newest') + ".</p>")
     return out
 
 

@@ -386,5 +386,17 @@ canned["portfolio_fund_terms"] = [dict(match={"p_cnpjs": TERMS_CNPJS}, rows=[
 
 canned = {"_note": "Synthetic canned rows for FakeClient. Shapes follow the silo-mcp contract; values are modelled on production measurements of 2026-10-03 (CDA 2026-05) but "
                    "names marked FIF / EXEMPLO / ESTRANHO, aggregate 'linha agregada sintética' LFT rows, fee, sector and screen rows are invented. Never read as data."} | canned
+# Synthetic fee-peer response, never a measured market distribution.
+canned["portfolio_fee_peers"] = [dict(match={}, rows=[
+    dict(cnpj="08935128000159", classe_anbima="Ações Livre", fundo_cotas="N", tp_fundo_classe="FI",
+         taxa_adm=2.0, fee_as_of="2026-07-31", comparison_as_of="2026-10-03",
+         activity_from="2026-08-01", activity_to="2026-10-01", n_peers=40, n_excluded=4,
+         peer_fee_oldest="2024-01-31", peer_fee_newest="2026-09-30", p25_pct_year=0.75,
+         median_pct_year=1.0, p75_pct_year=1.5, percentile_pct=95.0, difference_pp=1.0,
+         status="compared", reason_code=None),
+    *[dict(cnpj=c, status="not_compared", reason_code="sem_extrato_comparavel", n_peers=0, n_excluded=0)
+      for c in ("50088190000119", "51488342000133", "42592315000115")],
+])]
+
 json.dump(canned, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 print({k: len(v) for k, v in canned.items() if k != "_note"})
