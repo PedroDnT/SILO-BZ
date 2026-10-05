@@ -311,7 +311,19 @@ if [[ -n "$OLD_DIRECT" ]]; then
   NEW_DIRECT=$(with_password "$OLD_DIRECT") || { warn "could not rebuild POSTGRES_URL; left as it was"; NEW_DIRECT=""; }
   [[ -n "$NEW_DIRECT" ]] && write_env POSTGRES_URL "$NEW_DIRECT"
 fi
-set_secret POSTGRES_URL "$NEW_POOLER"
+# CI needs the IPv4 session pooler (the ingest and the analytical apply use session
+# features, which a transaction pooler on 6543 does not give; scripts/apply_analytical.sh).
+# A login that works from this machine on another host, such as the dedicated pooler
+# db.<ref>.supabase.co:6543, must not overwrite the secret.
+case "$NEW_POOLER" in
+  *.pooler.supabase.com:5432/*)
+    set_secret POSTGRES_URL "$NEW_POOLER" ;;
+  *)
+    warn "The GitHub secret POSTGRES_URL was NOT touched."
+    say  "CI needs the session pooler (aws-*.pooler.supabase.com, port 5432); the URL now in"
+    say  "$ENV_FILE points elsewhere. Set the secret from a session-pooler URL when you have one."
+    SKIPPED+=("GitHub secret POSTGRES_URL: the URL is not a session-pooler URL") ;;
+esac
 pause
 
 # ── 4 ─────────────────────────────────────────────────────────────────────
