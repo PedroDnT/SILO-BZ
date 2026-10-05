@@ -110,7 +110,7 @@ The refusal says **why and how**: `<function>: refused, this request would retur
 | [`future_curve`](/api-docs/rates) · [`curve`](/api-docs/rates) | one session, about 50 contracts or 300 vertices, always fits |
 | [`future_series`](/api-docs/rates) · [`curve_history`](/api-docs/rates) | defaults to 12 months; narrow `p_from`/`p_to` (about four years fit) |
 | `research_universe` | no narrowing parameter; 639 pairs today, one page |
-| `portfolio_resolve` · `portfolio_fees` · `portfolio_lookthrough` · `portfolio_movement` | no window: send at most 200 statement lines or CNPJs per call; for the look-through, fewer funds or a lower `p_max_depth` |
+| `portfolio_resolve` · `portfolio_fees` · `portfolio_lookthrough` · `portfolio_movement` · `portfolio_instruments` · `portfolio_fund_terms` | no window: send at most 200 statement lines, codes or CNPJs per call; for the look-through, fewer funds or a lower `p_max_depth` |
 | [`inflation`](/api-docs/inflation) | defaults to 36 months; pin `p_series` or `p_family` for deeper history |
 | [`inflation_items`](/api-docs/inflation) | defaults to the nine groups over 36 months; pin `p_item` or one month for deeper levels |
 | [`fidc_cedentes`](/api-docs/fidc) | narrow `p_from`/`p_to` (a `p_cedente` lookup spans many funds), or newest N with `p_limit` (1..1000) |

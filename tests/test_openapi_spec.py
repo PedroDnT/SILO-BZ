@@ -267,6 +267,9 @@ REFUSING_FUNCTIONS = {
     "portfolio_lookthrough",
     # v54: the movement of a fund against its class (31_api_portfolio.sql).
     "portfolio_movement",
+    # v61: statement codes and fund terms (31_api_portfolio.sql).
+    "portfolio_instruments",
+    "portfolio_fund_terms",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 

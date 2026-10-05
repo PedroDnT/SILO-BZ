@@ -48,7 +48,8 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - `mv_fund_name_history` (`31_api_portfolio.sql`) holds every name a fund ever
   filed (CDA and registry) behind a trigram index; `api.portfolio_resolve` reads
   it, rebuilt by the same apply. `portfolio_lookthrough` reads the CDA tables
-  only by CNPJ and one month.
+  only by CNPJ and one month; `portfolio_instruments` reads them only by
+  `cd_ativo` and one month, and `cvm_securit_serie` by CETIP code (migration 73).
 - Nothing depends on pg_cron. The live database has none (checked 2026-09-29),
   so the jobs in `08_cron_schedules.sql` do not run.
 

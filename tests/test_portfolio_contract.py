@@ -1,4 +1,4 @@
-"""The portfolio-diagnosis reads in schema `api` (31_api_portfolio.sql, catalog v51; v54 adds portfolio_movement).
+"""The portfolio-diagnosis reads in schema `api` (31_api_portfolio.sql, catalog v51; v54 adds portfolio_movement; v61 portfolio_instruments and portfolio_fund_terms).
 
 Offline: the SQL text, the catalog and the CI wiring are pinned to each other.
 The behaviour itself is executed in tests/sql/portfolio_behaviour.sql (CI's
@@ -33,6 +33,8 @@ SIGNATURES = {
     "portfolio_fees": "api.portfolio_fees(TEXT[], DATE)",
     "portfolio_lookthrough": "api.portfolio_lookthrough(TEXT[], DATE, INT)",
     "portfolio_movement": "api.portfolio_movement(TEXT[], DATE)",
+    "portfolio_instruments": "api.portfolio_instruments(TEXT[])",
+    "portfolio_fund_terms": "api.portfolio_fund_terms(TEXT[])",
 }
 
 
@@ -55,9 +57,12 @@ def test_file_is_one_guarded_transaction_after_its_inputs():
         assert ordered.index("31_api_portfolio.sql") > ordered.index(needed)
 
 
-def test_exactly_the_four_api_functions_are_created():
+def test_exactly_the_six_api_functions_are_created():
     created = re.findall(r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+api\.(\w+)\(", _strip(SQL31))
-    assert created == ["portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement"]
+    assert created == [
+        "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
+        "portfolio_instruments", "portfolio_fund_terms",
+    ]
 
 
 def test_definer_empty_search_path_and_grants():
@@ -80,7 +85,11 @@ def test_every_function_refuses_above_one_page_and_never_trims():
     # The over-cap hint names the real lever, not a window these functions do not have.
     helper = _strip(SQL19[SQL19.index("FUNCTION api.assert_row_cap"):SQL19.index("COMMENT ON FUNCTION api.assert_row_cap")])
     assert "p_fn = 'portfolio_resolve'" in helper
-    assert "('portfolio_fees', 'portfolio_lookthrough', 'portfolio_movement')" in helper
+    assert re.search(
+        r"\('portfolio_fees', 'portfolio_lookthrough', 'portfolio_movement',\s*'portfolio_fund_terms'\)",
+        helper,
+    )
+    assert "p_fn = 'portfolio_instruments'" in helper
     portfolio_hint = helper[helper.index("p_fn = 'portfolio_resolve'"): helper.index("left(p_fn, 7) = 'screen_'")]
     assert "p_from" not in portfolio_hint and "p_after" not in portfolio_hint
 
