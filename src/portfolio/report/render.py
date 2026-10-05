@@ -778,6 +778,10 @@ def _exposure_section(engine: dict) -> str:
         name = v(engine, f"{q}.name") if s.get("name") else v(engine, f"{q}.key")
         rows.append([name, v(engine, f"{q}.level"), legs, v(engine, f"{q}.total_brl"), v(engine, f"{q}.total_pct")])
     out.append(_table([("Exposição", False), ("Nível", False), ("Caminhos", False), ("Total", True), ("Peso", True)], rows))
+    origin = charts.exposure_origin_chart(engine)
+    if origin:
+        out.append("<h3>De onde vem a exposição ao mesmo ativo</h3>")
+        out.append(origin)
     if lt.get("top_underlying"):
         out.append("<h3>O que está por baixo (maiores exposições)</h3>")
         rows = [[v(engine, f"lookthrough.top_underlying[{i}].name"), v(engine, f"lookthrough.top_underlying[{i}].value_brl"),

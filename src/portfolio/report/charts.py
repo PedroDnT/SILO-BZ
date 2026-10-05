@@ -18,6 +18,7 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
+from src.portfolio.common import REASON_TEXT
 from src.portfolio.report.values import format_value, is_number, resolve
 
 FONT = "DejaVu Sans, Helvetica, Arial, sans-serif"
@@ -89,10 +90,13 @@ def _svg(height: float, body: str, label: str, width: int = WIDTH) -> str:
             f'viewBox="0 0 {width} {height:.0f}" role="img" aria-label="{escape(label)}">{body}</svg>')
 
 
-def figure(svg: str, caption: str, note: str = "") -> str:
+def figure(svg: str, caption: str, note: str = "", note_below: bool = False) -> str:
+    """The chart and its caption; ``note_below`` puts the note on a line of its own under the caption."""
     if not svg:
         return ""
-    tail = f'<span class="nota"> {escape(note)}</span>' if note else ""
+    tail = ""
+    if note:
+        tail = f'{"<br>" if note_below else " "}<span class="nota">{escape(note)}</span>'
     return f'<figure class="grafico">{svg}<figcaption>{escape(caption)}{tail}</figcaption></figure>'
 
 
@@ -285,6 +289,139 @@ def lookthrough_chart(view: dict) -> str:
     svg = _svg(height + 2, "".join(parts), "Look-through: carteira, fundos e maiores ativos por baixo")
     return figure(svg, "Look-through: da carteira aos fundos e aos maiores ativos de cada um (% da carteira)",
                   "Só os caminhos que o motor abriu; o peso é o do ativo na carteira inteira.")
+
+
+# --- d2. where the exposure to one asset comes from (owner's decision Q42 = A, 2026-10-05) ------------------------------
+
+DIRECT_FILL = SERIES
+VIA_FILLS = ("#1baf7a", "#eda100", "#e87ba4", "#4a3aa7", "#008300")  # categorical slots 3 to 7 of the dataviz reference
+ORIGIN_CAVEAT = ("A parte via fundo é a carteira do fundo no mês da CDA, não na data do extrato; fundos sem CDA no mês "
+                 "não são abertos, então o total é um piso. Ações ON e PN da mesma companhia (como PETR3 e PETR4) são "
+                 "ativos diferentes aqui. Peso no fundo: fração do fundo na CDA, não em %.")
+ORIGIN_BAR_H = 14
+ORIGIN_TEXT_X = 16
+ORIGIN_DETAIL_SIZE = 8
+
+
+def _seg_path(x: float, y: float, w: float, h: float, round_left: bool, round_right: bool, r: float = RADIUS) -> str:
+    """A bar segment: rounded only at the ends of the whole bar, square where it touches its neighbour."""
+    r = min(r, w / 2, h / 2)
+    rl, rr = (r if round_left else 0.0), (r if round_right else 0.0)
+    d = f"M{x + rl:.1f},{y:.1f} H{x + w - rr:.1f} "
+    if rr:
+        d += f"A{rr:.1f},{rr:.1f} 0 0 1 {x + w:.1f},{y + rr:.1f} "
+    d += f"V{y + h - rr:.1f} "
+    if rr:
+        d += f"A{rr:.1f},{rr:.1f} 0 0 1 {x + w - rr:.1f},{y + h:.1f} "
+    d += f"H{x + rl:.1f} "
+    if rl:
+        d += f"A{rl:.1f},{rl:.1f} 0 0 1 {x:.1f},{y + h - rl:.1f} "
+    d += f"V{y + rl:.1f} "
+    if rl:
+        d += f"A{rl:.1f},{rl:.1f} 0 0 1 {x + rl:.1f},{y:.1f} "
+    return d + "Z"
+
+
+def _positive(v: Any) -> bool:
+    return is_number(v) and v > 0
+
+
+def _origin_detail(view: dict, q: str, seg: dict) -> str:
+    """The second line of a via-fund segment: weight inside the fund and the CDA month with its age. Every figure is
+    ``format_value`` of the segment's own path; a part the engine did not carry is left out."""
+    parts = []
+    if is_number(seg.get("weight_in_line")):
+        parts.append(f"peso no fundo: {format_value(view, f'{q}.weight_in_line')}")
+    elif is_number(seg.get("n_paths")):
+        parts.append(f"{format_value(view, f'{q}.n_paths')} caminhos dentro do fundo (peso não somado)")
+    if seg.get("cda_month"):
+        text = f"CDA de {format_value(view, f'{q}.cda_month')}"
+        age = seg.get("cda_age_months")
+        if is_number(age):
+            if age == 0:
+                text += ", no mês do extrato"
+            else:
+                text += f", {format_value(view, f'{q}.cda_age_months')} {'mês' if age == 1 else 'meses'} antes do extrato"
+        parts.append(text)
+    return " · ".join(parts)
+
+
+def exposure_origin_chart(view: dict) -> str:
+    """Per asset held through more than one statement line, one stacked bar: the asset's total exposure
+    (``total_brl``, ``total_pct``: the engine's) split into one segment per statement line, the direct holding and each
+    fund the asset is reached through (``lookthrough.exposure_origin``, built by ``adapt``).
+
+    Under each bar, one row per segment with the line and its R$; a via-fund row adds the asset's weight in that fund
+    and the CDA month with its age against the statement. A segment with no positive R$ is never a bar: it is listed
+    as text. Nothing when no asset has a positive total (the "Sobreposição" table still lists every group)."""
+    groups = resolve(view, "lookthrough.exposure_origin")
+    if not isinstance(groups, list) or not any(isinstance(g, dict) and _positive(g.get("total_brl")) for g in groups):
+        return ""
+    parts: list[str] = []
+    summary: list[str] = []
+    y = 0.0
+    for gi, g in enumerate(groups):
+        if not isinstance(g, dict):
+            continue
+        base = f"lookthrough.exposure_origin[{gi}]"
+        segs = g.get("segments") or []
+        total_txt = format_value(view, f"{base}.total_brl")
+        if is_number(g.get("total_pct")):
+            total_txt += f" · {format_value(view, f'{base}.total_pct')} da carteira"
+        parts.append(_text(0, y + 9, truncate(g.get("asset"), WIDTH - 12 - len(total_txt) * CHAR_W), fill=INK, weight="bold"))
+        parts.append(_text(WIDTH, y + 9, total_txt, anchor="end"))
+        summary.append(f"{g.get('asset')}, {total_txt}")
+        drawn = [(i, s) for i, s in enumerate(segs) if isinstance(s, dict) and _positive(s.get("value_brl"))]
+        bar_y = y + 14
+        vsum = sum(s["value_brl"] for _, s in drawn) if _positive(g.get("total_brl")) else 0
+        x = 0.0
+        via_n = 0
+        fills: dict[int, str] = {}
+        for k, (i, s) in enumerate(drawn):
+            if s.get("direct"):
+                fills[i] = DIRECT_FILL
+            else:
+                fills[i] = VIA_FILLS[via_n % len(VIA_FILLS)]
+                via_n += 1
+            w = max(WIDTH * s["value_brl"] / vsum, 1.5)
+            q = f"{base}.segments[{i}]"
+            title = (f"{'direta' if s.get('direct') else 'via'}: {s.get('name')}: {format_value(view, f'{q}.value_brl')}")
+            parts.append(f'<path d="{_seg_path(x, bar_y, w, ORIGIN_BAR_H, k == 0, k == len(drawn) - 1)}" fill="{fills[i]}" '
+                         f'stroke="{SURFACE}" stroke-width="1"><title>{escape(title)}</title></path>')
+            x += w
+        ry = bar_y + ORIGIN_BAR_H + 10 if drawn and vsum else y + 14
+        if not (drawn and vsum):
+            parts.append(_text(0, ry + 9, "Sem exposição positiva a desenhar; ver a tabela de sobreposição.", fill=INK_2))
+            ry += 14
+        for i, s in enumerate(segs):
+            if not isinstance(s, dict):
+                continue
+            q = f"{base}.segments[{i}]"
+            who = ("direta · " if s.get("direct") else "via · ") + truncate(s.get("name"), 380)
+            value_txt = format_value(view, f"{q}.value_brl")
+            if i in fills:
+                parts.append(f'<rect x="0" y="{ry:.1f}" width="10" height="10" rx="2" fill="{fills[i]}"/>')
+                parts.append(_text(ORIGIN_TEXT_X, ry + 8.5, who, fill=INK))
+                parts.append(_text(WIDTH, ry + 8.5, value_txt, anchor="end", fill=INK))
+            else:  # zero, negative or missing: never a bar
+                parts.append(_text(ORIGIN_TEXT_X, ry + 8.5, f"{who} (não desenhada: exposição negativa, zero ou ausente)", fill=INK_2))
+                parts.append(_text(WIDTH, ry + 8.5, value_txt, anchor="end", fill=INK_2))
+            ry += 14
+            detail = "" if s.get("direct") else _origin_detail(view, q, s)
+            if detail:
+                parts.append(_text(ORIGIN_TEXT_X, ry + 4, detail, fill=INK_2, size=ORIGIN_DETAIL_SIZE))
+                ry += 12
+        y = ry + 12
+    height = y - 12
+    note = ORIGIN_CAVEAT
+    if resolve(view, "lookthrough.economic_group_assessed") is not True and resolve(view, "lookthrough.economic_group_note"):
+        note += " " + format_value(view, "lookthrough.economic_group_note")
+    if "sem_carteira_cda" in (resolve(view, "sections.lookthrough.reason_codes") or []):
+        note += " Neste extrato: " + REASON_TEXT["sem_carteira_cda"] + "."
+    svg = _svg(height, "".join(parts),
+               "Origem da exposição aos maiores ativos que aparecem em mais de uma linha do extrato: " + "; ".join(summary))
+    return figure(svg, "De onde vem a exposição ao mesmo ativo: direta e por cada fundo (valor e % da carteira)", note,
+                  note_below=True)
 
 
 # --- e. fee cost -------------------------------------------------------------------------------------------------------
