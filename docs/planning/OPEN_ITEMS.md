@@ -731,9 +731,15 @@ before changing rule 4.
    drop, count); a read-side seam so SQL rules are not restated in Python.
 6. **Rule 4 says every record passes `DataValidator`, and the CVM ingests do not
    all do it.** Rule and code disagree; which one changes is the owner's call.
-7. **The CNPJ measurement did not cover** CDA, securitization, FIP, the ETF
-   registry or company filings. The rule 4 sentence is true for the files
-   measured, not yet for those.
+7. ~~**The CNPJ measurement did not cover** CDA, securitization, FIP, the ETF
+   registry or company filings.~~ Measured 2026-10-05, every column a field map
+   types `cnpj`, in every member the ingests read: CDA 2026-08 (all blocks,
+   with block 2's `CNPJ_FUNDO_CLASSE_COTA`), FIP trimestral 2023 and
+   quadrimestral 2025/2026, CRI/CRA/OTS informe mensal 2026, DFIN CRA/CRI 2025,
+   IPE and FCA 2026, ITR 2026, DFP 2025, and the ETF seed (187 rows). All have
+   14 digits, so `coerce` pads nothing there either. The one ragged column
+   seen, `CNPJ` in the securitization `cedente_devedor` member (CPFs, text,
+   10 to 33 digits), is not read by any ingest.
 8. **CVM skip versus error is a substring match** on `"Data not found"`, from
    `ValueError(f"Data not found at {url}")` in `cvm_fetcher.py`. B3 and market use
    typed exceptions. A reworded message would turn a skip into an error.
