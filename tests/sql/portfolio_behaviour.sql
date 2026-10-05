@@ -1289,7 +1289,9 @@ BEGIN
     END IF;
     -- Dated before the snapshot, the ETF has no fee: no ETF peer, and the cell is not widened.
     SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000061'], DATE '2026-09-30');
-    IF r.reason_code <> 'pares_insuficientes' OR r.n_etf_peers <> 0 OR r.etf_peer_tickers IS NOT NULL
+    -- No fund of the cell is active that month, and the cell still shows its mapped ETFs (3 with no usable fee).
+    IF r.reason_code <> 'pares_insuficientes' OR r.n_etf_peers <> 0 OR r.n_etf_excluded <> 3 OR r.n_fund_peers <> 0
+       OR r.etf_peer_tickers IS NOT NULL
        OR r.etf_peer_fee_source IS NOT NULL OR r.median_pct_year IS NOT NULL THEN
         RAISE EXCEPTION 'ETF fee dated after p_as_of entered: %', row_to_json(r);
     END IF;

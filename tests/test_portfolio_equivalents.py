@@ -29,7 +29,7 @@ def _pair(**kw):
 
 def test_the_file_loads_and_every_spelling_is_filed():
     pairs = eq.load_pairs()
-    assert 8 <= len(pairs) <= 12
+    assert pairs  # the owner may remove pairs; an empty file is refused by the loader
     eq.check_spellings(pairs, FIXTURE["classe_anbima"], FIXTURE["underlying_index"])
 
 

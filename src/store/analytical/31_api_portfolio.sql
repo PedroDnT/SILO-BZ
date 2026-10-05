@@ -2398,12 +2398,17 @@ BEGIN
         FROM etf_peer p
         GROUP BY p.cls
     ), cells AS (
-        SELECT g.cls, g.fc, g.scope, g.n AS n_fund, g.excluded, g.oldest, g.newest,
+        -- Every targets' cell, so a cell with no active fund peer still shows its ETFs.
+        SELECT k.cls, k.fc, k.scope, COALESCE(g.n, 0) AS n_fund, COALESCE(g.excluded, 0) AS excluded,
+               g.oldest, g.newest,
                COALESCE(eg.n, 0) AS n_etf, COALESCE(eg.excluded, 0) AS etf_excluded,
                eg.oldest AS etf_oldest, eg.newest AS etf_newest, eg.tickers AS etf_tickers,
                eg.srcs AS etf_srcs,
                COALESCE(g.fees, '{}'::numeric[]) || COALESCE(eg.fees, '{}'::numeric[]) AS fees
-        FROM groups g LEFT JOIN etf_groups eg ON eg.cls = g.cls
+        FROM (SELECT DISTINCT t.cls, t.fc, t.scope FROM targets t
+              WHERE t.cls IS NOT NULL AND t.fc IN ('S', 'N') AND t.scope IN ('FI', 'CLASSES - FIF')) k
+        LEFT JOIN groups g ON g.cls = k.cls AND g.fc = k.fc AND g.scope = k.scope
+        LEFT JOIN etf_groups eg ON eg.cls = k.cls
     ), stats AS (
         SELECT c.*, cardinality(c.fees) AS n,
                q.p25, q.median, q.p75
