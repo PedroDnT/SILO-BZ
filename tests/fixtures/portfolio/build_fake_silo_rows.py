@@ -393,7 +393,10 @@ canned["portfolio_fee_peers"] = [dict(match={}, rows=[
          activity_from="2026-08-01", activity_to="2026-10-01", n_peers=40, n_excluded=4,
          peer_fee_oldest="2024-01-31", peer_fee_newest="2026-09-30", p25_pct_year=0.75,
          median_pct_year=1.0, p75_pct_year=1.5, percentile_pct=95.0, difference_pp=1.0,
-         status="compared", reason_code=None),
+         status="compared", reason_code=None,
+         # v66 (#609): the class is not in the reviewed class -> index list, so no ETF enters this cell
+         n_fund_peers=40, n_etf_peers=0, n_etf_excluded=0, etf_peer_tickers=None,
+         etf_peer_fee_oldest=None, etf_peer_fee_newest=None, etf_peer_fee_source=None),
     *[dict(cnpj=c, status="not_compared", reason_code="sem_extrato_comparavel", n_peers=0, n_excluded=0)
       for c in ("50088190000119", "51488342000133", "42592315000115")],
 ])]

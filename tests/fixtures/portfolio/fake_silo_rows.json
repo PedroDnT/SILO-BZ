@@ -3786,7 +3786,14 @@
      "percentile_pct": 95.0,
      "difference_pp": 1.0,
      "status": "compared",
-     "reason_code": null
+     "reason_code": null,
+     "n_fund_peers": 40,
+     "n_etf_peers": 0,
+     "n_etf_excluded": 0,
+     "etf_peer_tickers": null,
+     "etf_peer_fee_oldest": null,
+     "etf_peer_fee_newest": null,
+     "etf_peer_fee_source": null
     },
     {
      "cnpj": "50088190000119",

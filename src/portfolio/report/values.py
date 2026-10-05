@@ -9,7 +9,8 @@ only place a figure becomes text, and it formats by the path's last key:
 | contains ``_brl``            | reais                   | ``R$ 1.234,56`` / ``R$ 187,3 milhões`` |
 | contains ``_pct``            | percent (1.65 = 1,65%)  | ``1,65%``             |
 | contains ``cnpj``            | 14 digits               | ``00.000.000/0000-00``|
-| ``month`` / ``competencia``  | ISO date, first of month| ``08/2026``           |
+| ``month`` / ``competencia`` / ends ``_month`` | ISO date, first of month | ``08/2026`` |
+| ends ``_pp``                 | percentage points       | ``-0,43 p.p.``        |
 | other ISO date               | ``YYYY-MM-DD``          | ``31/08/2026``        |
 | ISO timestamp                | UTC                     | ``03/10/2026 13:00 (UTC-3) (16:00 UTC)`` |
 | ``old_num`` / ``new_num`` / ``change_brl`` of a ``VL_*`` leaf | reais | as ``_brl`` |
@@ -168,7 +169,7 @@ def fmt_timestamp(s: str) -> str:
 
 
 def unit_of(doc: Any, path: str) -> str:
-    """``brl`` | ``pct`` | ``cnpj`` | ``month`` | ``date`` | ``plain`` for the leaf at ``path``."""
+    """``brl`` | ``pct`` | ``pp`` | ``cnpj`` | ``month`` | ``date`` | ``plain`` for the leaf at ``path``."""
     key = last_key(path).lower()
     if "_brl" in key or key == "brl":
         return "brl"
@@ -176,6 +177,10 @@ def unit_of(doc: Any, path: str) -> str:
         return "pct"
     if "cnpj" in key:
         return "cnpj"
+    if key.endswith("_pp"):
+        return "pp"
+    if key.endswith("_month"):
+        return "month"  # engine 1.10: base_month, end_month, max_drawdown_peak_month (first of month)
     if key in ("old_num", "new_num", "change", "change_num"):
         parent = resolve(doc, parent_path(path))
         if isinstance(parent, dict) and str(parent.get("leaf", "")).upper().startswith("VL_"):
@@ -198,6 +203,8 @@ def format_value(doc: Any, path: str, value: Any = MISSING) -> str:
             return fmt_brl(float(v))
         if unit == "pct":
             return fmt_pct(float(v))
+        if unit == "pp":
+            return f"{fmt_number(float(v), 2)} p.p."
         if isinstance(v, int):
             return fmt_number(v, 0)
         decimals = min(6, max(2, len(repr(float(v)).split(".")[1].rstrip("0"))))
