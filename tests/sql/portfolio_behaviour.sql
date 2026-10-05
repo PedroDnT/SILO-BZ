@@ -1,6 +1,6 @@
 -- Executed checks for the portfolio-diagnosis reads (31_api_portfolio.sql:
 -- api.portfolio_resolve, api.portfolio_fees, api.portfolio_lookthrough, catalog
--- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56; ETF cotistas and PL, v57; api.portfolio_instruments and api.portfolio_fund_terms, v61). Regex tests pin the SQL text; this proves it DOES the right thing on
+-- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56; ETF cotistas and PL, v57; api.portfolio_instruments and api.portfolio_fund_terms, v61; the filed benchmark and api.portfolio_equivalents, v67). Regex tests pin the SQL text; this proves it DOES the right thing on
 -- rows. Synthetic CNPJs, inside a transaction that is rolled back, so it runs
 -- on any database with the schema and the analytical layer applied (CI's
 -- sql-compile job, or a scratch copy):
@@ -1389,5 +1389,148 @@ BEGIN
     RESET ROLE;
     RAISE NOTICE 'class_return_distribution behavior OK';
 END $$;
+
+-- ===========================================================================
+-- The filed benchmark on portfolio_fees (catalog v67, #606 Q36). The Extrato's
+-- PARAM_TAXA_PERFM comes back whatever the fee source (benchmark_extrato), and
+-- the lâmina's INDICE_REFER only when every class filed the same one. As filed:
+-- nothing is normalised or matched here (the engine's rule file does that).
+-- ===========================================================================
+ALTER TABLE public.zz_lamina_stub ADD COLUMN indice_refer text;
+CREATE OR REPLACE VIEW public.vw_fi_lamina_latest AS SELECT * FROM public.zz_lamina_stub;
+INSERT INTO public.zz_lamina_stub (cnpj, id_subclasse, dt_comptc, taxa_adm, indice_refer) VALUES
+    ('77000000000001', NULL, '2026-08-01', 0.5, 'CDI'),          -- lâmina source (no Extrato fee), one value
+    ('77000000000002', 'A', '2026-08-01', 0.5, 'CDI252'),        -- two classes, the same value
+    ('77000000000002', 'B', '2026-08-01', 0.5, 'CDI252'),
+    ('77000000000003', 'A', '2026-08-01', 0.5, 'CDI'),           -- two classes that differ
+    ('77000000000003', 'B', '2026-08-01', 0.5, 'IBOVESPA'),
+    ('77000000000004', NULL, '2026-08-01', 0.5, '  '),           -- blank: not filed
+    ('77000000000005', NULL, '2026-07-01', 0.5, 'CDI'),          -- an older month: not the newest
+    ('77000000000005', NULL, '2026-08-01', 0.5, 'IMA-B');
+INSERT INTO cvm_fi_extrato (cnpj, dt_comptc, classe_anbima, fundo_cotas, tp_fundo_classe, taxa_adm,
+                            existe_taxa_perfm, param_taxa_perfm, raw) VALUES
+    ('77000000000001', '2026-06-30', 'RENDA FIXA', 'N', 'FI', NULL, 'S', 'CDI', '{}'),   -- not the fee source, still served
+    ('77000000000006', '2026-06-30', 'RENDA FIXA', 'N', 'FI', 0.8, 'S', 'IBOVESPA', '{}'),
+    ('77000000000007', '2026-06-30', 'RENDA FIXA', 'N', 'FI', 0.8, 'N', NULL, '{}');
+DO $$
+DECLARE r RECORD;
+BEGIN
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000001']);
+    IF r.disclosed_origin IS DISTINCT FROM 'lamina' OR r.extrato_param_taxa_perfm IS NOT NULL
+       OR r.benchmark_extrato IS DISTINCT FROM 'CDI' OR r.benchmark_lamina IS DISTINCT FROM 'CDI'
+       OR r.benchmark_lamina_n IS DISTINCT FROM 1 OR r.extrato_as_of IS DISTINCT FROM DATE '2026-06-30' THEN
+        RAISE EXCEPTION 'benchmark, lâmina source: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000002']);
+    IF r.benchmark_lamina IS DISTINCT FROM 'CDI252' OR r.benchmark_lamina_n IS DISTINCT FROM 1 OR r.benchmark_extrato IS NOT NULL THEN
+        RAISE EXCEPTION 'benchmark, two equal classes: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000003']);
+    IF r.benchmark_lamina IS NOT NULL OR r.benchmark_lamina_n IS DISTINCT FROM 2 THEN
+        RAISE EXCEPTION 'benchmark, classes differ: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000004']);
+    IF r.benchmark_lamina IS NOT NULL OR r.benchmark_lamina_n IS DISTINCT FROM 0 THEN
+        RAISE EXCEPTION 'benchmark, blank: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000005']);
+    IF r.benchmark_lamina IS DISTINCT FROM 'IMA-B' THEN
+        RAISE EXCEPTION 'benchmark, newest lâmina month: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000006']);
+    IF r.disclosed_origin IS DISTINCT FROM 'extrato' OR r.benchmark_extrato IS DISTINCT FROM 'IBOVESPA'
+       OR r.extrato_param_taxa_perfm IS DISTINCT FROM 'IBOVESPA' OR r.benchmark_lamina_n IS NOT NULL THEN
+        RAISE EXCEPTION 'benchmark, Extrato source, no lâmina: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000007']);
+    IF r.benchmark_extrato IS NOT NULL OR r.benchmark_lamina IS NOT NULL THEN
+        RAISE EXCEPTION 'benchmark fabricated: %', row_to_json(r);
+    END IF;
+    RAISE NOTICE 'portfolio_fees benchmark OK';
+END $$;
+
+-- ===========================================================================
+-- Market equivalent (catalog v67, #609). Only approved pairs; the largest PL
+-- across every index of the class; one row per ETF CNPJ; inactive ETFs and
+-- snapshots after p_as_of never count; a class with no pair, no ETF or no PL
+-- comes back as said.
+-- ===========================================================================
+CREATE OR REPLACE VIEW public.portfolio_class_index AS
+SELECT v.classe_anbima, v.underlying_index, v.status
+FROM (VALUES ('EQ CLASS', 'EQ INDEX A', 'aprovada'),
+             ('EQ CLASS', 'EQ INDEX B', 'aprovada'),
+             ('EQ PROP', 'EQ INDEX A', 'proposta'),
+             ('EQ NOETF', 'EQ INDEX Z', 'aprovada'),
+             ('EQ NOPL', 'EQ INDEX C', 'aprovada')) AS v(classe_anbima, underlying_index, status);
+INSERT INTO cvm_etf_registry (ticker, cnpj, fund_name, underlying_index, segment, is_active) VALUES
+    ('EQAA11', '75000000000001', 'EQ ETF A', 'EQ INDEX A', 'equities_br', TRUE),       -- PL 100
+    ('EQAX11', '75000000000001', 'EQ ETF A 2', 'EQ INDEX A', 'equities_br', TRUE),     -- same CNPJ, no snapshot: counted once
+    ('EQBB11', '75000000000002', 'EQ ETF B', 'EQ INDEX B', 'fixed_income_br', TRUE),   -- PL 300: the largest, on the other index
+    ('EQDD11', '75000000000003', 'EQ ETF D', 'EQ INDEX A', 'equities_br', FALSE),      -- inactive, PL 1000: ignored
+    ('EQEE11', '75000000000004', 'EQ ETF E', 'EQ INDEX A', 'equities_br', TRUE),       -- PL only after p_as_of: never ranked
+    ('EQCC11', '75000000000005', 'EQ ETF C', 'EQ INDEX C', 'equities_br', TRUE);       -- no PL at all
+INSERT INTO etf_market_snapshot (ticker, snapshot_date, source, cnpj, taxa_adm_pct, nav) VALUES
+    ('EQAA11', '2026-10-01', 'etfsbrasil', '75000000000001', 0.50, 100000000),
+    ('EQBB11', '2026-09-30', 'etfsbrasil', '75000000000002', NULL, 300000000),
+    ('EQBB11', '2026-10-01', 'etfsbrasil', '75000000000002', 0.10, NULL),
+    ('EQDD11', '2026-10-01', 'etfsbrasil', '75000000000003', 0.20, 1000000000),
+    ('EQEE11', '2026-11-01', 'etfsbrasil', '75000000000004', 0.30, 900000000),
+    ('EQCC11', '2026-10-01', 'etfsbrasil', '75000000000005', 0.25, NULL);
+DO $$
+DECLARE r RECORD; n INT;
+BEGIN
+    SELECT count(*) INTO n FROM api.portfolio_equivalents(ARRAY['EQ CLASS'], DATE '2026-10-05');
+    IF n <> 3 THEN RAISE EXCEPTION 'equivalents: one row per active ETF CNPJ expected (3), got %', n; END IF;
+    SELECT * INTO r FROM api.portfolio_equivalents(ARRAY[' EQ CLASS '], DATE '2026-10-05') WHERE is_equivalent;
+    IF r.ticker IS DISTINCT FROM 'EQBB11' OR r.pl_rank <> 1 OR r.pl_brl <> 300000000 OR r.pl_as_of <> DATE '2026-09-30'
+       OR r.fee_pct_year <> 0.10 OR r.fee_as_of <> DATE '2026-10-01' OR r.segment <> 'fixed_income_br'
+       OR r.status <> 'found' OR r.n_etfs <> 3 OR r.class_indices <> ARRAY['EQ INDEX A', 'EQ INDEX B']
+       OR r.classe_anbima <> 'EQ CLASS' OR r.reason NOT LIKE 'equivalente de mercado%não é recomendação' THEN
+        RAISE EXCEPTION 'equivalents, the largest across the class''s indices: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_equivalents(ARRAY['EQ CLASS'], DATE '2026-10-05') WHERE ticker = 'EQAA11';
+    IF r.is_equivalent OR r.pl_rank <> 2 THEN RAISE EXCEPTION 'equivalents, second: %', row_to_json(r); END IF;
+    SELECT * INTO r FROM api.portfolio_equivalents(ARRAY['EQ CLASS'], DATE '2026-10-05') WHERE ticker = 'EQEE11';
+    IF r.is_equivalent OR r.pl_rank IS NOT NULL OR r.pl_brl IS NOT NULL THEN
+        RAISE EXCEPTION 'equivalents read a snapshot after p_as_of: %', row_to_json(r);
+    END IF;
+    -- After the later snapshot, it is the largest.
+    SELECT * INTO r FROM api.portfolio_equivalents(ARRAY['EQ CLASS'], DATE '2026-11-05') WHERE is_equivalent;
+    IF r.ticker IS DISTINCT FROM 'EQEE11' THEN RAISE EXCEPTION 'equivalents, dated later: %', row_to_json(r); END IF;
+    -- A proposed pair is not an approved one.
+    SELECT * INTO r FROM api.portfolio_equivalents(ARRAY['EQ PROP'], DATE '2026-10-05');
+    IF r.status <> 'sem_par' OR r.ticker IS NOT NULL OR r.class_indices IS NOT NULL OR r.is_equivalent THEN
+        RAISE EXCEPTION 'equivalents used a proposed pair: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_equivalents(ARRAY['EQ NOETF'], DATE '2026-10-05');
+    IF r.status <> 'sem_etf' OR r.n_etfs <> 0 OR r.class_indices <> ARRAY['EQ INDEX Z'] OR r.reason NOT LIKE 'nenhum ETF ativo%' THEN
+        RAISE EXCEPTION 'equivalents, no ETF: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_equivalents(ARRAY['EQ NOPL'], DATE '2026-10-05');
+    IF r.status <> 'sem_pl' OR r.is_equivalent OR r.pl_rank IS NOT NULL OR r.ticker <> 'EQCC11' OR r.fee_pct_year <> 0.25 THEN
+        RAISE EXCEPTION 'equivalents, no PL: %', row_to_json(r);
+    END IF;
+    SELECT count(*) INTO n FROM api.portfolio_equivalents(ARRAY['EQ CLASS', 'EQ NOETF', 'EQ CLASS', 'UNMAPPED'], DATE '2026-10-05');
+    IF n <> 5 THEN RAISE EXCEPTION 'equivalents, several classes: %', n; END IF;
+    BEGIN
+        PERFORM * FROM api.portfolio_equivalents(ARRAY(SELECT 'EQ CLASS' || g FROM generate_series(1, 51) g));
+        RAISE EXCEPTION 'equivalents accepted 51 classes';
+    EXCEPTION WHEN SQLSTATE '22023' THEN
+        IF SQLERRM NOT LIKE '%more than 50%' THEN RAISE; END IF;
+    END;
+    BEGIN
+        PERFORM * FROM api.portfolio_equivalents(ARRAY['EQ CLASS', ' ']);
+        RAISE EXCEPTION 'equivalents accepted a blank class';
+    EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+    SET LOCAL ROLE anon;
+    SELECT * INTO r FROM api.portfolio_equivalents(ARRAY['EQ CLASS'], DATE '2026-10-05') WHERE is_equivalent;
+    IF r.ticker IS DISTINCT FROM 'EQBB11' THEN RAISE EXCEPTION 'anon cannot read equivalents'; END IF;
+    IF has_table_privilege('anon', 'public.etf_market_snapshot', 'SELECT') THEN
+        RAISE EXCEPTION 'anon can read etf_market_snapshot';
+    END IF;
+    RESET ROLE;
+    RAISE NOTICE 'portfolio_equivalents behavior OK';
+END $$;
+
 
 ROLLBACK;

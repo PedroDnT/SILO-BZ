@@ -275,6 +275,8 @@ REFUSING_FUNCTIONS = {
     "trade_consolidated_history",
     # v66: the class return distribution (31_api_portfolio.sql).
     "class_return_distribution",
+    # v67: the market equivalent of a class (31_api_portfolio.sql).
+    "portfolio_equivalents",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav", "trade_consolidated_history"}
 

@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "66";
+export const CONTRACT_VERSION = "67";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -3144,6 +3144,40 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "portfolio_equivalents": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_equivalents",
+    "description": "The market equivalent of an ANBIMA class (catalog v67, #609): the active ETFs that track an index the owner-reviewed list (src/portfolio/rules/equivalents/class_index.yaml, generated into public.portfolio_class_index; only pairs with status aprovada) maps to the class, read in reverse (class -> index). One row per (class, ETF CNPJ) among cvm_etf_registry.is_active ETFs, the universe portfolio_fee_peers uses; class_indices lists every mapped index and n_etfs counts the ETFs. pl_brl and fee_pct_year are the third-party values etfsbrasil.com.br prints (etf_market_snapshot.nav and taxa_adm_pct, each the newest snapshot that has one dated no later than p_as_of, dated pl_as_of and fee_as_of), the values portfolio_fees serves as etf_site_pl and etf_site_taxa_adm: never a CVM filing, never rescaled. is_equivalent marks the largest by PL across all the class's indices (pl_rank 1, ties by ticker); an ETF with no PL is never ranked. segment is the registry's as filed: fixed_income_br trades in B3's FORWARD segment (prices in trade_consolidated_history), the others on the cash tape (quote_history). A class with no approved pair (status sem_par) or with no active ETF on its indices (sem_etf) comes back as one row with NULL ETF columns; when no ETF has a PL every row is sem_pl and none is the equivalent. The index is never inferred from a fund's name. reason is Portuguese. It names an ETF with the same objective, not a recommendation. 1 to 50 non-blank classes (outer spaces trimmed, duplicates collapsed); otherwise RAISES 22023; one page, never trimmed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_classes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_as_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        }
+      },
+      "required": [
+        "p_classes"
+      ],
+      "additionalProperties": false
+    }
+  },
   "portfolio_fee_peers": {
     "kind": "rpc",
     "path": "/rpc/portfolio_fee_peers",
@@ -3181,7 +3215,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "portfolio_fees": {
     "kind": "rpc",
     "path": "/rpc/portfolio_fees",
-    "description": "Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina's classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an OLDER source. One exception (v55): when the Extrato filed exactly 0 or above 5, the lâmina's single fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the source. fee_resolution names the rule: extrato, extrato_lamina_beside (Extrato 0 or above 5, a lâmina fee beside it), extrato_to_check (the same with no lâmina fee), lamina_newer, lamina, cad_fi. The other document's fee is returned as filed whatever the source (lamina_taxa_adm, _min, _max, lamina_n_classes, lamina_age_months; extrato_taxa_adm_filed with extrato_as_of), never rescaled and never a fee to sum; extrato_lamina_ratio is the Extrato over the lâmina when both are above 0, and extrato_scale_factor is 10 or 100 when an Extrato above 5 equals that factor times the lâmina within the two-decimal rounding of both, a flag only. The Extrato's performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund's fiscal-year start and are filed negative, so the month's accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month's accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. ETFs (v56): CVM's Extrato, lâmina and cad_fi carry no fee for an ETF, so for a CNPJ in SILO's curated ETF registry etf_ticker names the ticker and etf_site_taxa_adm, etf_site_as_of and etf_site_source give the 'Taxa de administração total' etfsbrasil.com.br prints (etf_market_snapshot, the newest snapshot with a fee, joined by ticker): a third-party site, not a CVM filing, never in disclosed_*, returned as published; etf_site_note says so and why a value is NULL. Since v57 etf_site_nr_cotistas and etf_site_pl (R$) are the 'Número de cotistas' and 'Patrimônio líquido' the same site prints in the SAME snapshot (etf_site_as_of): third-party descriptive facts, never summed, never a fee base. p_month = the balancete month (NULL = each fund's newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.",
+    "description": "Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina's classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an OLDER source. One exception (v55): when the Extrato filed exactly 0 or above 5, the lâmina's single fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the source. fee_resolution names the rule: extrato, extrato_lamina_beside (Extrato 0 or above 5, a lâmina fee beside it), extrato_to_check (the same with no lâmina fee), lamina_newer, lamina, cad_fi. The other document's fee is returned as filed whatever the source (lamina_taxa_adm, _min, _max, lamina_n_classes, lamina_age_months; extrato_taxa_adm_filed with extrato_as_of), never rescaled and never a fee to sum; extrato_lamina_ratio is the Extrato over the lâmina when both are above 0, and extrato_scale_factor is 10 or 100 when an Extrato above 5 equals that factor times the lâmina within the two-decimal rounding of both, a flag only. The Extrato's performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund's fiscal-year start and are filed negative, so the month's accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month's accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. ETFs (v56): CVM's Extrato, lâmina and cad_fi carry no fee for an ETF, so for a CNPJ in SILO's curated ETF registry etf_ticker names the ticker and etf_site_taxa_adm, etf_site_as_of and etf_site_source give the 'Taxa de administração total' etfsbrasil.com.br prints (etf_market_snapshot, the newest snapshot with a fee, joined by ticker): a third-party site, not a CVM filing, never in disclosed_*, returned as published; etf_site_note says so and why a value is NULL. Since v57 etf_site_nr_cotistas and etf_site_pl (R$) are the 'Número de cotistas' and 'Patrimônio líquido' the same site prints in the SAME snapshot (etf_site_as_of): third-party descriptive facts, never summed, never a fee base. Since v67 (#606 Q36) the filed benchmark, whatever the fee source and as filed, never inferred from a name or a class: benchmark_extrato is the Extrato's PARAM_TAXA_PERFM (the performance fee's index, the Extrato's only benchmark column; dated extrato_as_of), benchmark_lamina the lâmina's INDICE_REFER at lamina_as_of when every class filed the same one, benchmark_lamina_n the count of distinct values filed (0 none, above 1 the classes differ). p_month = the balancete month (NULL = each fund's newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.",
     "inputSchema": {
       "type": "object",
       "properties": {

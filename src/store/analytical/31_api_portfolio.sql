@@ -717,7 +717,11 @@ RETURNS TABLE (
     etf_site_note            TEXT,     -- what the etf_site_* value is and is not, and why it is NULL; NULL for a CNPJ that is no ETF
     -- ---- appended in catalog v57 (ETF facts; the existing columns above are unchanged) ----
     etf_site_nr_cotistas     INT,      -- the ETF's 'Número de cotistas' as etfsbrasil.com.br prints it (etf_market_snapshot.cotistas), from the SAME snapshot as etf_site_taxa_adm (etf_site_as_of, etf_site_source); a THIRD-PARTY site, not a CVM filing; descriptive, never summed; NULL = the site printed none (not zero)
-    etf_site_pl              NUMERIC   -- the ETF's 'Patrimônio líquido' in R$ as etfsbrasil.com.br prints it (etf_market_snapshot.nav: the site prints R$ MM with two decimals, stored x 1e6 by the ingest, so it resolves to R$ 10 mil), same snapshot; a THIRD-PARTY value, not a CVM filing; descriptive, never a fee base or a total; NULL = none
+    etf_site_pl              NUMERIC,  -- the ETF's 'Patrimônio líquido' in R$ as etfsbrasil.com.br prints it (etf_market_snapshot.nav: the site prints R$ MM with two decimals, stored x 1e6 by the ingest, so it resolves to R$ 10 mil), same snapshot; a THIRD-PARTY value, not a CVM filing; descriptive, never a fee base or a total; NULL = none
+    -- ---- appended in catalog v67 (the filed benchmark, #606 Q36; the existing columns above are unchanged) ----
+    benchmark_extrato        TEXT,     -- the Extrato's PARAM_TAXA_PERFM exactly as filed (newest version, dated extrato_as_of), WHATEVER the fee source: the index the performance fee is measured against, the only benchmark column the Extrato has; NULL = not filed
+    benchmark_lamina         TEXT,     -- the lâmina's INDICE_REFER exactly as filed at lamina_as_of, when every class row filed the same non-blank value; NULL when none filed one or they differ (benchmark_lamina_n)
+    benchmark_lamina_n       INT       -- distinct non-blank INDICE_REFER values at lamina_as_of: 0 = none filed, above 1 = the classes differ; NULL = no lâmina
 )
 LANGUAGE plpgsql
 STABLE
@@ -831,6 +835,7 @@ BEGIN
                CASE WHEN e ->> 'taxa_adm_max' ~ '^-?[0-9]+(\.[0-9]+)?$'
                     THEN (e ->> 'taxa_adm_max')::numeric END AS taxa_adm_max,
                NULLIF(btrim(e ->> 'taxa_perfm'), '') AS taxa_perfm,
+               NULLIF(btrim(e ->> 'indice_refer'), '') AS indice_refer,
                CASE WHEN e ->> 'pr_pl_despesa' ~ '^-?[0-9]+(\.[0-9]+)?$'
                     THEN (e ->> 'pr_pl_despesa')::numeric END AS pr_pl_despesa,
                CASE WHEN e ->> 'dt_ini_despesa' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
@@ -856,7 +861,11 @@ BEGIN
                min(r.pr_pl_despesa) AS desp,
                bool_or(r.pr_pl_despesa IS NULL) AS has_empty_desp,
                min(r.dt_ini_despesa) FILTER (WHERE r.pr_pl_despesa IS NOT NULL) AS desp_ini,
-               max(r.dt_fim_despesa) FILTER (WHERE r.pr_pl_despesa IS NOT NULL) AS desp_fim
+               max(r.dt_fim_despesa) FILTER (WHERE r.pr_pl_despesa IS NOT NULL) AS desp_fim,
+               -- v67: the filed reference index, one value only when every class filed the same one
+               count(DISTINCT r.indice_refer)::int AS n_bench,
+               min(r.indice_refer) AS bench,
+               bool_or(r.indice_refer IS NULL) AS has_empty_bench
         FROM lam_rows r
         WHERE r.dt_comptc = (SELECT max(q.dt_comptc) FROM lam_rows q WHERE q.cnpj = r.cnpj)
         GROUP BY r.cnpj, r.dt_comptc
@@ -924,6 +933,7 @@ BEGIN
                l.dt_comptc AS lam_dt, l.n_classes, l.n_adm, l.n_perfm, l.has_empty,
                l.adm_lo, l.adm_hi, l.adm_min, l.adm_max, l.perfm AS lam_perfm,
                l.n_desp, l.desp, l.has_empty_desp, l.desp_ini, l.desp_fim,
+               l.n_bench, l.bench, l.has_empty_bench,
                g.taxa_adm, g.taxa_perfm, g.inf_taxa_adm, g.inf_taxa_perfm
         FROM reg g
         LEFT JOIN ext x ON x.cnpj = g.cnpj
@@ -964,6 +974,7 @@ BEGIN
                d.x_ing_pr, d.x_ing_real, d.x_existe_saida, d.x_saida_pr, d.x_saida_real,
                d.n_desp, d.desp, d.has_empty_desp, d.desp_ini, d.desp_fim,
                d.lam_newer, d.lam_single,
+               d.n_bench, d.bench, d.has_empty_bench,
                -- The calendar month before; a gap is no previous month.
                p.dt_comptc IS NOT NULL AS has_prev,
                (d.dt_ini_exerc IS NOT NULL AND c.dt_comptc IS NOT NULL
@@ -1054,7 +1065,8 @@ BEGIN
           lamina_n_classes, lamina_age_months, extrato_taxa_adm_filed, extrato_as_of,
           extrato_lamina_ratio, extrato_scale_factor,
           etf_ticker, etf_site_taxa_adm, etf_site_as_of, etf_site_source, etf_site_note,
-          etf_site_nr_cotistas, etf_site_pl) AS (
+          etf_site_nr_cotistas, etf_site_pl,
+          benchmark_extrato, benchmark_lamina, benchmark_lamina_n) AS (
         SELECT f.cnpj, f.fund_name, f.dt_comptc, f.nav,
                f.adm_flow,
                round(f.adm_flow * 12 / NULLIF(f.nav, 0) * 100, 4),
@@ -1210,7 +1222,11 @@ BEGIN
                END,
                -- ---- appended in v57: the same snapshot row as the fee ----
                es.s_cotistas,
-               es.s_pl
+               es.s_pl,
+               -- ---- appended in v67: the filed benchmark, whatever the fee source ----
+               f.x_param,
+               CASE WHEN f.lam_dt IS NOT NULL AND f.n_bench = 1 AND NOT f.has_empty_bench THEN f.bench END,
+               CASE WHEN f.lam_dt IS NOT NULL THEN f.n_bench END
         FROM flag f
         LEFT JOIN etf et ON et.cnpj = f.cnpj
         LEFT JOIN etf_site es ON es.ticker = et.ticker
@@ -1235,7 +1251,8 @@ BEGIN
            g.lamina_n_classes, g.lamina_age_months, g.extrato_taxa_adm_filed, g.extrato_as_of,
            g.extrato_lamina_ratio, g.extrato_scale_factor,
            g.etf_ticker, g.etf_site_taxa_adm, g.etf_site_as_of, g.etf_site_source, g.etf_site_note,
-           g.etf_site_nr_cotistas, g.etf_site_pl
+           g.etf_site_nr_cotistas, g.etf_site_pl,
+           g.benchmark_extrato, g.benchmark_lamina, g.benchmark_lamina_n
     FROM page g
     WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_fees')
     ORDER BY g.cnpj
@@ -1248,7 +1265,7 @@ GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO anon, authenticate
 GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.portfolio_fees(TEXT[], DATE) IS
-    'Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina''s classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an OLDER source. One exception (v55): when the Extrato filed exactly 0 or above 5, the lâmina''s single fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the source. fee_resolution names the rule: extrato, extrato_lamina_beside (Extrato 0 or above 5, a lâmina fee beside it), extrato_to_check (the same with no lâmina fee), lamina_newer, lamina, cad_fi. The other document''s fee is returned as filed whatever the source (lamina_taxa_adm, _min, _max, lamina_n_classes, lamina_age_months; extrato_taxa_adm_filed with extrato_as_of), never rescaled and never a fee to sum; extrato_lamina_ratio is the Extrato over the lâmina when both are above 0, and extrato_scale_factor is 10 or 100 when an Extrato above 5 equals that factor times the lâmina within the two-decimal rounding of both, a flag only. The Extrato''s performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund''s fiscal-year start and are filed negative, so the month''s accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month''s accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. ETFs (v56): CVM''s Extrato, lâmina and cad_fi carry no fee for an ETF, so for a CNPJ in SILO''s curated ETF registry etf_ticker names the ticker and etf_site_taxa_adm, etf_site_as_of and etf_site_source give the ''Taxa de administração total'' etfsbrasil.com.br prints (etf_market_snapshot, the newest snapshot with a fee, joined by ticker): a third-party site, not a CVM filing, never in disclosed_*, returned as published; etf_site_note says so and why a value is NULL. Since v57 etf_site_nr_cotistas and etf_site_pl (R$) are the ''Número de cotistas'' and ''Patrimônio líquido'' the same site prints in the SAME snapshot (etf_site_as_of): third-party descriptive facts, never summed, never a fee base. p_month = the balancete month (NULL = each fund''s newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
+    'Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina''s classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an OLDER source. One exception (v55): when the Extrato filed exactly 0 or above 5, the lâmina''s single fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the source. fee_resolution names the rule: extrato, extrato_lamina_beside (Extrato 0 or above 5, a lâmina fee beside it), extrato_to_check (the same with no lâmina fee), lamina_newer, lamina, cad_fi. The other document''s fee is returned as filed whatever the source (lamina_taxa_adm, _min, _max, lamina_n_classes, lamina_age_months; extrato_taxa_adm_filed with extrato_as_of), never rescaled and never a fee to sum; extrato_lamina_ratio is the Extrato over the lâmina when both are above 0, and extrato_scale_factor is 10 or 100 when an Extrato above 5 equals that factor times the lâmina within the two-decimal rounding of both, a flag only. The Extrato''s performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund''s fiscal-year start and are filed negative, so the month''s accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month''s accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. ETFs (v56): CVM''s Extrato, lâmina and cad_fi carry no fee for an ETF, so for a CNPJ in SILO''s curated ETF registry etf_ticker names the ticker and etf_site_taxa_adm, etf_site_as_of and etf_site_source give the ''Taxa de administração total'' etfsbrasil.com.br prints (etf_market_snapshot, the newest snapshot with a fee, joined by ticker): a third-party site, not a CVM filing, never in disclosed_*, returned as published; etf_site_note says so and why a value is NULL. Since v57 etf_site_nr_cotistas and etf_site_pl (R$) are the ''Número de cotistas'' and ''Patrimônio líquido'' the same site prints in the SAME snapshot (etf_site_as_of): third-party descriptive facts, never summed, never a fee base. Since v67 (#606 Q36) the filed benchmark, whatever the fee source and as filed, never inferred from a name or a class: benchmark_extrato is the Extrato''s PARAM_TAXA_PERFM (the performance fee''s index, the Extrato''s only benchmark column; dated extrato_as_of), benchmark_lamina the lâmina''s INDICE_REFER at lamina_as_of when every class filed the same one, benchmark_lamina_n the count of distinct values filed (0 none, above 1 the classes differ). p_month = the balancete month (NULL = each fund''s newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
 
 
 -- ---------------------------------------------------------------------------
@@ -2619,5 +2636,159 @@ GRANT EXECUTE ON FUNCTION api.class_return_distribution(TEXT, TEXT, DATE) TO sil
 
 COMMENT ON FUNCTION api.class_return_distribution(TEXT, TEXT, DATE) IS
     'The NET quota return distribution of one ANBIMA class (catalog v66, #609): what an equivalent ETF''s return is set against. Two rows, window_months 12 and 6, ending at the close of end_month (p_month, any day of the month; NULL = the last complete FI month, latest_complete_period(''fi'')). Funds: FI funds whose newest CVM Extrato files exactly p_classe_anbima (outer spaces trimmed, never a wider class) and FUNDO_COTAS p_fundo_cotas (S or N), and that are active as in portfolio_fee_peers (a quota in fact_fund_monthly in the three reference months ending in end_month): n_universe. Return = (closing quota of end_month / closing quota of start_month - 1) x 100, from fact_fund_monthly''s one stable quota subclass, the quota api.fund_nav serves; the Informe Diario quota is net of the fees the class accrues (research #610), so this is a net return. Excluded and counted: n_excluded_no_quota (no positive quota at either end) and n_excluded_subclass (the quota subclass changed between the ends). p25_pct, median_pct and p75_pct are plain percentiles over the n_funds returns, not winsorized. Fewer than min_funds (30) funds with a return, or an incomplete end_month (mv_period_completeness): status nao_avaliado, NULL statistics and a Portuguese reason, never a fallback. ETFs are not in the universe (SILO keeps them out of fact_fund_monthly). A statistic of a class, not a forecast or a recommendation. p_classe_anbima NULL or blank, or p_fundo_cotas other than S or N, RAISES 22023; the result is two rows, one page.';
+
+-- Market equivalent (#609, catalog v67): for an ANBIMA class, the active ETFs
+-- that track an index the owner-reviewed YAML maps to it (public.portfolio_class_index,
+-- status 'aprovada' only, read in reverse: class -> index), with each ETF's
+-- third-party PL and fee (etfsbrasil.com.br, etf_market_snapshot, the same values
+-- api.portfolio_fees serves as etf_site_*). The equivalent is the largest by PL
+-- across every index mapped to the class (one class can be mapped to several
+-- spellings of one objective), ties broken by ticker. Same ETF universe as
+-- portfolio_fee_peers: cvm_etf_registry.is_active, one row per ETF CNPJ. segment
+-- is the registry's, as filed: fixed_income_br ETFs trade in B3's FORWARD segment
+-- (trade_consolidated_history), the others on the cash tape (quote_history).
+-- A class with no approved pair or no active ETF comes back as one row with NULL
+-- ETF columns and a reason. Never inferred from a fund's name.
+CREATE OR REPLACE FUNCTION api.portfolio_equivalents(
+    p_classes TEXT[],                    -- ANBIMA classes exactly as filed in the Extrato (portfolio_fee_peers.classe_anbima); 1 to 50
+    p_as_of   DATE DEFAULT CURRENT_DATE  -- snapshots dated after this day are not read
+)
+RETURNS TABLE (
+    classe_anbima    TEXT,     -- the class as asked (outer spaces trimmed)
+    class_indices    TEXT[],   -- every index the reviewed YAML maps to the class (status aprovada), sorted; NULL = no pair
+    n_etfs           INT,      -- active ETFs (one per CNPJ) tracking one of those indices
+    ticker           TEXT,     -- the ETF's registry ticker; NULL on a reason row
+    etf_cnpj         TEXT,     -- the ETF's CNPJ in cvm_etf_registry
+    etf_name         TEXT,     -- the registry name
+    underlying_index TEXT,     -- the index it tracks, as filed in cvm_etf_registry
+    segment          TEXT,     -- the registry segment as filed (fixed_income_br = B3 FORWARD segment, not COTAHIST)
+    pl_brl           NUMERIC,  -- 'Patrimônio líquido' in R$ as etfsbrasil.com.br prints it (etf_market_snapshot.nav), newest snapshot with one dated no later than p_as_of; THIRD-PARTY, not a CVM filing; NULL = none
+    pl_as_of         DATE,     -- that snapshot's date
+    fee_pct_year     NUMERIC,  -- 'Taxa de administração total' as the site prints it (etf_market_snapshot.taxa_adm_pct), newest snapshot with one dated no later than p_as_of; THIRD-PARTY; NULL = none (not zero)
+    fee_as_of        DATE,     -- that snapshot's date
+    snapshot_source  TEXT,     -- etf_market_snapshot.source of the PL snapshot (else of the fee snapshot)
+    pl_rank          INT,      -- 1 = largest PL among the class's ETFs that have one; NULL without a PL
+    is_equivalent    BOOLEAN,  -- TRUE on the one ETF with pl_rank 1
+    status           TEXT,     -- found | sem_par | sem_etf | sem_pl
+    reason           TEXT      -- Portuguese: what the row is, or why there is no equivalent
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+#variable_conflict use_column
+DECLARE
+    v_n     INT := COALESCE(cardinality(p_classes), 0);
+    v_as_of DATE := COALESCE(p_as_of, CURRENT_DATE);
+    v_cls   TEXT[];
+BEGIN
+    IF v_n = 0 OR v_n > 50 THEN
+        RAISE EXCEPTION 'portfolio_equivalents: needs 1 to 50 ANBIMA classes (exactly as filed in the Extrato: portfolio_fee_peers returns them as classe_anbima); more than 50 is refused. To fix: split the set.'
+            USING ERRCODE = '22023';
+    END IF;
+    IF EXISTS (SELECT 1 FROM unnest(p_classes) u(x) WHERE NULLIF(btrim(x), '') IS NULL) THEN
+        RAISE EXCEPTION 'portfolio_equivalents: every entry must be a non-blank ANBIMA class as filed in the Extrato.'
+            USING ERRCODE = '22023';
+    END IF;
+    SELECT array_agg(DISTINCT btrim(x)) INTO v_cls FROM unnest(p_classes) u(x);
+
+    RETURN QUERY
+    WITH asked AS (
+        SELECT unnest(v_cls) AS cls
+    ), pairs AS (
+        SELECT a.cls, array_agg(DISTINCT m.underlying_index ORDER BY m.underlying_index) AS idx
+        FROM asked a
+        JOIN public.portfolio_class_index m ON m.classe_anbima = a.cls AND m.status = 'aprovada'
+        GROUP BY a.cls
+    ), cand AS (
+        SELECT p.cls, r.ticker, r.cnpj, r.fund_name, r.underlying_index, r.segment,
+               pl.nav AS pl, pl.snapshot_date AS pl_dt, pl.source AS pl_src,
+               fe.taxa_adm_pct AS fee, fe.snapshot_date AS fee_dt, fe.source AS fee_src
+        FROM pairs p
+        JOIN public.cvm_etf_registry r
+          ON r.underlying_index = ANY (p.idx) AND r.is_active IS TRUE
+        LEFT JOIN LATERAL (
+            SELECT x.nav, x.snapshot_date, x.source
+            FROM public.etf_market_snapshot x
+            WHERE x.ticker = r.ticker AND x.nav IS NOT NULL AND x.snapshot_date <= v_as_of
+            ORDER BY x.snapshot_date DESC
+            LIMIT 1
+        ) pl ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT x.taxa_adm_pct, x.snapshot_date, x.source
+            FROM public.etf_market_snapshot x
+            WHERE x.ticker = r.ticker AND x.taxa_adm_pct IS NOT NULL AND x.snapshot_date <= v_as_of
+            ORDER BY x.snapshot_date DESC
+            LIMIT 1
+        ) fe ON TRUE
+    ), etf AS (
+        -- One row per (class, ETF CNPJ): a CNPJ with two tickers counts once, the one with a PL first.
+        SELECT DISTINCT ON (c.cls, c.cnpj) c.*
+        FROM cand c
+        ORDER BY c.cls, c.cnpj, (c.pl IS NOT NULL) DESC, c.pl_dt DESC NULLS LAST, c.ticker
+    ), ranked AS (
+        SELECT e.*,
+               CASE WHEN e.pl IS NOT NULL THEN
+                   (row_number() OVER (PARTITION BY e.cls ORDER BY e.pl DESC NULLS LAST, e.ticker))::int
+               END AS rk,
+               (count(*) OVER (PARTITION BY e.cls))::int AS n_cls,
+               (count(e.pl) OVER (PARTITION BY e.cls))::int AS n_pl
+        FROM etf e
+    ), page AS MATERIALIZED (
+        -- a class with ETFs: one row per ETF
+        SELECT r.cls AS classe_anbima, p.idx AS class_indices, r.n_cls AS n_etfs,
+               r.ticker AS ticker, r.cnpj AS etf_cnpj, r.fund_name AS etf_name,
+               r.underlying_index AS underlying_index, r.segment AS segment,
+               round(r.pl, 2) AS pl_brl, r.pl_dt AS pl_as_of, r.fee AS fee_pct_year, r.fee_dt AS fee_as_of,
+               COALESCE(r.pl_src, r.fee_src) AS snapshot_source,
+               r.rk AS pl_rank, COALESCE(r.rk = 1, FALSE) AS is_equivalent,
+               CASE WHEN r.n_pl = 0 THEN 'sem_pl' ELSE 'found' END AS status,
+               CASE
+                   WHEN r.n_pl = 0 THEN
+                       'nenhum dos ' || r.n_cls || ' ETF(s) ativos dos índices ligados à classe tem patrimônio líquido no site etfsbrasil.com.br até '
+                       || to_char(v_as_of, 'YYYY-MM-DD') || ': o maior por PL não é definido'
+                   WHEN r.rk = 1 THEN
+                       'equivalente de mercado: o maior ETF ativo por patrimônio líquido (site etfsbrasil.com.br, fonte de terceiros, em '
+                       || to_char(r.pl_dt, 'YYYY-MM-DD') || ') entre os que acompanham um índice ligado à classe na lista revisada; não é recomendação'
+                   WHEN r.pl IS NULL THEN
+                       'ETF de índice ligado à classe sem patrimônio líquido no site etfsbrasil.com.br: fora da escolha do maior'
+                   ELSE
+                       'ETF de índice ligado à classe, com patrimônio líquido menor que o do equivalente'
+               END AS reason
+        FROM ranked r JOIN pairs p ON p.cls = r.cls
+        UNION ALL
+        -- a class with no approved pair, or a pair and no active ETF
+        SELECT a.cls, p.idx, 0, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text,
+               NULL::numeric, NULL::date, NULL::numeric, NULL::date, NULL::text, NULL::int, FALSE,
+               CASE WHEN p.cls IS NULL THEN 'sem_par' ELSE 'sem_etf' END,
+               CASE WHEN p.cls IS NULL THEN
+                        'a classe ' || a.cls || ' não tem índice aprovado na lista revisada (class_index.yaml): sem equivalente de mercado'
+                    ELSE
+                        'nenhum ETF ativo no registro do SILO acompanha ' || array_to_string(p.idx, ', ')
+                        || ', o(s) índice(s) ligado(s) à classe: sem equivalente de mercado'
+               END
+        FROM asked a
+        LEFT JOIN pairs p ON p.cls = a.cls
+        WHERE NOT EXISTS (SELECT 1 FROM etf e WHERE e.cls = a.cls)
+        LIMIT 1001
+    )
+    SELECT g.classe_anbima, g.class_indices, g.n_etfs, g.ticker, g.etf_cnpj, g.etf_name, g.underlying_index,
+           g.segment, g.pl_brl, g.pl_as_of, g.fee_pct_year, g.fee_as_of, g.snapshot_source, g.pl_rank,
+           g.is_equivalent, g.status, g.reason
+    FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_equivalents')
+    ORDER BY g.classe_anbima, g.pl_rank NULLS LAST, g.ticker
+    LIMIT 1000;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.portfolio_equivalents(TEXT[], DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.portfolio_equivalents(TEXT[], DATE) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.portfolio_equivalents(TEXT[], DATE) TO silo_api;
+
+COMMENT ON FUNCTION api.portfolio_equivalents(TEXT[], DATE) IS
+    'The market equivalent of an ANBIMA class (catalog v67, #609): the active ETFs that track an index the owner-reviewed list (src/portfolio/rules/equivalents/class_index.yaml, generated into public.portfolio_class_index; only pairs with status aprovada) maps to the class, read in reverse (class -> index). One row per (class, ETF CNPJ) among cvm_etf_registry.is_active ETFs, the universe portfolio_fee_peers uses; class_indices lists every mapped index and n_etfs counts the ETFs. pl_brl and fee_pct_year are the third-party values etfsbrasil.com.br prints (etf_market_snapshot.nav and taxa_adm_pct, each the newest snapshot that has one dated no later than p_as_of, dated pl_as_of and fee_as_of), the values portfolio_fees serves as etf_site_pl and etf_site_taxa_adm: never a CVM filing, never rescaled. is_equivalent marks the largest by PL across all the class''s indices (pl_rank 1, ties by ticker); an ETF with no PL is never ranked. segment is the registry''s as filed: fixed_income_br trades in B3''s FORWARD segment (prices in trade_consolidated_history), the others on the cash tape (quote_history). A class with no approved pair (status sem_par) or with no active ETF on its indices (sem_etf) comes back as one row with NULL ETF columns; when no ETF has a PL every row is sem_pl and none is the equivalent. The index is never inferred from a fund''s name. reason is Portuguese. It names an ETF with the same objective, not a recommendation. 1 to 50 non-blank classes (outer spaces trimmed, duplicates collapsed); otherwise RAISES 22023; one page, never trimmed.';
+
 
 COMMIT;
