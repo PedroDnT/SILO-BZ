@@ -218,6 +218,7 @@ def test_conflict_columns_are_a_comma_separated_string():
     assert isinstance(CONFLICT_COLS, str)
     assert CONFLICT_COLS.split(",") == [
         "isin", "label", "last_date_prior", "approved_on", "factor", "rate",
+        "payment_date", "asset_issued",
     ]
 
 
@@ -490,3 +491,86 @@ def test_migration_53_keys_the_proof_on_the_issuing_code():
     for text in (sql, schema):
         assert "CREATE TABLE IF NOT EXISTS b3_corporate_event_sweep" in text
         assert "CONSTRAINT uq_b3_corporate_event_sweep UNIQUE (issuing_company)" in text
+
+
+# --------------------------------------------------------------------------
+# Migration 72: every published row is kept (#353)
+# --------------------------------------------------------------------------
+
+def _supplement_rows(record):
+    fetcher = B3CorporateEventsFetcher()
+    with patch.object(fetcher, "fetch_company_events", return_value=record):
+        return fetcher.fetch_events(record["code"])
+
+
+# Shapes measured on 2026-10-05 in the full GetListedSupplementCompany sweep:
+# a JCP paid in two installments (rows differ only in paymentDate) and a
+# capital reduction delivering two assets (rows differ only in assetIssued).
+SUPPLEMENT_INSTALLMENTS = {
+    "code": "XMPL",
+    "cashDividends": [
+        {"assetIssued": "BRXMPLACNOR1", "paymentDate": "30/06/2026", "rate": "0,50000000000",
+         "relatedTo": "2026", "approvedOn": "10/03/2026", "isinCode": "BRXMPLACNOR1",
+         "label": "JRS CAP PROPRIO", "lastDatePrior": "13/03/2026", "remarks": ""},
+        {"assetIssued": "BRXMPLACNOR1", "paymentDate": "30/12/2026", "rate": "0,50000000000",
+         "relatedTo": "2026", "approvedOn": "10/03/2026", "isinCode": "BRXMPLACNOR1",
+         "label": "JRS CAP PROPRIO", "lastDatePrior": "13/03/2026", "remarks": ""},
+    ],
+    "stockDividends": [
+        {"assetIssued": "BRXMPLACNOR1", "factor": "12,50000000000", "approvedOn": "02/02/2026",
+         "isinCode": "BRXMPLACNOR1", "label": "CIS RED CAP", "lastDatePrior": "05/02/2026",
+         "remarks": ""},
+        {"assetIssued": "BRNEWCACNOR4", "factor": "12,50000000000", "approvedOn": "02/02/2026",
+         "isinCode": "BRXMPLACNOR1", "label": "CIS RED CAP", "lastDatePrior": "05/02/2026",
+         "remarks": ""},
+    ],
+    "subscriptions": [],
+}
+
+
+def test_installments_and_two_asset_events_keep_distinct_keys():
+    recs = parse_events(_supplement_rows(SUPPLEMENT_INSTALLMENTS))
+    assert len(recs) == 4
+    keys = {tuple(r[c] for c in CONFLICT_COLS.split(",")) for r in recs}
+    assert len(keys) == 4, "an installment or a second asset must not replace the first"
+    old = {tuple(r[c] for c in CONFLICT_COLS.split(",")[:6]) for r in recs}
+    assert len(old) == 2, "the fixture is the collision the old key had"
+
+
+def test_asset_issued_is_parsed_from_raw_and_upper_cased():
+    rows = _supplement_rows(SUPPLEMENT_INSTALLMENTS)
+    rows[0]["raw"] = {**rows[0]["raw"], "assetIssued": " brxmplacnor1 "}
+    recs = parse_events(rows)
+    assert recs[0]["asset_issued"] == "BRXMPLACNOR1"
+    assert {r["asset_issued"] for r in recs} == {"BRXMPLACNOR1", "BRNEWCACNOR4"}
+    blank = parse_events([{**rows[0], "raw": {"assetIssued": ""}}])
+    assert blank[0]["asset_issued"] is None
+
+
+def _index_columns(sql: str) -> list:
+    import re
+
+    m = re.search(
+        r"CREATE UNIQUE INDEX (?:IF NOT EXISTS )?uq_b3_corporate_event\s+ON b3_corporate_event \((.*?)\)",
+        sql, re.S,
+    )
+    assert m, "uq_b3_corporate_event not declared"
+    return [c.strip() for c in m.group(1).replace("\n", " ").split(",")]
+
+
+def test_migration_72_and_schema_declare_the_upsert_key():
+    m72 = (ROOT / "src/store/migrations/72_b3_corporate_event_installments.sql").read_text(
+        encoding="utf-8"
+    )
+    schema = (ROOT / "src/store/schema.sql").read_text(encoding="utf-8")
+    assert _index_columns(m72) == CONFLICT_COLS.split(",")
+    assert _index_columns(schema) == CONFLICT_COLS.split(",")
+    # Replayed on every apply: the swap is guarded on the live definition, and
+    # the stored rows get asset_issued from their own raw before the swap.
+    assert "indexdef LIKE '%asset_issued%'" in m72
+    assert m72.index("UPDATE b3_corporate_event") < m72.index("DROP INDEX IF EXISTS")
+    assert "raw ->> 'assetIssued'" in m72
+    # A database created before migration 72 gets the column from schema.sql
+    # before schema.sql's index statement names it.
+    alter = schema.index("ALTER TABLE b3_corporate_event ADD COLUMN IF NOT EXISTS asset_issued TEXT;")
+    assert alter < schema.index("CREATE UNIQUE INDEX IF NOT EXISTS uq_b3_corporate_event")

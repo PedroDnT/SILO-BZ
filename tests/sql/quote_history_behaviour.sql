@@ -34,6 +34,9 @@ SELECT t, d, '010', '02', 'ON', 7, 1, 'BR' || left(t, 4) || 'ACNOR1', '{}' FROM 
 -- AMBG3: one label on one date with two factors.
 INSERT INTO b3_cotahist (codneg, trade_date, tpmerc, codbdi, especi, preco_fechamento, fator_cotacao, isin, raw)
 SELECT 'AMBG3', d, '010', '02', 'ON', 3, 1, 'BRAMBGACNOR1', '{}' FROM sess;
+-- TWOA3: one bonus on one date, same factor, paid in two assets (#353).
+INSERT INTO b3_cotahist (codneg, trade_date, tpmerc, codbdi, especi, preco_fechamento, fator_cotacao, isin, raw)
+SELECT 'TWOA3', d, '010', '02', 'ON', 3, 1, 'BRTWOAACNOR1', '{}' FROM sess;
 -- NOPR3: issuer never swept. STAL3: swept before its last session.
 INSERT INTO b3_cotahist (codneg, trade_date, tpmerc, codbdi, especi, preco_fechamento, fator_cotacao, isin, raw)
 SELECT t, d, '010', '02', 'ON', 4, 1, 'BR' || left(t, 4) || 'ACNOR1', '{}' FROM sess, unnest(ARRAY['NOPR3', 'STAL3']) t;
@@ -110,10 +113,13 @@ INSERT INTO b3_corporate_event (issuing_company, isin, event_class, label, last_
     ('SUBS', 'BRSUBSACNOR1', 'subscription', 'SUBSCRICAO', '2024-08-13', NULL, '{}'),
     ('AMBG', 'BRAMBGACNOR1', 'stock', 'DESDOBRAMENTO', '2024-08-06', 100, '{"v":1}'),
     ('AMBG', 'BRAMBGACNOR1', 'stock', 'DESDOBRAMENTO', '2024-08-06', 200, '{"v":2}');
+INSERT INTO b3_corporate_event (issuing_company, isin, event_class, label, last_date_prior, factor, asset_issued, raw) VALUES
+    ('TWOA', 'BRTWOAACNOR1', 'stock', 'BONIFICACAO', '2024-08-06', 10, 'BRTWOAACNOR1', '{}'),
+    ('TWOA', 'BRTWOAACNOR1', 'stock', 'BONIFICACAO', '2024-08-06', 10, 'BRTWOAACNPR8', '{}');
 
 INSERT INTO b3_corporate_event_sweep (issuing_company, n_events, proven_at)
 SELECT c, 0, '2024-09-02 06:00+00'
-FROM unnest(ARRAY['REFR', 'ETER', 'SPLT', 'CMPD', 'SPIN', 'SUBS', 'AMBG', 'DUPL', 'UNIT', 'LOTS', 'LONG']) c;
+FROM unnest(ARRAY['REFR', 'ETER', 'SPLT', 'CMPD', 'SPIN', 'SUBS', 'AMBG', 'TWOA', 'DUPL', 'UNIT', 'LOTS', 'LONG']) c;
 INSERT INTO b3_corporate_event_sweep (issuing_company, n_events, proven_at)
 VALUES ('STAL', 0, '2024-08-20 06:00+00');
 
@@ -252,6 +258,7 @@ INSERT INTO cases VALUES
     ('empty field list',      $s$SELECT * FROM api.quote_history('ETER3', '2024-08-01', '2024-08-02', NULL, NULL, ARRAY[]::text[])$s$, 'reason=invalid_field'),
     ('unsupported event',     $s$SELECT * FROM api.quote_history('SPIN3', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=unsupported corporate event CIS RED CAP'),
     ('ambiguous event',       $s$SELECT * FROM api.quote_history('AMBG3', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=ambiguous DESDOBRAMENTO'),
+    ('event in two assets',   $s$SELECT * FROM api.quote_history('TWOA3', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=ambiguous BONIFICACAO paid in two assets'),
     ('never swept',           $s$SELECT * FROM api.quote_history('NOPR3', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=issuer corporate events not proven swept'),
     ('proof older than tape', $s$SELECT * FROM api.quote_history('STAL3', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=corporate-event proof older'),
     ('not a share or unit',   $s$SELECT * FROM api.quote_history('FUND11', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=outside research universe'),
@@ -388,6 +395,12 @@ BEGIN
     SELECT array_agg(date ORDER BY date) INTO d
     FROM api.panel(ARRAY['AMBG3'], ARRAY['close_return'], '2024-08-05', '2024-08-09', 'day');
     ASSERT d = ARRAY['2024-08-06', '2024-08-08', '2024-08-09']::date[], format('AMBG3 daily close_return dates: %s', d);
+
+    -- One bonus on one date paid in two assets with the same factor: NULL on
+    -- the ex session too, not the factor counted once (#353).
+    SELECT array_agg(date ORDER BY date) INTO d
+    FROM api.panel(ARRAY['TWOA3'], ARRAY['close_return'], '2024-08-05', '2024-08-09', 'day');
+    ASSERT d = ARRAY['2024-08-06', '2024-08-08', '2024-08-09']::date[], format('TWOA3 daily close_return dates: %s', d);
 
     -- A normal ticker is unchanged: a cash distribution and a split years
     -- before the window adjust nothing, daily or monthly.

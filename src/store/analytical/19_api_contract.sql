@@ -855,9 +855,11 @@ REVOKE ALL ON FUNCTION api.quote_data_revision() FROM PUBLIC;
 -- other stock label (CIS RED CAP, INCORPORACAO, REST CAP ACOES, RESG TOTAL
 -- RV, ..., and any label B3 adds later)
 -- moves the price in a way this version does not adjust, so it blocks the
--- stretch on or before its last_date_prior. So do an unreadable factor and one
+-- stretch on or before its last_date_prior. So do an unreadable factor, one
 -- label on one date republished with two different factors (two events or a
--- correction: the rows cannot say which). An event whose last_date_prior is on
+-- correction: the rows cannot say which), and one label on one date paid in two
+-- assets (migration 72 stores both rows, #353; which share count each changes is
+-- not verified, so it is refused rather than counted once or twice). An event whose last_date_prior is on
 -- or after the anchor has not gone ex and neither adjusts nor blocks.
 CREATE OR REPLACE FUNCTION api.close_adj_status(p_isin TEXT, p_ticker TEXT)
 RETURNS TABLE (
@@ -878,7 +880,7 @@ AS $$
         WHERE b.isin = p_isin AND b.tpmerc = '010'
     ),
     ev AS (
-        SELECT DISTINCT e.label, e.last_date_prior, e.factor
+        SELECT DISTINCT e.label, e.last_date_prior, e.factor, e.asset_issued
         FROM public.b3_corporate_event e, a
         WHERE e.isin = p_isin
           AND e.last_date_prior < a.anchor
@@ -893,6 +895,8 @@ AS $$
                      OR (CASE ev.label WHEN 'GRUPAMENTO' THEN ev.factor
                                        ELSE 1 + ev.factor / 100 END) <= 0
                        THEN 'unreadable factor on ' || ev.label
+                   WHEN count(*) OVER (PARTITION BY ev.label, ev.last_date_prior, ev.factor) > 1
+                       THEN 'ambiguous ' || ev.label || ' paid in two assets'
                    WHEN count(*) OVER (PARTITION BY ev.label, ev.last_date_prior) > 1
                        THEN 'ambiguous ' || ev.label || ' published with two factors'
                END AS reason
@@ -4530,6 +4534,8 @@ quote_ret AS (
     ) r
     -- The share-count events between the two prints. DISTINCT: a republished
     -- event can come back as a second row that differs only in approved_on.
+    -- asset_issued is in it so one label on one date paid in two assets counts
+    -- twice and is refused like two factors are (#353).
     -- No event gives share_ratio 1 and leaves the return as it was.
     CROSS JOIN LATERAL (
         SELECT
@@ -4541,6 +4547,7 @@ quote_ret AS (
             SELECT DISTINCT
                 e.label,
                 e.last_date_prior,
+                e.asset_issued,
                 CASE e.label WHEN 'GRUPAMENTO' THEN e.factor ELSE 1 + e.factor / 100 END AS share_ratio
             FROM public.b3_corporate_event e
             WHERE e.isin = r.isin

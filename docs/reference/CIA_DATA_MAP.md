@@ -117,6 +117,17 @@ cumulative by summing quarters when the company has a non-calendar fiscal year
 **Widening the key stops future loss; it does not restore what was overwritten.
 The ITR backfill must be re-run.** DFP is unaffected and does not need it.
 
+The re-run can restore only what CVM still publishes, and CVM's yearly
+statement CSVs carry only the **latest** version of each document (the header
+CSV still lists every version). Four 2026-06-30 version-1 ITRs were stored
+under the old key and superseded before the re-run, so they hold the quarter
+lines (`dt_ini_exerc` 2026-04-01 and 2025-04-01) and no year-to-date lines:
+`cd_cvm` 20931 (Minerva), 23620 (CBO), 24112 (Azul) and 3328 (Axia Nordeste).
+Checked on 2026-10-05 against `itr_cia_aberta_2026.zip`: each of the four
+publishes only version 2 lines for that date. Their v2 is complete. An
+as-of caller inside the v1 window gets the quarter line only; no stored value is
+wrong, and none can be recovered from these files (#384).
+
 ## 4. Transformed — no company star schema
 
 There is still no `dim_company`, `fact_company_quarterly`, or materialized
