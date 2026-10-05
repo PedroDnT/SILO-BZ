@@ -14,8 +14,9 @@ as one row each. Times are shown in UTC-3 with UTC in parentheses.
     python scripts/trace_view.py exposure PETR4 <trace key | engine.json>   # where an asset's exposure comes from
 
 ``list`` uses the R2 REST API with ``CLOUDFLARE_ACCOUNT_ID`` and ``CLOUDFLARE_API_TOKEN``
-(Workers R2 Storage read); ``show`` of a key that is not a local file runs
-``npx wrangler r2 object get`` in ``deploy/cloudflare/``, as the deploy workflow does.
+(Workers R2 Storage read), taken from the environment or, when unset, from the ``.env`` file at the repository root;
+``show`` and ``exposure`` of a key that is not a local file run ``npx wrangler r2 object get`` in
+``deploy/cloudflare/`` with the same credentials, as the deploy workflow does.
 Traces hold no statement bytes and no free text, but they describe a real portfolio:
 keep what you download out of the repository.
 """
@@ -164,10 +165,38 @@ def row(trace: dict[str, Any]) -> str:
             f"schema {ra.get('app.engine.schema_version', '-')}")
 
 
+CF_VARS = ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")
+
+
+def read_dotenv(path: Path) -> dict[str, str]:
+    """``KEY=VALUE`` lines of a .env file (an optional ``export``, optional quotes). Values are never printed."""
+    out: dict[str, str] = {}
+    if not path.is_file():
+        return out
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.removeprefix("export ").partition("=")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        out[key.strip()] = value
+    return out
+
+
+def cloudflare_credentials(dotenv: Path | None = None) -> dict[str, str]:
+    """The Cloudflare account id and token: the environment first, then the repository's .env."""
+    file = read_dotenv(dotenv if dotenv is not None else REPO / ".env")
+    return {k: os.environ.get(k) or file.get(k, "") for k in CF_VARS}
+
+
 def list_keys(days: int, now: datetime | None = None) -> list[dict[str, Any]]:
-    account, token = os.environ.get("CLOUDFLARE_ACCOUNT_ID"), os.environ.get("CLOUDFLARE_API_TOKEN")
+    creds = cloudflare_credentials()
+    account, token = creds["CLOUDFLARE_ACCOUNT_ID"], creds["CLOUDFLARE_API_TOKEN"]
     if not account or not token:
-        sys.exit("list needs CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in the environment")
+        sys.exit("list needs CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, in the environment or in the .env file "
+                 "at the repository root")
     now = now or datetime.now(timezone.utc)
     api = f"https://api.cloudflare.com/client/v4/accounts/{account}/r2/buckets/{BUCKET}/objects"
     objs: list[dict[str, Any]] = []
@@ -188,8 +217,9 @@ def parse_listing(d: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def r2_get(key: str) -> bytes:
+    env = {**os.environ, **{k: v for k, v in cloudflare_credentials().items() if v}}
     r = subprocess.run(["npx", "wrangler", "r2", "object", "get", f"{BUCKET}/{key}", "--remote", "--pipe"],
-                       cwd=REPO / "deploy" / "cloudflare", capture_output=True, stdin=subprocess.DEVNULL)
+                       cwd=REPO / "deploy" / "cloudflare", capture_output=True, stdin=subprocess.DEVNULL, env=env)
     if r.returncode != 0:
         raise SystemExit(f"could not read {key} from R2: {r.stderr.decode(errors='replace').strip()[-400:]}")
     return r.stdout

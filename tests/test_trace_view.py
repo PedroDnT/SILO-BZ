@@ -76,11 +76,54 @@ def test_listing_parse_and_refusal():
         trace_view.parse_listing({"success": False, "errors": [{"code": 10000}]})
 
 
-def test_list_needs_the_cloudflare_env(monkeypatch):
+def test_list_needs_the_cloudflare_credentials(monkeypatch, tmp_path):
     monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
     monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    monkeypatch.setattr(trace_view, "REPO", tmp_path)  # no .env here
     with pytest.raises(SystemExit, match="CLOUDFLARE_ACCOUNT_ID"):
         trace_view.list_keys(1)
+
+
+def test_credentials_come_from_the_environment_then_the_dotenv_file(monkeypatch, tmp_path):
+    env = tmp_path / ".env"
+    env.write_text(
+        "# a comment\n\nPOSTGRES_URL=postgresql://u:p@h:5432/db?sslmode=require\n"
+        "export CLOUDFLARE_ACCOUNT_ID=acc-from-file\n"
+        "CLOUDFLARE_API_TOKEN=\"tok-from-file\"\n", encoding="utf-8")
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    assert trace_view.cloudflare_credentials(env) == {
+        "CLOUDFLARE_ACCOUNT_ID": "acc-from-file", "CLOUDFLARE_API_TOKEN": "tok-from-file"}
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "tok-from-env")  # the environment wins
+    assert trace_view.cloudflare_credentials(env)["CLOUDFLARE_API_TOKEN"] == "tok-from-env"
+    assert trace_view.cloudflare_credentials(tmp_path / "missing.env") == {
+        "CLOUDFLARE_ACCOUNT_ID": "", "CLOUDFLARE_API_TOKEN": "tok-from-env"}
+
+
+def test_list_reads_its_credentials_from_the_dotenv_file(monkeypatch, tmp_path):
+    (tmp_path / ".env").write_text("CLOUDFLARE_ACCOUNT_ID=acc\nCLOUDFLARE_API_TOKEN=tok\n", encoding="utf-8")
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    monkeypatch.setattr(trace_view, "REPO", tmp_path)
+    seen = []
+
+    class _R:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps({"success": True, "result": []}).encode()
+
+    def fake_urlopen(req, timeout=0):
+        seen.append((req.full_url, req.get_header("Authorization")))
+        return _R()
+
+    monkeypatch.setattr(trace_view.urllib.request, "urlopen", fake_urlopen)
+    assert trace_view.list_keys(1) == []
+    assert "/accounts/acc/r2/buckets/silo-diagnosis-traces/objects" in seen[0][0] and seen[0][1] == "Bearer tok"
 
 
 DEMO_ENGINE = Path(__file__).resolve().parent / "fixtures" / "portfolio" / "demo_engine_output.json"

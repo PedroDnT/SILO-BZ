@@ -59,7 +59,8 @@ written from the body the Worker already holds, under its own SHA-256 and only
 when it matches the trace's. A Worker-side 503 (no instance) has no trace.
 
 Read them with `scripts/trace_view.py` (from the repository root): `list` prints the keys of the
-last days through the R2 REST API (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`), `show <key or file>`
+last days through the R2 REST API (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, from the environment or the
+repository's `.env`), `show <key or file>`
 prints one run as a timeline with its sections, agents, tokens, cost and Revisor removals, and `show`
 with several prints one row per run. `exposure PETR4 <trace key>` fetches that run's engine JSON and prints where the
 asset's exposure comes from (direct, and through each fund with its CDA month); `exposure PETR4 engine.json` does the
