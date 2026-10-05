@@ -41,6 +41,15 @@
 			"max_instances": 3
 		}
 	],
+	// ADR 0003: one private bucket for run traces, the masked engine JSON and the
+	// PDF. Only this Worker writes it, through the binding; no public access, no
+	// lifecycle rule. The deploy workflow creates it when missing.
+	"r2_buckets": [
+		{
+			"binding": "TRACES",
+			"bucket_name": "silo-diagnosis-traces"
+		}
+	],
 	"durable_objects": {
 		"bindings": [
 			{

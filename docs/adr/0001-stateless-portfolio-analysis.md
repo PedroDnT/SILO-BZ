@@ -2,6 +2,8 @@
 
 Date: 2026-09-26. Status: accepted. Context: `docs/planning/PORTFOLIO_DIAGNOSIS.md`, #340.
 
+Amended by [ADR 0003](0003-diagnosis-traces-in-r2.md) for diagnosis traces.
+
 ## Decision
 
 SILO does not store user portfolios, accounts, or what-if runs. Every portfolio
