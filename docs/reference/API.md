@@ -369,12 +369,14 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
   from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client
   role can read `b3_index_level`.
 
-### The portfolio reads (catalog v51)
+### The portfolio reads (catalog v51, v54, v61)
 
-Three set-based functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
-map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`). All three are
-raise-only on the one 1000-row page, anon-callable like the rest of `api`, and
-take a set of funds or lines, never a name search that guesses.
+Six set-based functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
+map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`): three since v51,
+`portfolio_movement` since v54, `portfolio_instruments` and `portfolio_fund_terms`
+since v61. All six are raise-only on the one 1000-row page, anon-callable like the
+rest of `api`, and take a set of funds, codes or lines, never a name search that
+guesses.
 
 - **`api.portfolio_resolve(p_names, p_cnpjs, p_quotas, p_quota_dates)`**: one row
   per line and candidate (up to 5, `rank`), arrays parallel, at most 200 lines
@@ -503,6 +505,37 @@ take a set of funds or lines, never a name search that guesses.
   the same day, whose query is not on record; the five largest classes answer in
   0.5 s against anon's 3 s timeout. It states a number, a class, a sample size and
   a month: not a forecast, a verdict or a recommendation.
+- **`api.portfolio_instruments(p_codes)`** (catalog v61): a statement's credit
+  instruments by code. Each code is trimmed, upper-cased and loses a leading `CRA-`,
+  `CRI-` or `DEB-` (the hyphen is required: `CRA0260025T` keeps its `CRA`).
+  `match_kind = 'securit_cetip'`: every series of `cvm_securit_serie` whose
+  `codigo_cetip` is the code, at the code's newest `data_referencia`, one row per
+  (`numero_serie`, `classe`) at its highest `versao`, with `instrument_type`
+  (`cra_mensal` / `cri_mensal`), `cnpj_securit`, `data_vencimento`, `situacao`,
+  `taxa_juros` (text), `classificacao_risco_atual` and `valor_total_integralizado` as
+  filed. Else `'cda_ticker'`: a debenture in CDA block 4 (`tp_aplic = 'Debêntures'`)
+  at the newest month the code appears in (`cda_period`), with `cd_isin` (the most
+  common ISIN), `issuer_code` (ISIN characters 3-6, never a CNPJ), `n_fundos` and
+  `preco_marcacao_fundos` = sum of the funds' market value / sum of their quantity
+  (their own mark, not a trade price). A code held that month as something else
+  (a stock) is no match, and the reason says what it was held as. Else one row with
+  `match_kind` NULL and a Portuguese `reason`. Measured 2026-10-05 on the 15 codes
+  of the pinned statement: 9 CRA/CRI, 3 debentures (ORIG21, ENAT11, CUTI11), 3 in
+  neither table; 228 ms warm for the body. Migration 73 indexes
+  `cvm_securit_serie (codigo_cetip, data_referencia DESC)`. At most 200 codes.
+- **`api.portfolio_fund_terms(p_cnpjs)`** (catalog v61): one row per input CNPJ.
+  `gestor_id` (a CNPJ or a CPF), `gestor_name`, `admin_cnpj`, `admin_name` as filed
+  in `cvm_fund_registry`; a CNPJ with several registry rows uses the one with
+  `is_active`, then no `dt_cancel`, then the newest `dt_cancel`, `fetched_at`,
+  `entity_type`, and the reason names it. Redemption terms (`qt_dia_conversao_cota`,
+  `qt_dia_pagto_resgate`, `tp_dia_pagto_resgate`, `qt_dia_resgate_cotas` = lock-up)
+  from the CVM Extrato (`terms_source = 'extrato'`, `terms_dt_comptc` = the filed
+  version's date), else, only when there is no Extrato, from the lâmina
+  (`'lamina'`; `QT_DIA_CONVERSAO_COTA_RESGATE` and `QT_DIA_CAREN` mapped by name to
+  the same meanings; the row with no subclass, else the newest). As filed, NULL when
+  not filed, never zero. A FII, FIDC, FIP or FIAGRO is in neither document (the
+  Extrato holds only FI and FIF classes) and the reason says so. 24 ms cold for the
+  12 pinned CNPJs. At most 200 CNPJs.
 - A merge deploys nothing: the functions go live on the next analytical apply
   (`daily_ingest` `mode=analytics-only`), the MCP tools after `deploy_mcp.yml`.
 
@@ -801,7 +834,8 @@ cannot be paged" — that stopped being true two catalog versions ago. **`panel`
 `fund_documents`, `fund_restatements`, `fund_restatement_diff`,
 `company_events`, `macro_series`, `ptax`, `future_curve`, `future_series`,
 `curve`, `curve_history`, `research_universe`, `portfolio_resolve`, `portfolio_fees`,
-`portfolio_lookthrough`, `portfolio_movement` and the ten `screen_*` functions) have no cursor and
+`portfolio_lookthrough`, `portfolio_movement`, `portfolio_instruments`, `portfolio_fund_terms`
+and the ten `screen_*` functions) have no cursor and
 ask you to narrow the window or send fewer funds. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.

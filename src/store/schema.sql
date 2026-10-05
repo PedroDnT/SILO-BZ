@@ -859,6 +859,8 @@ CREATE TABLE IF NOT EXISTS cvm_securit_serie (
 CREATE INDEX IF NOT EXISTS idx_securit_serie_cnpj     ON cvm_securit_serie (cnpj_securit);
 CREATE INDEX IF NOT EXISTS idx_securit_serie_isin     ON cvm_securit_serie (codigo_isin);
 CREATE INDEX IF NOT EXISTS idx_securit_serie_situacao ON cvm_securit_serie (situacao, data_referencia DESC);
+-- Migration 73: api.portfolio_instruments finds a CRA / CRI by its CETIP code.
+CREATE INDEX IF NOT EXISTS idx_securit_serie_cetip    ON cvm_securit_serie (codigo_cetip, data_referencia DESC);
 
 -- ---------------------------------------------------------------------------
 -- SECURIT — monthly cash flows by tranche  (fluxo_caixa CSV)
