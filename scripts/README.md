@@ -23,7 +23,7 @@ Grouped by when you would reach for them.
 | `db_parity.py`                | Lists user tables/views with row-count estimates — used to compare two databases.                                                           |
 | `list_tables.py`              | Every schema / table / row-count / column. Broader than `db_parity.py`, handy for a first look at an unfamiliar database.                   |
 | `_check_conn.py`              | Bare connection check. Rewrites `:6543`→`:5432` defensively; see `docs/reference/supabase_operations.md`.                                             |
-| `trace_view.py`               | Reads the diagnosis run traces in R2 (ADR 0003): `list` the keys, `show` one as a timeline (spans, sections, agents, Revisor removals) or several as one row each. Times in UTC-3. |
+| `trace_view.py`               | Reads the diagnosis run traces in R2 (ADR 0003): `list` the keys, `show` one as a timeline (spans, sections, agents, Revisor removals) or several as one row each; `exposure TICKER <trace key or engine.json>` says where one asset's exposure comes from (direct and through each fund, with the CDA month). Times in UTC-3. |
 
 ## Offline development (no Supabase credentials needed)
 

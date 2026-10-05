@@ -11,6 +11,7 @@ as one row each. Times are shown in UTC-3 with UTC in parentheses.
     python scripts/trace_view.py show traces/2026/10/06/<id>.json   # from R2
     python scripts/trace_view.py show trace.json           # a local file
     python scripts/trace_view.py show a.json b.json ...    # one row per trace
+    python scripts/trace_view.py exposure PETR4 <trace key | engine.json>   # where an asset's exposure comes from
 
 ``list`` uses the R2 REST API with ``CLOUDFLARE_ACCOUNT_ID`` and ``CLOUDFLARE_API_TOKEN``
 (Workers R2 Storage read); ``show`` of a key that is not a local file runs
@@ -186,15 +187,74 @@ def parse_listing(d: dict[str, Any]) -> list[dict[str, Any]]:
     return list(d.get("result") or [])
 
 
-def load(ref: str) -> dict[str, Any]:
-    p = Path(ref)
-    if p.is_file():
-        return json.loads(p.read_text())
-    r = subprocess.run(["npx", "wrangler", "r2", "object", "get", f"{BUCKET}/{ref}", "--remote", "--pipe"],
+def r2_get(key: str) -> bytes:
+    r = subprocess.run(["npx", "wrangler", "r2", "object", "get", f"{BUCKET}/{key}", "--remote", "--pipe"],
                        cwd=REPO / "deploy" / "cloudflare", capture_output=True, stdin=subprocess.DEVNULL)
     if r.returncode != 0:
-        raise SystemExit(f"could not read {ref} from R2: {r.stderr.decode(errors='replace').strip()[-400:]}")
-    return json.loads(r.stdout)
+        raise SystemExit(f"could not read {key} from R2: {r.stderr.decode(errors='replace').strip()[-400:]}")
+    return r.stdout
+
+
+def load(ref: str) -> dict[str, Any]:
+    p = Path(ref)
+    return json.loads(p.read_text() if p.is_file() else r2_get(ref))
+
+
+def engine_doc(ref: str) -> dict[str, Any]:
+    """The engine JSON: a local engine file as is, or the artifact a trace (local file or R2 key) names."""
+    doc = load(ref)
+    if "look_through" in doc:
+        return doc
+    spans = spans_of(doc)
+    sha = attrs(spans[0]).get("app.engine_json.sha256") if spans else None
+    if not sha:
+        raise SystemExit("this trace names no engine JSON artifact (a run that failed before the engine ended has none)")
+    return json.loads(r2_get(f"artifacts/{sha}.json"))
+
+
+def _brl(v: Any) -> str:
+    return "R$ " + f"{float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _pct(v: Any) -> str:
+    return f"{float(v):.2f}".replace(".", ",") + "%"
+
+
+def exposure_text(doc: dict[str, Any], ticker: str) -> str:
+    """Where the exposure to one asset comes from: each statement line that holds it, directly or through a fund."""
+    lt = doc.get("look_through") or {}
+    groups = [g for g in (lt.get("shared_exposure") or {}).get("groups") or []
+              if g.get("kind") == "mesmo_ativo" and ticker.upper() in str(g.get("label", "")).upper()]
+    if not groups:
+        return (f"{ticker}: no asset held through more than one statement line matches in this engine output "
+                f"(look-through status: {lt.get('status')}, CDA month: {lt.get('cda_month')}).")
+    position_date = (doc.get("statement") or {}).get("position_date")
+    by_line = {li.get("line_no"): li for li in lt.get("lines") or []}
+    out = []
+    for g in groups:
+        out.append(f"{g['label']}: {_brl(g['total_exposure_brl'])} = {_pct(g['total_exposure_portfolio_pct'])} da carteira")
+        for ln in g.get("lines") or []:
+            if ln.get("direct"):
+                out.append(f"  direta       {ln['linha_extrato']} (linha {ln['line_no']}): {_brl(ln['exposure_brl'])}")
+                continue
+            ex = next((e for e in (by_line.get(ln["line_no"]) or {}).get("exposures") or []
+                       if str(e.get("asset_key", "")).upper() == ticker.upper()), None)
+            detail = ""
+            if ex:
+                bits = []
+                if ex.get("weight_in_line") is not None:
+                    bits.append(f"{_pct(float(ex['weight_in_line']) * 100)} do valor do fundo")
+                if ex.get("period"):
+                    bits.append(f"CDA de {str(ex['period'])[:7]}")
+                if ex.get("depth"):
+                    bits.append(f"nível {ex['depth']}")
+                detail = "; " + "; ".join(bits) if bits else ""
+            out.append(f"  via fundo    {ln['linha_extrato']} (linha {ln['line_no']}): {_brl(ln['exposure_brl'])}{detail}")
+    out += ["",
+            f"Extrato de {position_date or '?'}; CDA do look-through: {lt.get('cda_month')}. A parte via fundo é a carteira "
+            "do fundo naquele mês, não na data do extrato; fundo sem CDA do mês não é aberto (o total é um piso).",
+            (lt.get("shared_exposure") or {}).get("note") or ""]
+    return "\n".join(x for x in out if x is not None)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -204,7 +264,13 @@ def main(argv: list[str] | None = None) -> int:
     ls.add_argument("--days", type=int, default=2, help="UTC days back, today included (default 2)")
     sh = sub.add_parser("show", help="one trace in detail, or several as one row each")
     sh.add_argument("refs", nargs="+", help="local file or R2 key (traces/YYYY/MM/DD/<id>.json)")
+    ex = sub.add_parser("exposure", help="where the exposure to one asset comes from (direct and through funds)")
+    ex.add_argument("ticker", help="e.g. PETR4")
+    ex.add_argument("ref", help="engine.json, a local trace file, or an R2 trace key (traces/YYYY/MM/DD/<id>.json)")
     args = ap.parse_args(argv)
+    if args.cmd == "exposure":
+        print(exposure_text(engine_doc(args.ref), args.ticker))
+        return 0
     if args.cmd == "list":
         for o in list_keys(args.days):
             print(f"{o.get('key')}  {o.get('size', '?')} B  {o.get('last_modified', '')}")
