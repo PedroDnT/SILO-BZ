@@ -33,6 +33,7 @@ DISCARD_TEXT = {
     "juiz_rejeitou": "o modelo juiz não confirmou que o trecho sustenta o fato",
     "juiz_falhou": "o modelo juiz não respondeu",
     "campo_desconhecido": "campo fora da lista do investigador",
+    "documento_sem_identificador": "a página da web não cita o código, o ISIN, o CNPJ nem o nome do ativo",
 }
 
 # (field, value, passage) -> supported?  Raises on a failed call (counted as juiz_falhou).

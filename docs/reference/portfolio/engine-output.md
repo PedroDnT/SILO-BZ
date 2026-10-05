@@ -690,7 +690,9 @@ skipped). A fund with a `forte` movement: fato relevante, comunicado or relatór
 movement month or the two after. When those give no accepted fact: Exa Agent (`EXA_API_KEY`), official domains
 first (`cvm.gov.br`, `b3.com.br`, `bmfbovespa.com.br`, `debentures.com.br` and the issuer's, securitizadora's or
 manager's site), then the open web; each cited URL is read again through Exa `/contents` and checked like any
-document. Without the key the section says so (`web_search.available` false, `busca_web_indisponivel`).
+document; a page that does not name the asset (its code or ISIN, a debenture's issuer CNPJ, a fund's CNPJ or CVM
+name) is discarded (`documento_sem_identificador`), since a quote can be verbatim in a page about another asset.
+An item with no such identifier gets no web search. Without the key the section says so (`web_search.available` false, `busca_web_indisponivel`).
 
 **Budget**: `limits.searches_per_trigger` 5 and `limits.searches_per_report` 20, plus a wall clock of 180 s. A
 counted search is an FNET certificate lookup, an FNET listing page, a `company_events` call or an Exa Agent run;

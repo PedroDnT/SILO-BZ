@@ -514,6 +514,12 @@ class Investigator:
         if text is None:
             self._discarded["trecho_nao_localizado"] += 1
             return
+        if not _page_names_the_asset(t, text.text):
+            # a quote can be verbatim in a page about ANOTHER asset: the page must name this one
+            self._discarded["documento_sem_identificador"] += 1
+            return
+        if d.document_date is None and published and published[0]:
+            d.document_date = str(published[0])[:10]
         judge = ex.judge_fn(self.deps.models.judge) if self.deps.models.tier_b_enabled else None
         v = assess(fld, str(raw.get("value") or ""), str(raw.get("quote") or ""), text.text, judge)
         if v.tier == TIER_C:
@@ -663,6 +669,26 @@ def find_triggers(lines: list[Any], doc: dict[str, Any]) -> list[_Trigger]:
             out.append(_Trigger(f"t{len(out) + 1}", "movimento_forte", li.line_no, tipo,
                                 {k: v for k, v in ids.items() if v}, fund_cnpj=li.cnpj, movement_month=month))
     return out
+
+
+def _cnpj_forms(c: str) -> tuple[str, ...]:
+    d = _digits(c)
+    if len(d) != 14:
+        return ()
+    return (d, f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}")
+
+
+def _page_names_the_asset(t: _Trigger, text: str) -> bool:
+    """The web page names THIS asset: its code or ISIN (a credit line; a debenture also by its issuer's CNPJ),
+    or its CNPJ or CVM name (a fund). The securitizadora's CNPJ alone is not enough: it issues many CRAs."""
+    ids = t.identifiers
+    nt = normalize(text)
+    names: list[str] = [ids.get("codigo") or "", ids.get("isin") or ""]
+    if t.tipo == "debênture":
+        names += list(_cnpj_forms(ids.get("issuer_cnpj") or ""))
+    if t.tipo not in ("CRA", "CRI", "debênture"):
+        names += list(_cnpj_forms(ids.get("cnpj") or "")) + [ids.get("nome_cvm") or ""]
+    return any(len(n) >= 6 and normalize(n) in nt for n in names)
 
 
 # --- choosing documents ----------------------------------------------------------------------------

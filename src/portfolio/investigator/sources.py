@@ -333,11 +333,19 @@ class ExaClient:
         return structured if isinstance(structured, dict) else {}
 
     def contents(self, url: str) -> tuple[str, str | None]:
-        """``(text, published date)`` of one public URL, as Exa extracted it."""
-        r = self.http.post_json(f"{self.base_url}/contents", {"urls": [url], "text": True}, self._h())
+        """``(text, published date)`` of one public URL, as Exa extracted it.
+
+        ``POST /contents`` with the URL in ``ids`` and ``text: true`` (full page as markdown); ``statuses`` says
+        per URL whether it was read (docs.exa.ai, Contents API quickstart, read 2026-10-05).
+        """
+        r = self.http.post_json(f"{self.base_url}/contents", {"ids": [url], "text": True}, self._h())
         if r.status != 200:
             raise SourceError("exa_conteudo_falhou", f"HTTP {r.status}")
-        results = (_json_or_error(r, "exa_conteudo_falhou") or {}).get("results") or []
+        body = _json_or_error(r, "exa_conteudo_falhou")
+        for st in body.get("statuses") or []:
+            if isinstance(st, dict) and st.get("status") not in (None, "success"):
+                raise SourceError("exa_conteudo_falhou", str(st.get("status")))
+        results = body.get("results") or []
         if not results or not isinstance(results[0], dict) or not results[0].get("text"):
             raise SourceError("exa_conteudo_vazio")
         return str(results[0]["text"]), results[0].get("publishedDate")

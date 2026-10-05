@@ -311,7 +311,9 @@ def exa_routes(facts, page_text, url="https://www.securitizadora-exemplo.com.br/
                    "output": {"structured": {"facts": [dict(f, url=f.get("url", url)) for f in facts]}}})
 
     def contents(params, payload):
-        return js({"results": [{"url": payload["urls"][0], "text": page_text, "publishedDate": "2026-02-02"}]})
+        assert payload["text"] is True and "urls" not in payload  # the HTTP API takes the URLs in "ids"
+        return js({"results": [{"url": payload["ids"][0], "text": page_text, "publishedDate": "2026-02-02"}],
+                   "statuses": [{"id": payload["ids"][0], "status": "success"}]})
 
     return {"api.exa.ai/agent/runs": runs, "api.exa.ai/contents": contents}, created
 
@@ -321,7 +323,7 @@ def test_exa_fallback_checks_the_page_text_and_labels_the_source_by_domain():
     facts = [{"field": "vencimento", "value": "15 de abril de 2032",
               "quote": "“Data de Vencimento dos CRA”: significa 15 de abril de 2032, ressalvadas"},
              {"field": "vencimento", "value": "2040-01-01", "quote": "vencimento em 2040-01-01 conforme o termo"}]
-    routes, created = exa_routes(facts, TERMO)
+    routes, created = exa_routes(facts, TERMO + "\nCódigo CETIP dos CRA: 0260000X\n")
     http = FakeHttp(routes)
     exa = ExaClient(http, "exa-test-key", sleep=lambda s: None)
     sec = run(investigator(http, exa=exa), [li])
@@ -329,11 +331,24 @@ def test_exa_fallback_checks_the_page_text_and_labels_the_source_by_domain():
     assert created[0]["outputSchema"]["properties"]["facts"]["maxItems"] == 12 and created[0]["effort"] == "low"
     f = sec["facts"][0]
     assert f["tier"] == "A" and f["source_type"] == "web_dominio_nao_verificado" and f["fnet_id"] is None
+    assert f["document_date"] == "2026-02-02"  # Exa's published date when the agent gave none
     assert sec["counts"]["discarded"] == 1
     assert source_type_of("https://conteudo.cvm.gov.br/x.pdf", "open") == "web_cvm"
     assert source_type_of("https://blog.example.com/x", "open") == "web_busca_aberta"
     assert all(c["headers"].get("x-api-key") == "exa-test-key" for c in http.calls if "api.exa.ai" in c["url"])
     assert "exa-test-key" not in repr(exa)
+
+
+def test_a_web_page_that_does_not_name_the_asset_is_discarded():
+    """A quote can be verbatim in a page about another CRA: without this line's code or ISIN it is not a fact."""
+    li = credit_line(codigo="CRA-0260000X", status="unknown", flags=())
+    facts = [{"field": "vencimento", "value": "15 de abril de 2032",
+              "quote": "“Data de Vencimento dos CRA”: significa 15 de abril de 2032, ressalvadas"}]
+    routes, created = exa_routes(facts, TERMO + "\nCódigo CETIP dos CRA: 0999999Z\n")
+    http = FakeHttp(routes)
+    sec = run(investigator(http, exa=ExaClient(http, "k", sleep=lambda s: None)), [li])
+    assert sec["facts"] == [] and len(created) == 2
+    assert sec["discarded"]["by_reason"]["documento_sem_identificador"]["count"] == 2
 
 
 def test_exa_run_that_never_finishes_is_a_note_not_a_failure():
