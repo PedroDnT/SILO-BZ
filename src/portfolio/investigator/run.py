@@ -688,7 +688,10 @@ def find_triggers(lines: list[Any], doc: dict[str, Any]) -> list[_Trigger]:
                 kind = "credito_vencimento_diverge"
             if kind:
                 code = str(credit.get("code") or _PREFIX.sub("", str(p.codigo or "").strip())).strip().upper() or None
-                isin = credit.get("cd_isin") or (code if is_isin(code) else None)
+                # cd_isin is served as filed (catalog v67), so "00000" or "NÃO TEM" can arrive: only an ISIN-shaped
+                # value is a Fundos.NET search term.
+                served = credit.get("cd_isin")
+                isin = served if is_isin(served) else (code if is_isin(code) else None)
                 ids = {"tipo": tipo, "codigo": code, "isin": isin,
                        "cnpj_securitizadora": credit.get("cnpj_securit"),
                        "issuer_cnpj": li.issuer_cnpj, "issuer_code": li.issuer_code}
