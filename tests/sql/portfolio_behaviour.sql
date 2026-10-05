@@ -1234,7 +1234,7 @@ BEGIN
 END $$;
 
 -- ===========================================================================
--- ETF fee peers (catalog v65, #609). The generated class -> index view holds
+-- ETF fee peers (catalog v66, #609). The generated class -> index view holds
 -- the YAML's pairs; inside this transaction it is replaced by a test pair so the
 -- fixture class above meets synthetic ETFs. An ETF joins only through the
 -- mapped index; it counts once per CNPJ; inactive, unmapped, zero-fee and
@@ -1308,7 +1308,7 @@ BEGIN
 END $$;
 
 -- ===========================================================================
--- Class return distribution (catalog v65, #609). 'TESTE RET' / N: 33 active
+-- Class return distribution (catalog v66, #609). 'TESTE RET' / N: 33 active
 -- funds, quotas at the close of 2021-06, 2021-12 and 2022-06. Fund i returns
 -- i % over 12 months and i/2 % over 6. Fund 31 has no 2021-06 quota (excluded
 -- from the 12-month window only); fund 32 last filed in 2022-05 (active, no

@@ -2,7 +2,7 @@
 
 Implementation of the narrow cost-comparison slice proposed in #614, informed by
 #608. It contributes to #609, whose owner resolution (2026-10-05) adds ETF peers
-and the class return distribution (catalog v65, section "ETF peers" below).
+and the class return distribution (catalog v66, section "ETF peers" below).
 
 `api.portfolio_fee_peers(p_cnpjs TEXT[], p_as_of DATE DEFAULT CURRENT_DATE)`
 returns one row for each distinct normalized CNPJ (1–200 inputs), with a dated
@@ -32,7 +32,7 @@ it does not restore older versions of a latest document. Peers' fee dates can
 vary. Performance fees, total expense, FIDC, FII, FIP, taxes and any replacement
 recommendation are outside this comparison.
 
-## ETF peers (catalog v65, #609)
+## ETF peers (catalog v66, #609)
 
 ETFs enter the peer group because an ETF can replace a fund. CVM files no ANBIMA
 class for an ETF (173 of the 178 active ETFs are in `cvm_registro_classe` with the

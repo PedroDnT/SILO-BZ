@@ -42,6 +42,8 @@ SQL_EXTRA = (
     ROOT / "src/store/analytical/29_api_index.sql",
     # v51: the portfolio-diagnosis reads.
     ROOT / "src/store/analytical/31_api_portfolio.sql",
+    # v65: B3's FORWARD segment (fixed-income ETFs).
+    ROOT / "src/store/analytical/32_api_trade_consolidated.sql",
 )
 CLIENT = ROOT / "sdk/silo_client/client.py"
 

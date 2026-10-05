@@ -37,7 +37,7 @@ SIGNATURES = {
     "portfolio_fund_terms": "api.portfolio_fund_terms(TEXT[])",
     "portfolio_fee_peers": "api.portfolio_fee_peers(TEXT[], DATE)",
 }
-# api.class_return_distribution (v65) takes one class, not a set of CNPJs: its contract is
+# api.class_return_distribution (v66) takes one class, not a set of CNPJs: its contract is
 # pinned in tests/test_portfolio_equivalents.py and executed in tests/sql/portfolio_behaviour.sql.
 
 

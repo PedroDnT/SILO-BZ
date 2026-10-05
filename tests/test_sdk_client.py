@@ -1246,3 +1246,35 @@ def test_index_history_over_one_page_raises_over_cap_like_every_function():
     c = make_client(catalog_then(lambda r: httpx.Response(400, text=body)))
     with pytest.raises(SiloOverCap):
         c.index_history("IBOV", start="1968-01-02")
+
+
+# B3's FORWARD segment (catalog v65): the fixed-income ETFs COTAHIST lacks.
+def test_trade_consolidated_history_sends_the_spec_parameters():
+    sent = []
+
+    def responder(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json=[{"ticker": "IMAB11", "trade_date": "2026-09-29",
+                                          "last_price": 119.16, "ref_price": None}])
+
+    c = make_client(catalog_then(responder))
+    rows = c.trade_consolidated_history("IMAB11", start="2026-09-29", end="2026-09-29")
+    assert rows[0]["last_price"] == 119.16
+    assert sent == [{"p_ticker": "IMAB11", "p_from": "2026-09-29", "p_to": "2026-09-29"}]
+
+
+def test_iter_trade_consolidated_history_walks_pages_with_the_last_rows_trade_date():
+    seen = []
+    page1 = [{"ticker": "IMAB11", "trade_date": f"row-{i:04d}"} for i in range(SERVER_ROW_CAP)]
+    page2 = [{"ticker": "IMAB11", "trade_date": "row-last"}]
+
+    def responder(request):
+        body = json.loads(request.content)
+        seen.append(body.get("p_after"))
+        rows = page1 if body.get("p_after") == "" else page2
+        return httpx.Response(200, json=rows, headers={"Content-Range": f"0-{len(rows) - 1}/*"})
+
+    c = make_client(catalog_then(responder))
+    rows = c.trade_consolidated_history_all("IMAB11", start="2025-06-10")
+    assert len(rows) == SERVER_ROW_CAP + 1
+    assert seen == ["", page1[-1]["trade_date"]]

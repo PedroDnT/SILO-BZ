@@ -398,5 +398,66 @@ canned["portfolio_fee_peers"] = [dict(match={}, rows=[
       for c in ("50088190000119", "51488342000133", "42592315000115")],
 ])]
 
+# --- block 16, returns (engine 1.10): SYNTHETIC month-end paths, never the measured quotas or closes of #606.
+import datetime as _dt
+
+
+def _weekdays(start, end):
+    d, out = start, []
+    while d <= end:
+        if d.weekday() < 5:
+            out.append(d)
+        d += _dt.timedelta(days=1)
+    return out
+
+
+RET_MONTHS = [_dt.date(2025 + (8 + i) // 12, (8 + i) % 12 + 1, 1) for i in range(13)]  # 2025-09 .. 2026-09
+RET_DAYS = _weekdays(_dt.date(2025, 9, 1), _dt.date(2026, 9, 30))
+
+
+def _path(start, monthly_pct):
+    out = [start]
+    for r in monthly_pct:
+        out.append(out[-1] * (1 + r / 100))
+    return out
+
+
+def _daily(anchors):
+    """Weekday values: September 2025 flat at the base, then each month moves linearly to its month-end anchor."""
+    rows = []
+    for m_i, m in enumerate(RET_MONTHS):
+        days = [d for d in RET_DAYS if d.year == m.year and d.month == m.month]
+        lo = anchors[m_i - 1] if m_i else anchors[0]
+        for k, d in enumerate(days, start=1):
+            rows.append((d, lo + (anchors[m_i] - lo) * k / len(days)))
+    return rows
+
+
+# CDI: one synthetic rate per weekday, % a day (0.0525 until 2026-02, 0.0510 after)
+canned["macro_series"] = [dict(match={"p_series": "CDI"}, rows=[
+    dict(reference_date=d.isoformat(), series="CDI", sgs_code=12, value=0.0525 if d < _dt.date(2026, 3, 1) else 0.0510,
+         unit="% a.d.", frequency="daily", source="bacen_sgs") for d in RET_DAYS])]
+
+FUND_PATHS = {
+    # an equity fund: a positive 12 months and a negative 6 months (negative gross: fee per point shown, never ranked)
+    "08935128000159": _path(100.0, [3, 4, -2, 5, 2, 3, -3, -2, 1, -4, 2, -1]),
+    "50088190000119": _path(1.0, [1.10, 1.08, 1.12, 1.09, 1.11, 1.07, 1.10, 1.08, 1.12, 1.09, 1.10, 1.11]),
+    "51488342000133": _path(2.0, [1.08, 1.06, 1.10, 1.07, 1.09, 1.05, 1.08, 1.06, 1.10, 1.07, 1.08, 1.09]),
+    "42592315000115": _path(1.5, [0.85, 0.88, 0.86, 0.90, 0.87, 0.85, 0.89, 0.86, 0.88, 0.87, 0.86, 0.89]),
+}
+canned["fund_nav"] = [dict(match={"p_cnpj": c}, rows=[
+    dict(cnpj=c, period=m.isoformat(), entity_type="fi", nav=None, quota=round(q, 8), quotaholders=None, delinquency=None,
+         monthly_yield=None, inflows=None, redemptions=None, assets=None, period_month=m.isoformat())
+    for m, q in zip(RET_MONTHS, path)]) for c, path in FUND_PATHS.items()]
+
+canned["quote_history"] = [
+    dict(match={"p_ticker": "PETR4"}, rows=[
+        dict(ticker="PETR4", trade_date=d.isoformat(), close_total_return=round(v, 6), close_total_return_null_reason=None)
+        for d, v in _daily(_path(30.0, [2, 5, -3, 4, 6, -2, 3, 1, -4, 7, 2, 3]))]),
+    dict(match={"p_ticker": "HGLG11"}, rows=[
+        dict(ticker="HGLG11", trade_date=d.isoformat(), close=round(v, 2))
+        for d, v in _daily(_path(160.0, [-1, 0.5, -2, 1, -0.5, -1.5, 0.5, -1, 0, 1, -2, -0.5]))]),
+]
+
 json.dump(canned, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 print({k: len(v) for k, v in canned.items() if k != "_note"})

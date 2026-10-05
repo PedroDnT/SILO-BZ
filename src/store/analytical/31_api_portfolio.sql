@@ -23,10 +23,10 @@
 --   api.portfolio_fund_terms   per CNPJ (v62): manager and administrator as
 --                              filed in the registry, and the redemption terms
 --                              of the Extrato, else of the lâmina.
---   api.portfolio_fee_peers    per CNPJ (v63, ETF peers v65): the administration
+--   api.portfolio_fee_peers    per CNPJ (v63, ETF peers v66): the administration
 --                              fee against its class's funds and the ETFs whose
 --                              index is mapped to the class (#609).
---   api.class_return_distribution  per ANBIMA class and FUNDO_COTAS (v65): p25,
+--   api.class_return_distribution  per ANBIMA class and FUNDO_COTAS (v66): p25,
 --                              median and p75 of the funds' 12- and 6-month
 --                              quota returns, what an equivalent ETF is set against.
 --
@@ -2282,7 +2282,7 @@ COMMENT ON VIEW public.portfolio_class_index IS
 
 -- Fee peers (#608/#609): the latest filed Extrato, not a historical backtest.
 -- Same ANBIMA class, FUNDO_COTAS and document scope; no broader fallback.
--- v65 (#609, owner's resolution of 2026-10-05): ETFs enter the peer group. CVM
+-- v66 (#609, owner's resolution of 2026-10-05): ETFs enter the peer group. CVM
 -- files no ANBIMA class for an ETF, so an ETF joins a class only through
 -- public.portfolio_class_index (the reviewed YAML), read in reverse: an active
 -- ETF whose underlying_index is mapped to class C is a peer of every
@@ -2303,7 +2303,7 @@ RETURNS TABLE (
     p25_pct_year NUMERIC, median_pct_year NUMERIC, p75_pct_year NUMERIC,
     percentile_pct NUMERIC, difference_pp NUMERIC,
     status TEXT, reason_code TEXT,
-    -- v65: the peer group split by kind. n_peers = n_fund_peers + n_etf_peers.
+    -- v66: the peer group split by kind. n_peers = n_fund_peers + n_etf_peers.
     n_fund_peers INT,            -- FI funds with a usable Extrato fee (n_excluded counts the unusable ones)
     n_etf_peers INT,             -- active ETFs on a mapped index with a usable third-party fee
     n_etf_excluded INT,          -- active ETFs on a mapped index with no usable fee (none, 0, above 5, stale)
@@ -2470,9 +2470,9 @@ REVOKE ALL ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) TO silo_api;
 COMMENT ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) IS
-    'Administration fee comparison (catalog v63; ETF peers v65), one row per distinct input CNPJ. Latest CVM Extrato only, not a historical backtest: p_as_of (default today) dates the comparison, excludes future documents and fees older than 36 months. Fund peers have a FI quota in the three reference months ending in p_as_of month, the SAME filed ANBIMA class, FUNDO_COTAS S/N and TP_FUNDO_CLASSE FI/CLASSES - FIF. ETF peers (v65, #609): CVM files no ANBIMA class for an ETF, so an active ETF (cvm_etf_registry.is_active) joins a class only when its underlying_index is mapped to that class in public.portfolio_class_index (the owner-reviewed src/portfolio/rules/equivalents/class_index.yaml, never inferred from a name); it is a peer of every FUNDO_COTAS and scope cell of the class, once per CNPJ. Its fee is the third-party etfsbrasil.com.br value (etf_market_snapshot.taxa_adm_pct, the newest snapshot with a fee dated no later than p_as_of, as portfolio_fees serves etf_site_taxa_adm), never a CVM-disclosed fee; the same 0 < fee <= 5 and 36-month rules apply. n_peers = n_fund_peers + n_etf_peers; at least 30 usable fees in that combined group, the target included when eligible; no broader fallback. n_excluded counts unusable fund fees, n_etf_excluded mapped ETFs with no usable fee; peer_fee_oldest/newest date the usable fund documents, etf_peer_fee_oldest/newest the ETF snapshots; etf_peer_tickers and etf_peer_fee_source name the ETFs and say their fee is third-party. p25/median/p75 are annual administration fees over the combined group, percentile is midrank (half weight for ties), difference_pp is target minus median. No performance fee, expense ratio, alternative or saving estimate. not_compared carries a reason_code and NULL comparison statistics. Source values are never rescaled. 1 to 200 CNPJs per call, punctuation stripped and padded to 14 digits; invalid input or more than 200 raises 22023; one page, never trimmed.';
+    'Administration fee comparison (catalog v63; ETF peers v66), one row per distinct input CNPJ. Latest CVM Extrato only, not a historical backtest: p_as_of (default today) dates the comparison, excludes future documents and fees older than 36 months. Fund peers have a FI quota in the three reference months ending in p_as_of month, the SAME filed ANBIMA class, FUNDO_COTAS S/N and TP_FUNDO_CLASSE FI/CLASSES - FIF. ETF peers (v66, #609): CVM files no ANBIMA class for an ETF, so an active ETF (cvm_etf_registry.is_active) joins a class only when its underlying_index is mapped to that class in public.portfolio_class_index (the owner-reviewed src/portfolio/rules/equivalents/class_index.yaml, never inferred from a name); it is a peer of every FUNDO_COTAS and scope cell of the class, once per CNPJ. Its fee is the third-party etfsbrasil.com.br value (etf_market_snapshot.taxa_adm_pct, the newest snapshot with a fee dated no later than p_as_of, as portfolio_fees serves etf_site_taxa_adm), never a CVM-disclosed fee; the same 0 < fee <= 5 and 36-month rules apply. n_peers = n_fund_peers + n_etf_peers; at least 30 usable fees in that combined group, the target included when eligible; no broader fallback. n_excluded counts unusable fund fees, n_etf_excluded mapped ETFs with no usable fee; peer_fee_oldest/newest date the usable fund documents, etf_peer_fee_oldest/newest the ETF snapshots; etf_peer_tickers and etf_peer_fee_source name the ETFs and say their fee is third-party. p25/median/p75 are annual administration fees over the combined group, percentile is midrank (half weight for ties), difference_pp is target minus median. No performance fee, expense ratio, alternative or saving estimate. not_compared carries a reason_code and NULL comparison statistics. Source values are never rescaled. 1 to 200 CNPJs per call, punctuation stripped and padded to 14 digits; invalid input or more than 200 raises 22023; one page, never trimmed.';
 
--- Class return distribution (#609, catalog v65). What an equivalent ETF's return
+-- Class return distribution (#609, catalog v66). What an equivalent ETF's return
 -- is set against: for one ANBIMA class as filed in the Extrato and one
 -- FUNDO_COTAS flag, the funds' NET quota return (the Informe Diario quota is
 -- after the fees the class accrues, research #610) over 12 and 6 months ending
@@ -2618,6 +2618,6 @@ GRANT EXECUTE ON FUNCTION api.class_return_distribution(TEXT, TEXT, DATE) TO ano
 GRANT EXECUTE ON FUNCTION api.class_return_distribution(TEXT, TEXT, DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.class_return_distribution(TEXT, TEXT, DATE) IS
-    'The NET quota return distribution of one ANBIMA class (catalog v65, #609): what an equivalent ETF''s return is set against. Two rows, window_months 12 and 6, ending at the close of end_month (p_month, any day of the month; NULL = the last complete FI month, latest_complete_period(''fi'')). Funds: FI funds whose newest CVM Extrato files exactly p_classe_anbima (outer spaces trimmed, never a wider class) and FUNDO_COTAS p_fundo_cotas (S or N), and that are active as in portfolio_fee_peers (a quota in fact_fund_monthly in the three reference months ending in end_month): n_universe. Return = (closing quota of end_month / closing quota of start_month - 1) x 100, from fact_fund_monthly''s one stable quota subclass, the quota api.fund_nav serves; the Informe Diario quota is net of the fees the class accrues (research #610), so this is a net return. Excluded and counted: n_excluded_no_quota (no positive quota at either end) and n_excluded_subclass (the quota subclass changed between the ends). p25_pct, median_pct and p75_pct are plain percentiles over the n_funds returns, not winsorized. Fewer than min_funds (30) funds with a return, or an incomplete end_month (mv_period_completeness): status nao_avaliado, NULL statistics and a Portuguese reason, never a fallback. ETFs are not in the universe (SILO keeps them out of fact_fund_monthly). A statistic of a class, not a forecast or a recommendation. p_classe_anbima NULL or blank, or p_fundo_cotas other than S or N, RAISES 22023; the result is two rows, one page.';
+    'The NET quota return distribution of one ANBIMA class (catalog v66, #609): what an equivalent ETF''s return is set against. Two rows, window_months 12 and 6, ending at the close of end_month (p_month, any day of the month; NULL = the last complete FI month, latest_complete_period(''fi'')). Funds: FI funds whose newest CVM Extrato files exactly p_classe_anbima (outer spaces trimmed, never a wider class) and FUNDO_COTAS p_fundo_cotas (S or N), and that are active as in portfolio_fee_peers (a quota in fact_fund_monthly in the three reference months ending in end_month): n_universe. Return = (closing quota of end_month / closing quota of start_month - 1) x 100, from fact_fund_monthly''s one stable quota subclass, the quota api.fund_nav serves; the Informe Diario quota is net of the fees the class accrues (research #610), so this is a net return. Excluded and counted: n_excluded_no_quota (no positive quota at either end) and n_excluded_subclass (the quota subclass changed between the ends). p25_pct, median_pct and p75_pct are plain percentiles over the n_funds returns, not winsorized. Fewer than min_funds (30) funds with a return, or an incomplete end_month (mv_period_completeness): status nao_avaliado, NULL statistics and a Portuguese reason, never a fallback. ETFs are not in the universe (SILO keeps them out of fact_fund_monthly). A statistic of a class, not a forecast or a recommendation. p_classe_anbima NULL or blank, or p_fundo_cotas other than S or N, RAISES 22023; the result is two rows, one page.';
 
 COMMIT;

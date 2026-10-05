@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "65";
+export const CONTRACT_VERSION = "66";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -1507,7 +1507,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "class_return_distribution": {
     "kind": "rpc",
     "path": "/rpc/class_return_distribution",
-    "description": "The NET quota return distribution of one ANBIMA class (catalog v65, #609): what an equivalent ETF's return is set against. Two rows, window_months 12 and 6, ending at the close of end_month (p_month, any day of the month; NULL = the last complete FI month, latest_complete_period('fi')). Funds: FI funds whose newest CVM Extrato files exactly p_classe_anbima (outer spaces trimmed, never a wider class) and FUNDO_COTAS p_fundo_cotas (S or N), and that are active as in portfolio_fee_peers (a quota in fact_fund_monthly in the three reference months ending in end_month): n_universe. Return = (closing quota of end_month / closing quota of start_month - 1) x 100, from fact_fund_monthly's one stable quota subclass, the quota api.fund_nav serves; the Informe Diario quota is net of the fees the class accrues (research #610), so this is a net return. Excluded and counted: n_excluded_no_quota (no positive quota at either end) and n_excluded_subclass (the quota subclass changed between the ends). p25_pct, median_pct and p75_pct are plain percentiles over the n_funds returns, not winsorized. Fewer than min_funds (30) funds with a return, or an incomplete end_month (mv_period_completeness): status nao_avaliado, NULL statistics and a Portuguese reason, never a fallback. ETFs are not in the universe (SILO keeps them out of fact_fund_monthly). A statistic of a class, not a forecast or a recommendation. p_classe_anbima NULL or blank, or p_fundo_cotas other than S or N, RAISES 22023; the result is two rows, one page.",
+    "description": "The NET quota return distribution of one ANBIMA class (catalog v66, #609): what an equivalent ETF's return is set against. Two rows, window_months 12 and 6, ending at the close of end_month (p_month, any day of the month; NULL = the last complete FI month, latest_complete_period('fi')). Funds: FI funds whose newest CVM Extrato files exactly p_classe_anbima (outer spaces trimmed, never a wider class) and FUNDO_COTAS p_fundo_cotas (S or N), and that are active as in portfolio_fee_peers (a quota in fact_fund_monthly in the three reference months ending in end_month): n_universe. Return = (closing quota of end_month / closing quota of start_month - 1) x 100, from fact_fund_monthly's one stable quota subclass, the quota api.fund_nav serves; the Informe Diario quota is net of the fees the class accrues (research #610), so this is a net return. Excluded and counted: n_excluded_no_quota (no positive quota at either end) and n_excluded_subclass (the quota subclass changed between the ends). p25_pct, median_pct and p75_pct are plain percentiles over the n_funds returns, not winsorized. Fewer than min_funds (30) funds with a return, or an incomplete end_month (mv_period_completeness): status nao_avaliado, NULL statistics and a Portuguese reason, never a fallback. ETFs are not in the universe (SILO keeps them out of fact_fund_monthly). A statistic of a class, not a forecast or a recommendation. p_classe_anbima NULL or blank, or p_fundo_cotas other than S or N, RAISES 22023; the result is two rows, one page.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3147,7 +3147,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "portfolio_fee_peers": {
     "kind": "rpc",
     "path": "/rpc/portfolio_fee_peers",
-    "description": "Administration fee comparison (catalog v63; ETF peers v65), one row per distinct input CNPJ. Latest CVM Extrato only, not a historical backtest: p_as_of (default today) dates the comparison, excludes future documents and fees older than 36 months. Fund peers have a FI quota in the three reference months ending in p_as_of month, the SAME filed ANBIMA class, FUNDO_COTAS S/N and TP_FUNDO_CLASSE FI/CLASSES - FIF. ETF peers (v65, #609): CVM files no ANBIMA class for an ETF, so an active ETF (cvm_etf_registry.is_active) joins a class only when its underlying_index is mapped to that class in public.portfolio_class_index (the owner-reviewed src/portfolio/rules/equivalents/class_index.yaml, never inferred from a name); it is a peer of every FUNDO_COTAS and scope cell of the class, once per CNPJ. Its fee is the third-party etfsbrasil.com.br value (etf_market_snapshot.taxa_adm_pct, the newest snapshot with a fee dated no later than p_as_of, as portfolio_fees serves etf_site_taxa_adm), never a CVM-disclosed fee; the same 0 < fee <= 5 and 36-month rules apply. n_peers = n_fund_peers + n_etf_peers; at least 30 usable fees in that combined group, the target included when eligible; no broader fallback. n_excluded counts unusable fund fees, n_etf_excluded mapped ETFs with no usable fee; peer_fee_oldest/newest date the usable fund documents, etf_peer_fee_oldest/newest the ETF snapshots; etf_peer_tickers and etf_peer_fee_source name the ETFs and say their fee is third-party. p25/median/p75 are annual administration fees over the combined group, percentile is midrank (half weight for ties), difference_pp is target minus median. No performance fee, expense ratio, alternative or saving estimate. not_compared carries a reason_code and NULL comparison statistics. Source values are never rescaled. 1 to 200 CNPJs per call, punctuation stripped and padded to 14 digits; invalid input or more than 200 raises 22023; one page, never trimmed.",
+    "description": "Administration fee comparison (catalog v63; ETF peers v66), one row per distinct input CNPJ. Latest CVM Extrato only, not a historical backtest: p_as_of (default today) dates the comparison, excludes future documents and fees older than 36 months. Fund peers have a FI quota in the three reference months ending in p_as_of month, the SAME filed ANBIMA class, FUNDO_COTAS S/N and TP_FUNDO_CLASSE FI/CLASSES - FIF. ETF peers (v66, #609): CVM files no ANBIMA class for an ETF, so an active ETF (cvm_etf_registry.is_active) joins a class only when its underlying_index is mapped to that class in public.portfolio_class_index (the owner-reviewed src/portfolio/rules/equivalents/class_index.yaml, never inferred from a name); it is a peer of every FUNDO_COTAS and scope cell of the class, once per CNPJ. Its fee is the third-party etfsbrasil.com.br value (etf_market_snapshot.taxa_adm_pct, the newest snapshot with a fee dated no later than p_as_of, as portfolio_fees serves etf_site_taxa_adm), never a CVM-disclosed fee; the same 0 < fee <= 5 and 36-month rules apply. n_peers = n_fund_peers + n_etf_peers; at least 30 usable fees in that combined group, the target included when eligible; no broader fallback. n_excluded counts unusable fund fees, n_etf_excluded mapped ETFs with no usable fee; peer_fee_oldest/newest date the usable fund documents, etf_peer_fee_oldest/newest the ETF snapshots; etf_peer_tickers and etf_peer_fee_source name the ETFs and say their fee is third-party. p25/median/p75 are annual administration fees over the combined group, percentile is midrank (half weight for ties), difference_pp is target minus median. No performance fee, expense ratio, alternative or saving estimate. not_compared carries a reason_code and NULL comparison statistics. Source values are never rescaled. 1 to 200 CNPJs per call, punctuation stripped and padded to 14 digits; invalid input or more than 200 raises 22023; one page, never trimmed.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4082,6 +4082,50 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_codneg"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "trade_consolidated_history": {
+    "kind": "rpc",
+    "path": "/rpc/trade_consolidated_history",
+    "description": "Daily prints of one ticker of B3's consolidated trade file (TradeInformationConsolidatedFile), segment FORWARD only, as published, oldest first: the 46 Brazilian fixed-income ETFs COTAHIST does not carry (IMAB11, B5P211, IRFM11, LFTS11, ...) and 21 other FORWARD tickers. A ticker not held raises 22023 (this function holds only the FORWARD segment; a COTAHIST ticker is in quote_history), never an empty set. The close is last_price. ref_price is B3's reference price, NOT a trade and NEVER a close: a session with no trade carries only ref_price, and last_price (with min_price, max_price, avg_price, trade_count, quantity and notional_brl) is NULL there. There is NO opening price: the file has none and none is filled from another source. notional_brl is this file's volume and is not comparable with COTAHIST's or B3's BDI (BOVA11 on 2026-09-29: R$587,459,700.14 here, R$588,765,462.41 in COTAHIST). Prices are NOT adjusted for distributions: a return from last_price is a price-only return, which understates the real return of an ETF that distributes income (many fixed-income ETFs pay coupons); for one that reinvests the difference is small. Retention: the source's oldest session was 2025-06-10 when checked on 2026-09-30, so history starts there. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last. Or narrow p_from/p_to. Depth is in api.coverage().",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_ticker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 365)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        },
+        "p_after": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_ticker"
       ],
       "additionalProperties": false
     }

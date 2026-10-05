@@ -369,12 +369,49 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
   from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client
   role can read `b3_index_level`.
 
-### The portfolio reads (catalog v51, v54, v61, v63, v65)
+### The fixed-income ETFs: B3's FORWARD segment (catalog v65)
+
+`api.trade_consolidated_history(p_ticker, p_from, p_to, p_after)`
+(`32_api_trade_consolidated.sql`; research #606,
+`docs/reference/research/portfolio-return-coverage.md`) serves
+`b3_trade_consolidated` (migration 57): B3's TradeInformationConsolidatedFile,
+segment FORWARD only. That segment holds the 46 Brazilian fixed-income ETFs that
+COTAHIST does not carry (IMAB11, B5P211, IRFM11, LFTS11, ...) and 21 other
+tickers (67 on 2026-09-29), so `quote_history` and `panel` have nothing for them.
+
+- **Columns, as published:** ticker, trade_date, isin, segment, min_price,
+  max_price, avg_price, last_price, ref_price, oscillation_pct, trade_count,
+  quantity, notional_brl, file_status, source.
+- **The close is `last_price`.** `ref_price` is B3's reference price, not a trade
+  and never a close: a session with no trade carries only `ref_price`, and
+  `last_price` (with the other prices, count and volume) is NULL there.
+- **No opening price.** The file has none, so there is no open column, and none
+  is ever filled from another source.
+- **`notional_brl` is not comparable** with COTAHIST's volume or B3's BDI
+  (migration 57: BOVA11 on 2026-09-29 is R$587,459,700.14 here against
+  R$588,765,462.41 in COTAHIST).
+- **Not adjusted for distributions.** A return from `last_price` is a price-only
+  return: it understates the real return of an ETF that distributes income (many
+  fixed-income ETFs pay coupons); for one that reinvests the difference is small.
+- **Retention.** The source's oldest session was 2025-06-10 when checked on
+  2026-09-30, so history starts there.
+- **Tickers held only.** A ticker not in the table, a COTAHIST ticker included,
+  raises `22023` saying the function holds only the FORWARD segment and pointing
+  at `quote_history`; it never returns an empty set. A NULL window also raises.
+- **Paging.** Date cursor like `quote_history` and `index_history`.
+  `coverage()` has a `trade_consolidated_history` row (first session held, landed
+  from the `b3` / `trade_consolidated` audit rows).
+- Grants follow `index_history`: DEFINER with an empty `search_path`, revoked
+  from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client role
+  can read `b3_trade_consolidated`. Executed checks:
+  `tests/sql/trade_consolidated_history_behaviour.sql`.
+
+### The portfolio reads (catalog v51, v54, v61, v63, v66)
 
 Eight functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
 map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`): three since v51,
 `portfolio_movement` since v54, `portfolio_instruments` and `portfolio_fund_terms`
-since v61, `portfolio_fee_peers` since v63 and `class_return_distribution` since v65.
+since v61, `portfolio_fee_peers` since v63 and `class_return_distribution` since v66.
 All are raise-only on the one 1000-row page and anon-callable like the rest of
 `api`. Seven take a set of funds, codes or lines; `class_return_distribution` takes
 one ANBIMA class as filed. None is a name search that guesses.
@@ -537,10 +574,10 @@ one ANBIMA class as filed. None is a name search that guesses.
   not filed, never zero. A FII, FIDC, FIP or FIAGRO is in neither document (the
   Extrato holds only FI and FIF classes) and the reason says so. 24 ms cold for the
   12 pinned CNPJs. At most 200 CNPJs.
-- **`api.portfolio_fee_peers(p_cnpjs, p_as_of)`** (catalog v63; ETF peers v65,
+- **`api.portfolio_fee_peers(p_cnpjs, p_as_of)`** (catalog v63; ETF peers v66,
   #609): a fund's administration fee against the active FI funds of its exact
   ANBIMA class, FUNDO_COTAS and document scope (method:
-  [`fee-peer-comparison.md`](portfolio/fee-peer-comparison.md)). Since v65 ETFs enter
+  [`fee-peer-comparison.md`](portfolio/fee-peer-comparison.md)). Since v66 ETFs enter
   the group: CVM files no ANBIMA class for an ETF, so an active ETF joins a class
   only when its `underlying_index` is mapped to it in
   `src/portfolio/rules/equivalents/class_index.yaml` (owner-reviewed, generated into
@@ -554,7 +591,7 @@ one ANBIMA class as filed. None is a name search that guesses.
   `etf_peer_fee_oldest` / `_newest` and `etf_peer_fee_source`, which says the ETF fee
   is a third-party site's. Still at least 30 usable fees, no wider fallback.
 - **`api.class_return_distribution(p_classe_anbima, p_fundo_cotas, p_month)`**
-  (catalog v65, #609): what an equivalent ETF's return is set against. Two rows,
+  (catalog v66, #609): what an equivalent ETF's return is set against. Two rows,
   `window_months` 12 and 6, ending at the close of `p_month` (NULL = the last
   complete FI month). Funds: FI funds whose newest Extrato files exactly that class
   and FUNDO_COTAS (S or N), active as in `portfolio_fee_peers` (`n_universe`). Return
@@ -858,7 +895,8 @@ series and statement functions in v25/v26.
 set-returning function now fetches one page plus one row and **raises `22023`**
 rather than returning a trimmed result. This file previously stated that "a panel
 cannot be paged" — that stopped being true two catalog versions ago. **`panel`,
-`quote_history`, `fund_nav` and `index_history` page with a `p_after` cursor**; the others
+`quote_history`, `fund_nav`, `index_history` and `trade_consolidated_history`
+page with a `p_after` cursor**; the others
 (`option_history`, `termo_history`, `financials`, `company_financials`,
 `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
 `fund_documents`, `fund_restatements`, `fund_restatement_diff`,

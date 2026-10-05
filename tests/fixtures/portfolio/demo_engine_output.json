@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.9",
+  "schema_version": "1.10",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -16621,6 +16621,2401 @@
       }
     ]
   },
+  "returns": {
+    "status": "partial",
+    "reason": "Há linhas sem retorno avaliado; cada linha informa o motivo.",
+    "errors": [],
+    "reason_codes": [
+      "linhas_sem_retorno"
+    ],
+    "position_date": "2026-09-30",
+    "end_month": "2026-09-01",
+    "windows": [
+      {
+        "id": "12m",
+        "months": 12,
+        "base_month": "2025-09-01",
+        "end_month": "2026-09-01",
+        "annualized": false,
+        "fee_share_of_annual": 1.0,
+        "volatility_note": "12 observações; estimativa ruidosa",
+        "note": null
+      },
+      {
+        "id": "6m",
+        "months": 6,
+        "base_month": "2026-03-01",
+        "end_month": "2026-09-01",
+        "annualized": false,
+        "fee_share_of_annual": 0.5,
+        "volatility_note": "6 observações; muito ruidosa",
+        "note": "retorno do período de 6 meses, não anualizado"
+      }
+    ],
+    "definition": "Retorno líquido = valor de fim de mês final dividido pelo do mês base, menos 1. CDI composto pela convenção do fator DI da B3 (fatores diários truncados em 16 casas, produto arredondado em 8), das taxas da data base, inclusive, à data final, exclusive. Volatilidade = desvio padrão amostral dos retornos mensais vezes raiz de 12. Queda máxima = maior perda de um fechamento mensal para um fechamento posterior, na janela.",
+    "gross_note": "estimativa: retorno líquido mais a taxa de administração divulgada (metade dela na janela de 6 meses); não inclui IR, taxas de ingresso e saída nem a performance",
+    "sharpe_drag_note": "quanto de Sharpe a taxa come: Sharpe bruto menos Sharpe líquido = taxa anual dividida pela volatilidade anualizada",
+    "drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+    "performance_note": "o retorno líquido já desconta a performance provisionada; a taxa por ponto mostrada considera só a administração",
+    "note": "Fato por ativo sobre um período passado: sem limiar, sem total da carteira e sem ranking; não é previsão nem recomendação.",
+    "cdi": {
+      "series": "CDI",
+      "sgs_code": 12,
+      "unit": "% ao dia útil",
+      "convention": "fator DI da B3: produto de (1 + taxa/100), cada fator truncado em 16 casas, das taxas datadas da data base, inclusive, à data final, exclusive; produto arredondado em 8 casas",
+      "n_rates": 283,
+      "first_date": "2025-09-01",
+      "last_date": "2026-09-30",
+      "status": "ok",
+      "reason_code": null,
+      "sources": [
+        {
+          "tool": "macro_series",
+          "call_id": 43,
+          "args": {
+            "p_series": "CDI",
+            "p_from": "2025-09-01",
+            "p_to": "2026-09-30"
+          },
+          "data_date": "2026-09-30"
+        }
+      ]
+    },
+    "lines": [
+      {
+        "line_no": 1,
+        "linha_extrato": "NTN-B 2035",
+        "tipo": "tesouro",
+        "cnpj": null,
+        "ticker": null,
+        "name": "NTN-B 2035-05-15",
+        "valor_brl": 412351.0,
+        "basis": null,
+        "basis_label": null,
+        "without_distributions": false,
+        "status": "nao_avaliado",
+        "status_label": "não avaliado",
+        "reason_code": "retorno_tesouro_sem_serie",
+        "reason": "título do Tesouro: o SILO não tem série de preços",
+        "fee": null,
+        "performance_fee_filed": false,
+        "notes": [],
+        "month_ends": [],
+        "windows": {
+          "12m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_tesouro_sem_serie",
+            "reason": "título do Tesouro: o SILO não tem série de preços",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          },
+          "6m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_tesouro_sem_serie",
+            "reason": "título do Tesouro: o SILO não tem série de preços",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 1
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 2,
+        "linha_extrato": "PETROBRAS PN",
+        "tipo": "ação",
+        "cnpj": null,
+        "ticker": "PETR4",
+        "name": "PETROBRAS",
+        "valor_brl": 988000.0,
+        "basis": "close_total_return",
+        "basis_label": "fechamento com dividendos e JCP reinvestidos (close_total_return); JCP bruto de IR",
+        "without_distributions": false,
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "reason_code": null,
+        "reason": null,
+        "fee": {
+          "status": "nao_se_aplica",
+          "reason_code": "taxa_nao_aplicavel",
+          "rate_pct_year": null,
+          "kind": null,
+          "origin": null,
+          "as_of": null,
+          "sources": []
+        },
+        "performance_fee_filed": false,
+        "notes": [
+          "Dividendos e JCP reinvestidos na data ex; JCP bruto de IR. Ação não tem taxa de administração."
+        ],
+        "month_ends": [
+          {
+            "month": "2025-09-01",
+            "date": "2025-09-30",
+            "value": 30.0,
+            "null_reason": null
+          },
+          {
+            "month": "2025-10-01",
+            "date": "2025-10-31",
+            "value": 30.6,
+            "null_reason": null
+          },
+          {
+            "month": "2025-11-01",
+            "date": "2025-11-28",
+            "value": 32.13,
+            "null_reason": null
+          },
+          {
+            "month": "2025-12-01",
+            "date": "2025-12-31",
+            "value": 31.1661,
+            "null_reason": null
+          },
+          {
+            "month": "2026-01-01",
+            "date": "2026-01-30",
+            "value": 32.412744,
+            "null_reason": null
+          },
+          {
+            "month": "2026-02-01",
+            "date": "2026-02-27",
+            "value": 34.357509,
+            "null_reason": null
+          },
+          {
+            "month": "2026-03-01",
+            "date": "2026-03-31",
+            "value": 33.670358,
+            "null_reason": null
+          },
+          {
+            "month": "2026-04-01",
+            "date": "2026-04-30",
+            "value": 34.680469,
+            "null_reason": null
+          },
+          {
+            "month": "2026-05-01",
+            "date": "2026-05-29",
+            "value": 35.027274,
+            "null_reason": null
+          },
+          {
+            "month": "2026-06-01",
+            "date": "2026-06-30",
+            "value": 33.626183,
+            "null_reason": null
+          },
+          {
+            "month": "2026-07-01",
+            "date": "2026-07-31",
+            "value": 35.980016,
+            "null_reason": null
+          },
+          {
+            "month": "2026-08-01",
+            "date": "2026-08-31",
+            "value": 36.699616,
+            "null_reason": null
+          },
+          {
+            "month": "2026-09-01",
+            "date": "2026-09-30",
+            "value": 37.800605,
+            "null_reason": null
+          }
+        ],
+        "windows": {
+          "12m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2025-09-01",
+            "end_month": "2026-09-01",
+            "base_date": "2025-09-30",
+            "end_date": "2026-09-30",
+            "base_value": 30.0,
+            "end_value": 37.800605,
+            "n_observations": 12,
+            "net_return_pct": 26.002017,
+            "cdi_pct": 14.420517,
+            "cdi_base_date": "2025-09-30",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 261,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": 11.5815,
+            "volatility_annual_pct": 12.090569,
+            "volatility_note": "12 observações; estimativa ruidosa",
+            "max_drawdown_pct": -4.0,
+            "max_drawdown_peak_month": "2026-05-01",
+            "max_drawdown_trough_month": "2026-06-01",
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "nao_se_aplica",
+            "fee_reason_code": "taxa_nao_aplicavel",
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": [
+              {
+                "tool": "quote_history",
+                "call_id": 44,
+                "args": {
+                  "p_ticker": "PETR4",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30",
+                  "p_fields": [
+                    "close_total_return",
+                    "close_total_return_null_reason"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          },
+          "6m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2026-03-01",
+            "end_month": "2026-09-01",
+            "base_date": "2026-03-31",
+            "end_date": "2026-09-30",
+            "base_value": 33.670358,
+            "end_value": 37.800605,
+            "n_observations": 6,
+            "net_return_pct": 12.266715,
+            "cdi_pct": 6.907412,
+            "cdi_base_date": "2026-03-31",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 131,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": 5.359303,
+            "volatility_annual_pct": 12.393548,
+            "volatility_note": "6 observações; muito ruidosa",
+            "max_drawdown_pct": -4.0,
+            "max_drawdown_peak_month": "2026-05-01",
+            "max_drawdown_trough_month": "2026-06-01",
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "nao_se_aplica",
+            "fee_reason_code": "taxa_nao_aplicavel",
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [
+              "retorno do período de 6 meses, não anualizado"
+            ],
+            "sources": [
+              {
+                "tool": "quote_history",
+                "call_id": 44,
+                "args": {
+                  "p_ticker": "PETR4",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30",
+                  "p_fields": [
+                    "close_total_return",
+                    "close_total_return_null_reason"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 2
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "quote_history",
+            "call_id": 44,
+            "args": {
+              "p_ticker": "PETR4",
+              "p_from": "2025-09-01",
+              "p_to": "2026-09-30",
+              "p_fields": [
+                "close_total_return",
+                "close_total_return_null_reason"
+              ]
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 3,
+        "linha_extrato": "GERAÇÃO L. PAR FIA",
+        "tipo": "fundo",
+        "cnpj": "08935128000159",
+        "ticker": null,
+        "name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
+        "valor_brl": 264615.0,
+        "basis": "cota_fundo",
+        "basis_label": "cota mensal do fundo (fund_nav): líquida das taxas do fundo, bruta de IR",
+        "without_distributions": false,
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "reason_code": null,
+        "reason": null,
+        "fee": {
+          "status": "ok",
+          "reason_code": null,
+          "rate_pct_year": 2.0,
+          "kind": "fixa",
+          "fee_status": "divulgada",
+          "origin": "extrato",
+          "as_of": "2026-07-31",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "performance_fee_filed": true,
+        "notes": [
+          "Cota líquida das taxas de administração, gestão, distribuição e da performance provisionada e dos encargos do fundo (Res. CVM 175, Art. 117 § 2); bruta de IR e de taxas de ingresso e saída.",
+          "fund_nav serve a cota do mês (último informe diário arquivado no mês), não o dia: as datas do CDI são o último dia útil do mês no calendário do próprio CDI.",
+          "o retorno líquido já desconta a performance provisionada; a taxa por ponto mostrada considera só a administração"
+        ],
+        "month_ends": [
+          {
+            "month": "2025-09-01",
+            "date": null,
+            "value": 100.0,
+            "null_reason": null
+          },
+          {
+            "month": "2025-10-01",
+            "date": null,
+            "value": 103.0,
+            "null_reason": null
+          },
+          {
+            "month": "2025-11-01",
+            "date": null,
+            "value": 107.12,
+            "null_reason": null
+          },
+          {
+            "month": "2025-12-01",
+            "date": null,
+            "value": 104.9776,
+            "null_reason": null
+          },
+          {
+            "month": "2026-01-01",
+            "date": null,
+            "value": 110.22648,
+            "null_reason": null
+          },
+          {
+            "month": "2026-02-01",
+            "date": null,
+            "value": 112.4310096,
+            "null_reason": null
+          },
+          {
+            "month": "2026-03-01",
+            "date": null,
+            "value": 115.80393989,
+            "null_reason": null
+          },
+          {
+            "month": "2026-04-01",
+            "date": null,
+            "value": 112.32982169,
+            "null_reason": null
+          },
+          {
+            "month": "2026-05-01",
+            "date": null,
+            "value": 110.08322526,
+            "null_reason": null
+          },
+          {
+            "month": "2026-06-01",
+            "date": null,
+            "value": 111.18405751,
+            "null_reason": null
+          },
+          {
+            "month": "2026-07-01",
+            "date": null,
+            "value": 106.73669521,
+            "null_reason": null
+          },
+          {
+            "month": "2026-08-01",
+            "date": null,
+            "value": 108.87142911,
+            "null_reason": null
+          },
+          {
+            "month": "2026-09-01",
+            "date": null,
+            "value": 107.78271482,
+            "null_reason": null
+          }
+        ],
+        "windows": {
+          "12m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2025-09-01",
+            "end_month": "2026-09-01",
+            "base_date": null,
+            "end_date": null,
+            "base_value": 100.0,
+            "end_value": 107.78271482,
+            "n_observations": 12,
+            "net_return_pct": 7.782715,
+            "cdi_pct": 14.420517,
+            "cdi_base_date": "2025-09-30",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 261,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": -6.637802,
+            "volatility_annual_pct": 10.269106,
+            "volatility_note": "12 observações; estimativa ruidosa",
+            "max_drawdown_pct": -7.829824,
+            "max_drawdown_peak_month": "2026-03-01",
+            "max_drawdown_trough_month": "2026-07-01",
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "ok",
+            "fee_reason_code": null,
+            "fee_pct_period": 2.0,
+            "gross_return_est_pct": 9.782715,
+            "gross_label": "estimativa",
+            "fee_per_point": 0.204442,
+            "fee_per_point_excluded_from_aggregates": false,
+            "fee_per_point_note": "taxa do período dividida pelo retorno bruto estimado do período",
+            "sharpe_drag": 0.1948,
+            "sharpe_drag_note": "quanto de Sharpe a taxa come: Sharpe bruto menos Sharpe líquido = taxa anual dividida pela volatilidade anualizada",
+            "notes": [],
+            "sources": [
+              {
+                "tool": "fund_nav",
+                "call_id": 45,
+                "args": {
+                  "p_cnpj": "08935128000159",
+                  "p_from": "2025-09-01",
+                  "p_entity_type": "fi"
+                },
+                "data_date": "2026-09-01"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              },
+              {
+                "tool": "portfolio_fees",
+                "call_id": 17,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "11728688000147",
+                    "32113885000121",
+                    "42592315000115",
+                    "50088190000119",
+                    "51488342000133"
+                  ],
+                  "p_month": "2026-08-01"
+                },
+                "data_date": "2026-08-31"
+              }
+            ]
+          },
+          "6m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2026-03-01",
+            "end_month": "2026-09-01",
+            "base_date": null,
+            "end_date": null,
+            "base_value": 115.80393989,
+            "end_value": 107.78271482,
+            "n_observations": 6,
+            "net_return_pct": -6.926556,
+            "cdi_pct": 6.907412,
+            "cdi_base_date": "2026-03-31",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 131,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": -13.833968,
+            "volatility_annual_pct": 8.024961,
+            "volatility_note": "6 observações; muito ruidosa",
+            "max_drawdown_pct": -7.829824,
+            "max_drawdown_peak_month": "2026-03-01",
+            "max_drawdown_trough_month": "2026-07-01",
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "ok",
+            "fee_reason_code": null,
+            "fee_pct_period": 1.0,
+            "gross_return_est_pct": -5.926556,
+            "gross_label": "estimativa",
+            "fee_per_point": -0.168732,
+            "fee_per_point_excluded_from_aggregates": true,
+            "fee_per_point_note": "retorno bruto estimado negativo: valor mostrado como calculado, nunca entra em média, mediana ou ranking",
+            "sharpe_drag": 0.2492,
+            "sharpe_drag_note": "quanto de Sharpe a taxa come: Sharpe bruto menos Sharpe líquido = taxa anual dividida pela volatilidade anualizada",
+            "notes": [
+              "retorno do período de 6 meses, não anualizado"
+            ],
+            "sources": [
+              {
+                "tool": "fund_nav",
+                "call_id": 45,
+                "args": {
+                  "p_cnpj": "08935128000159",
+                  "p_from": "2025-09-01",
+                  "p_entity_type": "fi"
+                },
+                "data_date": "2026-09-01"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              },
+              {
+                "tool": "portfolio_fees",
+                "call_id": 17,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "11728688000147",
+                    "32113885000121",
+                    "42592315000115",
+                    "50088190000119",
+                    "51488342000133"
+                  ],
+                  "p_month": "2026-08-01"
+                },
+                "data_date": "2026-08-31"
+              }
+            ]
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 3
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "fund_nav",
+            "call_id": 45,
+            "args": {
+              "p_cnpj": "08935128000159",
+              "p_from": "2025-09-01",
+              "p_entity_type": "fi"
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 4,
+        "linha_extrato": "XP BANCOS FIC",
+        "tipo": "fundo",
+        "cnpj": "50088190000119",
+        "ticker": null,
+        "name": "XP BANCOS FIC FIF RENDA FIXA",
+        "valor_brl": 1387809.9,
+        "basis": "cota_fundo",
+        "basis_label": "cota mensal do fundo (fund_nav): líquida das taxas do fundo, bruta de IR",
+        "without_distributions": false,
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "reason_code": null,
+        "reason": null,
+        "fee": {
+          "status": "nao_avaliado",
+          "reason_code": "sem_taxa_utilizavel",
+          "rate_pct_year": null,
+          "kind": "faixa",
+          "fee_status": "faixa divulgada",
+          "origin": "lamina",
+          "as_of": "2026-07-31",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "performance_fee_filed": false,
+        "notes": [
+          "Cota líquida das taxas de administração, gestão, distribuição e da performance provisionada e dos encargos do fundo (Res. CVM 175, Art. 117 § 2); bruta de IR e de taxas de ingresso e saída.",
+          "fund_nav serve a cota do mês (último informe diário arquivado no mês), não o dia: as datas do CDI são o último dia útil do mês no calendário do próprio CDI."
+        ],
+        "month_ends": [
+          {
+            "month": "2025-09-01",
+            "date": null,
+            "value": 1.0,
+            "null_reason": null
+          },
+          {
+            "month": "2025-10-01",
+            "date": null,
+            "value": 1.011,
+            "null_reason": null
+          },
+          {
+            "month": "2025-11-01",
+            "date": null,
+            "value": 1.0219188,
+            "null_reason": null
+          },
+          {
+            "month": "2025-12-01",
+            "date": null,
+            "value": 1.03336429,
+            "null_reason": null
+          },
+          {
+            "month": "2026-01-01",
+            "date": null,
+            "value": 1.04462796,
+            "null_reason": null
+          },
+          {
+            "month": "2026-02-01",
+            "date": null,
+            "value": 1.05622333,
+            "null_reason": null
+          },
+          {
+            "month": "2026-03-01",
+            "date": null,
+            "value": 1.06752492,
+            "null_reason": null
+          },
+          {
+            "month": "2026-04-01",
+            "date": null,
+            "value": 1.0792677,
+            "null_reason": null
+          },
+          {
+            "month": "2026-05-01",
+            "date": null,
+            "value": 1.09092379,
+            "null_reason": null
+          },
+          {
+            "month": "2026-06-01",
+            "date": null,
+            "value": 1.10314213,
+            "null_reason": null
+          },
+          {
+            "month": "2026-07-01",
+            "date": null,
+            "value": 1.11516638,
+            "null_reason": null
+          },
+          {
+            "month": "2026-08-01",
+            "date": null,
+            "value": 1.12743321,
+            "null_reason": null
+          },
+          {
+            "month": "2026-09-01",
+            "date": null,
+            "value": 1.13994772,
+            "null_reason": null
+          }
+        ],
+        "windows": {
+          "12m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2025-09-01",
+            "end_month": "2026-09-01",
+            "base_date": null,
+            "end_date": null,
+            "base_value": 1.0,
+            "end_value": 1.13994772,
+            "n_observations": 12,
+            "net_return_pct": 13.994772,
+            "cdi_pct": 14.420517,
+            "cdi_base_date": "2025-09-30",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 261,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": -0.425745,
+            "volatility_annual_pct": 0.055514,
+            "volatility_note": "12 observações; estimativa ruidosa",
+            "max_drawdown_pct": 0.0,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "nao_avaliado",
+            "fee_reason_code": "sem_taxa_utilizavel",
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": [
+              {
+                "tool": "fund_nav",
+                "call_id": 46,
+                "args": {
+                  "p_cnpj": "50088190000119",
+                  "p_from": "2025-09-01",
+                  "p_entity_type": "fi"
+                },
+                "data_date": "2026-09-01"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          },
+          "6m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2026-03-01",
+            "end_month": "2026-09-01",
+            "base_date": null,
+            "end_date": null,
+            "base_value": 1.06752492,
+            "end_value": 1.13994772,
+            "n_observations": 6,
+            "net_return_pct": 6.784179,
+            "cdi_pct": 6.907412,
+            "cdi_base_date": "2026-03-31",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 131,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": -0.123233,
+            "volatility_annual_pct": 0.048989,
+            "volatility_note": "6 observações; muito ruidosa",
+            "max_drawdown_pct": 0.0,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "nao_avaliado",
+            "fee_reason_code": "sem_taxa_utilizavel",
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [
+              "retorno do período de 6 meses, não anualizado"
+            ],
+            "sources": [
+              {
+                "tool": "fund_nav",
+                "call_id": 46,
+                "args": {
+                  "p_cnpj": "50088190000119",
+                  "p_from": "2025-09-01",
+                  "p_entity_type": "fi"
+                },
+                "data_date": "2026-09-01"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 4
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "fund_nav",
+            "call_id": 46,
+            "args": {
+              "p_cnpj": "50088190000119",
+              "p_from": "2025-09-01",
+              "p_entity_type": "fi"
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 5,
+        "linha_extrato": "XP LIQUIDEZ FIC",
+        "tipo": "fundo",
+        "cnpj": "51488342000133",
+        "ticker": null,
+        "name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+        "valor_brl": 902591.9,
+        "basis": "cota_fundo",
+        "basis_label": "cota mensal do fundo (fund_nav): líquida das taxas do fundo, bruta de IR",
+        "without_distributions": false,
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "reason_code": null,
+        "reason": null,
+        "fee": {
+          "status": "nao_avaliado",
+          "reason_code": "sem_taxa_utilizavel",
+          "rate_pct_year": null,
+          "kind": "zero_informado",
+          "fee_status": "0 informado; a conferir",
+          "origin": "extrato",
+          "as_of": "2026-06-30",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "performance_fee_filed": false,
+        "notes": [
+          "Cota líquida das taxas de administração, gestão, distribuição e da performance provisionada e dos encargos do fundo (Res. CVM 175, Art. 117 § 2); bruta de IR e de taxas de ingresso e saída.",
+          "fund_nav serve a cota do mês (último informe diário arquivado no mês), não o dia: as datas do CDI são o último dia útil do mês no calendário do próprio CDI."
+        ],
+        "month_ends": [
+          {
+            "month": "2025-09-01",
+            "date": null,
+            "value": 2.0,
+            "null_reason": null
+          },
+          {
+            "month": "2025-10-01",
+            "date": null,
+            "value": 2.0216,
+            "null_reason": null
+          },
+          {
+            "month": "2025-11-01",
+            "date": null,
+            "value": 2.04302896,
+            "null_reason": null
+          },
+          {
+            "month": "2025-12-01",
+            "date": null,
+            "value": 2.06550228,
+            "null_reason": null
+          },
+          {
+            "month": "2026-01-01",
+            "date": null,
+            "value": 2.08760315,
+            "null_reason": null
+          },
+          {
+            "month": "2026-02-01",
+            "date": null,
+            "value": 2.11035803,
+            "null_reason": null
+          },
+          {
+            "month": "2026-03-01",
+            "date": null,
+            "value": 2.13251679,
+            "null_reason": null
+          },
+          {
+            "month": "2026-04-01",
+            "date": null,
+            "value": 2.15554797,
+            "null_reason": null
+          },
+          {
+            "month": "2026-05-01",
+            "date": null,
+            "value": 2.17839678,
+            "null_reason": null
+          },
+          {
+            "month": "2026-06-01",
+            "date": null,
+            "value": 2.20235914,
+            "null_reason": null
+          },
+          {
+            "month": "2026-07-01",
+            "date": null,
+            "value": 2.22592438,
+            "null_reason": null
+          },
+          {
+            "month": "2026-08-01",
+            "date": null,
+            "value": 2.24996437,
+            "null_reason": null
+          },
+          {
+            "month": "2026-09-01",
+            "date": null,
+            "value": 2.27448898,
+            "null_reason": null
+          }
+        ],
+        "windows": {
+          "12m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2025-09-01",
+            "end_month": "2026-09-01",
+            "base_date": null,
+            "end_date": null,
+            "base_value": 2.0,
+            "end_value": 2.27448898,
+            "n_observations": 12,
+            "net_return_pct": 13.724449,
+            "cdi_pct": 14.420517,
+            "cdi_base_date": "2025-09-30",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 261,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": -0.696068,
+            "volatility_annual_pct": 0.055514,
+            "volatility_note": "12 observações; estimativa ruidosa",
+            "max_drawdown_pct": 0.0,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "nao_avaliado",
+            "fee_reason_code": "sem_taxa_utilizavel",
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": [
+              {
+                "tool": "fund_nav",
+                "call_id": 47,
+                "args": {
+                  "p_cnpj": "51488342000133",
+                  "p_from": "2025-09-01",
+                  "p_entity_type": "fi"
+                },
+                "data_date": "2026-09-01"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          },
+          "6m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2026-03-01",
+            "end_month": "2026-09-01",
+            "base_date": null,
+            "end_date": null,
+            "base_value": 2.13251679,
+            "end_value": 2.27448898,
+            "n_observations": 6,
+            "net_return_pct": 6.657495,
+            "cdi_pct": 6.907412,
+            "cdi_base_date": "2026-03-31",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 131,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": -0.249917,
+            "volatility_annual_pct": 0.04899,
+            "volatility_note": "6 observações; muito ruidosa",
+            "max_drawdown_pct": 0.0,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "nao_avaliado",
+            "fee_reason_code": "sem_taxa_utilizavel",
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [
+              "retorno do período de 6 meses, não anualizado"
+            ],
+            "sources": [
+              {
+                "tool": "fund_nav",
+                "call_id": 47,
+                "args": {
+                  "p_cnpj": "51488342000133",
+                  "p_from": "2025-09-01",
+                  "p_entity_type": "fi"
+                },
+                "data_date": "2026-09-01"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 5
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "fund_nav",
+            "call_id": 47,
+            "args": {
+              "p_cnpj": "51488342000133",
+              "p_from": "2025-09-01",
+              "p_entity_type": "fi"
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 6,
+        "linha_extrato": "MN I FIDC",
+        "tipo": "FIDC",
+        "cnpj": null,
+        "ticker": null,
+        "name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+        "valor_brl": 750000.0,
+        "basis": null,
+        "basis_label": null,
+        "without_distributions": false,
+        "status": "nao_avaliado",
+        "status_label": "não avaliado",
+        "reason_code": "retorno_fidc_sem_classe",
+        "reason": "FIDC: o extrato não diz qual classe ou série de cotas a linha detém",
+        "fee": null,
+        "performance_fee_filed": false,
+        "notes": [],
+        "month_ends": [],
+        "windows": {
+          "12m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_fidc_sem_classe",
+            "reason": "FIDC: o extrato não diz qual classe ou série de cotas a linha detém",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          },
+          "6m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_fidc_sem_classe",
+            "reason": "FIDC: o extrato não diz qual classe ou série de cotas a linha detém",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 6
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 7,
+        "linha_extrato": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+        "tipo": "fundo",
+        "cnpj": "42592315000115",
+        "ticker": null,
+        "name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
+        "valor_brl": 770616.5,
+        "basis": "cota_fundo",
+        "basis_label": "cota mensal do fundo (fund_nav): líquida das taxas do fundo, bruta de IR",
+        "without_distributions": false,
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "reason_code": null,
+        "reason": null,
+        "fee": {
+          "status": "ok",
+          "reason_code": null,
+          "rate_pct_year": 1.5,
+          "kind": "fixa",
+          "fee_status": "divulgada",
+          "origin": "lamina",
+          "as_of": "2024-03-31",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "performance_fee_filed": false,
+        "notes": [
+          "Cota líquida das taxas de administração, gestão, distribuição e da performance provisionada e dos encargos do fundo (Res. CVM 175, Art. 117 § 2); bruta de IR e de taxas de ingresso e saída.",
+          "fund_nav serve a cota do mês (último informe diário arquivado no mês), não o dia: as datas do CDI são o último dia útil do mês no calendário do próprio CDI."
+        ],
+        "month_ends": [
+          {
+            "month": "2025-09-01",
+            "date": null,
+            "value": 1.5,
+            "null_reason": null
+          },
+          {
+            "month": "2025-10-01",
+            "date": null,
+            "value": 1.51275,
+            "null_reason": null
+          },
+          {
+            "month": "2025-11-01",
+            "date": null,
+            "value": 1.5260622,
+            "null_reason": null
+          },
+          {
+            "month": "2025-12-01",
+            "date": null,
+            "value": 1.53918633,
+            "null_reason": null
+          },
+          {
+            "month": "2026-01-01",
+            "date": null,
+            "value": 1.55303901,
+            "null_reason": null
+          },
+          {
+            "month": "2026-02-01",
+            "date": null,
+            "value": 1.56655045,
+            "null_reason": null
+          },
+          {
+            "month": "2026-03-01",
+            "date": null,
+            "value": 1.57986613,
+            "null_reason": null
+          },
+          {
+            "month": "2026-04-01",
+            "date": null,
+            "value": 1.59392694,
+            "null_reason": null
+          },
+          {
+            "month": "2026-05-01",
+            "date": null,
+            "value": 1.60763471,
+            "null_reason": null
+          },
+          {
+            "month": "2026-06-01",
+            "date": null,
+            "value": 1.6217819,
+            "null_reason": null
+          },
+          {
+            "month": "2026-07-01",
+            "date": null,
+            "value": 1.6358914,
+            "null_reason": null
+          },
+          {
+            "month": "2026-08-01",
+            "date": null,
+            "value": 1.64996006,
+            "null_reason": null
+          },
+          {
+            "month": "2026-09-01",
+            "date": null,
+            "value": 1.66464471,
+            "null_reason": null
+          }
+        ],
+        "windows": {
+          "12m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2025-09-01",
+            "end_month": "2026-09-01",
+            "base_date": null,
+            "end_date": null,
+            "base_value": 1.5,
+            "end_value": 1.66464471,
+            "n_observations": 12,
+            "net_return_pct": 10.976314,
+            "cdi_pct": 14.420517,
+            "cdi_base_date": "2025-09-30",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 261,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": -3.444203,
+            "volatility_annual_pct": 0.056889,
+            "volatility_note": "12 observações; estimativa ruidosa",
+            "max_drawdown_pct": 0.0,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "ok",
+            "fee_reason_code": null,
+            "fee_pct_period": 1.5,
+            "gross_return_est_pct": 12.476314,
+            "gross_label": "estimativa",
+            "fee_per_point": 0.120228,
+            "fee_per_point_excluded_from_aggregates": false,
+            "fee_per_point_note": "taxa do período dividida pelo retorno bruto estimado do período",
+            "sharpe_drag": 26.3669,
+            "sharpe_drag_note": "quanto de Sharpe a taxa come: Sharpe bruto menos Sharpe líquido = taxa anual dividida pela volatilidade anualizada",
+            "notes": [],
+            "sources": [
+              {
+                "tool": "fund_nav",
+                "call_id": 48,
+                "args": {
+                  "p_cnpj": "42592315000115",
+                  "p_from": "2025-09-01",
+                  "p_entity_type": "fi"
+                },
+                "data_date": "2026-09-01"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              },
+              {
+                "tool": "portfolio_fees",
+                "call_id": 17,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "11728688000147",
+                    "32113885000121",
+                    "42592315000115",
+                    "50088190000119",
+                    "51488342000133"
+                  ],
+                  "p_month": "2026-08-01"
+                },
+                "data_date": "2026-08-31"
+              }
+            ]
+          },
+          "6m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2026-03-01",
+            "end_month": "2026-09-01",
+            "base_date": null,
+            "end_date": null,
+            "base_value": 1.57986613,
+            "end_value": 1.66464471,
+            "n_observations": 6,
+            "net_return_pct": 5.366188,
+            "cdi_pct": 6.907412,
+            "cdi_base_date": "2026-03-31",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 131,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": -1.541224,
+            "volatility_annual_pct": 0.04775,
+            "volatility_note": "6 observações; muito ruidosa",
+            "max_drawdown_pct": 0.0,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "ok",
+            "fee_reason_code": null,
+            "fee_pct_period": 0.75,
+            "gross_return_est_pct": 6.116188,
+            "gross_label": "estimativa",
+            "fee_per_point": 0.122625,
+            "fee_per_point_excluded_from_aggregates": false,
+            "fee_per_point_note": "taxa do período dividida pelo retorno bruto estimado do período",
+            "sharpe_drag": 31.4135,
+            "sharpe_drag_note": "quanto de Sharpe a taxa come: Sharpe bruto menos Sharpe líquido = taxa anual dividida pela volatilidade anualizada",
+            "notes": [
+              "retorno do período de 6 meses, não anualizado"
+            ],
+            "sources": [
+              {
+                "tool": "fund_nav",
+                "call_id": 48,
+                "args": {
+                  "p_cnpj": "42592315000115",
+                  "p_from": "2025-09-01",
+                  "p_entity_type": "fi"
+                },
+                "data_date": "2026-09-01"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              },
+              {
+                "tool": "portfolio_fees",
+                "call_id": 17,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "11728688000147",
+                    "32113885000121",
+                    "42592315000115",
+                    "50088190000119",
+                    "51488342000133"
+                  ],
+                  "p_month": "2026-08-01"
+                },
+                "data_date": "2026-08-31"
+              }
+            ]
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 7
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "fund_nav",
+            "call_id": 48,
+            "args": {
+              "p_cnpj": "42592315000115",
+              "p_from": "2025-09-01",
+              "p_entity_type": "fi"
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 8,
+        "linha_extrato": "HGLG11 CSHG LOGISTICA FII",
+        "tipo": "FII",
+        "cnpj": null,
+        "ticker": "HGLG11",
+        "name": "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO",
+        "valor_brl": 175440.0,
+        "basis": "close_sem_proventos",
+        "basis_label": "fechamento sem proventos (close): variação de preço",
+        "without_distributions": true,
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "reason_code": null,
+        "reason": null,
+        "fee": {
+          "status": "nao_avaliado",
+          "reason_code": "sem_taxa_utilizavel",
+          "rate_pct_year": null,
+          "kind": null,
+          "fee_status": "taxa divulgada não encontrada",
+          "origin": null,
+          "as_of": null,
+          "sources": []
+        },
+        "performance_fee_filed": false,
+        "notes": [
+          "Sem proventos: só a variação de preço da cota; os rendimentos distribuídos pelo FII não entram."
+        ],
+        "month_ends": [
+          {
+            "month": "2025-09-01",
+            "date": "2025-09-30",
+            "value": 160.0,
+            "null_reason": null
+          },
+          {
+            "month": "2025-10-01",
+            "date": "2025-10-31",
+            "value": 158.4,
+            "null_reason": null
+          },
+          {
+            "month": "2025-11-01",
+            "date": "2025-11-28",
+            "value": 159.19,
+            "null_reason": null
+          },
+          {
+            "month": "2025-12-01",
+            "date": "2025-12-31",
+            "value": 156.01,
+            "null_reason": null
+          },
+          {
+            "month": "2026-01-01",
+            "date": "2026-01-30",
+            "value": 157.57,
+            "null_reason": null
+          },
+          {
+            "month": "2026-02-01",
+            "date": "2026-02-27",
+            "value": 156.78,
+            "null_reason": null
+          },
+          {
+            "month": "2026-03-01",
+            "date": "2026-03-31",
+            "value": 154.43,
+            "null_reason": null
+          },
+          {
+            "month": "2026-04-01",
+            "date": "2026-04-30",
+            "value": 155.2,
+            "null_reason": null
+          },
+          {
+            "month": "2026-05-01",
+            "date": "2026-05-29",
+            "value": 153.65,
+            "null_reason": null
+          },
+          {
+            "month": "2026-06-01",
+            "date": "2026-06-30",
+            "value": 153.65,
+            "null_reason": null
+          },
+          {
+            "month": "2026-07-01",
+            "date": "2026-07-31",
+            "value": 155.19,
+            "null_reason": null
+          },
+          {
+            "month": "2026-08-01",
+            "date": "2026-08-31",
+            "value": 152.08,
+            "null_reason": null
+          },
+          {
+            "month": "2026-09-01",
+            "date": "2026-09-30",
+            "value": 151.32,
+            "null_reason": null
+          }
+        ],
+        "windows": {
+          "12m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2025-09-01",
+            "end_month": "2026-09-01",
+            "base_date": "2025-09-30",
+            "end_date": "2026-09-30",
+            "base_value": 160.0,
+            "end_value": 151.32,
+            "n_observations": 12,
+            "net_return_pct": -5.425,
+            "cdi_pct": 14.420517,
+            "cdi_base_date": "2025-09-30",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 261,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": -19.845517,
+            "volatility_annual_pct": 3.726851,
+            "volatility_note": "12 observações; estimativa ruidosa",
+            "max_drawdown_pct": -5.425,
+            "max_drawdown_peak_month": "2025-09-01",
+            "max_drawdown_trough_month": "2026-09-01",
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "nao_avaliado",
+            "fee_reason_code": "sem_taxa_utilizavel",
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": [
+              {
+                "tool": "quote_history",
+                "call_id": 49,
+                "args": {
+                  "p_ticker": "HGLG11",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30",
+                  "p_fields": [
+                    "close"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          },
+          "6m": {
+            "status": "avaliado",
+            "status_label": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2026-03-01",
+            "end_month": "2026-09-01",
+            "base_date": "2026-03-31",
+            "end_date": "2026-09-30",
+            "base_value": 154.43,
+            "end_value": 151.32,
+            "n_observations": 6,
+            "net_return_pct": -2.013857,
+            "cdi_pct": 6.907412,
+            "cdi_base_date": "2026-03-31",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 131,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": -8.921269,
+            "volatility_annual_pct": 3.746558,
+            "volatility_note": "6 observações; muito ruidosa",
+            "max_drawdown_pct": -2.5,
+            "max_drawdown_peak_month": "2026-04-01",
+            "max_drawdown_trough_month": "2026-09-01",
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": "nao_avaliado",
+            "fee_reason_code": "sem_taxa_utilizavel",
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [
+              "retorno do período de 6 meses, não anualizado"
+            ],
+            "sources": [
+              {
+                "tool": "quote_history",
+                "call_id": 49,
+                "args": {
+                  "p_ticker": "HGLG11",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30",
+                  "p_fields": [
+                    "close"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 8
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "quote_history",
+            "call_id": 49,
+            "args": {
+              "p_ticker": "HGLG11",
+              "p_from": "2025-09-01",
+              "p_to": "2026-09-30",
+              "p_fields": [
+                "close"
+              ]
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 9,
+        "linha_extrato": "CDB BANCO EXEMPLO",
+        "tipo": "CDB",
+        "cnpj": null,
+        "ticker": null,
+        "name": null,
+        "valor_brl": 270000.0,
+        "basis": null,
+        "basis_label": null,
+        "without_distributions": false,
+        "status": "nao_avaliado",
+        "status_label": "não avaliado",
+        "reason_code": "retorno_credito_sem_serie",
+        "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+        "fee": null,
+        "performance_fee_filed": false,
+        "notes": [],
+        "month_ends": [],
+        "windows": {
+          "12m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_credito_sem_serie",
+            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          },
+          "6m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_credito_sem_serie",
+            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 9
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 10,
+        "linha_extrato": "LCA BANCO EXEMPLO",
+        "tipo": "LCA",
+        "cnpj": null,
+        "ticker": null,
+        "name": null,
+        "valor_brl": 120000.0,
+        "basis": null,
+        "basis_label": null,
+        "without_distributions": false,
+        "status": "nao_avaliado",
+        "status_label": "não avaliado",
+        "reason_code": "retorno_credito_sem_serie",
+        "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+        "fee": null,
+        "performance_fee_filed": false,
+        "notes": [],
+        "month_ends": [],
+        "windows": {
+          "12m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_credito_sem_serie",
+            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          },
+          "6m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_credito_sem_serie",
+            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 10
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 11,
+        "linha_extrato": "CRA AGRO EXEMPLO",
+        "tipo": "CRA",
+        "cnpj": null,
+        "ticker": null,
+        "name": null,
+        "valor_brl": 95000.0,
+        "basis": null,
+        "basis_label": null,
+        "without_distributions": false,
+        "status": "nao_avaliado",
+        "status_label": "não avaliado",
+        "reason_code": "retorno_credito_sem_serie",
+        "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+        "fee": null,
+        "performance_fee_filed": false,
+        "notes": [],
+        "month_ends": [],
+        "windows": {
+          "12m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_credito_sem_serie",
+            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          },
+          "6m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_credito_sem_serie",
+            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 11
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 12,
+        "linha_extrato": "DEB ENERGIA EXEMPLO",
+        "tipo": "debênture",
+        "cnpj": null,
+        "ticker": null,
+        "name": null,
+        "valor_brl": 60000.0,
+        "basis": null,
+        "basis_label": null,
+        "without_distributions": false,
+        "status": "nao_avaliado",
+        "status_label": "não avaliado",
+        "reason_code": "retorno_credito_sem_serie",
+        "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+        "fee": null,
+        "performance_fee_filed": false,
+        "notes": [],
+        "month_ends": [],
+        "windows": {
+          "12m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_credito_sem_serie",
+            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          },
+          "6m": {
+            "status": "nao_avaliado",
+            "status_label": "não avaliado",
+            "reason_code": "retorno_credito_sem_serie",
+            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "base_month": null,
+            "end_month": null,
+            "base_date": null,
+            "end_date": null,
+            "base_value": null,
+            "end_value": null,
+            "n_observations": null,
+            "net_return_pct": null,
+            "cdi_pct": null,
+            "cdi_base_date": null,
+            "cdi_end_date": null,
+            "cdi_n_rates": null,
+            "cdi_reason_code": null,
+            "net_minus_cdi_pp": null,
+            "volatility_annual_pct": null,
+            "volatility_note": null,
+            "max_drawdown_pct": null,
+            "max_drawdown_peak_month": null,
+            "max_drawdown_trough_month": null,
+            "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
+            "fee_status": null,
+            "fee_reason_code": null,
+            "fee_pct_period": null,
+            "gross_return_est_pct": null,
+            "gross_label": "estimativa",
+            "fee_per_point": null,
+            "fee_per_point_excluded_from_aggregates": null,
+            "fee_per_point_note": null,
+            "sharpe_drag": null,
+            "sharpe_drag_note": null,
+            "notes": [],
+            "sources": []
+          }
+        },
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 12
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      }
+    ],
+    "n_lines": 12,
+    "n_evaluated": 6,
+    "n_not_evaluated": 6,
+    "coverage": {
+      "12m": {
+        "evaluated_value_brl": 4489073.3,
+        "coverage_portfolio_value_pct": 72.4462,
+        "n_evaluated": 6
+      },
+      "6m": {
+        "evaluated_value_brl": 4489073.3,
+        "coverage_portfolio_value_pct": 72.4462,
+        "n_evaluated": 6
+      }
+    }
+  },
   "assumptions": [
     {
       "id": "fee_units",
@@ -16665,6 +19060,10 @@
     {
       "id": "abnormal_movement",
       "text": "Movimento incomum (esquema 1.3): o retorno mensal da cota do fundo é comparado com o da sua classe ANBIMA conforme arquivada no Extrato da CVM, nos limiares do dono (atenção acima de 2 desvios padrão, só em tabela; forte acima de 3, no texto). Os limiares de materialidade de reapresentação seguem estacionados pelo dono."
+    },
+    {
+      "id": "returns",
+      "text": "Retorno por posição (esquema 1.10): 12 e 6 meses até o mês da posição, em valores de fim de mês servidos pelo SILO (cota mensal do fundo; fechamento com proventos da ação; fechamento sem proventos de ETF e FII). O retorno bruto é uma estimativa: líquido mais a taxa de administração divulgada do bloco de taxas, metade dela em 6 meses. Volatilidade amostral dos retornos mensais vezes raiz de 12; perda de Sharpe = taxa anual sobre volatilidade anualizada. Sem limiar, sem total da carteira e sem ranking."
     },
     {
       "id": "movement_class",
@@ -16740,6 +19139,13 @@
       "status": "complete",
       "reason": null,
       "reason_codes": []
+    },
+    "returns": {
+      "status": "partial",
+      "reason": "Há linhas sem retorno avaliado; cada linha informa o motivo.",
+      "reason_codes": [
+        "linhas_sem_retorno"
+      ]
     }
   },
   "provenance": [
@@ -17325,6 +19731,104 @@
       "row_count": 6,
       "error": null,
       "id": "p42"
+    },
+    {
+      "call_id": 43,
+      "tool": "macro_series",
+      "args": {
+        "p_series": "CDI",
+        "p_from": "2025-09-01",
+        "p_to": "2026-09-30"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 283,
+      "error": null,
+      "id": "p43"
+    },
+    {
+      "call_id": 44,
+      "tool": "quote_history",
+      "args": {
+        "p_ticker": "PETR4",
+        "p_from": "2025-09-01",
+        "p_to": "2026-09-30",
+        "p_fields": [
+          "close_total_return",
+          "close_total_return_null_reason"
+        ]
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 283,
+      "error": null,
+      "id": "p44"
+    },
+    {
+      "call_id": 45,
+      "tool": "fund_nav",
+      "args": {
+        "p_cnpj": "08935128000159",
+        "p_from": "2025-09-01",
+        "p_entity_type": "fi"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 13,
+      "error": null,
+      "id": "p45"
+    },
+    {
+      "call_id": 46,
+      "tool": "fund_nav",
+      "args": {
+        "p_cnpj": "50088190000119",
+        "p_from": "2025-09-01",
+        "p_entity_type": "fi"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 13,
+      "error": null,
+      "id": "p46"
+    },
+    {
+      "call_id": 47,
+      "tool": "fund_nav",
+      "args": {
+        "p_cnpj": "51488342000133",
+        "p_from": "2025-09-01",
+        "p_entity_type": "fi"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 13,
+      "error": null,
+      "id": "p47"
+    },
+    {
+      "call_id": 48,
+      "tool": "fund_nav",
+      "args": {
+        "p_cnpj": "42592315000115",
+        "p_from": "2025-09-01",
+        "p_entity_type": "fi"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 13,
+      "error": null,
+      "id": "p48"
+    },
+    {
+      "call_id": 49,
+      "tool": "quote_history",
+      "args": {
+        "p_ticker": "HGLG11",
+        "p_from": "2025-09-01",
+        "p_to": "2026-09-30",
+        "p_fields": [
+          "close"
+        ]
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 283,
+      "error": null,
+      "id": "p49"
     }
   ]
 }

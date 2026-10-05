@@ -66,6 +66,7 @@ One per published endpoint. Dates accept `date` objects or ISO strings; `None` m
 | `iter_quote_history(...)` · `quote_history_all(...)` | `quote_history` + `p_after` | pages on `trade_date`; never combine two data revisions |
 | `research_universe(as_of)` | `research_universe` | one row per ticker+ISIN pair; `as_of=T` keeps `first_observed <= T <= last_observed` |
 | `index_history(index, start, end)` · `iter_index_history(...)` · `index_history_all(...)` | `index_history` + `p_after` | an index **code**, never a ticker; IBOV from 1968 is 15 pages; every code is a total-return index, as B3 labels it |
+| `trade_consolidated_history(ticker, start, end)` · `iter_trade_consolidated_history(...)` · `trade_consolidated_history_all(...)` | `trade_consolidated_history` + `p_after` | B3's FORWARD segment (fixed-income ETFs such as IMAB11); the close is `last_price`, no open, not adjusted for distributions; a COTAHIST ticker is refused |
 | `iter_fund_nav(cnpj, entity_type, start, end)` · `fund_nav_all(...)` | `fund_nav` + `p_after` | **`entity_type` is required**, checked client-side |
 | `option_chain(prefix, trade_date, expiry_from, limit)` · `option_history(codneg, …)` · `option_exercises(prefix, …)` | options | prefix ≥ 3 chars, checked client-side |
 | `termo_history(codneg, start, end)` | `termo_history` | |
