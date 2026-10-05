@@ -486,7 +486,8 @@ Return block (#610, owner's resolution of 2026-10-05): implemented in the engine
 only, schema 1.10 `returns` (`src/portfolio/returns.py`; keys in
 [engine-output.md](../reference/portfolio/engine-output.md)). Remaining: the
 report adapter and HTML do not show it yet, and fixed-income ETFs stay "não
-avaliado" until `api.trade_consolidated_history` is served.
+avaliado" until `api.trade_consolidated_history` (catalog v65, #632) is deployed
+to the live MCP.
 
 **Superseded by map #510 (2026-10-03).** #340 and #341–#345 were closed as not
 planned on 2026-09-30. The demo is now map #510 (label `demo-diagnostico`),

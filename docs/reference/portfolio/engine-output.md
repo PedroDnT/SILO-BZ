@@ -653,7 +653,7 @@ still renders. The view holds no holder, account or statement-file identifier. U
 ## Tools the engine calls
 
 `fund_nav`, `quote_history`, `macro_series` and `trade_consolidated_history` (1.10, the return block; the last
-is not live yet and its unknown-tool answer is the expected `etf_rf_sem_api`), `portfolio_instruments` and `portfolio_fund_terms` (catalog v62), `portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57), `portfolio_lookthrough` (merged; the canned
+is catalog v65, merged in #632 and live once the analytical SQL and the MCP are deployed; until then its unknown-tool answer is the expected `etf_rf_sem_api`), `portfolio_instruments` and `portfolio_fund_terms` (catalog v62), `portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57), `portfolio_lookthrough` (merged; the canned
 rows follow their documented columns and have not been run against the live functions), and the
 existing `lookup`, `quote_latest`, `company_financials`, `short_interest`, `fidc_portfolio`,
 `fund_restatements`, `fund_restatement_diff` and the `screen_*` tools. Default client: the public
