@@ -15,7 +15,7 @@ It is not the daily picture: how the system runs is
 
 1. The Supabase project: `zcjbtpxuhdekpwcxmepn`.
 2. The **Session pooler** connection string (Supabase dashboard → Connect):
-   `postgresql://postgres.zcjbtpxuhdekpwcxmepn:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres`.
+   `postgresql://postgres.zcjbtpxuhdekpwcxmepn:<pw>@aws-1-<region>.pooler.supabase.com:5432/postgres`.
    - Use the **session pooler (port 5432)**, not the transaction pooler (6543):
      DDL/migrations and `execute_values` bulk upserts are happiest on a session
      connection, and it's IPv4 (works from CI/GitHub Actions). `scripts/db_parity.py`
@@ -29,7 +29,7 @@ It is not the daily picture: how the system runs is
 
 ### 1. Point the env at Supabase
 ```bash
-export POSTGRES_URL="postgresql://postgres.zcjbtpxuhdekpwcxmepn:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require"
+export POSTGRES_URL="postgresql://postgres.zcjbtpxuhdekpwcxmepn:<pw>@aws-1-<region>.pooler.supabase.com:5432/postgres?sslmode=require"
 ```
 (Locally: put it in `.env`. For automation: set the **GitHub secret**
 `POSTGRES_URL` — see step 7.)

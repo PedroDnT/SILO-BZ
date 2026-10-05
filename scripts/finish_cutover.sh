@@ -42,7 +42,7 @@ if [[ -z "$CI_URL" ]]; then
   if [[ "$POSTGRES_URL" == *"db."*".supabase.co"* ]]; then
     echo "  SKIPPED: POSTGRES_URL is the direct (IPv6-only) host — unsafe for CI."
     echo "  Set the session pooler URL and re-run, e.g.:"
-    echo "    export SUPABASE_POOLER_URL='postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require'"
+    echo "    export SUPABASE_POOLER_URL='postgresql://postgres.<ref>:<pw>@aws-1-sa-east-1.pooler.supabase.com:5432/postgres?sslmode=require'"
     echo "  (Supabase Dashboard -> Connect -> Session pooler). Secret left unchanged."
     CI_URL=""
   else
