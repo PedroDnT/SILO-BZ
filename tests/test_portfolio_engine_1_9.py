@@ -587,3 +587,19 @@ def test_the_largest_fund_sums_one_fund_held_in_two_accounts():
     ident = [dict(line_no=n, identity=dict(kind="fund", cnpj=c, name=f"FUNDO {c[:2]}")) for n, c in ((1, A), (2, B), (3, A))]
     row = _fund_row({"statement": {"positions": pos, "sum_of_lines_brl": 100.0}, "identification": {"lines": ident}})
     assert row["value_pct"] == 60.0 and row["line_nos"] == [1, 3] and "somados (mesmo fundo)" in row["source_path"]
+
+
+def test_a_fund_held_directly_and_inside_another_fund_is_one_overlap():
+    from src.portfolio.identify import LineId
+    from src.portfolio.lookthrough import shared_exposure
+    s = stmt(fund("ETF DEB", None, 100.0, tipo="ETF"), fund("FIC CRED", B, 200.0), fund("FUNDO X", C, 50.0), fund("FUNDO X", C, 50.0))
+    li = [LineId(position=p) for p in s.positions]
+    li[0].kind, li[0].etf_cnpj = "ticker", A
+    for x in li[1:]:
+        x.kind, x.cnpj = "fund", x.position.codigo
+    node = {"fund_cnpj": A, "fund_name": "ETF DEB", "value_brl": 20.0, "sources": []}
+    groups = shared_exposure(li, {1: [], 2: [], 3: [], 4: []}, {2: [node]})["groups"]
+    g = [x for x in groups if x["kind"] == "mesmo_fundo_investido"]
+    assert len(g) == 1 and g[0]["fund_cnpj"] == A and g[0]["line_nos"] == [1, 2] and g[0]["direct_line_nos"] == [1]
+    # the same fund on two direct lines (two accounts) is one position, not an overlap
+    assert not any(x.get("fund_cnpj") == C for x in groups)

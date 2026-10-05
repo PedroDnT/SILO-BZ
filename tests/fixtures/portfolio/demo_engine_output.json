@@ -9002,16 +9002,19 @@
             4,
             5
           ],
+          "direct_line_nos": [],
           "lines": [
             {
               "line_no": 4,
               "linha_extrato": "XP BANCOS FIC",
-              "exposure_brl": 1382639.4
+              "exposure_brl": 1382639.4,
+              "direct": false
             },
             {
               "line_no": 5,
               "linha_extrato": "XP LIQUIDEZ FIC",
-              "exposure_brl": 902139.55
+              "exposure_brl": 902139.55,
+              "direct": false
             }
           ],
           "total_exposure_brl": 2284778.95,
@@ -9051,16 +9054,19 @@
             4,
             5
           ],
+          "direct_line_nos": [],
           "lines": [
             {
               "line_no": 4,
               "linha_extrato": "XP BANCOS FIC",
-              "exposure_brl": 26955.64
+              "exposure_brl": 26955.64,
+              "direct": false
             },
             {
               "line_no": 5,
               "linha_extrato": "XP LIQUIDEZ FIC",
-              "exposure_brl": 16078.12
+              "exposure_brl": 16078.12,
+              "direct": false
             }
           ],
           "total_exposure_brl": 43033.76,
@@ -9124,16 +9130,19 @@
             4,
             5
           ],
+          "direct_line_nos": [],
           "lines": [
             {
               "line_no": 4,
               "linha_extrato": "XP BANCOS FIC",
-              "exposure_brl": 52637.16
+              "exposure_brl": 52637.16,
+              "direct": false
             },
             {
               "line_no": 5,
               "linha_extrato": "XP LIQUIDEZ FIC",
-              "exposure_brl": 31396.26
+              "exposure_brl": 31396.26,
+              "direct": false
             }
           ],
           "total_exposure_brl": 84033.42,

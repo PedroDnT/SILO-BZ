@@ -558,10 +558,19 @@ def shared_exposure(
         for n in nodes:
             if n.get("fund_cnpj"):
                 by_fund[str(n["fund_cnpj"])].append((ln, n))
+    # A fund or ETF held directly is the same fund when another line holds it underneath (real statement,
+    # 2026-10-05: an ETF bought directly and also inside a credit fund's master). Only with at least one
+    # look-through leg: two direct lines of one fund are one position in two accounts, not an overlap.
+    for li in lines:
+        c = li.cnpj if li.kind == "fund" else li.etf_cnpj
+        if c and str(c) in by_fund:
+            by_fund[str(c)].append((li.line_no, {"fund_cnpj": c, "fund_name": li.name or li.position.linha_extrato,
+                                                 "value_brl": float(li.position.valor), "direct": True, "sources": []}))
     for cnpj, members in sorted(by_fund.items()):
         line_nos = sorted({ln for ln, _ in members})
-        if len(line_nos) < 2:
+        if len(line_nos) < 2 or all(n.get("direct") for _, n in members):
             continue
+        direct = sorted({ln for ln, n in members if n.get("direct")})
         per_line: dict[int, Decimal] = defaultdict(Decimal)
         for ln, n in members:
             per_line[ln] += dec(n.get("value_brl")) or Decimal("0")
@@ -571,8 +580,9 @@ def shared_exposure(
                 "label": f"fundo {cnpj} ({members[0][1].get('fund_name')})",
                 "fund_cnpj": cnpj,
                 "line_nos": line_nos,
+                "direct_line_nos": direct,
                 "lines": [
-                    {"line_no": ln, "linha_extrato": names[ln], "exposure_brl": brl(v)}
+                    {"line_no": ln, "linha_extrato": names[ln], "exposure_brl": brl(v), "direct": ln in direct}
                     for ln, v in sorted(per_line.items())
                 ],
                 "total_exposure_brl": brl(sum(per_line.values(), Decimal("0"))),

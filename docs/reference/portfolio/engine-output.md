@@ -43,7 +43,9 @@ with its defaults (above 1000 rows on 2026-10-05), so it is called once per wors
 2026-10-05): a `renamed` finding is written only when the name led the identification (`match_kind` other than
 `cnpj`), since CVM 175 renamed almost every fund; `concentracao_fundo` sums the lines of one fund (same CNPJ, else
 same code) held in several accounts; the `indexador` row carries `check_label` when more than 25% of the portfolio has
-no indexer (`INDEXER_UNCLASSIFIED_CHECK_PCT`).
+no indexer (`INDEXER_UNCLASSIFIED_CHECK_PCT`). `look_through.shared_exposure.groups[]` of kind
+`mesmo_fundo_investido` gain `direct_line_nos` and `lines[].direct`: a fund or ETF held directly joins the group when
+another line holds the same CNPJ underneath (never two direct lines alone).
 
 1.8 (owner's brief of 2026-10-04: charts, a clear fee total and the main risks). Keys were added, none renamed,
 retyped or removed. **New section `allocation`** and **new section `risks`** (below), placed after `concentration`

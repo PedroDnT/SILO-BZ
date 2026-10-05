@@ -393,9 +393,15 @@ def template_findings(engine: dict) -> dict:
             txt += f" Pela linha {{{{{q}.legs[{j}].line_id}}}} ({{{{{q}.legs[{j}].via}}}}): {{{{{q}.legs[{j}].value_brl}}}}."
         add("exposicao", "Exposição compartilhada", txt, s.get("provenance"))
         if s.get("level") == "fundo" and not s.get("same_position"):
-            add("achados", "Duas linhas, uma carteira por baixo",
-                f"Duas linhas do extrato investem no mesmo fundo, {name}. "
-                "Elas parecem diversificação, mas por baixo são a mesma carteira.", s.get("provenance"))
+            direct = next((j for j, leg in enumerate(s.get("legs") or []) if leg.get("via") == "direto"), None)
+            if direct is not None:  # engine 1.9: one leg holds the fund itself, another holds it inside a fund
+                add("achados", "O mesmo fundo, direto e por dentro",
+                    f"A linha {{{{{q}.legs[{direct}].line_id}}}} detém diretamente o {name}, e outra linha "
+                    "o detém por dentro de um fundo: parece diversificação, mas é a mesma carteira.", s.get("provenance"))
+            else:
+                add("achados", "Duas linhas, uma carteira por baixo",
+                    f"Duas linhas do extrato investem no mesmo {name}. "
+                    "Elas parecem diversificação, mas por baixo são a mesma carteira.", s.get("provenance"))
     ix = engine.get("indexer") or {}
     buckets = ix.get("buckets") or []
     if buckets:
