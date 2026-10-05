@@ -22,6 +22,7 @@ from src.portfolio.common import add_months, brl, iso, month_start, statement_so
 from src.portfolio.concentration import compute_concentration
 from src.portfolio.consolidate import merge_same_identity
 from src.portfolio.fees import compute_fees, summarize
+from src.portfolio.fee_peers import compute_fee_peers
 from src.portfolio.identify import LineId, identify
 from src.portfolio.indexer import compute_indexer
 from src.portfolio.liquidity import compute_liquidity
@@ -256,6 +257,7 @@ def run_engine(
     add_portfolio_shares(look, exposures, stmt.sum_of_lines)
     fund_nodes = {ln["line_no"]: ln.get("fund_nodes", []) for ln in look["lines"]}
     fees = compute_fees(lines, client, params.fee_month, fund_nodes)
+    fees["comparison"] = compute_fee_peers(lines, fees, client, clock().astimezone(dt.timezone.utc).date(), stmt.sum_of_lines)
     _fee_totals_as_portfolio_pct(fees, stmt.sum_of_lines)
     unexplained = _unexplained_values(lines, look)
     indexer = compute_indexer(lines, exposures, unexplained)

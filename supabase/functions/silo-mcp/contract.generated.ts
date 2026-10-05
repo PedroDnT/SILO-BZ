@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "63";
+export const CONTRACT_VERSION = "64";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -3099,6 +3099,40 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_ids"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_fee_peers": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_fee_peers",
+    "description": "Administration fee comparison (catalog v63), one row per distinct input CNPJ. Latest CVM Extrato only, not a historical backtest: p_as_of (default today) dates the comparison, excludes future documents and fees older than 36 months. Peers have a FI quota in the three reference months ending in p_as_of month, the SAME filed ANBIMA class, FUNDO_COTAS S/N and TP_FUNDO_CLASSE FI/CLASSES - FIF. Cohort includes the target when eligible; at least 30 usable fees (0 < fee <= 5), no broader fallback. n_excluded counts unusable fees in that cohort; oldest/newest date the usable peer documents. p25/median/p75 are annual administration fees, percentile is midrank (half weight for ties), difference_pp is target minus median. No performance fee, expense ratio, ETF comparison, alternative or saving estimate. not_compared carries a reason_code and NULL comparison statistics. Source values are never rescaled. 1 to 200 CNPJs per call, punctuation stripped and padded to 14 digits; invalid input or more than 200 raises 22023; one page, never trimmed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpjs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_as_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        }
+      },
+      "required": [
+        "p_cnpjs"
       ],
       "additionalProperties": false
     }

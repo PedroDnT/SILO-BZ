@@ -476,6 +476,12 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 
 ## 15. Portfolio diagnosis: decisions still open (2026-09-26)
 
+Fee comparison slice (#614 / #609): implemented as `api.portfolio_fee_peers` and
+`fees.comparison`; see [method and rollout](../reference/portfolio/fee-peer-comparison.md).
+Analytical SQL, MCP and engine deployment plus live coverage/cold performance
+validation remain. Equivalent products are still undecided; this slice does not
+complete #609, #606 (return engine) or #607 (brief).
+
 **Superseded by map #510 (2026-10-03).** #340 and #341–#345 were closed as not
 planned on 2026-09-30. The demo is now map #510 (label `demo-diagnostico`),
 built on the Phase 0 note `docs/reference/research/portfolio-diagnosis-phase0.md`.

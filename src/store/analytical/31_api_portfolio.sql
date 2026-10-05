@@ -2250,4 +2250,114 @@ GRANT EXECUTE ON FUNCTION api.portfolio_fund_terms(TEXT[]) TO silo_api;
 COMMENT ON FUNCTION api.portfolio_fund_terms(TEXT[]) IS
     'Who runs a fund and how long a redemption takes (catalog v62). One row per input CNPJ (punctuation stripped, padded to 14 digits; an entry that is not a CNPJ comes back with cnpj NULL and a reason). gestor_id, gestor_name, admin_cnpj and admin_name are as filed in cvm_fund_registry; a CNPJ with several registry rows (one per entity_type) uses one, picked by is_active first, then no dt_cancel, then the newest dt_cancel, then the newest fetched_at, then entity_type, and the reason names it. gestor_id can be a CPF and is never read as a CNPJ. The redemption terms (qt_dia_conversao_cota, qt_dia_pagto_resgate, tp_dia_pagto_resgate, qt_dia_resgate_cotas = lock-up) come from the CVM Extrato das Informacoes (vw_fi_extrato_latest, terms_source extrato, terms_dt_comptc = the filed version''s DT_COMPTC), and only when the CNPJ has no Extrato from the lamina (vw_fi_lamina_latest, terms_source lamina: QT_DIA_CONVERSAO_COTA_RESGATE and QT_DIA_CAREN mapped by name to the same meanings; the row with no subclass, else the newest). Values are as filed, never rescaled; NULL is not filed, never zero. A fund in neither document (a FII, FIDC, FIP or FIAGRO, a closed fund) has every term NULL and the reason says so (Portuguese). More than 200 CNPJs RAISES 22023; the result is one row per input, at most one 1000-row page.';
 
+-- Fee peers (#608/#609): the latest filed Extrato, not a historical backtest.
+-- Same ANBIMA class, FUNDO_COTAS and document scope; no broader fallback.
+CREATE OR REPLACE FUNCTION api.portfolio_fee_peers(
+    p_cnpjs TEXT[],
+    p_as_of DATE DEFAULT CURRENT_DATE
+)
+RETURNS TABLE (
+    cnpj TEXT, classe_anbima TEXT, fundo_cotas TEXT, tp_fundo_classe TEXT,
+    taxa_adm NUMERIC, fee_as_of DATE, comparison_as_of DATE,
+    activity_from DATE, activity_to DATE,
+    n_peers INT, n_excluded INT, peer_fee_oldest DATE, peer_fee_newest DATE,
+    p25_pct_year NUMERIC, median_pct_year NUMERIC, p75_pct_year NUMERIC,
+    percentile_pct NUMERIC, difference_pp NUMERIC,
+    status TEXT, reason_code TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+#variable_conflict use_column
+DECLARE
+    v_n INT := COALESCE(cardinality(p_cnpjs), 0);
+    v_as_of DATE := COALESCE(p_as_of, CURRENT_DATE);
+    v_month DATE := date_trunc('month', COALESCE(p_as_of, CURRENT_DATE))::date;
+    v_ids TEXT[];
+BEGIN
+    IF v_n = 0 OR v_n > 200 THEN
+        RAISE EXCEPTION 'portfolio_fee_peers: needs 1 to 200 CNPJs; more than 200 is refused. To fix: split the set into calls of at most 200.'
+            USING ERRCODE = '22023';
+    END IF;
+    IF EXISTS (SELECT 1 FROM unnest(p_cnpjs) u(x)
+               WHERE x IS NULL OR regexp_replace(x, '\D', '', 'g') !~ '^[0-9]{1,14}$') THEN
+        RAISE EXCEPTION 'portfolio_fee_peers: every entry must be a CNPJ (up to 14 digits, punctuation ignored).'
+            USING ERRCODE = '22023';
+    END IF;
+    SELECT array_agg(DISTINCT lpad(regexp_replace(x, '\D', '', 'g'), 14, '0'))
+      INTO v_ids FROM unnest(p_cnpjs) u(x);
+
+    RETURN QUERY
+    WITH active AS MATERIALIZED (
+        SELECT DISTINCT f.cnpj
+        FROM public.fact_fund_monthly f
+        WHERE f.entity_type = 'fi' AND f.vl_quota IS NOT NULL
+          AND f.period BETWEEN (v_month - INTERVAL '2 months')::date AND v_month
+    ), ext AS MATERIALIZED (
+        SELECT e.cnpj, NULLIF(btrim(e.classe_anbima), '') AS cls,
+               e.fundo_cotas AS fc, e.tp_fundo_classe AS scope,
+               e.taxa_adm AS fee, e.dt_comptc AS dt,
+               (e.taxa_adm > 0 AND e.taxa_adm <= 5
+                AND e.dt_comptc BETWEEN (v_as_of - INTERVAL '36 months')::date AND v_as_of) AS usable
+        FROM public.vw_fi_extrato_latest e
+    ), targets AS (
+        SELECT i.id, e.* FROM unnest(v_ids) i(id) LEFT JOIN ext e ON e.cnpj = i.id
+    ), groups AS (
+        SELECT e.cls, e.fc, e.scope,
+               count(*) FILTER (WHERE e.usable)::int AS n,
+               count(*) FILTER (WHERE e.usable IS NOT TRUE)::int AS excluded,
+               min(e.dt) FILTER (WHERE e.usable) AS oldest,
+               max(e.dt) FILTER (WHERE e.usable) AS newest,
+               percentile_cont(0.25) WITHIN GROUP (ORDER BY e.fee) FILTER (WHERE e.usable)::numeric AS p25,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY e.fee) FILTER (WHERE e.usable)::numeric AS median,
+               percentile_cont(0.75) WITHIN GROUP (ORDER BY e.fee) FILTER (WHERE e.usable)::numeric AS p75,
+               array_agg(e.fee) FILTER (WHERE e.usable) AS fees
+        FROM ext e JOIN active a ON a.cnpj = e.cnpj
+        WHERE e.cls IS NOT NULL AND e.fc IN ('S', 'N') AND e.scope IN ('FI', 'CLASSES - FIF')
+          AND EXISTS (SELECT 1 FROM targets t WHERE t.cls = e.cls AND t.fc = e.fc AND t.scope = e.scope)
+        GROUP BY e.cls, e.fc, e.scope
+    ), evaluated AS (
+        SELECT t.*, g.n, g.excluded, g.oldest, g.newest, g.p25, g.median, g.p75, g.fees,
+               CASE WHEN t.cnpj IS NULL THEN 'sem_extrato_comparavel'
+                    WHEN t.cls IS NULL THEN 'sem_classe_comparavel'
+                    WHEN t.fc NOT IN ('S', 'N') OR t.fc IS NULL THEN 'sem_tipo_comparavel'
+                    WHEN t.scope NOT IN ('FI', 'CLASSES - FIF') OR t.scope IS NULL THEN 'sem_escopo_comparavel'
+                    WHEN t.fee IS NULL OR t.fee <= 0 OR t.fee > 5 THEN 'taxa_nao_utilizavel'
+                    WHEN t.dt > v_as_of THEN 'taxa_data_futura'
+                    WHEN t.usable IS NOT TRUE THEN 'taxa_defasada_comparacao'
+                    WHEN COALESCE(g.n, 0) < 30 THEN 'pares_insuficientes'
+                    ELSE NULL END AS why
+        FROM targets t LEFT JOIN groups g ON g.cls = t.cls AND g.fc = t.fc AND g.scope = t.scope
+    ), page AS MATERIALIZED (
+        SELECT t.id AS cnpj, t.cls AS classe_anbima, t.fc AS fundo_cotas, t.scope AS tp_fundo_classe,
+               t.fee AS taxa_adm, t.dt AS fee_as_of, v_as_of AS comparison_as_of,
+               (v_month - INTERVAL '2 months')::date AS activity_from, v_month AS activity_to,
+               COALESCE(t.n, 0) AS n_peers, COALESCE(t.excluded, 0) AS n_excluded,
+               t.oldest AS peer_fee_oldest, t.newest AS peer_fee_newest,
+               CASE WHEN t.why IS NULL THEN round(t.p25, 6) END AS p25_pct_year,
+               CASE WHEN t.why IS NULL THEN round(t.median, 6) END AS median_pct_year,
+               CASE WHEN t.why IS NULL THEN round(t.p75, 6) END AS p75_pct_year,
+               CASE WHEN t.why IS NULL THEN
+                   (SELECT round(100.0 * (count(*) FILTER (WHERE fee < t.fee)
+                            + 0.5 * count(*) FILTER (WHERE fee = t.fee)) / t.n, 4)
+                    FROM unnest(t.fees) u(fee)) END AS percentile_pct,
+               CASE WHEN t.why IS NULL THEN round(t.fee - t.median, 6) END AS difference_pp,
+               CASE WHEN t.why IS NULL THEN 'compared' ELSE 'not_compared' END AS status,
+               t.why AS reason_code
+        FROM evaluated t ORDER BY t.id LIMIT 1001
+    )
+    SELECT p.* FROM page p
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_fee_peers')
+    ORDER BY p.cnpj;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) TO silo_api;
+COMMENT ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) IS
+    'Administration fee comparison (catalog v63), one row per distinct input CNPJ. Latest CVM Extrato only, not a historical backtest: p_as_of (default today) dates the comparison, excludes future documents and fees older than 36 months. Peers have a FI quota in the three reference months ending in p_as_of month, the SAME filed ANBIMA class, FUNDO_COTAS S/N and TP_FUNDO_CLASSE FI/CLASSES - FIF. Cohort includes the target when eligible; at least 30 usable fees (0 < fee <= 5), no broader fallback. n_excluded counts unusable fees in that cohort; oldest/newest date the usable peer documents. p25/median/p75 are annual administration fees, percentile is midrank (half weight for ties), difference_pp is target minus median. No performance fee, expense ratio, ETF comparison, alternative or saving estimate. not_compared carries a reason_code and NULL comparison statistics. Source values are never rescaled. 1 to 200 CNPJs per call, punctuation stripped and padded to 14 digits; invalid input or more than 200 raises 22023; one page, never trimmed.';
+
 COMMIT;

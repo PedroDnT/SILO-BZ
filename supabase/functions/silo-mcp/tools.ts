@@ -107,6 +107,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   // The portfolio-diagnosis reads: statement lines to funds (ambiguity flagged,
   // never picked), disclosed fee beside a balancete estimate, look-through.
   t("portfolio_resolve", "Resolve statement lines to funds (name history, quota tie-break)"),
+  t("portfolio_fee_peers", "Administration fee versus comparable FI peers (class, fund-of-funds flag and scope)"),
   t("portfolio_fees", "Fees: disclosed (Extrato, lamina, cad_fi) beside a balancete estimate"),
   t("portfolio_lookthrough", "Look-through of funds into their holdings (CDA blocks 1, 2, 4, 6)"),
   t("portfolio_movement", "Is a fund's month unusual for its ANBIMA class (quota return, winsorized z, nao_avaliado with reason)"),

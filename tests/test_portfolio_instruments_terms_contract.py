@@ -92,7 +92,7 @@ def test_refusals_say_why_and_how():
         assert body.count("ERRCODE = '22023'") == 2
     helper = _strip(SQL19[SQL19.index("FUNCTION api.assert_row_cap"):SQL19.index("COMMENT ON FUNCTION api.assert_row_cap")])
     assert "p_fn = 'portfolio_instruments'" in helper
-    assert re.search(r"'portfolio_movement',\s*'portfolio_fund_terms'\) THEN", helper)
+    assert re.search(r"'portfolio_movement',\s*'portfolio_fund_terms',\s*'portfolio_fee_peers'\) THEN", helper)
 
 
 def test_instruments_normalise_and_read_paths():
