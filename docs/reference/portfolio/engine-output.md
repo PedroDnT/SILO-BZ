@@ -588,7 +588,7 @@ quedas dentro do mês não aparecem"), `fee_status`, `fee_reason_code`, `fee_pct
 for `6m`), `gross_return_est_pct` (net + `fee_pct_period`) with `gross_label` "estimativa", `fee_per_point`
 (`fee_pct_period` ÷ gross, a ratio; null when the gross is exactly 0), `fee_per_point_excluded_from_aggregates`
 (true when the gross is ≤ 0: a negative value is shown as computed and never enters a mean, median or ranking),
-`fee_per_point_note`, `sharpe_drag` (annual fee ÷ annualized volatility, both windows: the Sharpe the fee takes)
+`fee_per_point_note`, `sharpe_drag` (annual fee ÷ annualized volatility, both windows: the Sharpe the fee takes; null with a "não aplicável" note when the annualized volatility is below 1% a.a., a cash-like fund, owner 2026-10-05)
 and `sharpe_drag_note`, `notes`, `sources`; where it applies, `missing_months` and `null_reasons`.
 
 The CDI is `macro_series('CDI', base month, position date)`, compounded by B3's DI-factor convention: daily factors
