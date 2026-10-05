@@ -406,7 +406,7 @@ tickers (67 on 2026-09-29), so `quote_history` and `panel` have nothing for them
   can read `b3_trade_consolidated`. Executed checks:
   `tests/sql/trade_consolidated_history_behaviour.sql`.
 
-### The portfolio reads (catalog v51, v54, v61, v63, v66)
+### The portfolio reads (catalog v51, v54, v61, v63, v66, v67)
 
 Eight functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
 map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`): three since v51,
@@ -551,7 +551,11 @@ one ANBIMA class as filed. None is a name search that guesses.
   (`numero_serie`, `classe`) at its highest `versao`, with `instrument_type`
   (`cra_mensal` / `cri_mensal`), `cnpj_securit`, `data_vencimento`, `situacao`,
   `taxa_juros` (text), `classificacao_risco_atual` and `valor_total_integralizado` as
-  filed. Else `'cda_ticker'`: a debenture in CDA block 4 (`tp_aplic = 'Debêntures'`)
+  filed, and (v67) `cd_isin` = the series' `codigo_isin` as filed: B3 Fundos.NET
+  finds a CRA or CRI certificate only by its ISIN, never by the CETIP code. It is
+  not validated: in 2026-08, 1,136 of 1,148 CRA rows and 4,731 of 4,862 CRI rows
+  carried a well-formed ISIN, and the rest filed `00000`, `NÃO TEM`, a CETIP-like
+  code or nothing, so check the shape (`BR` + 9 characters + a digit). Else `'cda_ticker'`: a debenture in CDA block 4 (`tp_aplic = 'Debêntures'`)
   at the newest month the code appears in (`cda_period`), with `cd_isin` (the most
   common ISIN), `issuer_code` (ISIN characters 3-6, never a CNPJ), `n_fundos` and
   `preco_marcacao_fundos` = sum of the funds' market value / sum of their quantity

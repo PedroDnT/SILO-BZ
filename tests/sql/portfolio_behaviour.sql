@@ -1,6 +1,6 @@
 -- Executed checks for the portfolio-diagnosis reads (31_api_portfolio.sql:
 -- api.portfolio_resolve, api.portfolio_fees, api.portfolio_lookthrough, catalog
--- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56; ETF cotistas and PL, v57; api.portfolio_instruments and api.portfolio_fund_terms, v61). Regex tests pin the SQL text; this proves it DOES the right thing on
+-- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56; ETF cotistas and PL, v57; api.portfolio_instruments and api.portfolio_fund_terms, v61; a CRA / CRI series' ISIN, v67). Regex tests pin the SQL text; this proves it DOES the right thing on
 -- rows. Synthetic CNPJs, inside a transaction that is rolled back, so it runs
 -- on any database with the schema and the analytical layer applied (CI's
 -- sql-compile job, or a scratch copy):
@@ -976,21 +976,21 @@ CREATE OR REPLACE VIEW public.vw_fi_lamina_latest AS SELECT * FROM public.zz_lam
 INSERT INTO cvm_securit_serie
     (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, classe, numero_serie,
      codigo_cetip, data_vencimento, situacao, valor_total_integralizado, taxa_juros,
-     classificacao_risco_atual, versao, occurrence)
+     classificacao_risco_atual, versao, occurrence, codigo_isin)
 VALUES
     -- an older informe: never served once a newer one holds the code
     ('cra_mensal', '87000000000101', 'BRZZZZCRA001', '2026-06-01', 'Sênior', 3, 'CRAZZ00001T',
-     '2031-04-16', 'Inadimplente', 900, 'IPCA + 7%', 'brA', 1, 1),
-    -- the newest informe, refiled: versao 2 wins over versao 1
+     '2031-04-16', 'Inadimplente', 900, 'IPCA + 7%', 'brA', 1, 1, 'BRZZZZCRAOLD'),
+    -- the newest informe, refiled: versao 2 wins over versao 1, its ISIN too (v67)
     ('cra_mensal', '87000000000101', 'BRZZZZCRA001', '2026-07-01', 'Sênior', 3, 'CRAZZ00001T',
-     '2031-04-16', 'Adimplente', 1000, 'IPCA + 7%', 'brA', 1, 1),
+     '2031-04-16', 'Adimplente', 1000, 'IPCA + 7%', 'brA', 1, 1, 'BRZZZZCRAV10'),
     ('cra_mensal', '87000000000101', 'BRZZZZCRA001', '2026-07-01', 'Sênior', 3, 'CRAZZ00001T',
-     '2031-04-16', 'Adimplente', 1100, 'IPCA + 7%', 'brAA', 2, 2),
-    -- one CETIP code, two series: both returned
+     '2031-04-16', 'Adimplente', 1100, 'IPCA + 7%', 'brAA', 2, 2, 'BRZZZZCRA001'),
+    -- one CETIP code, two series: both returned; an ISIN filed as text that is no ISIN is served as filed
     ('cri_mensal', '87000000000102', 'BRZZZZCRI001', '2026-07-01', 'Sênior', 1, '26ZZ000001',
-     '2033-11-16', 'Adimplente', 500, 'CDI + 2%', NULL, 1, 1),
+     '2033-11-16', 'Adimplente', 500, 'CDI + 2%', NULL, 1, 1, 'BRZZZZCRI001'),
     ('cri_mensal', '87000000000102', 'BRZZZZCRI001', '2026-07-01', 'Subordinada', 2, '26ZZ000001',
-     '2033-11-16', 'Adimplente', 100, 'CDI + 5%', NULL, 1, 1);
+     '2033-11-16', 'Adimplente', 100, 'CDI + 5%', NULL, 1, 1, 'NÃO TEM');
 
 INSERT INTO cvm_fi_cda_acoes (cnpj, period, tp_aplic, tp_ativo, cd_ativo, cd_isin, qt_pos_final, vl_merc_pos_final, raw) VALUES
     -- ZZDB11 a debenture: an older month, then three funds in the newest, two ISINs
@@ -1034,7 +1034,8 @@ BEGIN
     IF r.code IS DISTINCT FROM 'CRAZZ00001T' OR r.match_kind IS DISTINCT FROM 'securit_cetip' OR r.instrument_type IS DISTINCT FROM 'cra_mensal'
        OR r.data_referencia IS DISTINCT FROM DATE '2026-07-01' OR r.valor_total_integralizado IS DISTINCT FROM 1100
        OR r.classificacao_risco_atual IS DISTINCT FROM 'brAA' OR r.situacao IS DISTINCT FROM 'Adimplente' OR r.numero_serie IS DISTINCT FROM 3
-       OR r.cnpj_securit IS DISTINCT FROM '87000000000101' OR r.cd_isin IS NOT NULL OR r.n_fundos IS NOT NULL
+       OR r.cnpj_securit IS DISTINCT FROM '87000000000101' OR r.cd_isin IS DISTINCT FROM 'BRZZZZCRA001'
+       OR r.issuer_code IS NOT NULL OR r.n_fundos IS NOT NULL
        OR r.line_no IS DISTINCT FROM 1 OR r.input_code IS DISTINCT FROM ' cra-crazz00001t ' OR COALESCE(r.reason, '') NOT LIKE '%versão 2%' THEN
         RAISE EXCEPTION 'securit_cetip: % % % % % % %', r.code, r.match_kind, r.data_referencia,
             r.valor_total_integralizado, r.classificacao_risco_atual, r.numero_serie, r.reason;
@@ -1047,10 +1048,14 @@ BEGIN
         RAISE EXCEPTION 'no hyphen, no strip: % %', r.code, r.match_kind;
     END IF;
     -- One code, two series: both, in series order.
-    SELECT count(*), string_agg(classe, ',' ORDER BY numero_serie) INTO r
+    SELECT count(*), string_agg(classe, ',' ORDER BY numero_serie), string_agg(cd_isin, ',' ORDER BY numero_serie) AS isins INTO r
     FROM api.portfolio_instruments(ARRAY['CRI-26ZZ000001']);
     IF r.count IS DISTINCT FROM 2 OR r.string_agg IS DISTINCT FROM 'Sênior,Subordinada' THEN
         RAISE EXCEPTION 'two series: % %', r.count, r.string_agg;
+    END IF;
+    -- v67: each series' codigo_isin as filed, never validated or nulled
+    IF r.isins IS DISTINCT FROM 'BRZZZZCRI001,NÃO TEM' THEN
+        RAISE EXCEPTION 'securit cd_isin as filed: %', r.isins;
     END IF;
 
     -- Debenture: the newest month, three funds, the most common ISIN, the funds' mark.
