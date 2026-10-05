@@ -4,7 +4,8 @@ The Redator, the Revisor and the renderer were written against a view of the eng
 (``tests/fixtures/portfolio/report_provisional_engine_output.json``: ``lines``, ``fees.by_line``,
 ``lookthrough.shared_exposure``, ``indexer.buckets``...). The engine's own schema is richer and
 named differently (``docs/reference/portfolio/engine-output.md``), so this module is the mapping
-table of that page as code: it renames, selects and reshapes. It computes no figure: every number
+table of that page as code: it renames, selects and reshapes. It computes no figure, with one exception
+(``cda_age_months``, two engine dates subtracted): every number
 is copied from the engine document (percentages the view needs are fields the engine writes,
 ``portfolio_pct`` and friends), and every label that says what a fee is comes from the engine.
 
@@ -468,10 +469,94 @@ def _lookthrough_view(eng: dict, names: dict[int, str]) -> dict:
         "max_depth": lt.get("max_depth"),
         "n_shared_groups": len(groups),
         "n_shared_groups_shown": len(shown),
+        "economic_group_assessed": lt["shared_exposure"].get("economic_group_assessed"),
         "economic_group_note": lt["shared_exposure"].get("note"),
         "shared_exposure": shared,
+        "exposure_origin": _exposure_origin(eng),
         "top_underlying": top,
     }
+
+
+ORIGIN_ASSETS = 5
+CENTAVO = 0.01
+
+
+def _month_index(iso: Any) -> int | None:
+    """``year * 12 + month`` of an ISO ``YYYY-MM-...`` date string, or None."""
+    if not isinstance(iso, str) or len(iso) < 7 or iso[4] != "-":
+        return None
+    try:
+        return int(iso[:4]) * 12 + int(iso[5:7])
+    except ValueError:
+        return None
+
+
+def cda_age_months(period: Any, position_date: Any) -> int | None:
+    """Whole calendar months from the CDA month (an exposure's ``period``) to the statement's position date. The one
+    figure of the exposure-origin chart that is not copied: two engine dates, subtracted by month. None when either
+    date is missing or the CDA month is after the statement (the chart then prints the month only)."""
+    a, b = _month_index(period), _month_index(position_date)
+    if a is None or b is None or b < a:
+        return None
+    return b - a
+
+
+def _asset_match(label: Any, exposure: dict) -> bool:
+    """Whether an exposure is the asset of a ``mesmo_ativo`` group: the engine labels a group ``<asset_key> (<isin>)``
+    (``lookthrough._label``) and groups by asset key or ISIN."""
+    text = str(label or "")
+    key, isin = text, None
+    if text.endswith(")") and " (" in text:
+        key, isin = text[: text.rindex(" (")], text[text.rindex(" (") + 2:-1]
+    tokens = {t.strip().upper() for t in (key, isin) if t and t.strip()}
+    return bool(tokens & {str(exposure.get(k)).strip().upper() for k in ("asset_key", "isin") if exposure.get(k)})
+
+
+def _origin_segment(eng: dict, line: dict, label: Any, position_date: Any) -> dict:
+    """One statement line of an asset: the direct holding or the fund the asset is reached through.
+
+    The weight inside the fund and the CDA month are copied from the line's ``look_through.lines[].exposures[]`` rows
+    for the asset, and only when those rows add up to the group's value for the line (to the centavo per row), so a
+    row of another path can never be shown as this segment's. With several rows (the fund holds the asset through more
+    than one path) the weights are not summed here: the segment shows the R$ and the number of paths."""
+    seg = {"line_id": f"L{line['line_no']}", "name": line.get("linha_extrato"), "direct": bool(line.get("direct")),
+           "value_brl": line.get("exposure_brl"), "weight_in_line": None, "cda_month": None, "cda_age_months": None,
+           "n_paths": None}
+    if seg["direct"]:
+        return seg
+    fund = next((x for x in eng["look_through"].get("lines") or [] if x.get("line_no") == line["line_no"]), None)
+    rows = [e for e in (fund or {}).get("exposures") or [] if not e.get("not_opened_fund") and _asset_match(label, e)]
+    value = line.get("exposure_brl")
+    if not rows or not isinstance(value, (int, float)):
+        return seg
+    if abs(sum(e.get("exposure_brl") or 0 for e in rows) - value) > CENTAVO * len(rows):
+        return seg  # the rows are not this segment's value: show the R$ only, never a guess
+    periods = {e.get("period") for e in rows}
+    if len(periods) == 1:
+        (period,) = periods
+        seg["cda_month"] = period
+        seg["cda_age_months"] = cda_age_months(period, position_date)
+    if len(rows) == 1:
+        seg["weight_in_line"] = rows[0].get("weight_in_line")
+    else:
+        seg["n_paths"] = len(rows)
+    return seg
+
+
+def _exposure_origin(eng: dict) -> list[dict]:
+    """Owner's decision Q42 = A (2026-10-05): where the exposure to an asset comes from, for the ``ORIGIN_ASSETS``
+    largest assets (``kind == "mesmo_ativo"``, by ``total_exposure_brl``) that appear in more than one statement line.
+    The chart's data only: the engine's total and portfolio percent, and one segment per statement line."""
+    position_date = eng["statement"].get("position_date")
+    groups = [g for g in eng["look_through"]["shared_exposure"]["groups"]
+              if g.get("kind") == "mesmo_ativo" and len(g.get("lines") or []) > 1
+              and isinstance(g.get("total_exposure_brl"), (int, float))]
+    groups.sort(key=lambda g: -g["total_exposure_brl"])
+    return [
+        {"asset": g.get("label"), "total_brl": g["total_exposure_brl"], "total_pct": g.get("total_exposure_portfolio_pct"),
+         "segments": [_origin_segment(eng, ln, g.get("label"), position_date) for ln in g["lines"]]}
+        for g in groups[:ORIGIN_ASSETS]
+    ]
 
 
 TREE_FUNDS = 5

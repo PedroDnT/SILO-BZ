@@ -83,9 +83,10 @@ def _walk(doc: Any, path: str = "") -> Any:
 # endpoints and error text are dropped (a reason can quote a tool or an error; the report says what could not be
 # evaluated in a fixed section written without the model); section status codes stay.
 # Engine 1.8: ``table_only`` (the attention-level movement count of the risks table) and ``tree`` (the look-through
-# diagram's selection, chart-only) are dropped too.
+# diagram's selection, chart-only) are dropped too, and so is ``exposure_origin`` (the exposure-origin chart's data:
+# the same assets as ``shared_exposure``, plus a CDA age the model must not restate).
 REDATOR_DROP_KEYS = frozenset({"reason", "error", "errors", "params", "args", "endpoint", "failed", "not_run", "gaps",
-                               "table_only", "tree"})
+                               "table_only", "tree", "exposure_origin"})
 
 
 def redator_view(engine: dict) -> dict:
