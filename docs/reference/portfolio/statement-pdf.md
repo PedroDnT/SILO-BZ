@@ -158,17 +158,25 @@ file as a hybrid and hands the same parser layout text:
 2. **Numbers from the text layer.** `pdftotext -bbox` (bytes on STDIN) gives every number with its
    box, in PDF points.
 3. **Labels from OCR.** Each page is rendered with `pdftoppm -r 300 -gray` and the image is piped
-   into `tesseract stdin stdout -l por --psm 4 tsv` (one thread each, pages in parallel on the CPUs
-   the process may use, at most 4; `SILO_OCR_WORKERS` overrides). Word boxes are scaled to points. Nothing touches the disk, and tesseract's stderr is
-   discarded.
+   into `tesseract stdin stdout -l por tsv` (one thread each, pages in parallel on the CPUs
+   the process may use, at most 4; `SILO_OCR_WORKERS` overrides). The cover uses `--psm 4`, which the
+   masking was built on. The table pages use `--psm 11` (sparse text): each word is read on its own,
+   so a wrapped cell centred half a pitch off its row is not merged into the date row. On the real
+   files, psm 4 read such a wrapped CRA code as an unrelated word. A code-like word (letters and digits) read with
+   confidence under 60 is read again on its own: only its box is rendered (`pdftoppm -x -y -W -H`)
+   and read as one line (`--psm 7`). The new reading replaces the old only when tesseract is more
+   confident in it. On a real page this undid a doubled round glyph (`CRA0O…` read again as `CRAO…`). Word boxes are
+   scaled to points. Nothing touches the disk, and tesseract's stderr is discarded.
 4. **Merge.** An OCR word that overlaps a text-layer token is dropped, so the text layer always wins
    for numbers. So is a numeric-looking OCR word on a text-layer token's line and column, and so is
-   a stray mark (`|`, quotes, specks). OCR words of one tesseract line with a word space between
-   them form a phrase with single spaces. A wider gap keeps two spaces, which the parser reads as a
-   column gap. Tokens join a line when their vertical centres are within 0.3 of the font size, so
-   the wrapped cells of a centred row, half a pitch away, stay separate lines. x is mapped to
-   character columns on the finer of the monospace advance and a narrow OCR character width. The
-   text-layer tokens keep their columns, and a proportional label never overruns the next one.
+   a stray mark (`|`, quotes, specks). Tokens join a line when their vertical centres are within 0.3
+   of the font size, so the wrapped cells of a centred row, half a pitch away, stay separate lines.
+   On a line, two OCR words with a word space between them form a phrase with single spaces, by
+   their boxes alone. A wider gap keeps two spaces, which the parser reads as a column gap. x is
+   mapped to character columns on the finer of the monospace advance and a narrow OCR character
+   width. A text-layer token is placed by its right edge, because the tables right-align their
+   numbers, so a column keeps one end column whatever the length of its values. Each line also
+   carries its vertical centre, in font-size units, to the parser.
 5. **The same parser, in OCR mode** (`parse_extrato_pages(..., ocr_mode=True)`). It matches the
    known headings with one OCR error (two in the long ones), the cover's
    "Informações detalhadas" line and "Extrato da Conta Investimento" the same way, and accepts a
@@ -195,7 +203,36 @@ file as a hybrid and hands the same parser layout text:
      last two, because BTG prints every rate with two decimals (`1716%` becomes `17,16%`). Anything
      else (one decimal, a stray character) is kept as read with `taxa_conferida = false`. The rate
      only feeds the indexer class (CDI / IPCA / a.a.).
-7. **Sum checks unchanged and decisive.** If OCR misses a heading, its numbers belong to no table.
+7. **Columns by position, not by count.** The real missing-value dash is an outline. The text layer
+   never carries it, and tesseract reads some and drops most. So a fund row has 8 or 7 values
+   instead of 9, and a renda fixa row has no carência, data inicial, IR or IOF value at all.
+   In OCR mode, no table is read by counting tokens:
+   - **Funds:** Saldo Bruto is the row's number in the column of the `Total em fundos` value.
+     Quantity and quota are the two numbers before it, after the date and the invested value.
+   - **Renda fixa:** a row is the line with the Emissão and Vencimento dates. Saldo Bruto is its
+     number in the column of the subtotal's first value, and Quantidade and Preço are the two
+     numbers before it. The rate starts after the row's own Liquidez value and any carência, data
+     inicial or dash speck after it. When no Liquidez value was read, it starts 40% of the way from
+     the `Data inicial` header to the `Taxa` header. Emissor and Ativo are left of the Emissão date,
+     split at the header's `Ativo`.
+   - **Specks:** a one- or two-letter OCR reading of a dash or a rule (`o`, `ã`, `x`, never `+` or
+     `do`) is ignored and counted.
+   - **Quantity × unit price:** in every table it must give Saldo Bruto, within R$ 0,05 or 0,001%
+     of the value, whichever is larger. A row that fails is a row not read, because a value was
+     taken from the wrong column. The subtotals only check what was taken as Saldo Bruto.
+   - **Wrapped cells:** in a table whose cells are centred, each wrapped Emissor, Ativo or rate line
+     goes to the row on its page whose numbers it sits closest to. No lines are counted, so a speck
+     between rows cannot shift the count. A line exactly half-way is ambiguous and counted.
+8. **Headings and furniture in OCR mode.**
+   - The index and the Disclaimers pages open no table. Their footnote titles repeat `Fundos de
+     Investimento - Posição` and `Renda Fixa - Posição`.
+   - `Previdência Individual - Posições abertas por alíquota` is skipped, and so is any
+     `Fundos de Investimento - ...` heading (plural).
+   - The page head above `Período` (the logo, read as stray words) joins no table.
+   - A column header line may carry its footnote markers (`Saldo Líquido R$ 3`), its dates (the
+     Sumário's) and, in OCR text, one- or two-letter specks and `IRR$`.
+   - A fund title's CNPJ may have a dot dropped or read as a space (`11.222 333/0001-81`).
+9. **Sum checks unchanged and decisive.** If OCR misses a heading, its numbers belong to no table.
    The Sumário check then fails, and the failure lists every line with money that no section took,
    `pN:lM (shape ...)`, never its text.
 
@@ -204,19 +241,26 @@ as numeric, stray marks) and the verified and unverified counts. `--mostrar-ativ
 per position: type, the asset as printed, `codigo`, CNPJ, `vencimento`, `taxa`, `valor` and the
 flags (`lido por OCR`, `código conferido` / `NÃO conferido`, the adjustments). The owner allowed
 asset names. Holder data stays masked, since the cover is read only to build the masker and then
-discarded. The ten synthetic pages take about 3 s on four cores; a real page took about 2 s when measured on the owner's files. The
+discarded. The ten synthetic pages take about 3 s on four cores; a real 19-page file took about 11 s on four cores, re-reads included. The
 engine image installs `tesseract-ocr` and `tesseract-ocr-por`, and `engine_image.yml` reads a
 synthetic image-only statement inside it with `SILO_REQUIRE_OCR=1`.
 
-**Tested on synthetic files only** (`tests/portfolio_ocr_fixtures.py`: the invented pages above,
-numbers as Courier text and every label rasterised). **Not verified on the real file:**
+**Read on the owner's two real files (2026-10-04)**, 19 pages each. Both reconcile, with every sum
+check `ok` and every row's quantity × price equal to its Saldo Bruto: 41 positions in all. All 12
+fund and previdência CNPJs were read correctly. So were 18 of the 19 distinct registry codes and
+tickers. The regression fixtures rebuild the real file's shapes with invented data
+(`tests/portfolio_ocr_fixtures.real_layout_pages`, also built as an outlined PDF and read through
+tesseract). No real page, image or OCR text is in the repository.
 
-- the y tolerance on the real line pitch;
-- whether the real missing-value `-` is text or outline. Tesseract drops many lone dashes, which
-  would break the nine-column fund row and the six trailing values of a renda fixa row; the
-  runner's shapes would show it;
-- the phrase gap against the real column gaps;
-- how often tesseract doubles a round glyph (`CRA0O250005M`: kept and unverified).
+**Known limits:**
+
+- One debenture code (four letters and `11`) reads as three to six wrong characters at every dpi
+  and mode tried. It is kept as read with `codigo_conferido = false`, and its value reconciles.
+- A CDB, LCA, LCI or CDCA code has no known shape, so it is kept as read and unverified even when
+  right.
+- A FIP is typed `fundo`: `Position` has no FIP type.
+- The rate text and the Emissor are OCR with no check digit. A rate is flagged only when it does
+  not look like a rate.
 
 Matching the codes against SILO (`cvm_securit_serie.codigo_cetip`, the CDA `cd_ativo`) is the next
 step.

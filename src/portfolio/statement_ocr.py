@@ -40,6 +40,12 @@ from src.portfolio.statement import StatementFormatError
 
 DPI = 300
 EXTRACTOR = "poppler+tesseract"
+# Page segmentation. The cover keeps psm 4 (one column of text lines), which the masking was built on. The
+# table pages use psm 11 (sparse text): each word is read on its own, so the wrapped cells of a row centred
+# half a pitch off its numbers are not merged into the date row (psm 4 read such a wrapped CRA code as
+# an unrelated word). Lines are rebuilt from the word boxes here anyway.
+PSM_COVER = "4"
+PSM_TABLES = "11"
 
 # ---------------------------------------------------------------------------
 # Detection.
@@ -102,6 +108,7 @@ class W:
     src: str  # "pdf" (text layer) or "ocr"
     line: tuple[int, int, int] | None = None  # tesseract (block, paragraph, line)
     conf: float = 100.0
+    reread: bool = False  # the word's cell was read again on its own (``_reread_codes``) with more confidence
 
     @property
     def yc(self) -> float:
@@ -167,8 +174,9 @@ def parse_tsv(tsv: str, dpi: int = DPI) -> list[W]:
     return out
 
 
-def ocr_page(data: bytes, page_no: int, dpi: int = DPI) -> list[W]:
+def ocr_page(data: bytes, page_no: int, dpi: int = DPI, psm: str | None = None) -> list[W]:
     """OCR one page (1-based). The image goes from pdftoppm to tesseract in memory, never to disk."""
+    psm = psm or (PSM_COVER if page_no == 1 else PSM_TABLES)
     img = subprocess.run(
         ["pdftoppm", "-r", str(dpi), "-gray", "-f", str(page_no), "-l", str(page_no), "-"],
         input=data, capture_output=True, timeout=180, check=False,
@@ -177,13 +185,57 @@ def ocr_page(data: bytes, page_no: int, dpi: int = DPI) -> list[W]:
         raise StatementFormatError(f"pdftoppm could not render page {page_no} (exit {img.returncode})")
     env = {**os.environ, "OMP_THREAD_LIMIT": "1"}  # one thread per page; the pages run in parallel
     proc = subprocess.run(
-        ["tesseract", "stdin", "stdout", "-l", "por", "--psm", "4", "tsv"],
+        ["tesseract", "stdin", "stdout", "-l", "por", "--psm", psm, "tsv"],
         input=img.stdout, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=300, check=False, env=env,
     )
     del img
     if proc.returncode != 0:
         raise StatementFormatError(f"tesseract failed on page {page_no} (exit {proc.returncode}); is the 'por' language installed?")
-    return parse_tsv(proc.stdout.decode("utf-8", errors="replace"), dpi)
+    words = parse_tsv(proc.stdout.decode("utf-8", errors="replace"), dpi)
+    if psm == PSM_TABLES:
+        words = _reread_codes(data, page_no, dpi, words, env)
+    return words
+
+
+REREAD_CONF = 60.0  # tesseract's confidence below which a code-like word is read again on its own
+_CODE_LIKE = re.compile(r"^(?=.*\d)(?=.*[A-Za-z])[A-Za-z0-9-]{4,}$")
+
+
+def _reread_codes(data: bytes, page_no: int, dpi: int, words: list[W], env: dict) -> list[W]:
+    """A code-like word (letters and digits) read with low confidence is read again alone, as one line (psm 7).
+
+    The sparse page read sometimes doubles a round glyph in a tight cell ('CRA0O2599XY'); the cell on
+    its own reads cleanly ('CRAO2599XY'). Only the crop of that word's box is rendered (pdftoppm -x -y
+    -W -H, in memory). The new reading replaces the old only when tesseract is more confident in it and
+    it is one word; it is still OCR of the same pixels, and the parser checks it against the code's shape.
+    """
+    s = dpi / 72.0
+    pad = 2.0
+    out = []
+    for w in words:
+        t = w.t.strip(_STRAY_EDGE)
+        if w.conf >= REREAD_CONF or not _CODE_LIKE.match(t):
+            out.append(w)
+            continue
+        x, y = int((w.x0 - pad) * s), int((w.y0 - pad) * s)
+        cw, ch = int((w.x1 - w.x0 + 2 * pad) * s), int((w.y1 - w.y0 + 2 * pad) * s)
+        img = subprocess.run(
+            ["pdftoppm", "-r", str(dpi), "-gray", "-f", str(page_no), "-l", str(page_no), "-x", str(x), "-y", str(y), "-W", str(cw), "-H", str(ch), "-"],
+            input=data, capture_output=True, timeout=60, check=False,
+        )
+        if img.returncode != 0 or not img.stdout:
+            out.append(w)
+            continue
+        proc = subprocess.run(
+            ["tesseract", "stdin", "stdout", "-l", "por", "--psm", "7", "tsv"],
+            input=img.stdout, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60, check=False, env=env,
+        )
+        again = parse_tsv(proc.stdout.decode("utf-8", errors="replace"), dpi) if proc.returncode == 0 else []
+        if len(again) == 1 and again[0].conf > w.conf and _CODE_LIKE.match(again[0].t.strip(_STRAY_EDGE)):
+            out.append(W(w.x0, w.y0, w.x1, w.y1, again[0].t, "ocr", w.line, again[0].conf, True))
+        else:
+            out.append(w)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +305,7 @@ class MergeStats:
     dropped_overlap: int = 0
     dropped_numeric: int = 0
     dropped_marks: int = 0
+    reread: int = 0  # code-like words read again alone, with more confidence
 
 
 def _area(a: W) -> float:
@@ -308,8 +361,12 @@ class _Phrase:
     src: str
 
 
-def merge_page(pdf: list[W], ocr: list[W], stats: MergeStats | None = None) -> list[str]:
-    """One page's tokens as ``pdftotext -layout``-style lines (empty lines dropped)."""
+def merge_page(pdf: list[W], ocr: list[W], stats: MergeStats | None = None, ys: list[float] | None = None) -> list[str]:
+    """One page's tokens as ``pdftotext -layout``-style lines (empty lines dropped).
+
+    ``ys``, when given, receives each returned line's vertical centre in units of the page's font size,
+    so the parser can tell which row a wrapped cell sits closest to.
+    """
     st = stats if stats is not None else MergeStats()
     st.pdf_words += len(pdf)
     st.ocr_words += len(ocr)
@@ -319,6 +376,7 @@ def merge_page(pdf: list[W], ocr: list[W], stats: MergeStats | None = None) -> l
         if t is None:
             st.dropped_marks += 1
             continue
+        st.reread += w.reread
         w = W(w.x0, w.y0, w.x1, w.y1, t, "ocr", w.line, w.conf)
         if any(_inter(w, p) >= 0.3 * min(_area(w), _area(p)) for p in pdf):
             st.dropped_overlap += 1
@@ -337,19 +395,7 @@ def merge_page(pdf: list[W], ocr: list[W], stats: MergeStats | None = None) -> l
     # the median OCR word's ink height (about 0.7 em, so 0.55 em).
     ink = statistics.median(w.h for w in kept) if kept else 0.7 * fs
     gap_thr = 0.8 * ink
-    # OCR words of one tesseract line with a word space between them are one phrase.
-    kept.sort(key=lambda w: (w.line, w.x0))
-    phrases: list[_Phrase] = []
-    prev: W | None = None
-    for w in kept:
-        if prev is not None and w.line == prev.line and 0 <= w.x0 - prev.x1 < gap_thr and abs(w.yc - prev.yc) < 0.3 * fs:
-            ph = phrases[-1]
-            ph.text += " " + w.t
-            ph.x1 = w.x1
-        else:
-            phrases.append(_Phrase(w.x0, w.x1, w.yc, w.t, "ocr"))
-        prev = w
-    phrases += [_Phrase(w.x0, w.x1, w.yc, w.t, "pdf") for w in pdf]
+    phrases = [_Phrase(w.x0, w.x1, w.yc, w.t, "ocr") for w in kept] + [_Phrase(w.x0, w.x1, w.yc, w.t, "pdf") for w in pdf]
     # Lines: a token joins the line whose centre is within a third of the font size. Wrapped cells of a
     # vertically centred row sit half a line pitch away and stay separate lines.
     tol = 0.3 * fs
@@ -369,14 +415,21 @@ def merge_page(pdf: list[W], ocr: list[W], stats: MergeStats | None = None) -> l
         line = ""
         prev_p: _Phrase | None = None
         for p in row:
-            col = round(p.x0 / cw)
+            # A text-layer token is placed by its right edge: the numbers of a table are right-aligned, so
+            # a column keeps one end column whatever the length of its values. OCR words by their left edge.
+            col = round(p.x1 / cw) - len(p.text) if p.src == "pdf" else round(p.x0 / cw)
             if prev_p is not None:
-                need = 2 if p.x0 - prev_p.x1 >= gap_thr else 1
-                col = max(col, len(line) + need)
+                gap = p.x0 - prev_p.x1
+                if p.src == prev_p.src == "ocr" and gap < gap_thr:
+                    col = len(line) + 1  # a word space: one phrase, single spaces
+                else:
+                    col = max(col, len(line) + (2 if gap >= gap_thr else 1))
             line = line.ljust(col) + p.text
             prev_p = p
         if line.strip():
             out.append(line.rstrip())
+            if ys is not None:
+                ys.append(sum(p.yc for p in row) / len(row) / fs)
     return out
 
 
@@ -385,6 +438,8 @@ class OcrResult:
     pages: list[str]
     stats: MergeStats
     n_pages: int
+    # per page, per line of ``pages[i].splitlines()``: the line's vertical centre in font-size units
+    ys: list[list[float]] = field(default_factory=list)
 
 
 MAX_WORKERS = 4  # each tesseract at 300 dpi holds about 100 MB; the server runs several requests at once
@@ -420,13 +475,17 @@ def ocr_pages(data: bytes, dpi: int = DPI, workers: int | None = None, first_pag
     n = len(layer)
     stats = MergeStats()
     # the text layer's own word boxes are font boxes; the OCR's are ink boxes. Both are in points.
-    first = "\n".join(merge_page(layer[0].words, ocr_page(data, 1, dpi), stats))
+    ys: list[list[float]] = [[]]
+    first = "\n".join(merge_page(layer[0].words, ocr_page(data, 1, dpi), stats, ys[0]))
     if first_page_ok is not None and not first_page_ok(first):
         return None
     with ThreadPoolExecutor(max_workers=_workers(n - 1, workers)) as ex:
         rest = list(ex.map(lambda i: ocr_page(data, i + 1, dpi), range(1, n)))
-    pages = [first] + ["\n".join(merge_page(pw.words, ow, stats)) for pw, ow in zip(layer[1:], rest)]
-    return OcrResult(pages, stats, n)
+    pages = [first]
+    for pw, ow in zip(layer[1:], rest):
+        ys.append([])
+        pages.append("\n".join(merge_page(pw.words, ow, stats, ys[-1])))
+    return OcrResult(pages, stats, n, ys)
 
 
 # ---------------------------------------------------------------------------

@@ -460,6 +460,9 @@ def _ocr_ready() -> str | None:
     return None
 
 
+from tests.portfolio_ocr_fixtures import build_outlined_pdf  # noqa: E402
+
+
 @pytest.fixture(scope="module")
 def outlined():
     why = _ocr_ready()
@@ -530,3 +533,163 @@ def test_outlined_pdf_runner_and_engine_never_show_the_holder(outlined, tmp_path
     from src.portfolio.client import FakeClient
 
     no_originals(dumps(run_engine(st, FakeClient({}))))
+
+
+# ---------------------------------------------------------------------------
+# The real layout's shapes (synthetic, tests/portfolio_ocr_fixtures.real_layout_pages)
+# ---------------------------------------------------------------------------
+
+FONT_UNITS_PER_PITCH = 1.4  # what statement_ocr reports per line pitch on the real pages (y / font size)
+
+
+def real_layout(edit=None):
+    from tests.portfolio_ocr_fixtures import real_layout_pages
+
+    pages, ys = real_layout_pages()
+    if edit:
+        pages = edit(pages)
+    return pages, [[y * FONT_UNITS_PER_PITCH for y in page] for page in ys]
+
+
+def test_real_layout_reads_by_column_and_reconciles():
+    from tests.portfolio_ocr_fixtures import real_layout_totals
+
+    pages, ys = real_layout()
+    st, diag = parse_extrato_pages(pages, ocr.EXTRACTOR, ocr_mode=True, line_ys=ys)
+    tot = real_layout_totals()
+    assert st.stated_total == st.sum_of_lines == tot["total"]
+    assert diag.unread == [] and all(ok for _, ok, _ in diag.checks)
+    # every row with a quantity had quantity x price = Saldo Bruto
+    assert diag.qty_price_checked == sum(1 for p in st.positions if p.quantidade is not None) == 7
+    by = {p.codigo: p for p in st.positions}
+    # funds: 8 and 7 values (the IOF dash, and one IR dash, are outlines), the CNPJ's lost dot restored
+    alfa = by["11.222.333/0001-81"]
+    assert alfa.quantidade == Decimal("8000.00000000") and alfa.preco_unitario == Decimal("3.12500000") and alfa.valor == Decimal("25000.00")
+    assert by["22.333.444/0001-92"].valor == Decimal("56102.00")
+    # renda fixa: no dash anywhere, Emissor and Ativo wrapped half a pitch above and below the numbers
+    beta = by["CRA02599001"]
+    assert beta.emissor == "AGRO BETA" and beta.taxa_texto == "13,25% a.a." and beta.quantidade == Decimal("25.0")
+    assert by["CRA0259900X"].emissor == "EMISSORA ALFA" and by["CRA0259900X"].taxa_texto == "CDI + 2,15%"
+    cdb = by["CDB9Z8Y7X65"]  # three lines, the middle one on the row, the last a lone digit
+    assert cdb.emissor == "BANCO GAMA S/A CREDITO E INVESTIMENTO" and cdb.taxa_texto == "IPCA + 5,10%"
+    # the liquidez speck ('ã') is not the rate, and the alíquota table under previdência is not a position
+    assert not any("ã" in (p.taxa_texto or "") for p in st.positions)
+    assert sum(1 for p in st.positions if p.classe_corretora == "Previdência") == 1
+    assert by["ABCD11"].valor == Decimal("25000.00")
+    # the Disclaimers page opened no table; the page logo above 'Período' joined none
+    assert diag.sections["ignore_page"] == 1 and "funds" in diag.sections and diag.sections["funds"] == 1
+    assert diag.wrap_ambiguous == 0
+
+
+def test_real_layout_without_line_positions_still_needs_them_for_centred_cells():
+    """Without y the centred chain is counted from the lines; it closes on this table, so it still reads."""
+    pages, _ = real_layout()
+    st, diag = parse_extrato_pages(pages, ocr.EXTRACTOR, ocr_mode=True)
+    assert diag.unread == [] and st.sum_of_lines == st.stated_total
+
+
+def test_a_value_out_of_its_column_is_a_row_not_read():
+    # a price taken from the wrong column (the purchase price): quantity x price no longer gives Saldo Bruto
+    pages, ys = real_layout(lambda pg: [p.replace("1.012,345678", "1.000,000000") for p in pg])
+    with pytest.raises(StatementTotalMismatch) as ei:
+        parse_extrato_pages(pages, ocr.EXTRACTOR, ocr_mode=True, line_ys=ys)
+    assert any("quantity x unit price is not Saldo Bruto" in u.reason for u in ei.value.unreadable_rows)
+
+
+def test_a_renda_fixa_row_with_no_saldo_bruto_under_the_subtotal_is_not_read():
+    def shift(pg):
+        out = []
+        for p in pg:
+            lines = p.split("\n")
+            lines = [ln.replace("    25.308,64", "25.308,64    ", 1) if "10/02/25" in ln else ln for ln in lines]
+            out.append("\n".join(lines))
+        return out
+
+    pages, ys = real_layout(shift)
+    with pytest.raises(StatementTotalMismatch) as ei:
+        parse_extrato_pages(pages, ocr.EXTRACTOR, ocr_mode=True, line_ys=ys)
+    assert any("no Saldo Bruto under the subtotal's column" in u.reason for u in ei.value.unreadable_rows)
+
+
+def test_sumario_header_with_dates_and_footnote_markers_is_a_header():
+    toks = ex.tokens("Mercados    Saldo Bruto R$ 31/08/26    Saldo Líquido R$ 31/08/26 2    Saldo Bruto R$ 30/09/26    Saldo Líquido R$ 30/09/26 1")
+    assert ex._is_col_header(toks) and ex._is_col_header(toks, tolerant=True)
+    rf = ex.tokens("Emissor   Ativo A   Emissão   Vencimento   Liquidez oi  4   Quantidade   Preço R$  1   IRR$   IOF R$  2")
+    assert ex._is_col_header(rf, tolerant=True) and not ex._is_col_header(rf)
+    assert not ex._is_col_header(ex.tokens("BOA   CRA-"), tolerant=True)
+
+
+def test_headings_of_the_real_file():
+    h = lambda s: ex.heading_of(s, tolerant=True)  # noqa: E731
+    assert h("Previdência Individual - Posições abertas por alíquota") == ("ignore", "")
+    assert h("Fundos de Investimento - Rentabilidade") == ("ignore", "")
+    assert h("Disclaimers") == ("ignore_page", "")
+    assert h("Previdência Individual - Posição - 1234/PGBL") == ("prev", "PGBL")
+
+
+def test_fund_title_cnpj_with_a_dropped_or_spaced_dot_in_ocr_mode():
+    assert ex._fund_title("FUNDO X FICFIM - Classe CNPJ: 11.222 333/0001-81 - Cód. Subclasse: Z1", True) == ("FUNDO X FICFIM", "11.222.333/0001-81")
+    assert ex._fund_title("FUNDO Y - Classe CNPJ: 44.555666/0001-07", True) == ("FUNDO Y", "44.555.666/0001-07")
+    assert ex._fund_title("FUNDO Y - Classe CNPJ: 44.555666/0001-07", False)[1] is None
+
+
+def test_merge_places_numbers_by_right_edge_and_glues_words_by_geometry():
+    # two numbers of different lengths ending at the same x land on the same end column
+    pdf = [num(40, 100, "12.345,67"), num(37, 120, "1.012.345,67")]
+    assert pdf[0].x1 == pdf[1].x1
+    lines = ocr.merge_page(pdf, [lab(0, 100, "BOA"), lab(0, 120, "SAFRA")])
+    assert len(lines[0]) == len(lines[1])
+    # sparse OCR gives each word its own tesseract line: a word space still makes one phrase
+    words = [lab(0, 50, "Renda", line=(1, 1, 1)), lab(22, 50, "fixa", line=(2, 1, 1)), lab(80 * CW, 50, "CDI", line=(3, 1, 1))]
+    ys: list[float] = []
+    out = ocr.merge_page([num(46, 80, "10/03/25")], words, ys=ys)
+    assert out[0].startswith("Renda fixa ") and re.search(r"fixa {2,}CDI", out[0])
+    assert len(ys) == len(out) and ys[0] < ys[1]
+
+
+def test_low_confidence_code_is_read_again_alone_and_kept_only_if_more_confident(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, input=None, **kw):
+        calls.append(cmd[0])
+        if cmd[0] == "pdftoppm":
+            return subprocess.CompletedProcess(cmd, 0, stdout=b"P5 1 1 255 x", stderr=b"")
+        conf = "64" if len([c for c in calls if c == "tesseract"]) == 1 else "20"
+        tsv = "level\tpage\tblock\tpar\tline\tword\tleft\ttop\twidth\theight\tconf\ttext\n" f"5\t1\t1\t1\t1\t1\t0\t0\t10\t10\t{conf}\tCRAO2599XYZ\n"
+        return subprocess.CompletedProcess(cmd, 0, stdout=tsv.encode(), stderr=b"")
+
+    monkeypatch.setattr(ocr.subprocess, "run", fake_run)
+    words = [W(10, 10, 60, 16, "CRA0O2599XYZ"), W(10, 30, 60, 36, "CRA0O2599XYW"), W(10, 50, 60, 56, "Emissor")]
+    words[0].conf = words[1].conf = 27
+    out = ocr._reread_codes(b"%PDF", 2, 300, words, {})
+    assert out[0].t == "CRAO2599XYZ" and out[0].reread  # more confident: replaced
+    assert out[1].t == "CRA0O2599XYW" and not out[1].reread  # the re-read was less confident: kept
+    assert out[2].t == "Emissor" and calls.count("tesseract") == 2  # not code-like: never re-read
+
+
+@pytest.mark.parametrize("dash_text", [True, False])
+def test_outlined_dashes_as_pixels_read_end_to_end(outlined, dash_text):
+    """The real file draws the missing-value dashes as outlines: OCR reads some, drops most."""
+    build, mapping = outlined
+    pages, _ = build("center")
+    pdf = build_outlined_pdf(pages, dash_text=dash_text)
+    st, diag, _ = read_any_pdf_bytes(pdf)  # raises if any check fails or a row is not read
+    assert st.sum_of_lines == st.stated_total == grand_total() and len(st.positions) == n_positions()
+
+
+def test_outlined_real_layout_reads_end_to_end(outlined):
+    """Right-aligned numbers, no dashes in the text layer, cells half a pitch off their row, through tesseract."""
+    from tests.portfolio_ocr_fixtures import real_layout_pages, real_layout_totals
+
+    pages, ys = real_layout_pages()
+    pdf = build_outlined_pdf(pages, line_y=ys, dash_text=False)
+    st, diag, layout = read_any_pdf_bytes(pdf)
+    assert layout == "extrato" and diag.ocr and diag.unread == []
+    assert st.sum_of_lines == st.stated_total == real_layout_totals()["total"]
+    assert diag.qty_price_checked == 7 and len(st.positions) == 8
+    rf = [p for p in st.positions if p.classe_corretora == "Renda Fixa"]
+    assert [p.valor for p in rf] == [Decimal("41020.00"), Decimal("25308.64"), Decimal("120020.00")]
+    for p in rf:
+        if p.codigo_conferido:
+            assert p.codigo in ("CRA0259900X", "CRA02599001"), p.codigo
+    no_originals(repr(st) + str(st.notes))

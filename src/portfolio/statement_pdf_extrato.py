@@ -108,6 +108,7 @@ HEADER_VOCAB = {
     "taxa", "media", "ponderada", "quantidade", "preco", "r$", "saldo", "bruto", "ir", "iof", "liquido",
     "referencia", "cotas", "cotacao", "atual", "provisao", "variacao", "nominal", "fundo", "cnpj", "codigo",
     "qtde", "fechamento", "medio", "valor", "financeiro", "mercados", "em",
+    "irr$", "iofr$",  # OCR reads 'IR R$' and 'IOF R$' as one word
 }
 HEADER_UPPER_OK = {"R$", "IR", "IOF", "CNPJ", "IR R$", "IOF R$"}
 
@@ -257,7 +258,7 @@ def read_any_pdf_bytes(data: bytes):
     """
     pages, extractor, res = _extract(data)
     if res is not None:
-        stmt, diag = parse_extrato_pages(pages, extractor, ocr_mode=True, ocr_stats=res.stats)
+        stmt, diag = parse_extrato_pages(pages, extractor, ocr_mode=True, ocr_stats=res.stats, line_ys=res.ys)
         return stmt, diag, "extrato"
     if is_extrato(pages):
         stmt, diag = parse_extrato_pages(pages, extractor)
@@ -268,7 +269,9 @@ def read_any_pdf_bytes(data: bytes):
 
 def read_extrato_bytes(data: bytes):
     pages, extractor, res = _extract(data)
-    return parse_extrato_pages(pages, extractor, ocr_mode=res is not None, ocr_stats=res.stats if res else None)
+    return parse_extrato_pages(
+        pages, extractor, ocr_mode=res is not None, ocr_stats=res.stats if res else None, line_ys=res.ys if res else None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +344,14 @@ _LABEL_KEYS = ("containvestimento", "cpf", "periodo", "emitidoem", "extratodacon
 
 def _cover_scrubber(cover: str, tolerant: bool = False) -> tuple[_Scrubber, list[str]]:
     lines = [ln.strip() for ln in cover.splitlines() if ln.strip()]
+    # The real cover wraps the heading: "Informações detalhadas sobre" / "investimentos" (OCR, 2026-10-04).
+    for i in range(len(lines) - 1):
+        k = key(lines[i])
+        if (k.endswith("informacoesdetalhadassobre") or (tolerant and _fuzzy_prefix(k, "informacoesdetalhadassobre"))) and key(
+            lines[i + 1]
+        ).startswith("investimentos"):
+            lines[i : i + 2] = [lines[i] + " " + lines[i + 1]]
+            break
     flat = _strip_accents("\n".join(lines))
     head = next((i for i, ln in enumerate(lines) if "informacoesdetalhadassobreinvestimentos" in key(ln)), None)
     if head is None and tolerant:
@@ -430,10 +441,10 @@ def heading_of(text: str, tolerant: bool = False) -> tuple[str, str] | None:
     dashed = re.search(r"\S\s+[-–]\s+[A-Za-zÀ-ÿ]", s) is not None  # ' - <word>', never a missing value
     if k.startswith("sumariodistribuicao"):
         return ("sumario", "")
-    if k == "indice":
-        return ("ignore_page", "")
-    if k.startswith(("distribuicao", "perfilderisco", "disclaimer", "faleconosco", "posicoesabertasporaliquota")):
-        return ("ignore", "")
+    if k == "indice" or k.startswith("disclaimer"):
+        return ("ignore_page", "")  # the Disclaimers pages repeat section names ('Renda Fixa - Posição') as footnote titles
+    if k.startswith(("distribuicao", "perfilderisco", "faleconosco")) or "abertasporaliquota" in k:
+        return ("ignore", "")  # 'Previdência Individual - Posições abertas por alíquota' is not a position table
     if k.startswith("fundodeinvestimentoposicao"):
         return ("funds", "")
     if k.startswith("rendafixaposicaoconsolidadaporemissor"):
@@ -449,7 +460,7 @@ def heading_of(text: str, tolerant: bool = False) -> tuple[str, str] | None:
         return ("rv", parts[-1] if len(parts) >= 3 else "")
     if k.startswith("contacorrenteposicao"):
         return ("cc", "")
-    if dashed and k.startswith(("fundodeinvestimento", "rendafixa", "previdencia", "rendavariavel", "contacorrente")):
+    if dashed and k.startswith(("fundodeinvestimento", "fundosdeinvestimento", "rendafixa", "previdencia", "rendavariavel", "contacorrente")):
         return ("ignore", "")
     if dashed and "cnpj" not in k and len(s) <= 80 and len(s.split(" - ")[0].split()) <= 4:
         segs = s.split(" - ")
@@ -477,13 +488,21 @@ def _vocab_word(w: str, tolerant: bool) -> bool:
         return False
     if w in ("rs", "r"):  # 'R$' read by OCR
         return True
-    return len(w) >= 5 and any(abs(len(v) - len(w)) <= 1 and _lev(w, v) <= 1 for v in HEADER_VOCAB if len(v) >= 5)
+    return len(w) >= 4 and any(abs(len(v) - len(w)) <= 1 and _lev(w, v) <= 1 for v in HEADER_VOCAB if len(v) >= 4)
 
 
 def _is_col_header(toks: list[Tok], tolerant: bool = False) -> bool:
-    words = [t for t in toks if t.k not in ("D",)]
+    # the header's own dates ('Saldo Bruto R$ 31/08/26') and its footnote markers ('Saldo Líquido R$ 3') are
+    # neutral; so, in OCR text, is a one- or two-letter speck ('ai', 'A') read off the table's rules
+    words = [
+        t
+        for t in toks
+        if t.k != "D"
+        and not (t.k == "N" and re.fullmatch(r"\d", t.t))
+        and not (tolerant and t.k == "L" and len(t.t) <= 2 and t.t not in HEADER_UPPER_OK and key(t.t) not in HEADER_VOCAB)
+    ]
     if not words:
-        return True  # the header's own dates ('31/08/26  31/08/26  30/09/26')
+        return any(t.k == "D" for t in toks)  # the header's own dates ('31/08/26  31/08/26  30/09/26')
     strong = False
     good = bad = 0
     for t in words:
@@ -508,6 +527,7 @@ class Line:
     no: int
     text: str
     toks: list[Tok]
+    y: float | None = None  # OCR text: the line's vertical centre in font-size units (statement_ocr)
 
     @property
     def coord(self) -> str:
@@ -521,6 +541,7 @@ class Block:
     heading_key: str
     lines: list[Line] = field(default_factory=list)
     header_ativo_x: int | None = None
+    header: list[Line] = field(default_factory=list)
 
 
 @dataclass
@@ -546,6 +567,8 @@ class Diagnostics:
     ocr: bool = False  # the labels were read by OCR (statement_ocr)
     ocr_stats: object = None  # statement_ocr.MergeStats, counts only
     ocr_checks: Counter = field(default_factory=Counter)
+    ocr_specks: int = 0  # OCR mode: one- or two-character readings of a missing-value dash, ignored
+    qty_price_checked: int = 0  # OCR mode: rows whose quantity x unit price gave their Saldo Bruto
 
 
 def _has_money(toks: list[Tok]) -> bool:
@@ -565,6 +588,14 @@ def _blocks(lines: list[Line], diag: Diagnostics) -> list[Block]:
         if ln.toks:
             by_page.setdefault(ln.page, []).append(ln)
     edge = {id(x) for pg in by_page.values() for x in pg[:4] + pg[-3:]}
+    # OCR text: the page head above the 'Período' line is the logo and the holder header, which OCR reads as
+    # stray words ('ne INVESTIMENTOS'); they must not join the table that runs on from the page before
+    above_period: set[int] = set()
+    if diag.ocr:
+        for pg in by_page.values():
+            cut = next((i for i, x in enumerate(pg[:6]) if key(x.text).startswith("periodo") or _PERIOD_OCR.search(_strip_accents(x.text))), None)
+            if cut is not None:
+                above_period.update(id(x) for x in pg[:cut] if not _has_money(x.toks))
     for ln in lines:
         if not ln.toks:
             continue
@@ -578,8 +609,10 @@ def _blocks(lines: list[Line], diag: Diagnostics) -> list[Block]:
             # mask: the header line with the account is furniture whether or not it was masked
             diag.masked_lines_skipped += 1
             continue
-        if _is_furniture(ln.text):
+        if _is_furniture(ln.text) or id(ln) in above_period:
             continue
+        if cur is not None and cur.kind == "ignore_page":
+            continue  # the index and the Disclaimers pages: their section names are not tables
         h = heading_of(ln.text, tolerant=diag.ocr)
         if h is not None:
             hk = key(ln.text)
@@ -606,6 +639,7 @@ def _blocks(lines: list[Line], diag: Diagnostics) -> list[Block]:
             for t in ln.toks:
                 if key(t.t) == "ativo" and cur.header_ativo_x is None:
                     cur.header_ativo_x = t.x
+            cur.header.append(ln)
             continue
         cur.lines.append(ln)
     return out
@@ -659,6 +693,27 @@ class _Ctx:
         self.unread.append(f"{ln.coord}: {reason} (shape {shape_of(ln.toks)})")
 
 
+def _qty_price_ok(ln: Line, q: Tok | None, p: Tok | None, b: Tok, ctx: "_Ctx") -> bool:
+    """OCR mode: quantity x unit price must give Saldo Bruto, so a value taken from the wrong column is a row not read.
+
+    The subtotals only check what was taken as Saldo Bruto; this checks the columns beside it. The tolerance
+    covers a quota printed with its trailing digits cut (R$ 0,05, or 0,001% of the value when larger).
+    """
+    if q is None or p is None or q.k != "N" or p.k != "N":
+        ctx.bad(ln, "quantity or unit price missing beside Saldo Bruto")
+        return False
+    try:
+        qv, pv, bv = num(q.t), num(p.t), num(b.t)
+    except (ValueError, InvalidOperation):
+        ctx.bad(ln, "unreadable quantity, unit price or Saldo Bruto")
+        return False
+    if abs(qv * pv - bv) > max(Decimal("0.05"), bv * Decimal("0.00001")):
+        ctx.bad(ln, "quantity x unit price is not Saldo Bruto: a value is not in its column")
+        return False
+    ctx.diag.qty_price_checked += 1
+    return True
+
+
 def _assign(entries: list[tuple[str, object]], prefer_tail: Callable[[object], bool], ctx: "_Ctx"):
     """Attach the text-only lines of a table to its data rows.
 
@@ -693,6 +748,8 @@ def _assign(entries: list[tuple[str, object]], prefer_tail: Callable[[object], b
     mode = ctx.mode or "abaixo"
     diag.layout_modes[mode + (" (assumido)" if ctx.mode_assumed else "")] += 1
     row_objs = [entries[i][1] for i in rows]
+    if mode == "centralizado" and all(_y(obj) is not None for _, obj in entries):
+        return _assign_by_y(entries, row_objs, prefer_tail, ctx), []
     # Centred cells: a row prints as many wrapped lines above its numbers as below, so the lines
     # before the first row say how many follow it, the rest of the next gap precedes the next row,
     # and so on down the table; the text after the last row must close the chain exactly.
@@ -741,6 +798,48 @@ def _assign(entries: list[tuple[str, object]], prefer_tail: Callable[[object], b
     return out, []
 
 
+def _y(obj) -> float | None:
+    ln = obj.line if isinstance(obj, RfRow) else obj
+    return ln.y
+
+
+def _page(obj) -> int:
+    return (obj.line if isinstance(obj, RfRow) else obj).page
+
+
+Y_TIE = 0.15  # font-size units: a line this close to half-way between two rows is ambiguous
+
+
+def _assign_by_y(entries, row_objs, prefer_tail, ctx: "_Ctx"):
+    """Centred cells, OCR text: each text line goes to the row on its page whose numbers it sits closest to.
+
+    OCR keeps the lines' vertical positions, so a wrapped Emissor or Ativo half a pitch above or below its
+    row needs no counting of lines (a misread speck between rows would break the count). A line exactly
+    half-way between two rows is ambiguous: it goes by ``prefer_tail`` and is counted.
+    """
+    diag = ctx.diag
+    out = {id(r): ([], []) for r in row_objs}
+    for k, obj in entries:
+        if k != "f":
+            continue
+        cands = sorted((abs(_y(r) - obj.y), i) for i, r in enumerate(row_objs) if _page(r) == obj.page)
+        if not cands:
+            cands = [(0.0, 0 if obj.page < _page(row_objs[0]) else len(row_objs) - 1)]
+        i = cands[0][1]
+        if len(cands) > 1 and cands[1][0] - cands[0][0] <= Y_TIE:
+            diag.wrap_ambiguous += 1
+            a, b = sorted((cands[0][1], cands[1][1]))
+            i = a if prefer_tail(row_objs[a]) else b
+        r = row_objs[i]
+        if obj.y < _y(r) or (obj.page < _page(r)):
+            out[id(r)][0].append(obj)
+            diag.wrapped_prefix += 1
+        else:
+            out[id(r)][1].append(obj)
+            diag.wrapped_tail += 1
+    return out
+
+
 def _split_total(toks: list[Tok]) -> tuple[str, list[Tok]]:
     i = len(toks)
     while i > 0 and toks[i - 1].k in ("N", "-"):
@@ -781,6 +880,11 @@ def _parse_sumario(b: Block, ctx: _Ctx) -> None:
 # --- Fundos ----------------------------------------------------------------
 
 _FUND_TITLE = re.compile(r"^(?P<name>.*?)\s*-?\s*(?:Classe\s+)?CNPJ\s*:?\s*(?P<cnpj>\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})", re.I)
+# OCR text: the CNPJ's 14 digits with a dot dropped or read as a space ('11.222 333/0001-81')
+_FUND_TITLE_OCR = re.compile(
+    r"^(?P<name>.*?)\s*-?\s*(?:Classe\s+)?CNPJ\s*:?\s*(?P<cnpj>\d{2}[.,\s]?\d{3}[.,\s]?\d{3}\s?/\s?\d{4}\s?-?\s?\d{2})(?!\d)", re.I
+)
+COL_SLACK = 2  # character columns: a right-aligned number's end against its column's
 
 
 def _fund_tipo(name: str) -> str:
@@ -792,14 +896,74 @@ def _fund_tipo(name: str) -> str:
     return "fundo"
 
 
+def _is_fund_total(t: list[Tok]) -> bool:
+    k0, tail0 = _split_total(t)
+    return k0.startswith("totalem") or (k0 == "total" and bool(tail0))
+
+
+def _fund_values(t: list[Tok], bruto_ref: Tok | None, ctx: _Ctx) -> tuple[Tok, Tok, Tok] | str:
+    """(quantidade, cotação, Saldo Bruto) of a fund data line, or the reason it cannot be read.
+
+    Text layer: the nine columns, a missing value printed '-'. OCR mode: the missing-value dash is an
+    outline the text layer does not carry (and OCR reads it or not), so the columns are found by
+    position: Saldo Bruto is the number right-aligned with the 'Total em fundos' value, quantity and
+    quota the two numbers before it, after the date and the invested value. Nothing is counted.
+    """
+    if not ctx.ocr:
+        if len(t) != 9 or any(x.k not in ("N", "-") for x in t[1:]) or t[4].k != "N":
+            return "fund data line not in the nine columns"
+        return t[2], t[3], t[4]
+    if bruto_ref is None:
+        return "fund data line in a table with no 'Total em fundos' value to align the columns"
+    money = [i for i, x in enumerate(t) if x.k == "N" and "," in x.t]
+    bi = next((i for i in money if abs(t[i].end - bruto_ref.end) <= COL_SLACK), None)
+    if bi is None:
+        bi = next((i for i in money if _in_col(t[i], bruto_ref)), None)
+    # date, the invested value (a number, a dash, or a dash OCR did not see), quantity, quota, Saldo Bruto
+    if bi not in (3, 4) or t[bi - 1].k != "N" or t[bi - 2].k != "N" or (bi == 4 and t[1].k not in ("N", "-")):
+        return "fund data line: no Saldo Bruto under the total's column, after date, invested value, quantity and quota"
+    after = t[bi + 1 :]
+    if any(x.k not in ("N", "-") and not _ocr_speck(x) for x in after):
+        return "fund data line: text after Saldo Bruto"
+    ctx.diag.ocr_specks += sum(1 for x in after if x.k not in ("N", "-"))
+    return t[bi - 2], t[bi - 1], t[bi]
+
+
+RATE_WORDS = {"+", "do", "de", "aa", "aa.", "a.", "%"}
+
+
+def _ocr_speck(x: Tok) -> bool:
+    """OCR text only: a one- or two-character reading of a missing-value dash or a rule ('o', 'a', 'ã', 'x').
+
+    Never a digit, nor a piece of a rate ('+', 'do').
+    """
+    return x.k == "L" and len(x.t) <= 2 and not any(c.isdigit() for c in x.t) and x.t.lower() not in RATE_WORDS
+
+
+def _fund_title(text: str, tolerant: bool) -> tuple[str, str | None]:
+    """(name, CNPJ) of a fund title line. OCR mode reads a CNPJ whose dots OCR dropped or split ('11.222333/0001-81')."""
+    m = _FUND_TITLE.match(text)
+    if m:
+        return m.group("name").strip(" -"), m.group("cnpj")
+    if tolerant:
+        m = _FUND_TITLE_OCR.match(text)
+        if m:
+            d = re.sub(r"\D", "", m.group("cnpj"))
+            return m.group("name").strip(" -"), ocr._fmt_cnpj(d)
+    found = _CNPJ_ANY.search(text)
+    return text.strip(), (found.group(0) if found else None)
+
+
 def _parse_funds(b: Block, ctx: _Ctx, period_end: dt.date) -> None:
     title: list[Line] = []
     rows: list[Item] = []
     done = False
+    tot = next((ln for ln in b.lines if _is_fund_total(ln.toks)), None)
+    tot_nums = [x for x in tot.toks if x.k == "N"] if tot is not None else []
+    bruto_ref = tot_nums[0] if tot_nums else None
     for ln in b.lines:
         t = ln.toks
-        k0, tail0 = _split_total(t)
-        if k0.startswith("totalem") or (k0 == "total" and tail0):
+        if _is_fund_total(t):
             nums = [x for x in t if x.k == "N"]
             if not nums:
                 ctx.bad(ln, "'Total em fundos' with no value")
@@ -811,20 +975,20 @@ def _parse_funds(b: Block, ctx: _Ctx, period_end: dt.date) -> None:
             if done:
                 ctx.bad(ln, "fund row after 'Total em fundos'")
                 continue
-            if len(t) != 9 or any(x.k not in ("N", "-") for x in t[1:]) or t[4].k != "N":
-                ctx.bad(ln, "fund data line not in the nine columns")
+            vals = _fund_values(t, bruto_ref, ctx)
+            if isinstance(vals, str):
+                ctx.bad(ln, vals)
                 title = []
                 continue
+            q_tok, p_tok, b_tok = vals
             if not title:
                 ctx.bad(ln, "fund data line with no title line")
                 continue
+            if ctx.ocr and not _qty_price_ok(ln, q_tok, p_tok, b_tok, ctx):
+                title = []
+                continue
             text = " ".join(_gap_join(x.toks) for x in title)
-            m = _FUND_TITLE.match(text)
-            if m:
-                name, cnpj = m.group("name").strip(" -"), m.group("cnpj")
-            else:
-                found = _CNPJ_ANY.search(text)
-                name, cnpj = text.strip(), (found.group(0) if found else None)
+            name, cnpj = _fund_title(text, ctx.ocr)
             if len(title) > 1:
                 ctx.diag.wrapped_prefix += len(title) - 1
             title = []
@@ -840,9 +1004,9 @@ def _parse_funds(b: Block, ctx: _Ctx, period_end: dt.date) -> None:
                 codigo=cnpj,
                 codigo_conferido=chk.conferido if chk else None,
                 ajustes=chk.ajustes if chk else (),
-                valor=num(t[4].t),
-                quantidade=opt_num(t[2]),
-                preco=opt_num(t[3]),
+                valor=num(b_tok.t),
+                quantidade=opt_num(q_tok),
+                preco=opt_num(p_tok),
                 classe="Fundo de Investimento",
                 estrategia="Portfólio de fundos",
             )
@@ -913,7 +1077,220 @@ def _is_subtotal(t: list[Tok]) -> bool:
     return bool(tail) and len(tail) >= 3 and label in ("", "total") and tail[0].k == "N" and "," in tail[0].t
 
 
+def _header_x(b: Block, pattern: str) -> int | None:
+    """The column where a header phrase ('taxa', 'data inicial', which OCR may print as 'Datainicial') starts, or None."""
+    rx = re.compile(pattern, re.I)
+    xs = [m.start() for ln in b.header for m in [rx.search(_strip_accents(ln.text))] if m]
+    return min(xs) if xs else None
+
+
+def _in_col(tok: Tok, ref: Tok) -> bool:
+    """A number in the column of ``ref``: right-aligned with it (as printed) or, failing that, left-aligned."""
+    return abs(tok.end - ref.end) <= COL_SLACK or abs(tok.x - ref.x) <= COL_SLACK
+
+
+def _parse_rf_ocr(b: Block, ctx: _Ctx) -> None:
+    """A renda fixa table in OCR text: numbers placed by column, wrapped cells by their vertical position.
+
+    The text layer holds the dates and numbers, never the missing-value dashes (outlines, which OCR reads
+    or not). So a row is the line with the Emissão and Vencimento dates; Saldo Bruto is its number
+    right-aligned with the subtotal's first value, Quantidade and Preço the two numbers before it, and
+    quantity x price must give Saldo Bruto. Liquidez, carência and data inicial are not used; the rate is
+    the text between the header's 'Data inicial' and 'Taxa' columns and Quantidade. Emissor and Ativo are
+    left of the Emissão date, split at the header's 'Ativo'.
+    """
+    kind = b.arg
+    entries: list[tuple[str, object]] = []
+    sub: Line | None = None
+    for ln in b.lines:
+        t = ln.toks
+        if sub is not None:
+            if any(x.k in ("N", "D") for x in t):
+                ctx.bad(ln, "renda fixa line after the table's subtotal")
+            else:
+                ctx.diag.lines_after_total += 1
+            continue
+        di = next((i for i, x in enumerate(t) if x.k == "D"), None)
+        if di is not None:
+            if di + 1 >= len(t) or t[di + 1].k != "D":
+                ctx.bad(ln, "renda fixa row with no Vencimento date after Emissão")
+            else:
+                entries.append(("d", ln))
+            continue
+        if any(x.k == "N" and "," in x.t for x in t) and all(x.k in ("N", "-") or _ocr_speck(x) for x in t):
+            sub = ln
+            continue
+        if any(x.k == "C" or (x.k == "N" and "," in x.t) for x in t):
+            ctx.bad(ln, "renda fixa line with numbers that is neither a row nor the subtotal")
+            continue  # an integer stays: a code may read as digits only (a CRI's 'I' as '1'), or end in a wrapped '0'
+        entries.append(("f", ln))
+    if sub is None:
+        for k, obj in entries:
+            if k == "d":
+                ctx.bad(obj, "renda fixa row in a table with no subtotal to align the columns")
+        return
+    sub_nums = [x for x in sub.toks if x.k == "N"]
+    ativo_x = b.header_ativo_x
+    taxa_x, inicial_x = _header_x(b, r"\btaxa"), _header_x(b, r"data\s*inicial")
+    rows: list[RfRow] = []
+    for k, obj in list(entries):
+        if k != "d":
+            continue
+        ln: Line = obj  # type: ignore[assignment]
+        t = ln.toks
+        di = next(i for i, x in enumerate(t) if x.k == "D")
+        money = [i for i, x in enumerate(t) if i > di + 1 and x.k == "N" and "," in x.t]
+        bi = next((i for i in money if abs(t[i].end - sub_nums[0].end) <= COL_SLACK), None)
+        if bi is None:
+            bi = next((i for i in money if _in_col(t[i], sub_nums[0])), None)
+        reason = None
+        if bi is None or bi - 2 <= di + 1:
+            reason = "renda fixa row: no Saldo Bruto under the subtotal's column, after Quantidade and Preço"
+        elif any(x.k not in ("N", "-") and not _ocr_speck(x) for x in t[bi + 1 :]):
+            reason = "renda fixa row: text after Saldo Bruto"
+        if reason:
+            ctx.bad(ln, reason)
+            entries.remove((k, obj))
+            continue
+        q, pr, br = t[bi - 2], t[bi - 1], t[bi]
+        if not _qty_price_ok(ln, q, pr, br, ctx):
+            entries.remove((k, obj))
+            continue
+        ctx.diag.ocr_specks += sum(1 for x in t[bi + 1 :] if x.k == "L")
+        # Between Vencimento and Quantidade: Liquidez (a word), carência and data inicial (a number, a date or
+        # a dash OCR may read as a speck), then the rate. The rate starts after the row's own Liquidez value and
+        # what follows it; with no Liquidez value read, 40% of the way from the 'Data inicial' header to the
+        # 'Taxa' header (the rate prints a little left of its centred header).
+        if taxa_x is not None and inicial_x is not None and inicial_x < taxa_x:
+            header_lo = inicial_x + (taxa_x - inicial_x) * 2 // 5
+        elif taxa_x is not None:
+            header_lo = taxa_x - 8
+        else:
+            header_lo = q.x  # no header: no rate is read
+        middle = t[di + 2 : bi - 2]
+        j = 1 if middle and middle[0].k == "L" and not _ocr_speck(middle[0]) and middle[0].x < header_lo else 0
+        while j < len(middle) and (middle[j].k in ("N", "D", "-") or _ocr_speck(middle[j])):
+            j += 1
+        taxa = middle[j:]
+        taxa_lo = taxa[0].x if taxa else (middle[j - 1].end + 1 if j else header_lo)
+        if any(x.k in ("D", "C") or (x.k == "N" and "," in x.t and not x.t.endswith("%")) for x in taxa):
+            ctx.bad(ln, "renda fixa row: a date or value where the rate is printed")
+            entries.remove((k, obj))
+            continue
+        try:
+            venc = date_of(t[di + 1].t)
+        except ValueError:
+            ctx.bad(ln, "renda fixa row with an unreadable Vencimento")
+            entries.remove((k, obj))
+            continue
+        r = RfRow(ln, t[:di], t[di].x, venc, taxa, taxa_lo, q.x, num(q.t), num(pr.t), num(br.t))
+        rows.append(r)
+        entries[entries.index((k, obj))] = ("d", r)
+
+    def is_ativo(tk: Tok) -> bool:
+        if ativo_x is not None:
+            return tk.x >= ativo_x - COL_SLACK
+        return _ATIVO_LIKE.match(tk.t) is not None and tk.x > 0
+
+    for r in rows:
+        if r.lead and is_ativo(r.lead[-1]):
+            r.ativo_tok = r.lead[-1]
+    if any(r.ativo_tok is not None and r.ativo_tok.t.endswith("-") for r in rows):
+        ctx.ev_top = True
+
+    def prefer_tail(row: RfRow) -> bool:
+        return bool(row.ativo_tok and row.ativo_tok.t.endswith("-"))
+
+    placed, orphans = _assign(entries, prefer_tail, ctx) if rows else ({}, [o for k, o in entries if k == "f"])
+    for ln in orphans:
+        ctx.bad(ln, "text line not attached to any renda fixa row")
+    items: list[Item] = []
+    for r in rows:
+        pre, post = placed[id(r)]
+        emissor_parts: list[str] = []
+        ativo_parts: list[str] = []
+        taxa_parts: list[str] = []
+        ok = True
+
+        def take(toks: list[Tok], ln: Line) -> bool:
+            em, at, tx = [], [], []
+            for tk in toks:
+                if tk.x < r.date_x - 1:
+                    (at if is_ativo(tk) else em).append(tk)
+                elif _ocr_speck(tk):
+                    ctx.diag.ocr_specks += 1  # a dash or a rule read as a letter: not read
+                elif r.taxa_lo - COL_SLACK <= tk.x and tk.end <= r.qty_x - 1:
+                    tx.append(tk)
+                elif tk.k == "L" and tk.end <= r.taxa_lo:
+                    ctx.diag.ocr_specks += 1  # the Liquidez text, wrapped: not read
+                else:
+                    ctx.bad(ln, "wrapped text outside the Emissor, Ativo and Taxa columns")
+                    return False
+            if em:
+                emissor_parts.append(_gap_join(em))
+            if at:
+                ativo_parts.append("".join(x.t for x in at))
+            if tx:
+                taxa_parts.append(_gap_join(tx))
+            return True
+
+        for ln in pre:
+            ok = take(ln.toks, ln) and ok
+        lead_em = [x for x in r.lead if x is not r.ativo_tok]
+        if lead_em:
+            emissor_parts.append(_gap_join(lead_em))
+        if r.ativo_tok is not None:
+            ativo_parts.append(r.ativo_tok.t)
+        if r.taxa_toks:
+            taxa_parts.append(_gap_join(r.taxa_toks))
+        for ln in post:
+            ok = take(ln.toks, ln) and ok
+        if not ok:
+            continue
+        item = _rf_item(r, kind, emissor_parts, ativo_parts, taxa_parts, ctx)
+        if item is not None:
+            items.append(item)
+    ctx.subtotals.append((f"folhas x subtotal Renda fixa {kind or '?'}", num(sub_nums[0].t), items))
+
+
+def _rf_item(r: RfRow, kind: str, emissor_parts: list[str], ativo_parts: list[str], taxa_parts: list[str], ctx: _Ctx) -> Item | None:
+    ativo = "".join(ativo_parts).upper()
+    emissor = sp.join_fragments(emissor_parts) or None
+    if not ativo or ativo.endswith("-"):
+        ctx.bad(r.line, "renda fixa row with no complete Ativo code")
+        return None
+    chk = None
+    if ctx.ocr:
+        ativo, chk = ocr.normalize_ativo("".join(ativo_parts))
+    tipo, codigo = _rf_type(ativo, emissor, kind, r.venc)
+    if ctx.ocr and chk is None:
+        chk = ocr.FieldCheck(codigo or "", tipo == "tesouro" and codigo is not None and ativo.replace("-", "") in TESOURO_ATIVO)
+    taxa = " ".join(taxa_parts) or None
+    name = f"{emissor} - {ativo}" if emissor else ativo
+    it = Item(
+        group="rf",
+        name=name,
+        tipo=tipo,
+        codigo=codigo,
+        valor=r.bruto,
+        quantidade=r.qty,
+        preco=r.preco,
+        vencimento=r.venc,
+        taxa=taxa,
+        emissor=emissor,
+        classe="Renda Fixa",
+        estrategia=kind or None,
+        codigo_conferido=chk.conferido if chk else None,
+        ajustes=chk.ajustes if chk else (),
+    )
+    ctx.items.append(it)
+    return it
+
+
 def _parse_rf(b: Block, ctx: _Ctx) -> None:
+    if ctx.ocr:
+        _parse_rf_ocr(b, ctx)
+        return
     kind = b.arg
     entries: list[tuple[str, object]] = []
     subtotal: Decimal | None = None
@@ -1004,37 +1381,9 @@ def _parse_rf(b: Block, ctx: _Ctx) -> None:
             ok = take(ln.toks, ln) and ok
         if not ok:
             continue
-        ativo = "".join(ativo_parts).upper()
-        emissor = sp.join_fragments(emissor_parts) or None
-        if not ativo or ativo.endswith("-"):
-            ctx.bad(r.line, "renda fixa row with no complete Ativo code")
-            continue
-        chk = None
-        if ctx.ocr:
-            ativo, chk = ocr.normalize_ativo("".join(ativo_parts))
-        tipo, codigo = _rf_type(ativo, emissor, kind, r.venc)
-        if ctx.ocr and chk is None:
-            chk = ocr.FieldCheck(codigo or "", tipo == "tesouro" and codigo is not None and ativo.replace("-", "") in TESOURO_ATIVO)
-        taxa = " ".join(taxa_parts) or None
-        name = f"{emissor} - {ativo}" if emissor else ativo
-        it = Item(
-            group="rf",
-            name=name,
-            tipo=tipo,
-            codigo=codigo,
-            valor=r.bruto,
-            quantidade=r.qty,
-            preco=r.preco,
-            vencimento=r.venc,
-            taxa=taxa,
-            emissor=emissor,
-            classe="Renda Fixa",
-            estrategia=kind or None,
-            codigo_conferido=chk.conferido if chk else None,
-            ajustes=chk.ajustes if chk else (),
-        )
-        items.append(it)
-        ctx.items.append(it)
+        it = _rf_item(r, kind, emissor_parts, ativo_parts, taxa_parts, ctx)
+        if it is not None:
+            items.append(it)
     if subtotal is None:
         if rows:
             ctx.unread.append(f"renda fixa {kind or '?'}: table with no subtotal row (shape -)")
@@ -1139,6 +1488,8 @@ def _parse_prev(b: Block, ctx: _Ctx, plan_no: int) -> None:
         if not name:
             ctx.bad(ln, "previdência row with no fund name")
             continue
+        if ctx.ocr and not _qty_price_ok(ln, t[-3], t[-2], t[-1], ctx):
+            continue
         chk = ocr.check_cnpj(cnpj_tok.t) if ctx.ocr else None
         it = Item(
             group="prev",
@@ -1218,6 +1569,8 @@ def _parse_rv(b: Block, ctx: _Ctx) -> None:
         if not ok:
             continue
         name = sp.join_fragments(parts) or t[0].t
+        if ctx.ocr and not _qty_price_ok(ln, t[-4], t[-3], t[-1], ctx):
+            continue
         chk = ocr.normalize_ticker(t[0].t) if ctx.ocr else None
         try:
             it = Item(
@@ -1277,9 +1630,13 @@ def _period_end(texts: list[str], tolerant: bool = False) -> dt.date:
     raise StatementFormatError("no period 'Período de DD/MM/YY a DD/MM/YY' found: the position date cannot be set")
 
 
-def parse_extrato_pages(pages: list[str], extractor: str = "text", ocr_mode: bool = False, ocr_stats=None) -> tuple[Statement, Diagnostics]:
+def parse_extrato_pages(
+    pages: list[str], extractor: str = "text", ocr_mode: bool = False, ocr_stats=None, line_ys: list[list[float]] | None = None
+) -> tuple[Statement, Diagnostics]:
     """Read the extrato's pages (layout text). ``ocr_mode``: the labels came from OCR (``statement_ocr``):
     headings are matched with OCR tolerance, and codes, CNPJs and rates are normalised and flagged per position.
+    ``line_ys`` (OCR only): per page, each line's vertical centre in font-size units, so a wrapped cell of a
+    vertically centred row goes to the row it sits closest to.
     """
     diag = Diagnostics(extractor=extractor, pages=len(pages), ocr=ocr_mode, ocr_stats=ocr_stats)
     if not pages or not any(p.strip() for p in pages):
@@ -1291,8 +1648,13 @@ def parse_extrato_pages(pages: list[str], extractor: str = "text", ocr_mode: boo
     period_end = _period_end([ln for pg in pages for ln in pg.splitlines()], tolerant=ocr_mode)
     rest = pages[1:]
     del pages
+    ys = line_ys[1:] if line_ys else None
+
+    def y_of(pi: int, li: int) -> float | None:
+        return ys[pi][li] if ys is not None and pi < len(ys) and li < len(ys[pi]) else None
+
     lines = [
-        Line(pi + 2, li + 1, s, tokens(s))
+        Line(pi + 2, li + 1, s, tokens(s), y_of(pi, li))
         for pi, pg in enumerate(rest)
         for li, s in enumerate(scrub(raw) for raw in pg.splitlines())
     ]
@@ -1497,11 +1859,14 @@ def _describe_ocr(diag: Diagnostics) -> list[str]:
     st = diag.ocr_stats
     words = (
         f"palavras OCR {st.ocr_words}, da camada de texto {st.pdf_words}; descartadas: sobre a camada de texto "
-        f"{st.dropped_overlap}, numéricas na coluna de um número {st.dropped_numeric}, marcas soltas {st.dropped_marks}"
+        f"{st.dropped_overlap}, numéricas na coluna de um número {st.dropped_numeric}, marcas soltas {st.dropped_marks}; "
+        f"códigos relidos sozinhos {st.reread}"
         if isinstance(st, ocr.MergeStats) else "contagem de palavras indisponível"
     )
     return [
         f"OCR: rótulos lidos por OCR (tesseract por); números e datas da camada de texto; {words}",
+        f"OCR colunas: valores por posição; traços de valor ausente lidos e ignorados {diag.ocr_specks}; "
+        f"linhas com quantidade x preço = Saldo Bruto {diag.qty_price_checked}",
         "OCR conferência: " + (", ".join(f"{k} {v}" for k, v in sorted(diag.ocr_checks.items())) or "nada a conferir"),
     ]
 
