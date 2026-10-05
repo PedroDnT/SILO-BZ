@@ -603,3 +603,28 @@ def test_a_fund_held_directly_and_inside_another_fund_is_one_overlap():
     assert len(g) == 1 and g[0]["fund_cnpj"] == A and g[0]["line_nos"] == [1, 2] and g[0]["direct_line_nos"] == [1]
     # the same fund on two direct lines (two accounts) is one position, not an overlap
     assert not any(x.get("fund_cnpj") == C for x in groups)
+
+
+def test_an_ocr_code_not_checked_that_matches_nothing_says_ocr_never_sem_registro():
+    s = patch(stmt(credit("DEB EOLICA", "debênture", "Curi")), 0, codigo_conferido=False)
+    rows = [inst(1, "Curi", "CURI", None, reason="sem correspondência")]
+    sec, lines = identify(s, FakeClient({"portfolio_instruments": [{"match": {}, "rows": rows}]}))
+    cm = sec["lines"][0]["credit_match"]
+    assert sec["lines"][0]["reason_code"] == "codigo_nao_conferido" and cm["reason_code"] == "codigo_nao_conferido"
+    assert [f["code"] for f in cm["flags"]] == ["codigo_nao_conferido"] and not cm["matched"]
+
+
+def test_a_bad_argument_22023_is_not_retried_shallower():
+    s = stmt(fund("FIC PREV", A, 100.0))
+    asked = []
+
+    class Bad(FakeClient):
+        def _request(self, tool, args):
+            if tool == "portfolio_lookthrough":
+                asked.append(args["p_max_depth"])
+                raise ToolError(tool, '{"code":"22023","message":"p_max_depth must be between 1 and 6"}')
+            return super()._request(tool, args)
+
+    _, lines = identify(s, Bad(resolve_none()))
+    compute_lookthrough(lines, Bad(resolve_none()), dt.date(2026, 5, 1), 4)
+    assert asked == [4]

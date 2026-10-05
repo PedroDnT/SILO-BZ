@@ -252,7 +252,7 @@ def compute_lookthrough(
     return section, exposures
 
 
-_ROW_CAP = re.compile(r"more than 1000 rows|22023")
+_ROW_CAP = re.compile(r"more than 1000 rows")  # 22023 alone is also a bad argument: only the page cap steps down
 
 
 def _lookthrough_call(client: SiloClient, cnpj: str, cda_month: dt.date, max_depth: int, errors: list[dict]) -> tuple[Call, int]:

@@ -480,10 +480,16 @@ def _identify_credit(lines: list[LineId], client: SiloClient, sec: Section) -> d
             kind = INSTRUMENT_MATCH_KIND[li.position.tipo]
             cands = [r for r in grouped.get(idx, []) if r.get("match_kind") == kind]
             if not cands:
-                li.status, li.reason_code = "unknown", "credito_sem_registro"
+                # an OCR code that did not pass its check and matches nothing is a reading problem first, not a gap in
+                # SILO (real statement, 2026-10-05: a debenture ticker read as a word): say so, never "sem registro"
+                unchecked = li.position.codigo_conferido is False
+                code = "codigo_nao_conferido" if unchecked else "credito_sem_registro"
+                li.status, li.reason_code = "unknown", code
                 li.reason = (f"{li.position.tipo} com código {sent[idx - 1]}: o código não foi encontrado nos dados do SILO "
-                             f"({'registro de CRA e CRI da CVM' if kind == 'securit_cetip' else 'carteiras dos fundos, CDA bloco 4'}).")
-                out[li.line_no] = _credit_block(li, None, [], src, "credito_sem_registro")
+                             f"({'registro de CRA e CRI da CVM' if kind == 'securit_cetip' else 'carteiras dos fundos, CDA bloco 4'})"
+                             + ("; o código foi lido por OCR e não conferido." if unchecked else "."))
+                flags = [{"code": "codigo_nao_conferido", "text": REASON_TEXT["codigo_nao_conferido"]}] if unchecked else None
+                out[li.line_no] = _credit_block(li, None, [], src, code, flags)
                 continue
             out[li.line_no] = _apply_credit(li, cands, src)
     return out

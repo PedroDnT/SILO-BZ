@@ -150,8 +150,9 @@ DETAIL_LABEL = {"credito_sem_fgc": "valor sem cobertura", "fgc_acima_limite": "e
 CHECK_LABEL = {"credito_vencimento_diverge": "a conferir", "credito_preco_marcacao": "informativo, não é veredito de preço",
                "indexador": "leitura parcial: mais de 25% da carteira sem indexador classificado (partes ao lado)"}
 # Above this share of the portfolio without an indexer, the indexer row's largest group may not be the largest one:
-# the row keeps its value and severity and carries CHECK_LABEL["indexador"] (real statement, 2026-10-05: 46% of the
-# value unclassified, the funds' part the ingested CDA blocks do not explain, printed beside "baixo").
+# the row keeps its value and severity and carries CHECK_LABEL["indexador"] (real statement, 2026-10-05, replayed with
+# a sample of each fund's look-through: a large unclassified share, the funds' part the ingested CDA blocks do not
+# explain, printed beside "baixo").
 INDEXER_UNCLASSIFIED_CHECK_PCT = 25.0
 FUND_TIPOS = ("fundo", "FIDC", "FII", "ETF", "FIP")
 INDEXER_GROUPS = (
