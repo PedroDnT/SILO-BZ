@@ -271,8 +271,10 @@ REFUSING_FUNCTIONS = {
     "portfolio_instruments",
     "portfolio_fund_terms",
     "portfolio_fee_peers",
+    # v65: B3's FORWARD segment (32_api_trade_consolidated.sql). Pages.
+    "trade_consolidated_history",
 }
-PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
+PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav", "trade_consolidated_history"}
 
 
 def test_fidc_concentration_is_no_longer_described_as_silently_clamped(spec):
