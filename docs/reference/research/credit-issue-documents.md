@@ -35,6 +35,7 @@ portfolio (`DEB-01`, `DEB-02` and `CRI-01` were not looked up).
    Distribuição Pública" (16) and "Relatório de agência classificadora de
    risco" (36). Whether the JSON listing answers without a browser session was
    **not verified** here (a call without the AJAX header got HTTP 520).
+   Verified later the same day: it does, with no captcha (Addendum).
 4. **The current version is several documents.** A termo or escritura is
    amended by aditamentos, and an aditamento may restate only the clauses it
    changes. The CRA example's first aditamento carries a consolidated termo
@@ -262,14 +263,19 @@ Q7's last query also returns `BRECOACRACP4` ("CDI + 1,8000 a.a.", rated
 
 ## 7. Not verified
 
-- Whether the Fundos.NET JSON listing answers `paginaCertificados=true` from
-  a plain HTTP client with only the `X-Requested-With` header, as the fund
-  listing does; and its `recordsTotal` for CRI and CRA per day.
+- **Verified (Addendum, A.1):** the Fundos.NET JSON listing answers
+  `paginaCertificados=true` with `tipoFundo` 5 and 6 to a third-party GET
+  with no captcha, login, cookie or session, and a document downloads by id
+  the same way. One day's `recordsTotal`: 136 CRI (2026-10-02), 121 CRA
+  (2026-10-01 and 02 together). Still not isolated: which request headers
+  the endpoint requires (the fetcher's headers are not visible).
 - Whether Fundos.NET certificados carry every termo: posting rules were not
   read, only the categories the page offers.
-- The columns of `oferta_distribuicao.csv` and `oferta_resolucao_160.csv`
-  (the zips could not be opened here), so whether they carry the issuer CNPJ,
-  ISIN or debtor.
+- **Still not verified (Addendum, A.2):** the data dictionary of
+  `oferta_distribuicao.csv` and `oferta_resolucao_160.csv`. The meta zip
+  could not be opened by any tool here. Some column names are known from
+  CVM's resource note and from third-party code (A.2); whether the files
+  carry the ISIN, lastro, debtor, rating or indexer is not known.
 - The terms of use of RAD, the CVM open-data portal (beyond the ODbL licence
   filter), B3, the securitizadora sites, the issuer IR pages and the SND.
   `robots.txt` was not read for any source.
@@ -284,3 +290,85 @@ Q7's last query also returns `BRECOACRACP4` ("CDI + 1,8000 a.a.", rated
   escritura scanned without OCR would not.
 - The owner's `DEB-01`, `DEB-02` and `CRI-01` were not looked up (no real
   portfolio data in this note).
+
+## Addendum 2026-10-05 (UTC-3)
+
+Tested 2026-10-05 from 10:00 to 10:20 UTC-3 (13:00 to 13:20 UTC). Closes two
+items of section 7. Every request was a public GET made through a third-party
+fetcher (Firecrawl `firecrawl_scrape`, Exa `web_fetch_exa`), because this
+session's shell and built-in fetch cannot reach `fnet.bmfbovespa.com.br` or
+`dados.cvm.gov.br`. The browser tool could not start (no Chromium in the
+session), so no XHR was watched. No captcha was solved, bypassed or read, and
+no captcha parameter was sent. The documents named below are public listings,
+not positions of the owner's portfolio.
+
+### A.1 Fundos.NET certificados: the listing answers without the captcha
+
+Base: `https://fnet.bmfbovespa.com.br/fnet/publico/`. Each call is the
+endpoint SILO's fetcher uses, plus `paginaCertificados=true`.
+
+| Call (query string)                                                                                   | HTTP | Observed                                                                                                     |
+| ----------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------ |
+| `pesquisarGerenciadorDocumentosDados?d=1&s=0&l=10&paginaCertificados=true&tipoFundo=6&dataInicial=01/10/2026&dataFinal=02/10/2026` | 200  | JSON, `"recordsTotal":121`; first row "BSIP CRA Emissão:1 Série:3 Frigorifico Redentor 04/2017 BRBSIPCRA004", "Informe Mensal de CRA" |
+| same, without `paginaCertificados`                                                                    | 200  | `{"data":[],"draw":1,"recordsFiltered":0,"recordsTotal":0}`                                                  |
+| `...&l=5&paginaCertificados=true&tipoFundo=5&idCategoriaDocumento=17&dataInicial=01/09/2026&dataFinal=30/09/2026` | 200  | `"recordsTotal":35`, every row `"categoriaDocumento":"Termo de Securitização"`; first id 1306837             |
+| `...&l=1&paginaCertificados=true&tipoFundo=5&dataInicial=02/10/2026&dataFinal=02/10/2026`, first try | 520  | Cloudflare page "Web server is returning an unknown error", 2026-10-05 10:08 UTC-3 (13:08 UTC)               |
+| the same call, a few minutes later                                                                    | 200  | `"recordsTotal":136`; first row "BRAZILIAN SC CRI Emissão:1 Série:238 ...", "Ata da Assembleia"             |
+| `downloadDocumento?id=1306837`                                                                        | 200  | `application/pdf`, 189 pages; text read: "TERMO DE SECURITIZAÇÃO DE CRÉDITOS IMOBILIÁRIOS ... 111ª ... EMISSÃO DA LEVERAGE COMPANHIA SECURITIZADORA ... CNPJ n° 48.415.978/0001-40" |
+
+Result:
+
+- **Verified.** The listing returns rows for CRI and CRA with no captcha,
+  login, cookie or session. A month-wide window answered when filtered by
+  category (35 termos), not only a day.
+- The control call explains the fetcher's note "4..6 return nothing": without
+  `paginaCertificados=true` the same CRA window returns 0 rows.
+- **Verified.** A document downloads by id with no captcha. Firecrawl's PDF
+  parser returned the text; whether this PDF has a text layer or was OCR'd by
+  the parser was not checked.
+- The 520 came and went on identical parameters, so it is an intermittent
+  origin error, not a captcha or a header wall. Section 7's earlier 520 is
+  not evidence of a header rule either.
+- Rows carry the security in `descricaoFundo` (securitizadora, CRA or CRI,
+  issue, series, name, ISIN) and `"cnpjFundo":null`, `"fundoOuClasse":"Certifcado ou Inf. Sec."`
+  (sic). No issuer or debtor CNPJ is on the row.
+- Not isolated: which headers the endpoint needs. Firecrawl sends its own
+  headers, which the result does not show; a plain client with only
+  `X-Requested-With`, as in `fnet_fetcher.py`, was not run.
+- The captcha on the page belongs to the keyword and "Extrair Inf. Mensal"
+  features (section 1.1); nothing tested here needed it.
+
+### A.2 CVM offers dataset: columns, partly
+
+Dataset page `https://dados.cvm.gov.br/dataset/oferta-distrib`, read
+2026-10-05. The data dictionary is
+`https://dados.cvm.gov.br/dados/OFERTA/DISTRIB/META/meta_oferta_distribuicao.zip`
+(3,073 bytes, dated 15-Apr-2026 in the directory listing). It could not be
+opened: Exa returned `CRAWL_UNEXPECTED_CONTENT_TYPE`, Firecrawl refuses
+`application/zip`, the built-in fetch got `EGRESS_BLOCKED`, the shell got
+`CONNECT tunnel failed, response 403`, and Parallel was rate-limited.
+
+What CVM itself states (CKAN `package_show?id=oferta-distrib`, resource
+"Ofertas de Distribuição"): "Novas colunas incluídas a partir de maio/2022:
+Modalidade_Oferta; Data_Inicio_Oferta; Tipo_Societario_Emissor;
+Tipo_Fundo_Investimento; Ultimo_Comunicado; Data_Comunicado. Além disso, as
+colunas Modalidade_Registro_Oferta e Modalidade_Dispensa_Oferta foram
+renomeadas para Modalidade_Registro e Modalidade_Dispensa_Registro". That
+note is about `oferta_distribuicao.csv`.
+
+Column names of `oferta_resolucao_160.csv` used by third-party code that
+reads the CSV (read 2026-10-05; not CVM's dictionary, no descriptions):
+
+| Column                                        | Seen in                                                                 | Relevant to                     |
+| --------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------- |
+| `Numero_Requerimento`, `Numero_Processo`      | both in `thaissalzer/monitor_debentures` `automacao_cvm.py`; `Numero_Requerimento` also in `marcioyoshida/Signals-Competitor-Intelligence` `docs/DATA_SOURCES.md` | the offer's id; the SRE page is `web.cvm.gov.br/sre-publico-cvm/#/oferta-publica/<Numero_Requerimento>` in that code |
+| `Nome_Emissor`, `CNPJ_Emissor`                | `DATA_SOURCES.md`                                                       | issuer (the securitizadora for a CRA or CRI) |
+| `Valor_Mobiliario`                            | both; value "Debêntures" in the code, "Cotas de FIDC" in the doc        | security type                   |
+| `Titulo_incentivado`                          | `automacao_cvm.py` (value "S")                                          | incentivized debenture flag     |
+| `Nome_Lider`, `CNPJ_Lider`                    | `DATA_SOURCES.md`                                                       | lead coordinator                |
+| `Data_Registro`, `Data_requerimento`, `Valor_Total_Registrado`, `Status_Requerimento`, `Tipo_Oferta`, `Rito_Requerimento` | `DATA_SOURCES.md` | dates, amount, status, rito     |
+
+Result: **still not verified.** No source read here names a column for the
+lastro, the debtor, the guarantees, the indexer, the rating or the ISIN; that
+is unknown, not absent. Opening the meta zip needs a client that can reach
+`dados.cvm.gov.br` (a GitHub Actions run or a local machine).
