@@ -129,9 +129,9 @@ def test_template_writer_covers_every_section_and_passes_the_revisor(engine):
     findings = redator._coerce_findings(redator.template_findings(engine))
     result = revisor.check(engine, findings)
     assert result.removed == []
-    # "riscos" needs the engine 1.8 risks section, "retornos" and "impostos" the 1.10 and 1.11 blocks, which the
-    # provisional view does not carry
-    absent = {"riscos": "risks", "retornos": "returns", "impostos": "tax"}
+    # "riscos" needs the engine 1.8 risks section, "retornos", "impostos" and "equivalentes" the 1.10, 1.11 and 1.13 blocks,
+    # which the provisional view does not carry
+    absent = {"riscos": "risks", "retornos": "returns", "impostos": "tax", "equivalentes": "equivalents"}
     expected = set(redator.SECTIONS) - {sec for sec, key in absent.items() if key not in engine}
     assert {f.section for f in result.kept} == expected
     for f in result.kept:  # rule zero: no digit outside a placeholder

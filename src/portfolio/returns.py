@@ -27,7 +27,9 @@ session in the month on or before the position date. Every window needs all its 
 
 Per window: net return; the CDI over the same dates (``macro_series('CDI')``, B3's DI-factor convention: daily
 factors ``1 + rate/100`` truncated at 16 decimals, product over the rates dated from the base date inclusive to
-the end date exclusive, rounded to 8); volatility (sample standard deviation of the monthly returns, × √12);
+the end date exclusive, rounded to 8); "% do CDI" (engine 1.13, #606 Q36) only for a fund whose own filed benchmark
+is CDI or DI (``benchmark.py``, the versioned spelling list) and only when the CDI over the window is above zero, else
+a reason code and only the difference in percentage points; volatility (sample standard deviation of the monthly returns, × √12);
 maximum drawdown on month-end values; and, when the fee block has a single disclosed administration fee
 (headline ``fixa`` or ``lamina_mais_recente``, or ``etf_site`` counted as a cost), the estimated gross return
 (net + the annual fee; half of it for 6 months), the fee per point of gross return and the Sharpe drag
@@ -40,6 +42,7 @@ import datetime as dt
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Any
 
+from src.portfolio import benchmark
 from src.portfolio.client import SiloClient
 from src.portfolio.common import (
     STATUS_NOT_APPLICABLE,
@@ -164,6 +167,14 @@ REASONS = {
     "consulta_falhou": "consulta ao SILO falhou ou foi recusada",
     "resposta_inconsistente": "resposta do SILO inconsistente; a linha não foi avaliada",
 }
+# engine 1.13: why a window has no "% do CDI" (fixed Portuguese text in common.REASON_TEXT)
+PCT_CDI_ONLY_FUNDS = "pct_cdi_so_fundos"
+PCT_CDI_NOT_SERVED = "referencia_nao_servida"
+PCT_CDI_NOT_POSITIVE = "cdi_nao_positivo"
+NOTE_PCT_OF_CDI = (
+    "% do CDI = retorno líquido dividido pelo CDI das mesmas datas, vezes 100; só para fundo cujo índice de referência "
+    "arquivado (Extrato ou lâmina) é CDI ou DI, e só com CDI do período acima de zero"
+)
 
 
 def compute_returns(
@@ -229,6 +240,7 @@ def compute_returns(
         "sharpe_drag_note": NOTE_SHARPE,
         "drawdown_note": NOTE_DRAWDOWN,
         "performance_note": NOTE_PERFORMANCE,
+        "pct_of_cdi_note": NOTE_PCT_OF_CDI,  # engine 1.13
         "note": NOT_A_RECOMMENDATION,
         "cdi": cdi.as_dict(),
         "lines": out,
@@ -373,6 +385,9 @@ def _empty_window(code: str | None, reason: str | None) -> dict[str, Any]:
         "cdi_n_rates": None,
         "cdi_reason_code": None,
         "net_minus_cdi_pp": None,
+        "cdi_like": None,  # engine 1.13: the line's filed benchmark is CDI or DI (benchmark.py)
+        "pct_of_cdi": None,  # engine 1.13: net / CDI x 100, only when cdi_like and the CDI is above zero
+        "pct_of_cdi_reason_code": None,
         "volatility_annual_pct": None,
         "volatility_note": None,
         "max_drawdown_pct": None,
@@ -422,6 +437,7 @@ def _line(
         "reason_code": None,
         "reason": None,
         "fee": None,
+        "benchmark": None,  # engine 1.13: the filed benchmark and whether it is CDI-like
         "performance_fee_filed": False,
         "notes": [],
         "month_ends": [],
@@ -436,11 +452,13 @@ def _line(
     rec["notes"] = _basis_notes(basis, p.tipo)
     fee = _fee(li, basis, fee_line)
     rec["fee"] = fee
+    bench = _benchmark(basis, fee_line)
+    rec["benchmark"] = bench
     rec["performance_fee_filed"] = bool(fee_line and _perf_filed(fee_line))
     if rec["performance_fee_filed"]:
         rec["notes"].append(NOTE_PERFORMANCE)
 
-    points, call, err = _series(li, basis, client, months, position_date, cache, sec)
+    points, call, err = _series(li.cnpj, li.ticker, li.line_no, basis, client, months, position_date, cache, sec)
     if call is not None:
         rec["sources"].append(call.src(_last_date(points) or position_date))
     if points is None:
@@ -457,13 +475,40 @@ def _line(
         for m in months
     ]
     for wid, n, frac, vol_note in WINDOWS:
-        rec["windows"][wid] = _window(months[-(n + 1):], n, frac, vol_note, points, basis, fee, cdi, call)
+        rec["windows"][wid] = _window(months[-(n + 1):], n, frac, vol_note, points, basis, fee, cdi, call, bench)
     if any(w["status"] == EVALUATED for w in rec["windows"].values()):
         rec.update(status=EVALUATED, status_label=STATUS_LABELS[EVALUATED])
     else:
         first = rec["windows"]["12m"]
         rec.update(reason_code=first["reason_code"], reason=first["reason"])
     return rec
+
+
+def _no_benchmark(code: str) -> dict[str, Any]:
+    return {"cdi_like": False, "reason_code": code, "extrato": None, "lamina": None, "lamina_n": None,
+            "extrato_as_of": None, "lamina_as_of": None, "matched": [], "rule_version": None, "sources": []}
+
+
+def _benchmark(basis: str, fee_line: dict[str, Any] | None) -> dict[str, Any]:
+    """The filed benchmark the fee block read (catalog v68), classified by the versioned spelling list."""
+    if basis != FUND:
+        return _no_benchmark(PCT_CDI_ONLY_FUNDS)
+    filed = (fee_line or {}).get("benchmark_as_filed")
+    if not filed:
+        return _no_benchmark(PCT_CDI_NOT_SERVED)
+    verdict = benchmark.classify(filed.get("extrato"), filed.get("lamina"), filed.get("lamina_n"))
+    return {
+        "cdi_like": verdict["cdi_like"],
+        "reason_code": verdict["reason_code"],
+        "extrato": filed.get("extrato"),  # as filed, never normalized in the output
+        "lamina": filed.get("lamina"),
+        "lamina_n": filed.get("lamina_n"),
+        "extrato_as_of": filed.get("extrato_as_of"),
+        "lamina_as_of": filed.get("lamina_as_of"),
+        "matched": verdict["matched"],
+        "rule_version": verdict["rule_version"],
+        "sources": list(filed.get("sources") or []),
+    }
 
 
 def _basis_notes(basis: str, tipo: str) -> list[str]:
@@ -502,7 +547,9 @@ def _fee(li: LineId, basis: str, fee_line: dict[str, Any] | None) -> dict[str, A
 
 
 def _series(
-    li: LineId,
+    cnpj: str | None,
+    ticker: str | None,
+    line_no: int | None,
     basis: str,
     client: SiloClient,
     months: list[dt.date],
@@ -513,12 +560,12 @@ def _series(
     """Month -> {date, value[, null_reason]} for the 13 months, or (None, call, reason code)."""
     base = months[0]
     if basis == FUND:
-        args = {"p_cnpj": li.cnpj, "p_from": base.isoformat(), "p_entity_type": "fi"}
+        args = {"p_cnpj": cnpj, "p_from": base.isoformat(), "p_entity_type": "fi"}
     elif basis == FIXED_INCOME_ETF:
-        args = {"p_ticker": li.ticker, "p_from": base.isoformat(), "p_to": position_date.isoformat()}
+        args = {"p_ticker": ticker, "p_from": base.isoformat(), "p_to": position_date.isoformat()}
     else:
         fields = ["close_total_return", "close_total_return_null_reason"] if basis == TOTAL_RETURN else ["close"]
-        args = {"p_ticker": li.ticker, "p_from": base.isoformat(), "p_to": position_date.isoformat(), "p_fields": fields}
+        args = {"p_ticker": ticker, "p_from": base.isoformat(), "p_to": position_date.isoformat(), "p_fields": fields}
     tool = TOOLS[basis]
     key = f"{tool}:{sorted(args.items())}"
     if key in cache:
@@ -526,17 +573,21 @@ def _series(
     call = call_tool(client, tool, args, sec.errors)
     if not call.ok:
         if basis != FIXED_INCOME_ETF:
-            sec.degrade(f"{tool} falhou para a linha {li.line_no} (erro literal em errors).", code="consulta_falhou")
+            sec.degrade(f"{tool} falhou para {_who(line_no, ticker)} (erro literal em errors).", code="consulta_falhou")
         result = (None, call, "consulta_falhou")
     else:
         pts = _fund_points(call.rows or [], months) if basis == FUND else _tape_points(call.rows or [], months, position_date, basis)
         if pts is None:
-            sec.degrade(f"{tool} devolveu resposta inconsistente para a linha {li.line_no}.", code="resposta_inconsistente")
+            sec.degrade(f"{tool} devolveu resposta inconsistente para {_who(line_no, ticker)}.", code="resposta_inconsistente")
             result = (None, call, "resposta_inconsistente")
         else:
             result = (pts, call, None)
     cache[key] = result
     return result
+
+
+def _who(line_no: int | None, ticker: str | None) -> str:
+    return f"a linha {line_no}" if line_no is not None else f"o ticker {ticker}"
 
 
 def _fund_points(rows: list[dict], months: list[dt.date]) -> dict[dt.date, dict[str, Any]] | None:
@@ -609,6 +660,7 @@ def _window(
     fee: dict[str, Any],
     cdi: _Cdi,
     call: Call | None,
+    bench: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     missing = [m for m in months if m not in points]
     nulls = [m for m in months if m in points and points[m]["value"] is None]
@@ -653,6 +705,7 @@ def _window(
     )
 
     # CDI over the same dates: a fund's are the CDI calendar's month-ends, a ticker's are its sessions.
+    cdi_period: Decimal | None = None
     if basis == FUND:
         c_start, c_end = cdi.month_end(months[0]), cdi.month_end(months[-1])
     else:
@@ -670,6 +723,20 @@ def _window(
                      net_minus_cdi_pp=ratio((net - c) * 100, 6))
             if cdi.call:
                 w["sources"].append(cdi.call.src(c_end))
+            cdi_period = c
+
+    # engine 1.13 (#606 Q36): "% do CDI" only for a fund whose own filed benchmark is CDI or DI
+    if bench is not None:
+        w["cdi_like"] = bool(bench.get("cdi_like"))
+        if not bench.get("cdi_like"):
+            w["pct_of_cdi_reason_code"] = bench.get("reason_code")
+        elif cdi_period is None:
+            w["pct_of_cdi_reason_code"] = "cdi_indisponivel"
+        elif cdi_period <= 0:
+            w["pct_of_cdi_reason_code"] = PCT_CDI_NOT_POSITIVE
+        else:
+            w["pct_of_cdi"] = ratio(net / cdi_period * 100, 4)
+            w["sources"].extend(bench.get("sources") or [])
 
     # The fee's weight: from the fee block's headline only.
     w["fee_status"] = fee["status"]

@@ -82,6 +82,12 @@ _MOVEMENT_WORD_RE = re.compile(r"movimento", re.IGNORECASE)
 _RISK_ROW_RE = re.compile(r"^risks\.rows\[(\d+)\]")
 _RETURN_WINDOW_RE = re.compile(r"^returns\.lines\[\d+\]\.windows\[(\d+)\]")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+# engine 1.13 (#606 Q36): "% do CDI" exists only where the engine wrote pct_of_cdi (a fund whose filed benchmark is CDI
+# or DI). The renderer prints that placeholder as "97,05% do CDI", so the phrase never comes from the writer: a literal
+# "% do CDI" is removed, and so is any other figure followed by "do CDI" (it would print as a "% do CDI" the engine
+# never computed). The CDI's own return (cdi_pct) may still be called "do CDI".
+_PCT_CDI_WORDS_RE = re.compile(r"%\s*do\s+CDI|por\s+cento\s+do\s+CDI|percentual\s+do\s+CDI", re.IGNORECASE)
+_PH_THEN_CDI_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}\s*%?\s*do\s+CDI", re.IGNORECASE)
 _DIGIT_RE = re.compile(r"\d")
 
 
@@ -124,8 +130,9 @@ def _extreme(engine: dict, path: str, value: Any) -> tuple[str, float] | None:
         # A class-relative return, mean or sd is a sample statistic, not an exposure: it carries its own
         # n_peers, class and month, and the section's level rule decides where it may appear.
         return None
-    if low_path.startswith(("returns.", "tax.")):
-        # engines 1.10 and 1.11: a past return, the CDI, a volatility, a drawdown or a legal tax rate is not an exposure;
+    if low_path.startswith(("returns.", "tax.", "equivalents.")):
+        # engines 1.10 to 1.13: a past return, the CDI, a class percentile, a volatility, a drawdown or a legal tax rate
+        # is not an exposure;
         # only a fee rate under these sections keeps the fee rule (a fee above 5% a.a. needs a second path)
         if "_pct" in key and ("fee" in key or ".fee." in low_path):
             annual = float(value)
@@ -212,6 +219,15 @@ def check_sentence(engine: dict, sentence: str, sources: set[str]) -> str | None
         if (m and ph.endswith((".severity_label", ".severity"))
                 and resolve(engine, f"risks.rows[{m.group(1)}].id") == "movimento_anormal"):
             return f"semáforo do movimento incomum só em tabela: {{{{{ph}}}}}"
+    if _PCT_CDI_WORDS_RE.search(bare):
+        return "'% do CDI' só pelo marcador pct_of_cdi que o motor escreveu"
+    for m in _PH_THEN_CDI_RE.finditer(sentence):
+        if not _valid_path(m.group(1)) or last_key(m.group(1)) != "cdi_pct":
+            return f"'do CDI' depois de um valor que não é o CDI: {{{{{m.group(1)}}}}}"
+    for ph in placeholders(sentence):
+        if (_valid_path(ph) and last_key(ph) == "pct_of_cdi" and resolve(engine, ph) not in (None, MISSING)
+                and resolve(engine, parent_path(ph) + ".cdi_like") is not True):
+            return f"'% do CDI' em linha cujo índice de referência arquivado não é CDI ou DI: {{{{{ph}}}}}"
     movement_phs = [ph for ph in placeholders(sentence) if ph.lower().startswith("movement.")]
     for ph in movement_phs:
         if not ph.lower().startswith(MOVEMENT_TEXT_PATHS):
@@ -230,6 +246,14 @@ def check_sentence(engine: dict, sentence: str, sources: set[str]) -> str | None
         if ext and not _confirmed(engine, ph, ext[0], ext[1], float(value)):
             return f"valor extremo ({ext[0]}) sem segundo caminho que o confirme: {{{{{ph}}}}}"
     return None
+
+
+def _valid_path(ph: str) -> bool:
+    try:
+        last_key(ph)
+        return True
+    except KeyError:
+        return False
 
 
 def check_finding(engine: dict, f: Finding) -> tuple[Finding | None, list[Removal]]:

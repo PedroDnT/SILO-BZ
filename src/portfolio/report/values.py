@@ -11,6 +11,7 @@ only place a figure becomes text, and it formats by the path's last key:
 | contains ``cnpj``            | 14 digits               | ``00.000.000/0000-00``|
 | ``month`` / ``competencia`` / ends ``_month`` | ISO date, first of month | ``08/2026`` |
 | ends ``_pp``                 | percentage points       | ``-0,43 p.p.``        |
+| ``pct_of_cdi``               | percent of the CDI      | ``97,05% do CDI``     |
 | other ISO date               | ``YYYY-MM-DD``          | ``31/08/2026``        |
 | ISO timestamp                | UTC                     | ``03/10/2026 13:00 (UTC-3) (16:00 UTC)`` |
 | ``old_num`` / ``new_num`` / ``change_brl`` of a ``VL_*`` leaf | reais | as ``_brl`` |
@@ -171,6 +172,8 @@ def fmt_timestamp(s: str) -> str:
 def unit_of(doc: Any, path: str) -> str:
     """``brl`` | ``pct`` | ``pp`` | ``cnpj`` | ``month`` | ``date`` | ``plain`` for the leaf at ``path``."""
     key = last_key(path).lower()
+    if key == "pct_of_cdi":
+        return "pct_cdi"  # engine 1.13: the phrase "% do CDI" is the formatter's, never the writer's
     if "_brl" in key or key == "brl":
         return "brl"
     if "_pct" in key or key == "pct":
@@ -205,6 +208,8 @@ def format_value(doc: Any, path: str, value: Any = MISSING) -> str:
             return fmt_pct(float(v))
         if unit == "pp":
             return f"{fmt_number(float(v), 2)} p.p."
+        if unit == "pct_cdi":
+            return f"{fmt_number(float(v), 2)}% do CDI"
         if isinstance(v, int):
             return fmt_number(v, 0)
         decimals = min(6, max(2, len(repr(float(v)).split(".")[1].rstrip("0"))))

@@ -165,7 +165,7 @@ EST_OK = "estimate from the balancete accruals: (previous minus current accumula
 
 def fee(cnpj, name, nav, adm_est, perf_est=None, suspect=False, origin=None, adm=None, raw=None, d_min=None, d_max=None, d_perf=None,
         asof=None, age_m=None, age_d=None, ncls=None, note=None, est_label=None, month="2026-08-31", zero=False, implausible=False,
-        extrato=None, desp=None, lam=None):
+        extrato=None, desp=None, lam=None, bench=None):
     """One portfolio_fees row in the catalog v55 shape: the 21 v51 columns, the 25 of v52, then the 10 of v55.
     ``lam`` is the lâmina beside an Extrato fee (adm, as_of, age_m), synthetic."""
     src = {"extrato": "cvm_fi_extrato", "lamina": "cvm_fi_lamina", "cad_fi": "cvm_fund_registry (cad_fi)"}.get(origin)
@@ -207,6 +207,10 @@ def fee(cnpj, name, nav, adm_est, perf_est=None, suspect=False, origin=None, adm
     )
     if lam:
         row["lamina_as_of"] = lam["as_of"]
+    # catalog v67 (#606 Q36): the filed benchmark, whatever the fee source, as filed. Synthetic spellings.
+    b = bench or {}
+    row.update(benchmark_extrato=b.get("extrato"), benchmark_lamina=b.get("lamina"),
+               benchmark_lamina_n=b.get("lamina_n", 1 if b.get("lamina") else (0 if row.get("lamina_as_of") else None)))
     return row
 
 
@@ -217,18 +221,19 @@ statement_rows = [
         d_perf="20% do que exceder 100% do Ibovespa",
         extrato=dict(tp="CLASSES - FIF", classe="Ações", existe_perfm="S", perfm=20.0, param="Ibovespa", calc="semestral", inf="20% do que exceder 100% do Ibovespa",
                      existe_ing="N", existe_saida="N", custodia=0.05),
-        desp=dict(pct=2.31, ini="2025-07-01", fim="2026-06-30", as_of="2026-06-30")),
+        desp=dict(pct=2.31, ini="2025-07-01", fim="2026-06-30", as_of="2026-06-30"), bench=dict(extrato="Ibovespa")),
     # lâmina older than 24 months: defasada
     fee("42592315000115", FUNDS["42592315000115"]["name"], 198605786912.83, 1.97, origin="lamina", adm=1.5, asof="2024-03-31", age_m=29, age_d=915, ncls=1),
     # lâmina with classes that differ: the range as filed
     fee("50088190000119", FUNDS["50088190000119"]["name"], 1780000000.0, 0.20, origin="lamina", d_min=0.15, d_max=0.30, asof="2026-07-31", age_m=1, age_d=64, ncls=2,
-        note="the fund's 2 classes disclose different fees: the single value is NULL, read the min and max"),
+        note="the fund's 2 classes disclose different fees: the single value is NULL, read the min and max",
+        bench=dict(lamina="CDI", lamina_n=1)),
     # Extrato filed 0 while the balancete books a fee: shown, never counted as a zero cost
     # ... and a synthetic lâmina fee, older than the Extrato, shown beside it (catalog v55, #552)
     fee("51488342000133", FUNDS["51488342000133"]["name"], 3360184376.89, 0.35, origin="extrato", adm=0.0, zero=True, asof="2026-06-30", age_m=2, age_d=95, ncls=1,
         note="the Extrato filed an administration fee of exactly 0: returned as filed (filed_zero); read it as not informed, never as a zero cost",
         extrato=dict(tp="CLASSES - FIF", classe="Renda Fixa", existe_perfm="N", existe_ing="N", existe_saida="N"),
-        lam=dict(adm=0.5, as_of="2026-03-31", age_m=5)),
+        lam=dict(adm=0.5, as_of="2026-03-31", age_m=5), bench=dict(lamina="CDI252", lamina_n=1)),
 ]
 underlying_rows = [
     # lâmina filed 0 and the balancete books a fee: the attention finding
@@ -397,8 +402,18 @@ canned["portfolio_fee_peers"] = [dict(match={}, rows=[
          # v66 (#609): the class is not in the reviewed class -> index list, so no ETF enters this cell
          n_fund_peers=40, n_etf_peers=0, n_etf_excluded=0, etf_peer_tickers=None,
          etf_peer_fee_oldest=None, etf_peer_fee_newest=None, etf_peer_fee_source=None),
+    # engine 1.12 demo: the Extrato filed 0 (no usable fee), the class is mapped, so the cell lists its ETFs
+    dict(cnpj="51488342000133", classe_anbima="RENDA FIXA SIMPLES", fundo_cotas="S", tp_fundo_classe="CLASSES - FIF",
+         taxa_adm=0.0, fee_as_of="2026-06-30", comparison_as_of="2026-10-03",
+         activity_from="2026-08-01", activity_to="2026-10-01", n_peers=122, n_excluded=9,
+         peer_fee_oldest="2023-11-30", peer_fee_newest="2026-09-30", p25_pct_year=None,
+         median_pct_year=None, p75_pct_year=None, percentile_pct=None, difference_pp=None,
+         status="not_compared", reason_code="taxa_nao_utilizavel",
+         n_fund_peers=120, n_etf_peers=2, n_etf_excluded=0, etf_peer_tickers=["EXLF11", "EXTS11"],
+         etf_peer_fee_oldest="2026-10-01", etf_peer_fee_newest="2026-10-01",
+         etf_peer_fee_source="third-party site (etfsbrasil, etf_market_snapshot.taxa_adm_pct), not a CVM filing"),
     *[dict(cnpj=c, status="not_compared", reason_code="sem_extrato_comparavel", n_peers=0, n_excluded=0)
-      for c in ("50088190000119", "51488342000133", "42592315000115")],
+      for c in ("50088190000119", "42592315000115")],
 ])]
 
 # --- block 16, returns (engine 1.10): SYNTHETIC month-end paths, never the measured quotas or closes of #606.
@@ -461,6 +476,37 @@ canned["quote_history"] = [
         dict(ticker="HGLG11", trade_date=d.isoformat(), close=round(v, 2))
         for d, v in _daily(_path(160.0, [-1, 0.5, -2, 1, -0.5, -1.5, 0.5, -1, 0, 1, -2, -0.5]))]),
 ]
+
+# --- block 17, market equivalent (engine 1.12, catalog v67): SYNTHETIC ETFs (EXLF11, EXTS11 are invented tickers) on
+# the indices the reviewed YAML maps to RENDA FIXA SIMPLES; PL and fee shaped like the etfsbrasil snapshot, never measured.
+RF_SIMPLES_INDICES = ["TEVA LFT Curto Prazo", "TEVA Tesouro Selic", "Tesouro Selic (LFT)", "Tesouro Selic B3"]
+canned["portfolio_equivalents"] = [dict(match={"p_classes": ["Ações Livre", "RENDA FIXA SIMPLES"]}, rows=[
+    dict(classe_anbima="Ações Livre", class_indices=None, n_etfs=0, ticker=None, etf_cnpj=None, etf_name=None,
+         underlying_index=None, segment=None, pl_brl=None, pl_as_of=None, fee_pct_year=None, fee_as_of=None,
+         snapshot_source=None, pl_rank=None, is_equivalent=False, status="sem_par",
+         reason="a classe Ações Livre não tem índice aprovado na lista revisada (class_index.yaml): sem equivalente de mercado"),
+    dict(classe_anbima="RENDA FIXA SIMPLES", class_indices=RF_SIMPLES_INDICES, n_etfs=2, ticker="EXLF11",
+         etf_cnpj="90000000000901", etf_name="ETF EXEMPLO TESOURO SELIC", underlying_index="Tesouro Selic (LFT)",
+         segment="fixed_income_br", pl_brl=4200000000.00, pl_as_of="2026-10-01", fee_pct_year=0.15, fee_as_of="2026-10-01",
+         snapshot_source="etfsbrasil", pl_rank=1, is_equivalent=True, status="found",
+         reason="equivalente de mercado: o maior ETF ativo por patrimônio líquido (site etfsbrasil.com.br, fonte de terceiros, em 2026-10-01) entre os que acompanham um índice ligado à classe na lista revisada; não é recomendação"),
+    dict(classe_anbima="RENDA FIXA SIMPLES", class_indices=RF_SIMPLES_INDICES, n_etfs=2, ticker="EXTS11",
+         etf_cnpj="90000000000902", etf_name="ETF EXEMPLO SELIC TEVA", underlying_index="TEVA Tesouro Selic",
+         segment="fixed_income_br", pl_brl=1100000000.00, pl_as_of="2026-10-01", fee_pct_year=0.19, fee_as_of="2026-10-01",
+         snapshot_source="etfsbrasil", pl_rank=2, is_equivalent=False, status="found",
+         reason="ETF de índice ligado à classe, com patrimônio líquido menor que o do equivalente"),
+])]
+canned["class_return_distribution"] = [dict(match={"p_classe_anbima": "RENDA FIXA SIMPLES", "p_fundo_cotas": "S", "p_month": "2026-09-01"}, rows=[
+    dict(classe_anbima="RENDA FIXA SIMPLES", fundo_cotas="S", window_months=12, start_month="2025-09-01", end_month="2026-09-01",
+         month_complete=True, n_universe=96, n_funds=88, n_excluded_no_quota=8, n_excluded_subclass=0,
+         p25_pct=13.62, median_pct=14.05, p75_pct=14.38, min_funds=30, status="evaluated", reason="sintético"),
+    dict(classe_anbima="RENDA FIXA SIMPLES", fundo_cotas="S", window_months=6, start_month="2026-03-01", end_month="2026-09-01",
+         month_complete=True, n_universe=96, n_funds=91, n_excluded_no_quota=5, n_excluded_subclass=0,
+         p25_pct=6.58, median_pct=6.79, p75_pct=6.95, min_funds=30, status="evaluated", reason="sintético"),
+])]
+canned["trade_consolidated_history"] = [dict(match={"p_ticker": "EXLF11"}, rows=[
+    dict(ticker="EXLF11", trade_date=d.isoformat(), last_price=round(v, 4))
+    for d, v in _daily(_path(100.0, [1.12, 1.10, 1.14, 1.11, 1.13, 1.09, 1.12, 1.10, 1.14, 1.11, 1.12, 1.13]))])]
 
 json.dump(canned, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 print({k: len(v) for k, v in canned.items() if k != "_note"})

@@ -61,8 +61,34 @@ the N cells); `n_fund_peers` shows when ETFs made the difference.
 `api.class_return_distribution(p_classe_anbima, p_fundo_cotas, p_month)` gives the
 p25, median and p75 of the class's net fund quota returns over 12 and 6 months, at
 least 30 funds or `nao_avaliado`: what the equivalent ETF's return is set against.
-The engine wiring (equivalent selection by net assets, the label "equivalente de
-mercado com o mesmo objetivo; não é recomendação", ETF price returns) is a later PR.
+
+## Market equivalent (catalog v68, engine 1.13)
+
+`api.portfolio_equivalents(p_classes TEXT[], p_as_of DATE)` reads the same pairs,
+only those with `status: aprovada`, and returns, per class, every active ETF (one
+row per CNPJ, the fee-peer universe) on an index mapped to the class, with its
+third-party PL and fee (etfsbrasil, `etf_market_snapshot`, each dated), and flags
+the largest by PL across all of the class's indices (`is_equivalent`, ties by
+ticker). A class with no approved pair, no active ETF or no PL comes back as
+`sem_par`, `sem_etf` or `sem_pl`. Measured 2026-10-05: `RENDA FIXA SIMPLES` and
+`RENDA FIXA BAIXA DURAÇÃO - SOBERANO` give BLFT11 (R$ 13.82 bn), the small-cap
+class SMAL11, the dividend class DIVO11, the sustainability class ISUS11.
+
+The engine (`src/portfolio/market_equivalent.py`, section `equivalents`) takes the
+class and FUNDO_COTAS each fund line's fee comparison read from the Extrato,
+checks that the SQL's indices are the YAML's approved ones, and sets the ETF and
+the fund beside `class_return_distribution` over the return block's 12- and
+6-month windows: the class's p25, median and p75, the difference to the median in
+p.p., and the quartile band each return falls in (a position in the class's
+distribution, not a ranking; the function serves quartiles, not an exact
+percentile rank). The ETF's return is the return block's own series: the cash
+tape's raw `close` ("sem proventos", understated for an ETF that distributes) or,
+for a `fixed_income_br` ETF, `trade_consolidated_history`'s `last_price`; never
+`ref_price` or `close_adj`. The ETF's fee is the same third-party value the fee
+peers use, with its date and label, and `in_fee_peers` says whether it was a peer.
+Everything is labelled "equivalente de mercado; não é recomendação"; a fund with
+no class, no pair, no ETF, no PL, or an ETF with no return carries a fixed reason
+code (`common.REASON_TEXT`), never a blank.
 
 ## Engine and report
 
@@ -94,6 +120,7 @@ checks cohort separation, minimum count, exclusions, tie percentiles,
 normalization, input refusal and anon privileges with synthetic rows.
 
 Apply analytical SQL before deploying `silo-mcp`; then redeploy the Python engine.
-The catalog is version 63, with regenerated OpenAPI and MCP contracts. A merge
+The catalog is version 68 (`portfolio_equivalents` and the filed benchmark on
+`portfolio_fees`), with regenerated OpenAPI and MCP contracts. A merge
 alone does not deploy analytical SQL or the remote MCP. Until the RPC is available,
 its refusal/error is shown as a gap and the existing fee section remains usable.

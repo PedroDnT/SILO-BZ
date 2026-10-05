@@ -36,6 +36,7 @@ SIGNATURES = {
     "portfolio_instruments": "api.portfolio_instruments(TEXT[])",
     "portfolio_fund_terms": "api.portfolio_fund_terms(TEXT[])",
     "portfolio_fee_peers": "api.portfolio_fee_peers(TEXT[], DATE)",
+    "portfolio_equivalents": "api.portfolio_equivalents(TEXT[], DATE)",
 }
 # api.class_return_distribution (v66) takes one class, not a set of CNPJs: its contract is
 # pinned in tests/test_portfolio_equivalents.py and executed in tests/sql/portfolio_behaviour.sql.
@@ -60,12 +61,12 @@ def test_file_is_one_guarded_transaction_after_its_inputs():
         assert ordered.index("31_api_portfolio.sql") > ordered.index(needed)
 
 
-def test_exactly_the_eight_api_functions_are_created():
+def test_exactly_the_nine_api_functions_are_created():
     created = re.findall(r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+api\.(\w+)\(", _strip(SQL31))
     assert created == [
         "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
         "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
-        "class_return_distribution",
+        "class_return_distribution", "portfolio_equivalents",
     ]
 
 
@@ -101,7 +102,8 @@ def test_every_function_refuses_above_one_page_and_never_trims():
 def test_calls_are_capped_and_refused_with_a_why_and_a_how():
     for name in SIGNATURES:
         body = _function(name)
-        assert "more than 200" in body, f"{name} caps the call at 200 lines or CNPJs"
+        cap = "more than 50" if name == "portfolio_equivalents" else "more than 200"  # v68: classes, not funds
+        assert cap in body, f"{name} caps the call ({cap})"
     # The refusals the caller can fix carry both halves in the message itself.
     assert body.count("To fix") >= 1
     assert "To fix" in _function("portfolio_resolve") and "To fix" in _function("portfolio_fees")
@@ -373,7 +375,7 @@ V57_COLUMNS = ["etf_site_nr_cotistas", "etf_site_pl"]
 def test_v57_appends_cotistas_and_pl_last():
     cols = _fee_columns()
     last = cols.index(V56_COLUMNS[-1])
-    assert cols[last + 1:] == V57_COLUMNS
+    assert cols[last + 1:last + 1 + len(V57_COLUMNS)] == V57_COLUMNS
     assert len(cols) == len(set(cols))
 
 
@@ -398,3 +400,48 @@ def test_catalog_v57_names_cotistas_and_pl():
     for needle in ("etf_site_nr_cotistas", "etf_site_pl", "SAME snapshot (etf_site_as_of)"):
         assert needle in text, needle
     assert f'"version": {CATALOG_VERSION}' in SQL19
+
+
+V68_COLUMNS = ["benchmark_extrato", "benchmark_lamina", "benchmark_lamina_n"]
+
+
+def test_v68_appends_the_filed_benchmark_last():
+    cols = _fee_columns()
+    assert cols[cols.index(V57_COLUMNS[-1]) + 1:] == V68_COLUMNS
+
+
+def test_v68_the_benchmark_is_served_as_filed_whatever_the_fee_source():
+    body = _strip(_function("portfolio_fees"))
+    # the Extrato's column is read unconditionally (extrato_param_taxa_perfm stays gated on the fee source)
+    assert "CASE WHEN f.use_ext THEN f.x_param END" in body
+    assert "f.x_param," in body.split("es.s_pl,")[-1]
+    # the lâmina's INDICE_REFER: one value only when every class filed the same non-blank one
+    assert "NULLIF(btrim(e ->> 'indice_refer'), '') AS indice_refer" in body
+    assert "f.n_bench = 1 AND NOT f.has_empty_bench THEN f.bench" in body
+    # nothing is matched, normalised or inferred in SQL: the engine's rule file decides what is CDI
+    for bad in ("ILIKE '%CDI", "~* 'CDI", "'CDI'"):
+        assert bad not in body, bad
+    # the distinct count uses the rule file's normalization (trim, collapse spaces, upper-case); the value stays as filed
+    assert "count(DISTINCT upper(regexp_replace(r.indice_refer, '\\s+', ' ', 'g')))::int AS n_bench" in body
+    assert "min(r.indice_refer) AS bench" in body
+
+
+def test_catalog_v68_names_the_benchmark_and_the_equivalents():
+    from serve.catalog import CATALOG_VERSION, catalog_payload
+
+    assert CATALOG_VERSION >= 68
+    text = str(catalog_payload())
+    for needle in ("benchmark_extrato", "benchmark_lamina", "portfolio_equivalents", "is_equivalent",
+                   "POST /rest/v1/rpc/portfolio_equivalents"):
+        assert needle in text, needle
+    assert f'"version": {CATALOG_VERSION}' in SQL19
+
+
+def test_v68_equivalents_read_approved_pairs_only_and_rank_by_pl():
+    body = _strip(_function("portfolio_equivalents"))
+    assert "m.status = 'aprovada'" in body
+    assert "r.is_active IS TRUE" in body and "DISTINCT ON (c.cls, c.cnpj)" in body
+    assert "ORDER BY e.pl DESC NULLS LAST, e.ticker" in body
+    assert "x.snapshot_date <= v_as_of" in body
+    # never a name match: the registry index against the reviewed list only
+    assert "fund_name ILIKE" not in body and "r.underlying_index = ANY (p.idx)" in body

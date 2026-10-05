@@ -406,15 +406,16 @@ tickers (67 on 2026-09-29), so `quote_history` and `panel` have nothing for them
   can read `b3_trade_consolidated`. Executed checks:
   `tests/sql/trade_consolidated_history_behaviour.sql`.
 
-### The portfolio reads (catalog v51, v54, v61, v63, v66, v67)
+### The portfolio reads (catalog v51, v54, v61, v63, v66, v67, v68)
 
-Eight functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
+Nine functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
 map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`): three since v51,
 `portfolio_movement` since v54, `portfolio_instruments` and `portfolio_fund_terms`
-since v61 (`portfolio_instruments` serves a CRA or CRI ISIN since v67), `portfolio_fee_peers` since v63 and `class_return_distribution` since v66.
+since v61 (`portfolio_instruments` serves a CRA or CRI ISIN since v67), `portfolio_fee_peers` since v63,
+`class_return_distribution` since v66 and `portfolio_equivalents` since v68.
 All are raise-only on the one 1000-row page and anon-callable like the rest of
 `api`. Seven take a set of funds, codes or lines; `class_return_distribution` takes
-one ANBIMA class as filed. None is a name search that guesses.
+one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a name search that guesses.
 
 - **`api.portfolio_resolve(p_names, p_cnpjs, p_quotas, p_quota_dates)`**: one row
   per line and candidate (up to 5, `rank`), arrays parallel, at most 200 lines
@@ -479,6 +480,15 @@ one ANBIMA class as filed. None is a name search that guesses.
   106,027 and R$ 15.32 bn; IVVB11 241,779 and R$ 7.78 bn; B5P211 43,321 and
   R$ 4.33 bn). The site prints PL in R$ millions with two decimals, so it resolves to
   R$ 10 thousand. Descriptive third-party facts: never summed, never a fee base.
+  Catalog v68 (#606 Q36): the filed benchmark, whatever the fee source, as filed.
+  `benchmark_extrato` is the Extrato's `PARAM_TAXA_PERFM` (the index the performance
+  fee is measured against; the Extrato has no other benchmark column, and
+  `extrato_param_taxa_perfm` stays NULL when the Extrato is not the fee source),
+  dated `extrato_as_of`. `benchmark_lamina` is the lâmina's `INDICE_REFER` at
+  `lamina_as_of` when every class filed the same non-blank value, and
+  `benchmark_lamina_n` counts the distinct values (0 none, above 1 the classes
+  differ). Nothing is matched or normalised in SQL: the engine's versioned rule file
+  (`src/portfolio/rules/benchmark_cdi.yaml`) decides which spellings are CDI.
   The Extrato's own fields come back as filed (`extrato_taxa_perfm` numeric with
   `extrato_param_taxa_perfm`, `extrato_calc_taxa_perfm`, `extrato_inf_taxa_perfm`;
   `extrato_existe_taxa_ingresso` / `_saida` with `_pr` percent and `_real` reais;
@@ -606,6 +616,25 @@ one ANBIMA class as filed. None is a name search that guesses.
   statistics and a reason, never a wider class. ETFs are not in the universe.
   Measured 2026-10-05 (bounded SELECT of the same query, 0.19 s): 17 active funds
   in `AÇÕES - ATIVO - SMALL CAPS` / N, so that class is not evaluated today.
+- **`api.portfolio_equivalents(p_classes, p_as_of)`** (catalog v68, #609): the
+  market equivalent of an ANBIMA class. For each class as filed (1 to 50), the active
+  ETFs (`cvm_etf_registry.is_active`, one row per CNPJ, the fee-peer universe) that
+  track an index the reviewed list maps to the class (only `status = aprovada`
+  pairs of `public.portfolio_class_index`, read in reverse); `class_indices` and
+  `n_etfs` say which and how many. `pl_brl` / `pl_as_of` and `fee_pct_year` /
+  `fee_as_of` are the third-party etfsbrasil values (`etf_market_snapshot.nav` and
+  `taxa_adm_pct`, each the newest snapshot that has one dated no later than
+  `p_as_of`), the same ones `portfolio_fees` serves as `etf_site_*`. `is_equivalent`
+  marks the largest by PL across all of the class's indices (`pl_rank` 1, ties by
+  ticker); an ETF with no PL is never ranked. `segment` is the registry's:
+  `fixed_income_br` prices are in `trade_consolidated_history`, the others in
+  `quote_history`. A class with no approved pair (`sem_par`) or no active ETF
+  (`sem_etf`) is one row with NULL ETF columns; with no PL anywhere every row is
+  `sem_pl`. Measured 2026-10-05: `RENDA FIXA SIMPLES` and
+  `RENDA FIXA BAIXA DURAÇÃO - SOBERANO` give BLFT11 (R$ 13.82 bn, TEVA LFT Curto
+  Prazo), `AÇÕES - ATIVO - SMALL CAPS` SMAL11 (R$ 2.79 bn), `AÇÕES - ATIVO -
+  DIVIDENDOS` DIVO11 and `AÇÕES - ATIVO - SUSTENTABILIDADE / GOVERNANÇA` ISUS11.
+  It names an ETF with the same objective, not a recommendation.
 - A merge deploys nothing: the functions go live on the next analytical apply
   (`daily_ingest` `mode=analytics-only`), the MCP tools after `deploy_mcp.yml`.
 
@@ -906,7 +935,7 @@ page with a `p_after` cursor**; the others
 `company_events`, `macro_series`, `ptax`, `future_curve`, `future_series`,
 `curve`, `curve_history`, `research_universe`, `portfolio_resolve`, `portfolio_fees`,
 `portfolio_lookthrough`, `portfolio_movement`, `portfolio_instruments`, `portfolio_fund_terms`,
-`portfolio_fee_peers`, `class_return_distribution` and the ten `screen_*` functions) have no cursor and
+`portfolio_fee_peers`, `class_return_distribution`, `portfolio_equivalents` and the ten `screen_*` functions) have no cursor and
 ask you to narrow the window or send fewer funds. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.
