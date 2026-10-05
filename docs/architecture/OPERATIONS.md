@@ -16,7 +16,7 @@ Times in UTC-3, with UTC in parentheses.
 05:00 (08:00)  publish_check  is the new build on the public URL? if not, promote it
 after a run    publish_check  also runs when a Daily CVM Ingest run ends green, or red with the
                               hook step done; waits up to 45 min for the build, then promotes
-                              it (interim, OPEN_ITEMS item 8)
+                              it (a no-op while Vercel auto-assigns; item 8)
 ```
 
 ## A red day

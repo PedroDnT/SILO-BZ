@@ -177,7 +177,24 @@ and `docs.json` remain in the repo but are no longer the source; `scalar/` and
 
 ~~**Blocked 2026-09-25:** DNS record plus Mintlify plan; account action, no repo change.~~
 
-## 8. Production deployments stopped taking the public hostnames
+## 8. ~~Production deployments stopped taking the public hostnames~~ (done)
+
+**Cause found 2026-10-05 (#559), and auto-assignment is back.** Vercel turns off
+the auto-assignment of production domains when production is moved to an older
+deployment, and turns it back on when a deployment is promoted ("After a
+rollback, Vercel turns off auto-assignment of production domains… To restore
+normal deployment behavior, you need to undo the rollback by promoting a
+different deployment", vercel.com/docs/instant-rollback). The 2026-09-18
+manual promote below pinned both hostnames to an existing deployment, which is
+that state. The first promote of a new build, 2026-09-26 (`promote responded
+201`), ended it: since then the newest production build already holds the
+hostnames when the 08:00 UTC check runs. On 2026-10-03 the check's promote of
+`dpl_CWNAEhkR5Avo1mJgQ22cvEgPBR8A`, built that morning, answered `409 … is
+already the current production deployment`. The rename itself did not cause
+it. The audit log that would show the 09-18 action is not readable with the
+project token (403), so the sequence is matched to Vercel's documented rule,
+not read from the log. `promote_dashboard.sh` stays: it is a no-op while
+auto-assignment works, and it is what restores it after the next rollback.
 
 This is the one that bit. Between 2026-09-18 and 2026-09-22 the published site
 did not move at all, while four production deployments went READY on top of it.
@@ -230,7 +247,7 @@ up to 45 minutes for the hook's build to leave BUILDING, and promotes it
 only. The durable fix is the cause below; when Vercel assigns the project
 domains to a production build again, delete the `workflow_run` trigger.
 
-**Blocked 2026-09-25:** the cause needs Pedro: the Vercel audit log or support.
+~~**Blocked 2026-09-25:** the cause needs Pedro: the Vercel audit log or support.~~ Found from Vercel's docs and the Publish Check logs instead; see the top of this item.
 
 1. ~~**`VERCEL_TOKEN` is not set**~~ (done 2026-09-26). Pedro added the
    repository secret; a dispatched Publish Check (run 36212626171) promoted
@@ -238,7 +255,7 @@ domains to a production build again, delete the `workflow_run` trigger.
    and verified it. Checked independently the same hour: `/data/manifest.json`
    is byte-identical on `silo-bz-deloslabs.vercel.app`, `silo-bz.vercel.app`
    and the `git-main` alias. The guard now fixes a freeze, not just detects it.
-2. **The cause** (still open). Find and undo whatever the 2026-09-17/18 alias attempts left
+2. ~~**The cause**~~ (found 2026-10-05, above). Find and undo whatever the 2026-09-17/18 alias attempts left
    behind; they are recorded below because they are the likeliest culprit.
    Pedro does not remember making the change, so there is no memory to rely on
    here — it needs reading the Vercel project's audit log or support.
