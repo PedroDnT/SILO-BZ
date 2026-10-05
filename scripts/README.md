@@ -23,6 +23,7 @@ Grouped by when you would reach for them.
 | `db_parity.py`                | Lists user tables/views with row-count estimates — used to compare two databases.                                                           |
 | `list_tables.py`              | Every schema / table / row-count / column. Broader than `db_parity.py`, handy for a first look at an unfamiliar database.                   |
 | `_check_conn.py`              | Bare connection check. Rewrites `:6543`→`:5432` defensively; see `docs/reference/supabase_operations.md`.                                             |
+| `trace_view.py`               | Reads the diagnosis run traces in R2 (ADR 0003): `list` the keys, `show` one as a timeline (spans, sections, agents, Revisor removals) or several as one row each. Times in UTC-3. |
 
 ## Offline development (no Supabase credentials needed)
 
@@ -42,6 +43,7 @@ Grouped by when you would reach for them.
 | `gen_mcp_contract.py`    | Regenerates `supabase/functions/silo-mcp/contract.generated.ts` from `openapi.json` (`--check` exits 1 when stale). Run after `gen_openapi.py`.                          |
 | `install_hooks.sh`       | Points git at `.githooks/` (pre-commit secret + syntax checks).                                                                                                           |
 | `setup_agents_wizard.sh` | The owner's steps for the agent loop (OPEN_ITEMS item 13), run by hand on the owner's machine: creates the three `agent:*` labels, creates or re-passwords the read-only role `silo_sentinel` from `docs/reference/security/sentinel_readonly_role.sql` (after a confirmation), tests its login on the session pooler, and walks the cloud environment that holds `SENTINEL_DATABASE_URL`. Values go to `.env` only; nothing secret is printed. Re-run to rotate the password. |
+| `rotate_db_password.sh` | Rotating the database owner's password, run by hand on the owner's machine after the reset in the Supabase dashboard. Tests the new password on the session pooler **before** writing anything, then updates `SUPABASE_POOLER_URL` and `POSTGRES_URL` in `.env` and the GitHub secret `POSTGRES_URL`, and walks the one Vercel edit (`EVIDENCE_SOURCE__supabase__password`, production and preview together). The password is never printed. GitHub secrets and Vercel sensitive variables cannot be read back, so the flow only goes outward. |
 | `build_etf_seed.py`      | Regenerates the curated B3 ETF seed at `src/store/seeds/etf_registry_seed.csv`.                                                                                           |
 
 ## One-off, historical
