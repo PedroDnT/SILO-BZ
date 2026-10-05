@@ -77,7 +77,7 @@ PENSION_BASE = {"PGBL": "valor total do resgate", "VGBL": "somente o rendimento"
 REGRESSIVE_NO_DATE = "tabela completa; data de início não informada, a conferir"
 FUND_OF_FUNDS_NOTE = (
     "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido "
-    "(Art. 98)."
+    "(Art. 98, conforme a resolução de #613)."
 )
 PERFORMANCE_NOTE = "taxa de performance não estimada"
 FEE_BASIS = "taxa de administração divulgada x valor da posição no extrato"
@@ -278,7 +278,8 @@ DIRECT = {"CDB": "cdb", "LCI": "lci", "LCA": "lca", "CRI": "cri", "CRA": "cra", 
 
 
 def _pension_plan(p) -> str | None:
-    m = re.search(r"\b(PGBL|VGBL)\b", " ".join(x for x in (p.estrategia_corretora, p.linha_extrato) if x), re.I)
+    # the plan is read from the statement's table heading only (estrategia_corretora), never from the fund's name
+    m = re.search(r"\b(PGBL|VGBL)\b", p.estrategia_corretora or "", re.I)
     return m.group(1).upper() if m else None
 
 

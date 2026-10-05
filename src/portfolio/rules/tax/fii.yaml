@@ -29,10 +29,22 @@ sources:
     quote: "os rendimentos distribuídos pelos Fundos de Investimento Imobiliário e pelos Fundos de Investimento nas Cadeias Produtivas Agroindustriais (Fiagro) cujas cotas sejam admitidas à negociação exclusivamente em bolsas de valores ou no mercado de balcão organizado"
   - id: l11033_art3_p1
     act: Lei 11.033/2004
-    article: art. 3º §1º, I a III
+    article: art. 3º §1º, I
     url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm
     accessed: "2026-10-05"
     quote: "será concedido somente nos casos em que os Fundos de Investimento Imobiliário ou os Fiagro possuam, no mínimo, 100 (cem) cotistas"
+  - id: l11033_art3_p1_ii
+    act: Lei 11.033/2004
+    article: art. 3º §1º, II
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm
+    accessed: "2026-10-05"
+    quote: "não será concedido ao cotista pessoa física titular de cotas que representem 10% (dez por cento) ou mais"
+  - id: l11033_art3_p1_iii
+    act: Lei 11.033/2004
+    article: art. 3º §1º, III
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm
+    accessed: "2026-10-05"
+    quote: "não será concedido ao conjunto de cotistas pessoas físicas ligadas ... 30% (trinta por cento) ou mais"
   - id: l14754_art39
     act: Lei 14.754/2023
     article: art. 39
@@ -65,11 +77,11 @@ ir:
             source: l11033_art3_iii,
           }
         - { condition: fund_holders_ge, value: 100, source: l11033_art3_p1 }
-        - { condition: holder_share_lt, value: 0.10, source: l11033_art3_p1 }
+        - { condition: holder_share_lt, value: 0.10, source: l11033_art3_p1_ii }
         - {
             condition: linked_holders_share_lt,
             value: 0.30,
-            source: l11033_art3_p1,
+            source: l11033_art3_p1_iii,
           }
 iof:
   applies: false

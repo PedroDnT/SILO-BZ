@@ -19131,7 +19131,7 @@
         "valid_from": "2024-01-01",
         "valid_to": null,
         "in_force": true,
-        "sha256": "f2dee3fea76955d42a89eac728cc4730cdc9dbaf15428374f41b9b38037a5bf5",
+        "sha256": "731fc2b81bea31d6b7fe0f86ed26d7323702caeb4fb97114225bed0d53514cc8",
         "not_verified": []
       },
       {
@@ -19504,7 +19504,7 @@
           "third_party_label": null,
           "fee_status": "divulgada",
           "notes": [
-            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98).",
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
             "taxa de performance não estimada"
           ],
           "loading": null,
@@ -19674,7 +19674,7 @@
           "third_party_label": null,
           "fee_status": "faixa divulgada",
           "notes": [
-            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98).",
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
             "taxa de performance não estimada"
           ],
           "loading": null,
@@ -19910,7 +19910,7 @@
           "third_party_label": null,
           "fee_status": "0 informado; a conferir",
           "notes": [
-            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98).",
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
             "taxa de performance não estimada"
           ],
           "loading": null,
@@ -20146,7 +20146,7 @@
           "third_party_label": null,
           "fee_status": "taxa divulgada não encontrada",
           "notes": [
-            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98).",
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
             "taxa de performance não estimada"
           ],
           "loading": null,
@@ -20224,7 +20224,7 @@
           "third_party_label": null,
           "fee_status": "divulgada",
           "notes": [
-            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98).",
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
             "taxa de performance não estimada"
           ],
           "loading": null,
@@ -20460,7 +20460,7 @@
           "third_party_label": null,
           "fee_status": "taxa divulgada não encontrada",
           "notes": [
-            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98).",
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
             "taxa de performance não estimada"
           ],
           "loading": null,
