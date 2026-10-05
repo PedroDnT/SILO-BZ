@@ -385,6 +385,10 @@ AGENTS.md §3a registry, and (optionally) run
 `cvm_ingest_log` and `fnet_document`; without it the Sentinel runs on the
 public API only.
 
+`bash scripts/setup_agents_wizard.sh` (2026-10-05) walks the owner through the
+labels, the Sentinel role and its own cloud environment; the routines are then
+created from a Claude session, which fills in the §3a registry.
+
 ## 14. The gaps backlog: resolution plan (2026-09-24)
 
 Sequences the [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md) §7 backlog (B1 to B11).
