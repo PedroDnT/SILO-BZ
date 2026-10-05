@@ -19,7 +19,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from src.portfolio.common import STATUS_COMPLETE, STATUS_NOT_APPLICABLE, STATUS_UNKNOWN, Section, brl, dec, pct
+from src.portfolio.common import STATUS_COMPLETE, STATUS_NOT_APPLICABLE, STATUS_UNKNOWN, Section, brl, dec, is_ticker, pct
 from src.portfolio.concentration import is_direct_credit
 from src.portfolio.identify import LineId
 from src.portfolio.terms import FundTerms
@@ -62,6 +62,10 @@ def _bucket_of(li: LineId, terms: FundTerms | None) -> tuple[str, str | None]:
     if is_direct_credit(li):
         return "credito_direto", None
     if p.tipo in ("ação", "ETF") or li.kind == "ticker":
+        return "bolsa", None
+    # A listed fund (an FII or FIDC with a B3 ticker on the statement) is sold on the exchange, not redeemed: the same
+    # bucket whether block 1 identified it by ticker or by CNPJ.
+    if li.kind == "fund" and is_ticker(p.codigo):
         return "bolsa", None
     if li.kind == "fund" and li.cnpj:
         if terms is None or li.line_no in terms.failed or li.line_no not in terms.rows:
@@ -126,7 +130,9 @@ def compute_liquidity(lines: list[LineId], terms: FundTerms | None) -> dict[str,
     if not lines:
         sec.status = STATUS_NOT_APPLICABLE
     elif unanswered:
-        asked = len(terms.requested) if terms else 0
+        # a listed fund is asked for its manager but placed in bolsa: only the lines that need a term count here
+        in_bolsa = {li.line_no for li, _ in acc["bolsa"]}
+        asked = len([n for n in terms.requested if n not in in_bolsa]) if terms else 0
         if asked and len(unanswered) >= asked:
             sec.fail("portfolio_fund_terms falhou: prazos de resgate dos fundos não avaliados (erro literal em errors).",
                      code="consulta_falhou")
