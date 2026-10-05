@@ -305,6 +305,10 @@ has to be read together with that gate and its tests.
 
 ## 10. Supabase storage near the plan allowance
 
+**Measured 2026-10-05 (UTC-3): 87.18 GB, 65% of 135 GB** (`pg_database_size`), with
+`cvm_fi_balancete` empty (migration 62). The account table is gone, the database is
+under the 100 GB line, and what is left is the owner's call on a smaller compute size.
+
 **Decided 2026-10-01 (owner): retire `cvm_fi_balancete` behind a summary.** Nothing reads the
 account table (31 GB, 27% of the database, which was 116 GB that day). Steps: (1) the summary
 `cvm_fi_balancete_resumo` (migration 59) and its backfill, `daily_ingest` mode=balancete-summary;
