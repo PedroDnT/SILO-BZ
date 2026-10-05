@@ -341,6 +341,9 @@ pause
 # ── 6 ─────────────────────────────────────────────────────────────────────
 stage "A cloud environment for the Sentinel only"
 say "The Sentinel routine reads SENTINEL_DATABASE_URL from its environment."
+warn "Heads-up (tested 2026-10-05): a cloud sandbox resolved the pooler host but a raw"
+warn "TCP connection to port 5432/6543 timed out, while HTTPS worked. DB mode may not"
+warn "connect from there; the Sentinel runs in public mode without any credential."
 say "Give it an environment of its own, so the Builder and the Scout"
 say "(which run in your usual environment) never hold a database credential."
 copied=0
@@ -356,7 +359,7 @@ step "Open any session, click the cloud environment name in its title bar."
 step "Add a new environment (or Edit a copy of yours). Suggested name: silo-sentinel."
 step "Repository: $REPO."
 step "Environment variable: SENTINEL_DATABASE_URL = (paste)."
-step "Network: allow the pooler host, aws-0-sa-east-1.pooler.supabase.com"
+step "Network: allow the pooler host, aws-1-sa-east-1.pooler.supabase.com"
 step "(or *.pooler.supabase.com), on top of GitHub."
 note "The menu names may differ slightly; the variable name must be exact."
 ask SENTINEL_ENV_NAME "Name you gave the environment:"
