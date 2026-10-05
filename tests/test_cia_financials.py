@@ -431,3 +431,130 @@ async def test_itr_dfp_ingest_upserts_each_member_before_reading_the_next():
     ]
     assert n == 3
     assert finish == {"n": 3, "error": None, "fetched": 2}
+
+
+# ---------------------------------------------------------------------------
+# #383: the previous year's ZIP, only the documents SILO does not hold
+# ---------------------------------------------------------------------------
+
+class _HeldCursor:
+    def __init__(self, held):
+        self.held = held
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=None):
+        self.executed.append((sql, params))
+
+    def fetchall(self):
+        return self.held
+
+
+class _HeldClient:
+    def __init__(self, held):
+        self.cursor_obj = _HeldCursor(held)
+
+    def cursor(self):
+        return self.cursor_obj
+
+
+def _new_versions_ingestor(members, held):
+    from src.pipeline.cvm_pipeline import CVMIngestor
+
+    read: List[str] = []
+
+    def _iter():
+        for m in members:
+            read.append(m.grupo)
+            yield m
+
+    class _Fetcher:
+        async def fetch_zip_members_async(self, doc_type, year, include_summary=False):
+            assert include_summary
+            return _iter()
+
+    ing = CVMIngestor.__new__(CVMIngestor)
+    ing._supabase = _HeldClient(held)
+    ing._cia_fetcher = _Fetcher()
+    finish = {}
+    ing._log_start = lambda *a, **k: None
+    ing._log_finish = lambda run_id, n, error=None, fetched=None: finish.update(
+        n=n, error=error, fetched=fetched)
+    return ing, read, finish
+
+
+def _members_v1_and_v2():
+    from src.fetchers.cia_fetcher import CIAMember
+
+    v2 = {"VERSAO": "2"}
+    summary = CIAMember("dfp_cia_aberta_2023.csv", "_summary", None,
+                        [SUMMARY_ROW, {**SUMMARY_ROW, **v2, "ID_DOC": "140001"}])
+    dre = CIAMember("dfp_cia_aberta_DRE_con_2023.csv", "DRE", "con",
+                    [DRE_ROW, {**DRE_ROW, **v2}])
+    bpa = CIAMember("dfp_cia_aberta_BPA_ind_2023.csv", "BPA", "ind",
+                    [BPA_ROW, {**BPA_ROW, **v2}])
+    return [summary, dre, bpa]
+
+
+@pytest.mark.asyncio
+async def test_prior_year_reads_only_the_header_when_nothing_is_new():
+    held = [("1023", datetime.date(2023, 12, 31), 1), ("1023", datetime.date(2023, 12, 31), 2)]
+    ing, read, finish = _new_versions_ingestor(_members_v1_and_v2(), held)
+    with patch("src.pipeline.cvm_pipeline.ingest_cia_filing") as filing, \
+         patch("src.pipeline.cvm_pipeline.ingest_cia_account") as account:
+        n = await ing.ingest_cia_itr_dfp_new_versions("dfp", 2023)
+    assert n == 0
+    assert read == ["_summary"], "no statement member is parsed when nothing is new"
+    filing.assert_not_called()
+    account.assert_not_called()
+    assert finish == {"n": 0, "error": None, "fetched": 0}
+    sql, params = ing._supabase.cursor_obj.executed[0]
+    assert "FROM cia_filing" in sql and params == ("dfp", [datetime.date(2023, 12, 31)])
+
+
+@pytest.mark.asyncio
+async def test_prior_year_ingests_only_the_new_version():
+    held = [("1023", datetime.date(2023, 12, 31), 1)]
+    ing, read, finish = _new_versions_ingestor(_members_v1_and_v2(), held)
+    seen = {}
+
+    def _filing(conn, rows, doc_type):
+        seen["filing"] = [r["VERSAO"] for r in rows]
+        return len(rows)
+
+    def _account(conn, members, doc_type):
+        seen.setdefault("account", []).extend(
+            (m.grupo, [r["VERSAO"] for r in m.rows]) for m in members)
+        return sum(len(m.rows) for m in members)
+
+    with patch("src.pipeline.cvm_pipeline.ingest_cia_filing", side_effect=_filing), \
+         patch("src.pipeline.cvm_pipeline.ingest_cia_account", side_effect=_account):
+        n = await ing.ingest_cia_itr_dfp_new_versions("dfp", 2023)
+    assert seen == {"filing": ["2"], "account": [("DRE", ["2"]), ("BPA", ["2"])]}
+    assert n == 3
+    assert finish == {"n": 3, "error": None, "fetched": 3}
+
+
+@pytest.mark.asyncio
+async def test_prior_year_without_a_header_is_an_error_not_a_quiet_zero():
+    from src.fetchers.cia_fetcher import CIAMember
+
+    dre = CIAMember("dfp_cia_aberta_DRE_con_2023.csv", "DRE", "con", [DRE_ROW])
+    ing, _read, finish = _new_versions_ingestor([dre], [])
+    with patch("src.pipeline.cvm_pipeline.ingest_cia_account") as account:
+        n = await ing.ingest_cia_itr_dfp_new_versions("dfp", 2023)
+    assert n == 0
+    account.assert_not_called()
+    assert "came before the header CSV" in finish["error"]
+
+
+def test_daily_plan_reads_the_previous_year_through_the_cheap_path():
+    from pathlib import Path
+
+    src = Path("src/pipeline/cvm_pipeline.py").read_text(encoding="utf-8")
+    assert "self.ingest_cia_itr_dfp_new_versions(doc_type, year - 1)" in src

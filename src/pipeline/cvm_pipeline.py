@@ -1815,6 +1815,95 @@ class CVMIngestor:
         logger.info("cia_aberta/%s %d: %d rows", doc_type, year, rows_inserted)
         return rows_inserted
 
+    def _held_cia_documents(
+        self, doc_type: str, ref_dates: List[date]
+    ) -> Set[Tuple[str, date, Optional[int]]]:
+        """(cd_cvm, dt_refer, versao) of every ITR/DFP header SILO holds for these dates."""
+        if not ref_dates:
+            return set()
+        with self._supabase.cursor() as cur:
+            cur.execute(
+                "SELECT cd_cvm, dt_refer, versao FROM cia_filing"
+                " WHERE doc_type = %s AND dt_refer = ANY(%s)",
+                (doc_type, list(ref_dates)),
+            )
+            return {(r[0], r[1], r[2]) for r in cur.fetchall()}
+
+    async def ingest_cia_itr_dfp_new_versions(self, doc_type: str, year: int) -> int:
+        """Ingest only the ITR/DFP documents of one year that SILO does not hold (#383).
+
+        The daily run re-reads the current year in full. A DFP filed in the
+        next year, or a restatement of a prior-year document, lands in the
+        PREVIOUS year's ZIP, and re-reading that one in full every day costs
+        about 4.7M upserts (measured 2026-09-28). This reads the year's header
+        CSV first and compares its (cd_cvm, dt_refer, versao) with cia_filing.
+        When nothing is new it stops there, before any statement member is
+        parsed. Otherwise it upserts the new headers and only the statement
+        lines of those documents. CVM's statement CSVs carry the latest
+        version of each document, so a new version's lines are in the file.
+        """
+        from src.fetchers.cia_fetcher import CIAMember
+        from src.parsers.field_maps import cia_filing as _filing_map
+        from src.parsers.mapping import apply_map
+
+        key_map = {k: _filing_map.FIELD_MAP[k] for k in ("cd_cvm", "dt_refer", "versao")}
+
+        def doc_key(row: Dict[str, Any]) -> Tuple[Any, Any, Any]:
+            typed, _ = apply_map(row, key_map)
+            return typed.get("cd_cvm"), typed.get("dt_refer"), typed.get("versao")
+
+        run_id = str(uuid4())
+        self._log_start(run_id, "cia_aberta", doc_type, year, None)
+        rows_inserted = 0
+        fetched = 0
+        try:
+            members = await self._cia_fetcher.fetch_zip_members_async(
+                doc_type, year, include_summary=True
+            )
+            new_docs: Optional[Set[Tuple[Any, Any, Any]]] = None
+            for m in members:
+                if m.is_summary:
+                    published = {doc_key(r) for r in m.rows}
+                    held = self._held_cia_documents(
+                        doc_type, sorted({k[1] for k in published if k[1] is not None})
+                    )
+                    new_docs = {k for k in published if k[0] and k[1] is not None} - held
+                    if not new_docs:
+                        break
+                    header = [r for r in m.rows if doc_key(r) in new_docs]
+                    fetched += len(header)
+                    rows_inserted += ingest_cia_filing(self._supabase, header, doc_type)
+                elif m.is_account_data:
+                    if new_docs is None:
+                        # The header member sorts first in every published ZIP;
+                        # without it there is nothing to compare against.
+                        raise ValueError(
+                            f"cia_aberta/{doc_type} {year}: statement member "
+                            f"{m.member_name} came before the header CSV"
+                        )
+                    lines = [r for r in m.rows if doc_key(r) in new_docs]
+                    if lines:
+                        fetched += len(lines)
+                        rows_inserted += ingest_cia_account(
+                            self._supabase,
+                            [CIAMember(m.member_name, m.grupo, m.escopo, lines)],
+                            doc_type,
+                        )
+            if new_docs is None:
+                raise ValueError(f"cia_aberta/{doc_type} {year}: no header CSV in the ZIP")
+        except Exception as exc:
+            logger.warning(
+                "ingest_cia_itr_dfp_new_versions %s %d failed: %s", doc_type, year, _describe(exc)
+            )
+            self._log_finish(run_id, 0, _describe(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted, fetched=fetched)
+        logger.info(
+            "cia_aberta/%s %d new versions: %d document(s), %d rows",
+            doc_type, year, len(new_docs), rows_inserted,
+        )
+        return rows_inserted
+
     # ------------------------------------------------------------------
     # Orchestrated runs
     # ------------------------------------------------------------------
@@ -2385,6 +2474,14 @@ class CVMIngestor:
                     "cia_account",
                     f"cia_aberta/{doc_type} {year}",
                     self.ingest_cia_itr_dfp(doc_type, year),
+                ))
+            # A DFP filed in January and a restated prior-year document land in
+            # last year's ZIP: read its header, ingest only what is new (#383).
+            for doc_type in ("itr", "dfp"):
+                tasks.append(IngestTask(
+                    "cia_account",
+                    f"cia_aberta/{doc_type} {year - 1} new versions",
+                    self.ingest_cia_itr_dfp_new_versions(doc_type, year - 1),
                 ))
 
         # SECURIT — refresh current year
