@@ -15,7 +15,18 @@ Endpoint contract, verified live 2026-09-23/24:
         &dataInicial=dd/mm/yyyy&dataFinal=dd/mm/yyyy     (filters on delivery date)
         [&tipoFundo=1|2|3]   1 = FII, 2 = FIDC, 3 = ETF / index funds
         [&cnpjFundo=<14 digits>]
+        [&paginaCertificados=true&tipoFundo=5|6]   the certificados page: 5 = CRI, 6 = CRA
+        [&idFundo=<certificate id>] [&idCategoriaDocumento=<n>]
     Header: X-Requested-With: XMLHttpRequest     (no login, cookie or session)
+
+  * The certificados page (#604 addendum, verified 2026-10-05): with
+    ``paginaCertificados=true`` and ``tipoFundo`` 5 or 6 the same endpoint
+    lists CRI and CRA documents; WITHOUT the parameter the same window
+    returns 0 rows, which is why 4..6 looked empty on 2026-09-24. A
+    certificate's own id (``idFundo``, from ``listarFundos?term=<ISIN>
+    &paraCerts=true``) lists its whole history without a date window.
+    Categories: 17 Termo de Securitização, 19 Aditamento, 16 offer
+    documents, 36 rating reports, 44 Escritura/Instrumento de Emissão.
 
   * The body is ``{draw, recordsTotal, recordsFiltered, data: [...]}``.
   * ``l`` above 200 fails; pages are walked with ``s``. The default order is
@@ -65,8 +76,10 @@ PAGE_SIZE = 200
 _SORT_PARAM = "o[0][dataEntrega]"
 _MAX_WALKS = 3
 
-# tipoFundo query code → label. 4..6 return nothing (verified 2026-09-24).
+# tipoFundo query code → label. 4..6 return nothing on the funds page (verified 2026-09-24); 5 and 6 are
+# the certificados page's CRI and CRA, answered only with paginaCertificados=true (verified 2026-10-05).
 FUND_TYPES: Dict[int, str] = {1: "FII", 2: "FIDC", 3: "ETF"}
+CERTIFICATE_TYPES: Dict[int, str] = {5: "CRI", 6: "CRA"}
 
 _HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
@@ -154,18 +167,25 @@ class FnetFetcher:
         day: Optional[date] = None,
         tipo_fundo: Optional[int] = None,
         cnpj: Optional[str] = None,
+        certificados: bool = False,
+        id_fundo: Optional[int] = None,
+        categoria: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Every document FNET lists for one delivery day and/or one fund.
+        """Every document FNET lists for one delivery day and/or one fund, or (``certificados=True``) for CRI
+        and CRA: one day of ``tipo_fundo`` 5 or 6, or one certificate's ``id_fundo``.
 
         Walks every page and reconciles the count against ``recordsTotal``;
         a mismatch raises rather than return a short list.
         """
-        if day is None and cnpj is None:
-            raise ValueError("FNET search needs a delivery day or a cnpj: unwindowed queries return an arbitrary 533 rows")
-        if tipo_fundo is not None and tipo_fundo not in FUND_TYPES:
-            raise ValueError(f"tipo_fundo must be one of {sorted(FUND_TYPES)}, got {tipo_fundo}")
+        if day is None and cnpj is None and id_fundo is None:
+            raise ValueError("FNET search needs a delivery day, a cnpj or an id_fundo: unwindowed queries return an arbitrary 533 rows")
+        allowed = CERTIFICATE_TYPES if certificados else FUND_TYPES
+        if tipo_fundo is not None and tipo_fundo not in allowed:
+            raise ValueError(f"tipo_fundo must be one of {sorted(allowed)}, got {tipo_fundo}")
         if cnpj is not None and not _CNPJ_RE.match(cnpj):
             raise ValueError(f"cnpj must be 14 digits, got {cnpj!r}")
+        if id_fundo is not None and not certificados:
+            raise ValueError("id_fundo is a certificate id: pass certificados=True")
 
         base: Dict[str, Any] = {"d": 1, "l": PAGE_SIZE}
         if day is not None:
@@ -174,6 +194,12 @@ class FnetFetcher:
             base["tipoFundo"] = tipo_fundo
         if cnpj is not None:
             base["cnpjFundo"] = cnpj
+        if certificados:
+            base["paginaCertificados"] = "true"
+        if id_fundo is not None:
+            base["idFundo"] = int(id_fundo)
+        if categoria is not None:
+            base["idCategoriaDocumento"] = int(categoria)
         label = " ".join(f"{k}={v}" for k, v in base.items() if k not in ("d", "l"))
 
         # FNET's default order is not stable between pages: on 2026-08-02 an

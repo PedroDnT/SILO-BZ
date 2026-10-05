@@ -132,6 +132,8 @@ class RunRecord:
     engine_json: bytes | None = None
     pdf: bytes | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    # engine 1.12: the investigator's read-once cache entries (public documents only), for the Worker to write
+    documents: dict[str, bytes] = field(default_factory=dict)
 
 
 def _span(trace_id: str, span_id: str, parent: str | None, name: str, start: int, end: int,

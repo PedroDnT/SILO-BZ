@@ -20,12 +20,15 @@
 	},
 	// Not secrets. The LLM defaults of src/portfolio/report/llm.py, set
 	// explicitly; the US$1.00 cost cap is in the code (COST_CAP_USD).
-	// EGRESS "allowlist" limits the Container to silo-mcp and api.openai.com
-	// (src/index.ts); "open" turns its internet on.
+	// EGRESS "allowlist" limits the Container to silo-mcp, api.openai.com and the
+	// investigator's sources (src/index.ts); "open" turns its internet on.
 	"vars": {
 		"SILO_LLM_PROVIDER": "openai",
 		"SILO_LLM_MODEL": "gpt-5.1",
 		"SILO_LLM_EFFORT": "medium",
+		// Engine 1.12 (#605): the investigator of official documents. "on" runs it; anything else leaves the
+		// engine's investigation section off. Its web fallback needs the EXA_API_KEY secret.
+		"SILO_INVESTIGATOR": "on",
 		"EGRESS": "allowlist"
 	},
 	"containers": [

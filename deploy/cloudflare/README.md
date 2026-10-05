@@ -69,11 +69,15 @@ to findings by id; they never copy portfolio data.
 repository secrets by the deploy, and handed to the Container as environment
 variables at start with `SILO_LLM_PROVIDER=openai`, `SILO_LLM_MODEL=gpt-5.1`,
 `SILO_LLM_EFFORT=medium`. The US$1.00 cost cap per report is in the engine
-(`COST_CAP_USD`, `src/portfolio/report/llm.py`).
+(`COST_CAP_USD`, `src/portfolio/report/llm.py`). `EXA_API_KEY` (engine 1.12,
+#605) is copied the same way; with `SILO_INVESTIGATOR=on` (a var) the engine's
+investigator reads Fundos.NET, RAD and, as its fallback, Exa, and the public
+documents it read go to R2 with the trace as `docs/<source>/<id>/<sha256>.txt`.
 
 Egress (`EGRESS` var): `allowlist` (default) starts the Container with internet
-off and lets out only `zcjbtpxuhdekpwcxmepn.supabase.co` (silo-mcp) and
-`api.openai.com`, through `@cloudflare/containers`' `allowedHosts` with
+off and lets out only `zcjbtpxuhdekpwcxmepn.supabase.co` (silo-mcp),
+`api.openai.com` and the investigator's sources `fnet.bmfbovespa.com.br`,
+`www.rad.cvm.gov.br` and `api.exa.ai`, through `@cloudflare/containers`' `allowedHosts` with
 `interceptHttps`. HTTPS is then terminated by the platform's proxy, whose CA the
 image trusts at start (`engine/start.sh`). `open` turns the internet on instead.
 
@@ -81,7 +85,7 @@ image trusts at start (`engine/start.sh`). `open` turns the internet on instead.
 
 Dispatch **Deploy Cloudflare demo** (`.github/workflows/deploy_cloudflare.yml`).
 It refuses unless `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
-`DEMO_ACCESS_TOKEN` and `OPENAI_API_KEY` exist, deploys with an immediate
+`DEMO_ACCESS_TOKEN`, `OPENAI_API_KEY` and `EXA_API_KEY` exist, deploys with an immediate
 Container rollout, and then checks the live address, printing status codes,
 sizes, timings and the cost header only: `/health` 200, `/` the page, `/diagnose`
 401 without a token and with wrong ones, an unknown path 404, then two real
