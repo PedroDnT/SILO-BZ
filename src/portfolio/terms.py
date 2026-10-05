@@ -19,6 +19,7 @@ from src.portfolio.client import SiloClient
 from src.portfolio.identify import LineId, call_halving, rows_by_input
 
 TOOL = "portfolio_fund_terms"
+MAX_CNPJS = 200
 TERM_FIELDS = (
     "gestor_id", "gestor_name", "admin_cnpj", "admin_name", "terms_source", "terms_dt_comptc",
     "qt_dia_conversao_cota", "qt_dia_pagto_resgate", "tp_dia_pagto_resgate", "qt_dia_resgate_cotas",
@@ -58,7 +59,12 @@ def fetch_fund_terms(lines: list[LineId], client: SiloClient) -> FundTerms:
     if not group:
         return out
     out.requested = [li.line_no for li in group]
-    answered, failed = call_halving(client, TOOL, group, _args, out.errors)
+    answered: list = []
+    failed: list = []
+    for i in range(0, len(group), MAX_CNPJS):  # the API refuses more than 200 CNPJs per call (22023)
+        a, f = call_halving(client, TOOL, group[i : i + MAX_CNPJS], _args, out.errors)
+        answered += a
+        failed += f
     for grp, _res in failed:
         for li in grp:
             out.failed[li.line_no] = "consulta_falhou"
@@ -69,7 +75,8 @@ def fetch_fund_terms(lines: list[LineId], client: SiloClient) -> FundTerms:
         for idx, li in enumerate(grp, start=1):
             rows = grouped.get(idx) or []
             row = rows[0] if rows else None
-            if row is not None and row.get("input_cnpj") is not None and _digits(row.get("input_cnpj")) != _digits(sent[idx - 1]):
+            # the API returns one row per input CNPJ, so a missing row is an inconsistent answer, never "not filed"
+            if row is None or (row.get("input_cnpj") is not None and _digits(row.get("input_cnpj")) != _digits(sent[idx - 1])):
                 out.failed[li.line_no] = "resposta_inconsistente"
                 continue
             out.rows[li.line_no] = terms_block(row, [res.src(li.position.data_posicao)])

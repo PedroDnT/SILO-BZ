@@ -15216,12 +15216,11 @@
       {
         "bucket_id": "fundo_sem_prazo",
         "bucket": "fundo sem prazo de resgate informado",
-        "value_brl": 925440.0,
-        "portfolio_pct": 14.9351,
-        "n_lines": 2,
+        "value_brl": 750000.0,
+        "portfolio_pct": 12.1038,
+        "n_lines": 1,
         "line_nos": [
-          6,
-          8
+          6
         ],
         "lines": [
           {
@@ -15229,38 +15228,6 @@
             "tipo": "FIDC",
             "value_brl": 750000.0,
             "portfolio_pct": 12.1038,
-            "qt_dia_pagto_resgate": null,
-            "tp_dia_pagto_resgate": null,
-            "qt_dia_conversao_cota": null,
-            "qt_dia_resgate_cotas": null,
-            "terms_source": null,
-            "terms_dt_comptc": null,
-            "estrategia_corretora": null,
-            "vencimento": null,
-            "reason_code": "prazo_nao_informado",
-            "sources": [
-              {
-                "tool": "portfolio_fund_terms",
-                "call_id": 10,
-                "args": {
-                  "p_cnpjs": [
-                    "08935128000159",
-                    "50088190000119",
-                    "51488342000133",
-                    "32113885000121",
-                    "42592315000115",
-                    "11728688000147"
-                  ]
-                },
-                "data_date": "2026-09-30"
-              }
-            ]
-          },
-          {
-            "line_no": 8,
-            "tipo": "FII",
-            "value_brl": 175440.0,
-            "portfolio_pct": 2.8313,
             "qt_dia_pagto_resgate": null,
             "tp_dia_pagto_resgate": null,
             "qt_dia_conversao_cota": null,
@@ -15400,11 +15367,12 @@
       {
         "bucket_id": "bolsa",
         "bucket": "ETF/ações (negociados em bolsa)",
-        "value_brl": 988000.0,
-        "portfolio_pct": 15.9447,
-        "n_lines": 1,
+        "value_brl": 1163440.0,
+        "portfolio_pct": 18.776,
+        "n_lines": 2,
         "line_nos": [
-          2
+          2,
+          8
         ],
         "lines": [
           {
@@ -15422,6 +15390,38 @@
             "vencimento": null,
             "reason_code": null,
             "sources": []
+          },
+          {
+            "line_no": 8,
+            "tipo": "FII",
+            "value_brl": 175440.0,
+            "portfolio_pct": 2.8313,
+            "qt_dia_pagto_resgate": null,
+            "tp_dia_pagto_resgate": null,
+            "qt_dia_conversao_cota": null,
+            "qt_dia_resgate_cotas": null,
+            "terms_source": null,
+            "terms_dt_comptc": null,
+            "estrategia_corretora": null,
+            "vencimento": null,
+            "reason_code": null,
+            "sources": [
+              {
+                "tool": "portfolio_fund_terms",
+                "call_id": 10,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "50088190000119",
+                    "51488342000133",
+                    "32113885000121",
+                    "42592315000115",
+                    "11728688000147"
+                  ]
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
           }
         ]
       },
@@ -15450,8 +15450,8 @@
       "fundo_sem_prazo",
       "credito_direto"
     ],
-    "above_d30_total_brl": 1735055.0,
-    "above_d30_total_pct": 28.0009,
+    "above_d30_total_brl": 1559615.0,
+    "above_d30_total_pct": 25.1696,
     "evaluated": true,
     "unanswered_line_nos": [],
     "sum_check_brl": 0.0
@@ -16248,7 +16248,7 @@
         "status": "avaliado",
         "status_label": "avaliado",
         "unit": "pct",
-        "value_pct": 28.0009,
+        "value_pct": 25.1696,
         "value_brl": null,
         "value_count": null,
         "subject": null,
@@ -16265,7 +16265,6 @@
         "line_nos": [
           3,
           6,
-          8,
           9,
           10,
           11,
@@ -16286,14 +16285,6 @@
             "call_id": null,
             "args": {
               "line_no": 6
-            },
-            "data_date": "2026-09-30"
-          },
-          {
-            "tool": "statement",
-            "call_id": null,
-            "args": {
-              "line_no": 8
             },
             "data_date": "2026-09-30"
           },
@@ -16330,7 +16321,7 @@
             "data_date": "2026-09-30"
           }
         ],
-        "value_brl_detail": 1735055.0,
+        "value_brl_detail": 1559615.0,
         "parts": [
           {
             "group": "acima de D+30",
@@ -16347,8 +16338,8 @@
           {
             "group": "fundo sem prazo de resgate informado",
             "bucket_id": "fundo_sem_prazo",
-            "value_brl": 925440.0,
-            "portfolio_pct": 14.9351
+            "value_brl": 750000.0,
+            "portfolio_pct": 12.1038
           },
           {
             "group": "crédito direto sem liquidez antes do vencimento",

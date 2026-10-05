@@ -228,17 +228,17 @@ def compute_lookthrough(
         sec.fail("portfolio_lookthrough falhou para todos os fundos (erros literais em errors).", code="consulta_falhou")
     elif refused:
         sec.degrade(f"portfolio_lookthrough falhou para {refused} de {len(roots)} fundos; essas linhas ficaram sem look-through.", code="consulta_falhou")
-    if depth_reduced and sec.status == "complete":
+    if depth_reduced:
         sec.degrade(
             f"{len(depth_reduced)} fundo(s) aberto(s) com profundidade menor que {max_depth}: a resposta passava de "
             "1000 linhas (22023); os fundos abaixo do limite ficam como limite de profundidade.",
             code="profundidade_reduzida",
         )
     empty = [o for o in out_lines if o["status"] == "no_holdings"]
-    if empty and sec.status == "complete":
+    if empty:
         sec.degrade(f"{len(empty)} fundo(s) sem carteira na CDA do mês.", code="sem_carteira_cda")
     partial_lines = [o for o in out_lines if o["status"] == "partial"]
-    if partial_lines and sec.status == "complete":
+    if partial_lines:
         sec.degrade(f"{len(partial_lines)} fundo(s) com linhas sem peso.", code="linhas_sem_peso")
 
     shared = shared_exposure(lines, exposures, fund_nodes)

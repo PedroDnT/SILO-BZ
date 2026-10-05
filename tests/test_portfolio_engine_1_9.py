@@ -20,13 +20,13 @@ from src.portfolio.client import FakeClient, ToolError, load_fake_rows
 from src.portfolio.common import SiloUnavailable
 from src.portfolio.diagnose import FAKE_CLOCK
 from src.portfolio.engine import default_params, run_engine
-from src.portfolio.identify import identify
+from src.portfolio.identify import LineId, identify
 from src.portfolio.liquidity import compute_liquidity
 from src.portfolio.lookthrough import compute_lookthrough
 from src.portfolio.report import adapt, build, charts, redator, render, revisor
 from src.portfolio.statement import TIPOS, parse_rows, read_statement
 from src.portfolio.statement_pdf_extrato import _fund_tipo
-from src.portfolio.terms import fetch_fund_terms
+from src.portfolio.terms import FundTerms, fetch_fund_terms
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "docs" / "reference" / "portfolio" / "statement-template.xlsx"
@@ -321,6 +321,45 @@ def test_a_transient_terms_failure_is_retried_halved_and_does_not_raise():
     _, lines = identify(s, Flaky(resolve_none()))
     t = fetch_fund_terms(lines, Flaky(resolve_none()))
     assert calls == [[A, B, C, P], [A, B], [C, P]] and set(t.failed) == {1, 2, 3, 4}
+
+
+def test_a_missing_terms_row_is_an_inconsistent_answer_never_not_filed():
+    s = fund_stmt()
+    rows = [terms_row(1, A, pagto=1), terms_row(2, B, pagto=1), terms_row(4, P, pagto=1)]  # no row for C (line 3)
+    canned = {**resolve_none(), "portfolio_fund_terms": [{"match": {"p_cnpjs": [A, B, C, P]}, "rows": rows}]}
+    _, lines = identify(s, FakeClient(canned))
+    t = fetch_fund_terms(lines, FakeClient(canned))
+    assert t.failed == {3: "resposta_inconsistente"} and 3 not in t.rows
+    by = {b["bucket_id"]: b for b in compute_liquidity(lines, t)["buckets"]}
+    assert by["fundo_sem_prazo"]["line_nos"] == [] and by["sem_classificacao"]["line_nos"] == [3]
+
+
+def test_more_than_200_fund_lines_are_sent_in_calls_of_at_most_200():
+    cnpjs = [f"{i:08d}000100" for i in range(1, 202)]
+    s = stmt(*[fund(f"F{i}", c, 1.0) for i, c in enumerate(cnpjs, start=1)])
+    sizes = []
+
+    class Paged(FakeClient):
+        def _request(self, tool, args):
+            if tool == "portfolio_fund_terms":
+                sent = args["p_cnpjs"]
+                if len(sent) > 200:
+                    raise ToolError(tool, '{"code":"22023","message":"portfolio_fund_terms: refused, more than 200"}')
+                sizes.append(len(sent))
+                return [terms_row(k, c, pagto=1) for k, c in enumerate(sent, start=1)]
+            return super()._request(tool, args)
+
+    _, lines = identify(s, Paged(resolve_none()))
+    t = fetch_fund_terms(lines, Paged(resolve_none()))
+    assert sizes == [200, 1] and not t.failed and len(t.rows) == 201
+
+
+def test_a_fund_line_with_a_b3_ticker_is_sold_on_the_exchange_however_identified():
+    s = stmt(["FII HGLG", "FII", "HGLG11", 10, 100.0, 1000.0, D, None, None])
+    li = LineId(position=s.positions[0], status="identified", kind="fund", cnpj=A)  # identified by CNPJ, not by ticker
+    t = FundTerms(requested=[1], rows={1: {"answered": True, "qt_dia_pagto_resgate": None, "qt_dia_resgate_cotas": None}})
+    by = {b["bucket_id"]: b for b in compute_liquidity([li], t)["buckets"]}
+    assert by["bolsa"]["line_nos"] == [1] and by["fundo_sem_prazo"]["line_nos"] == []
 
 
 # --- 3. risk rows and thresholds -------------------------------------------------------------------------------------
@@ -628,3 +667,21 @@ def test_a_bad_argument_22023_is_not_retried_shallower():
     _, lines = identify(s, Bad(resolve_none()))
     compute_lookthrough(lines, Bad(resolve_none()), dt.date(2026, 5, 1), 4)
     assert asked == [4]
+
+
+def test_a_reduced_depth_keeps_its_code_when_another_fund_already_degraded_the_section():
+    s = stmt(fund("FIC PREV", A, 100.0), fund("FUNDO B", B, 100.0))
+
+    class Mixed(FakeClient):
+        def _request(self, tool, args):
+            if tool == "portfolio_lookthrough":
+                if args["p_cnpjs"] == [B]:
+                    raise ToolError(tool, "refused")
+                if args["p_max_depth"] > 2:
+                    raise ToolError(tool, CAP)
+                return _lt_rows(A, args["p_max_depth"])
+            return super()._request(tool, args)
+
+    _, lines = identify(s, Mixed(resolve_none()))
+    sec, _ = compute_lookthrough(lines, Mixed(resolve_none()), dt.date(2026, 5, 1), 4)
+    assert sec["status"] == "partial" and {"consulta_falhou", "profundidade_reduzida"} <= set(sec["reason_codes"])
