@@ -65,6 +65,9 @@ Leave `p_ids` empty and name a family with `p_entity_type`: the panel selects th
 | `volume` | ticker, option, termo | equity, unit, bdr, fund_quota, cash_security, derivative | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a sum. |
 | `close_unit` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | `close / quotation_factor`: close per **single** quoted unit. Compares price levels across papers (one quoted per lot reads 1000× its unit price). Not corporate-action adjusted. |
 | `close_return` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1`, with `p_(t-1)` **divided by the share ratio of any split, grouping or bonus** between the two prints (a 1:4 split from 100.00 to 26.00 is +4%, not −74%). Price only, not a total return. **Cash tickers only.** |
+| `settlement_rate` | future | derivative | day, month | `b3_price_report` | Futures settlement as a rate, as B3 publishes it: for DI1, % a.a. on 252 business days. Ids are B3 contract codes (`DI1F27`); [`future_curve`](/api-docs/rates) lists a session's. Final (F) settlements only. Nothing is rolled: a contract stops at maturity. The default for a future. |
+| `settlement_price` | future | derivative | day, month | `b3_price_report` | Settlement price as published: for DI1 the PU. Final settlements only. |
+| `open_interest` | future | derivative | day, month | `b3_price_report` | Open contracts at the session's close. Monthly = the last session's, not a sum. |
 | `nav` | cnpj | fi, fidc, fii, fip, fiagro | month | `cvm` | Fund net assets (`vl_patrim_liq`). |
 | `quota` | cnpj | fi | month | `cvm` | Unit quota value. Comparable within a subclass only. |
 | `delinquency` | cnpj | fidc, fiagro | month | `cvm` | Delinquent portfolio **value**, not a rate; divide by `nav` yourself. |
@@ -86,10 +89,10 @@ A metric asked outside its asset classes (`catalog().applicability`) gives **no 
 
 | Field | What to know |
 | --- | --- |
-| `asset_class` | Cash tickers: the conservative B3 type (`fund_quota` deliberately does not guess ETF versus FII). `derivative` for option and termo codnegs. Funds: the vehicle's `entity_type`. |
+| `asset_class` | Cash tickers: the conservative B3 type (`fund_quota` deliberately does not guess ETF versus FII). `derivative` for option and termo codnegs and futures contract codes. Funds: the vehicle's `entity_type`. |
 | `date` | At `freq=month` **always the first day of the month**, for every id. This is normalisation: CVM publishes FI/FII/FIAGRO at first-of-month, FIDC at month-**end**, FIP at year-**end**. [`fund_nav`](/api-docs/funds) serves the period as filed. |
 | `value` | Nullable for `close` and `volume`; for every other metric a null is **no row at all**. |
-| `source` | `b3_cotahist` or `cvm`. |
+| `source` | `b3_cotahist`, `b3_price_report` (futures) or `cvm`. |
 
 Rows are ordered by `date`, `id`, `metric`, `asset_class`.
 

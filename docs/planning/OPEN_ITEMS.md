@@ -459,8 +459,8 @@ Nothing in wave 2 that depends on these starts until each has an answer.
   (research doc §10, missing sessions). **Served since catalog v42** (`27_api_rates.sql`):
   `future_curve`, `future_series`, `curve`, `curve_history`, live after the
   next analytics apply and a `deploy_mcp.yml` run. **Shown on the dashboard's
-  `/rates` page since 2026-09-30** (curves, breakevens, DI1 open interest). Still open: the futures arm
-  of `api.panel` (`id_type='future'`, phase B). Owner decision: whether
+  `/rates` page since 2026-09-30** (curves, breakevens, DI1 open interest). The futures arm of
+  `api.panel` (`id_type='future'`, phase B) is built (catalog v61). Owner decision: whether
   2021-01-04's DI1 may come from that day's earlier, well-formed versions of
   the Price Report. Owner-only, only if VIX itself is wanted: a signed Cboe
   licence (permissions@cboe.com) before setting the `CBOE_VIX_LICENSED`

@@ -282,3 +282,38 @@ def test_sdk_sends_exactly_the_declared_parameters():
     assert sent["curve"]["p_curve"] == "DOC"
     assert sent["curve_history"]["p_tenor_days"] == 360
     assert sent["curve_history"]["p_to"] == "2026-09-01"
+
+
+def _panel_body() -> str:
+    start = SQL19.index("CREATE OR REPLACE FUNCTION api.panel(")
+    return SQL19[start:SQL19.index("COMMENT ON FUNCTION api.panel(", start)]
+
+
+def test_panel_futures_arm_serves_final_settlements_under_named_metrics():
+    """B8 phase B (catalog v61): DI1 codes in api.panel. The settlement is
+    published as a rate and as a PU, so it is two metrics, never one
+    ambiguous `settlement`; the panel has no status column, so only a
+    settlement B3 marks F is served; source is the Price Report."""
+    from serve.catalog import CATALOG_VERSION, DEFAULTS, METRICS, catalog_payload
+
+    body = _panel_body()
+    for cte in ("future_month", "future_day"):
+        chunk = body[body.index(f"{cte} AS ("):]
+        chunk = chunk[:chunk.index("\n),\n")]
+        assert "FROM public.b3_futures_settlement f" in chunk, cte
+        assert "f.settlement_status = 'F'" in chunk, cte
+        assert "f.ticker IN (SELECT ticker FROM tickers)" in chunk, cte
+    arms = re.findall(r"SELECT u\.ticker, 'future', 'derivative', u\.period, '(\w+)', [^\n]*'b3_price_report'", body)
+    assert arms == ["settlement_rate", "settlement_price", "open_interest"]
+    assert "'settlement'" not in body
+    assert "('settlement_rate' = ANY (p.metrics) OR p.default_metrics)" in body
+
+    assert CATALOG_VERSION >= 61
+    for m in ("settlement_rate", "settlement_price", "open_interest"):
+        spec = METRICS[m]
+        assert spec["id_type"] == ["future"] and spec["asset_class"] == ["derivative"], m
+        assert spec["source"] == "b3_price_report" and spec["grain"] == ["day", "month"], m
+        assert "final" in spec["meaning"].lower(), m
+    assert "settlement" not in METRICS
+    assert "future" in catalog_payload()["id_types"]
+    assert "settlement_rate for futures" in DEFAULTS["panel"]["means"]
