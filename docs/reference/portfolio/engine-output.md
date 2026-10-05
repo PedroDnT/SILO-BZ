@@ -30,8 +30,8 @@ gains `cdi_like`, `pct_of_cdi` and `pct_of_cdi_reason_code`; `returns` gains `pc
 gains `benchmark_as_filed` (`portfolio_fees` v67's `benchmark_extrato`, `benchmark_lamina`, `benchmark_lamina_n`, null
 for a row that predates them). New reason codes in `common.REASON_TEXT`: `referencia_nao_informada`,
 `referencia_nao_cdi`, `referencia_diverge`, `referencia_nao_servida`, `pct_cdi_so_fundos`, `cdi_nao_positivo`,
-`equivalente_fora_escopo`, `equivalente_sem_classe`, `equivalente_sem_par`, `equivalente_sem_etf`,
-`equivalente_sem_pl`, `equivalente_sem_linha`, `equivalente_sem_retorno`, `equivalente_sem_taxa`,
+`equivalente_fora_escopo`, `equivalente_sem_comparacao`, `equivalente_sem_classe`, `equivalente_sem_par`,
+`equivalente_sem_etf`, `equivalente_sem_pl`, `equivalente_sem_linha`, `equivalente_sem_retorno`, `equivalente_sem_taxa`,
 `distribuicao_classe_nao_avaliada`. The equivalents block calls `portfolio_equivalents`, `class_return_distribution`
 and the ETF's series after every other block, so no earlier call id moves. The report shows it in "Equivalente de
 mercado" and prints "% do CDI" only where the engine wrote it (`redator-revisor.md`).
@@ -635,7 +635,7 @@ trimming, collapsing whitespace and upper-casing, against the rule file's `accep
 `pct_of_cdi` is `net_return_pct ÷ cdi_pct × 100` (4 decimals) only when `cdi_like` and the window's CDI is above zero;
 otherwise null with `pct_of_cdi_reason_code`: `pct_cdi_so_fundos` (not a fund), `referencia_nao_servida` (no fee row
 carried the benchmark), `referencia_nao_informada`, `referencia_nao_cdi`, `referencia_diverge` (the two documents, or the
-lâmina's classes, disagree), `cdi_indisponivel` or `cdi_nao_positivo`. `net_minus_cdi_pp` is kept in every case.
+lâmina's classes, disagree, or some classes filed one and some none), `cdi_indisponivel` or `cdi_nao_positivo`. `net_minus_cdi_pp` is kept in every case.
 
 ## `tax`
 
@@ -697,15 +697,17 @@ of the line's rule files, plus `data_aplicacao` when the rate depends on a date 
 class and FUNDO_COTAS (as the fee comparison read them from the Extrato) are mapped in the reviewed YAML
 (`src/portfolio/rules/equivalents/class_index.yaml`, approved pairs only, read in reverse), the equivalent is the
 largest active ETF by third-party PL across every index mapped to the class (`portfolio_equivalents`, catalog v67). The
-indices the SQL served must be the YAML's approved ones, and the flagged ETF the largest by PL, else
-`resposta_inconsistente`. Keys: `status`, `reason`, `errors`, `reason_codes`, `label` ("equivalente de mercado; não é
+served pairs decide (the SQL reads only approved ones); `class_indices_rules` holds the YAML's approved indices as this
+engine read them and `pairs_match_rules` is false while the database serves another version of the list (a deploy
+lag, never a failure). The class is read only from a comparison row the fee block accepted, and the flagged ETF must
+be the largest by PL, else `resposta_inconsistente`. Keys: `status`, `reason`, `errors`, `reason_codes`, `label` ("equivalente de mercado; não é
 recomendação"), `as_of` (the run's UTC date, as the fee comparison), `end_month` and `windows[]` (the return block's),
 `choice_note`, `class_note`, `band_note`, `pl_label`, `fee_label`, `lines[]`, `n_fund_lines`, `n_found`, `n_without`,
 `found_value_brl`, `coverage_portfolio_value_pct`. No ranking, no "melhor", no instruction.
 
 A line (every `fundo` line): `line_no`, `linha_extrato`, `fund_name`, `cnpj`, `valor_brl`, `classe_anbima`,
-`fundo_cotas`, `class_indices`, `n_etfs`, `status` (`encontrado` | `sem_equivalente`), `reason_code` and `reason`
-(`equivalente_fora_escopo`, `equivalente_sem_classe`, `equivalente_sem_par`, `equivalente_sem_etf`, `equivalente_sem_pl`,
+`fundo_cotas`, `class_indices`, `class_indices_rules`, `pairs_match_rules`, `n_etfs`, `status` (`encontrado` |
+`sem_equivalente`), `reason_code` and `reason` (`equivalente_fora_escopo`, `equivalente_sem_comparacao`, `equivalente_sem_classe`, `equivalente_sem_par`, `equivalente_sem_etf`, `equivalente_sem_pl`,
 `equivalente_sem_linha`, `consulta_falhou`, `resposta_inconsistente`), `label`, `etf`, `windows[]`,
 `fund_return_status`, `sources`.
 
@@ -780,7 +782,7 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `tax` (1.11) (`labels`, `rules_files`, `not_covered`, `person`, `lines[i]`: `line_id`, `fee`, `holding`, `tax`, `pension`, `optimization`, `iof`, `a_conferir`) | `tax.*`, copied without `rule_source`, `sources` and the `date_missing` template; `tax.act` from `rule_source.act`; every `reason` the fixed text of its code; `person.flags[i].line_ids` as `L<n>` |
 | `gaps[i]` from returns and tax (1.10, 1.11) | the lines with no return (`returns.lines[i].reason_code`) and the `sem_regra` tax lines, grouped by code, with their line ids and no value |
 | `fees.comparison.by_line[i]` `n_fund_peers`, `n_etf_peers`, `n_etf_excluded`, `etf_peer_*` (1.11) | the same keys of `fees.comparison.lines[i]` |
-| `equivalents` (1.12) (`label`, notes, `lines[i]`: `line_id`, `etf`, `windows[j]`) | `equivalents.*`, copied without `sources`; every reason the fixed text of its code (the SQL's own reason never reaches the view); lines with no equivalent and windows not compared are `gaps[i]`, grouped by code; the ETF's PL and fee dates date `ETFSBRASIL` |
+| `equivalents` (1.12) (`label`, notes, `lines[i]`: `line_id`, `etf`, `windows[j]`) | `equivalents.*`, copied without `sources`; every reason the fixed text of its code (the SQL's own reason never reaches the view); lines with no equivalent and windows not compared are `gaps[i]`, grouped by code; `api.portfolio_equivalents` is credited to `ETFSBRASIL` and dated by the ETF's PL and fee snapshots, never by the run date |
 | `data_dates`                                                                                                                                                                                                                                                                                                                     | the newest `data_date` per source name                                                                                                                                                                                                                                                                                                                 |
 
 ## Tools the engine calls

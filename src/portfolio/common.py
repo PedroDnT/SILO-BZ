@@ -104,6 +104,7 @@ REASON_TEXT = {
     # engine 1.12: the market equivalent (#609, market_equivalent.py)
     "equivalente_fora_escopo": "fundo não identificado ou fora da família FI: sem classe ANBIMA para ligar a um índice",
     "equivalente_sem_classe": "classe ANBIMA não informada no Extrato: sem equivalente de mercado",
+    "equivalente_sem_comparacao": "a comparação de taxas não leu a classe ANBIMA deste fundo (sem linha ou resposta inconsistente): sem equivalente de mercado",
     "equivalente_sem_par": "a classe ANBIMA do fundo não tem índice aprovado na lista revisada: sem equivalente de mercado",
     "equivalente_sem_etf": "nenhum ETF ativo acompanha o índice ligado à classe: sem equivalente de mercado",
     "equivalente_sem_pl": "nenhum ETF do índice ligado à classe tem patrimônio líquido no site de terceiros: maior ETF indefinido",

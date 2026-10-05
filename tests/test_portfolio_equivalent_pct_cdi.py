@@ -84,6 +84,9 @@ def test_no_benchmark_and_divergent_benchmarks_are_not_cdi_like():
     assert benchmark.classify("CDI", "IBOVESPA", 1)["reason_code"] == "referencia_diverge"
     assert benchmark.classify("OUTROS", "CDI", 1)["reason_code"] == "referencia_diverge"
     assert benchmark.classify(None, None, 2)["reason_code"] == "referencia_diverge"  # the lâmina's classes differ
+    # some classes filed CDI and some nothing: benchmark_lamina is NULL with one distinct value, not "não informado"
+    assert benchmark.classify(None, None, 1)["reason_code"] == "referencia_diverge"
+    assert benchmark.classify("CDI", None, 1)["reason_code"] == "referencia_diverge"
     for code in ("referencia_nao_informada", "referencia_nao_cdi", "referencia_diverge"):
         assert code in REASON_TEXT
 
@@ -284,11 +287,29 @@ def test_a_class_distribution_not_evaluated_gives_no_percentiles():
     assert w["etf_band"] is None and w["fund_band"] is None and w["etf_net_return_pct"] is not None
 
 
-def test_the_sql_indices_must_be_the_yaml_ones_and_the_flag_the_largest():
-    bad_idx = [eq_row(SMALL, "SMXX11", 2.5e9, 1, indices=("IBOVESPA",))]
-    assert eq_run(eq_rows=bad_idx)[0]["lines"][0]["reason_code"] == "resposta_inconsistente"
+def test_served_pairs_decide_a_deploy_lag_is_flagged_and_the_flag_must_be_the_largest():
+    ok = eq_run()[0]["lines"][0]
+    assert ok["pairs_match_rules"] is True and ok["class_indices_rules"] == ["SMLL (Small Cap)"]
+    lag = [eq_row(SMALL, "SMXX11", 2.5e9, 1, indices=("SMLL (Small Cap)", "OUTRO INDICE"))]
+    ln = eq_run(eq_rows=lag)[0]["lines"][0]
+    assert ln["status"] == "encontrado" and ln["pairs_match_rules"] is False
     not_largest = [eq_row(SMALL, "SMXX11", 1.0e8, 1), eq_row(SMALL, "SMYY11", 9.0e9, 2)]
     assert eq_run(eq_rows=not_largest)[0]["lines"][0]["reason_code"] == "resposta_inconsistente"
+
+
+@pytest.mark.parametrize("cmp_code", ["sem_linha_comparacao", "resposta_inconsistente"])
+def test_a_class_is_read_only_from_a_comparison_row_the_fee_block_accepted(cmp_code):
+    sec, client = eq_run(comparison={"line_no": 1, "classe_anbima": SMALL, "fundo_cotas": "X", "reason_code": cmp_code})
+    assert sec["lines"][0]["reason_code"] == "equivalente_sem_comparacao"
+    assert "portfolio_equivalents" not in {p.tool for p in client.provenance}
+    sec, _ = eq_run(comparison={"line_no": 99})  # no comparison row for the line
+    assert sec["lines"][0]["reason_code"] == "equivalente_sem_comparacao"
+
+
+def test_a_window_not_compared_degrades_the_section():
+    sec, _ = eq_run(extra={"class_return_distribution": [{"match": {}, "error": "boom"}]})
+    assert sec["status"] == "partial" and "consulta_falhou" in sec["reason_codes"]
+    assert sec["lines"][0]["windows"][0]["class_reason_code"] == "consulta_falhou"
 
 
 def test_a_fund_without_a_class_or_a_failed_call_says_why():

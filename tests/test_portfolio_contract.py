@@ -419,8 +419,11 @@ def test_v67_the_benchmark_is_served_as_filed_whatever_the_fee_source():
     assert "NULLIF(btrim(e ->> 'indice_refer'), '') AS indice_refer" in body
     assert "f.n_bench = 1 AND NOT f.has_empty_bench THEN f.bench" in body
     # nothing is matched, normalised or inferred in SQL: the engine's rule file decides what is CDI
-    for bad in ("ILIKE '%CDI", "~* 'CDI", "upper(r.indice_refer"):
+    for bad in ("ILIKE '%CDI", "~* 'CDI", "'CDI'"):
         assert bad not in body, bad
+    # the distinct count uses the rule file's normalization (trim, collapse spaces, upper-case); the value stays as filed
+    assert "count(DISTINCT upper(regexp_replace(r.indice_refer, '\\s+', ' ', 'g')))::int AS n_bench" in body
+    assert "min(r.indice_refer) AS bench" in body
 
 
 def test_catalog_v67_names_the_benchmark_and_the_equivalents():

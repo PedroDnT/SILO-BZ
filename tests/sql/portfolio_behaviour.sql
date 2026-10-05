@@ -1406,7 +1406,11 @@ INSERT INTO public.zz_lamina_stub (cnpj, id_subclasse, dt_comptc, taxa_adm, indi
     ('77000000000003', 'B', '2026-08-01', 0.5, 'IBOVESPA'),
     ('77000000000004', NULL, '2026-08-01', 0.5, '  '),           -- blank: not filed
     ('77000000000005', NULL, '2026-07-01', 0.5, 'CDI'),          -- an older month: not the newest
-    ('77000000000005', NULL, '2026-08-01', 0.5, 'IMA-B');
+    ('77000000000005', NULL, '2026-08-01', 0.5, 'IMA-B'),
+    ('77000000000008', 'A', '2026-08-01', 0.5, 'CDI'),           -- the same index in two spellings: one value
+    ('77000000000008', 'B', '2026-08-01', 0.5, ' cdi '),
+    ('77000000000009', 'A', '2026-08-01', 0.5, 'CDI'),           -- one class filed it, the other did not
+    ('77000000000009', 'B', '2026-08-01', 0.5, NULL);
 INSERT INTO cvm_fi_extrato (cnpj, dt_comptc, classe_anbima, fundo_cotas, tp_fundo_classe, taxa_adm,
                             existe_taxa_perfm, param_taxa_perfm, raw) VALUES
     ('77000000000001', '2026-06-30', 'RENDA FIXA', 'N', 'FI', NULL, 'S', 'CDI', '{}'),   -- not the fee source, still served
@@ -1436,6 +1440,14 @@ BEGIN
     SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000005']);
     IF r.benchmark_lamina IS DISTINCT FROM 'IMA-B' THEN
         RAISE EXCEPTION 'benchmark, newest lâmina month: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000008']);
+    IF r.benchmark_lamina_n IS DISTINCT FROM 1 OR r.benchmark_lamina NOT IN ('CDI', 'cdi') THEN
+        RAISE EXCEPTION 'benchmark, one index in two spellings: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000009']);
+    IF r.benchmark_lamina IS NOT NULL OR r.benchmark_lamina_n IS DISTINCT FROM 1 THEN
+        RAISE EXCEPTION 'benchmark, one class blank: %', row_to_json(r);
     END IF;
     SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000006']);
     IF r.disclosed_origin IS DISTINCT FROM 'extrato' OR r.benchmark_extrato IS DISTINCT FROM 'IBOVESPA'

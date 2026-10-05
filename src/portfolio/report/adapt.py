@@ -32,7 +32,7 @@ SOURCE_BY_TOOL = {
     "fund_nav": "CVM", "quote_history": "B3", "trade_consolidated_history": "B3", "macro_series": "BCB",
     # engine 1.12: the class distribution is CVM's quotas; the equivalents list is SILO's ETF registry (CVM) with the
     # etfsbrasil PL and fee, listed apart as ETFSBRASIL with the snapshot date (see _provenance_view)
-    "class_return_distribution": "CVM", "portfolio_equivalents": "CVM",
+    "class_return_distribution": "CVM", "portfolio_equivalents": "ETFSBRASIL",
 }
 LEVEL_BY_KIND = {
     "mesmo_ativo": "ativo",
@@ -1120,7 +1120,9 @@ def _provenance_view(eng: dict) -> tuple[list[dict], dict[str, str]]:
     by_source: dict[str, str] = {}
     for p in eng["provenance"]:
         src = SOURCE_BY_TOOL.get(p["tool"], "CVM")
-        when = dates.get(p["call_id"]) or (p.get("requested_at_utc") or "")[:10] or None
+        when = dates.get(p["call_id"])
+        if when is None and p["tool"] != "portfolio_equivalents":  # its date is the ETF snapshot's or none, never the run's
+            when = (p.get("requested_at_utc") or "")[:10] or None
         # engine 1.7: the request params and any error text stay in the engine JSON; the report's view has neither
         prov.append({"id": p.get("id") or f"p{p['call_id']}", "endpoint": f"api.{p['tool']}", "source": src,
                      "data_date": when, "failed": p.get("error") is not None})

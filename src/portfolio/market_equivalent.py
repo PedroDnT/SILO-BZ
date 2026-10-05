@@ -55,6 +55,8 @@ BANDS = {
     "acima_p75": "acima do p75 da classe",
 }
 CLASS_CALL_LIMIT = 50
+# fee-comparison codes that mean it read no class it accepted (the class comes only from an accepted served row)
+NO_CLASS_READ = ("sem_linha_comparacao", "sem_identificacao", "tipo_fora_comparacao", "resposta_inconsistente")
 STATUS_TO_CODE = {"sem_par": "equivalente_sem_par", "sem_etf": "equivalente_sem_etf", "sem_pl": "equivalente_sem_pl"}
 
 
@@ -80,10 +82,12 @@ def compute_equivalents(lines: list[LineId], fees: dict[str, Any], returns: dict
         rec = _empty_line(li, ret_by.get(li.line_no))
         c = cmp_by.get(li.line_no) or {}
         cls = c.get("classe_anbima")
-        if li.status != "identified" or li.entity_type not in (None, "fi"):
+        if li.status != "identified" or li.entity_type not in (None, "fi") or not li.cnpj:
             _why(rec, "equivalente_fora_escopo")
         elif c.get("reason_code") == "consulta_falhou":
             _why(rec, "consulta_falhou")
+        elif not c or c.get("reason_code") in NO_CLASS_READ:
+            _why(rec, "equivalente_sem_comparacao")  # the fee comparison read no row, or one it rejected
         elif not cls:
             _why(rec, "equivalente_sem_classe")
         else:
@@ -117,16 +121,19 @@ def compute_equivalents(lines: list[LineId], fees: dict[str, Any], returns: dict
             continue
         rows = by_class.get(cls)
         pick, code = _pick(rows, approved.get(cls, []))
-        rec["sources"].append(eq_calls[cls].src(as_of) if cls in eq_calls else None)
-        rec["sources"] = [s for s in rec["sources"] if s]
         if rows:
-            rec.update(class_indices=list(rows[0].get("class_indices") or []) or None, n_etfs=rows[0].get("n_etfs"))
+            rec.update(class_indices=list(rows[0].get("class_indices") or []) or None, n_etfs=rows[0].get("n_etfs"),
+                       class_indices_rules=sorted(set(approved.get(cls, []))) or None)
+            rec["pairs_match_rules"] = sorted(rec["class_indices"] or []) == (rec["class_indices_rules"] or [])
+        if cls in eq_calls:
+            rec["sources"].append(eq_calls[cls].src(pick.get("pl_as_of") if pick else None))
         if code:
             _why(rec, code)
             continue
         if pick.get("ticker") not in etf_cache:
             etf_cache[pick["ticker"]] = _etf_series(pick, client, months, position_date, series_cache, no_cdi, sec)
-        etf = _etf_record(pick, etf_cache[pick["ticker"]], fees, rec["line_no"], eq_calls[cls].src(pick.get("pl_as_of")))
+        etf = _etf_record(pick, etf_cache[pick["ticker"]], cmp_by.get(rec["line_no"]) or {},
+                          eq_calls[cls].src(pick.get("pl_as_of")))
         dist = _distribution(client, cls, fc, end_month, dist_cache, sec)
         rec.update(status=EQ_FOUND, etf=etf, windows=_windows(rec, etf_cache[pick["ticker"]], dist, ret_by.get(rec["line_no"]),
                                                        end_month))
@@ -138,7 +145,7 @@ def compute_equivalents(lines: list[LineId], fees: dict[str, Any], returns: dict
         for w in rec["windows"]:
             for k in ("etf_reason_code", "class_reason_code"):
                 if w.get(k):
-                    sec.code(w[k])
+                    sec.degrade("Há equivalentes sem comparação de retorno; cada janela informa o motivo.", code=w[k])
     if not funds:
         sec.status, sec.reason = STATUS_NOT_APPLICABLE, "Nenhuma linha de fundo na carteira."
     elif classes and set(classes) <= failed:
@@ -186,6 +193,8 @@ def _empty_line(li: LineId, ret_line: dict[str, Any] | None) -> dict[str, Any]:
         "etf": None,
         "windows": [],
         "fund_return_status": (ret_line or {}).get("status"),
+        "class_indices_rules": None,  # the YAML's approved indices for the class, as this engine read them
+        "pairs_match_rules": None,  # false while the database serves another version of the reviewed list
         "sources": [statement_source(li.line_no, li.position.data_posicao)],
     }
 
@@ -195,12 +204,10 @@ def _why(rec: dict[str, Any], code: str) -> None:
 
 
 def _pick(rows: list[dict] | None, yaml_indices: list[str]) -> tuple[dict | None, str | None]:
-    """The equivalent row, or a reason code. The SQL's indices must be the YAML's approved ones."""
+    """The equivalent row, or a reason code. The served pairs decide (the SQL reads only approved ones); a list that
+    differs from the YAML on disk is a deploy lag, flagged on the line (``pairs_match_rules``), not a failure."""
     if not rows:
         return None, "equivalente_sem_linha"
-    served = sorted({i for r in rows for i in (r.get("class_indices") or [])})
-    if served != sorted(set(yaml_indices)):
-        return None, "resposta_inconsistente"
     statuses = {r.get("status") for r in rows}
     if len(statuses) != 1:
         return None, "resposta_inconsistente"
@@ -223,8 +230,8 @@ def _etf_series(pick: dict, client: SiloClient, months: list[dt.date], position_
     points, call, err = _ret._series(None, pick["ticker"], None, basis, client, months, position_date, cache, sec)
     out: dict[str, Any] = {"basis": basis, "points_error": None, "windows": {}, "call": call}
     if points is None:
-        if basis == _ret.FIXED_INCOME_ETF and err != "resposta_inconsistente":
-            err = "etf_rf_sem_api"
+        if basis == _ret.FIXED_INCOME_ETF and err == "consulta_falhou" and not (call is not None and call.transient):
+            err = "etf_rf_sem_api"  # the tool is not served yet (catalog v65 not deployed) or refused
         out["points_error"] = err
         return out
     fee = {"status": "nao_se_aplica", "reason_code": None, "rate_pct_year": None, "sources": []}
@@ -233,9 +240,8 @@ def _etf_series(pick: dict, client: SiloClient, months: list[dt.date], position_
     return out
 
 
-def _etf_record(pick: dict, series: dict, fees: dict, line_no: int, src: dict) -> dict[str, Any]:
+def _etf_record(pick: dict, series: dict, comparison: dict, src: dict) -> dict[str, Any]:
     basis = series["basis"]
-    comparison = next((c for c in (fees.get("comparison") or {}).get("lines", []) if c.get("line_no") == line_no), {})
     peers = comparison.get("etf_peer_tickers") or []
     return {
         "ticker": pick.get("ticker"),

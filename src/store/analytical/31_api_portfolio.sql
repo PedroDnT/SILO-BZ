@@ -863,7 +863,9 @@ BEGIN
                min(r.dt_ini_despesa) FILTER (WHERE r.pr_pl_despesa IS NOT NULL) AS desp_ini,
                max(r.dt_fim_despesa) FILTER (WHERE r.pr_pl_despesa IS NOT NULL) AS desp_fim,
                -- v67: the filed reference index, one value only when every class filed the same one
-               count(DISTINCT r.indice_refer)::int AS n_bench,
+               -- distinct after trimming, collapsing spaces and upper-casing (the rule file's normalization),
+               -- so 'CDI' and 'cdi' are one index; the value served is one of them, as filed
+               count(DISTINCT upper(regexp_replace(r.indice_refer, '\s+', ' ', 'g')))::int AS n_bench,
                min(r.indice_refer) AS bench,
                bool_or(r.indice_refer IS NULL) AS has_empty_bench
         FROM lam_rows r

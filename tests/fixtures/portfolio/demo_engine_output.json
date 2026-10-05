@@ -22045,6 +22045,8 @@
         "etf": null,
         "windows": [],
         "fund_return_status": "avaliado",
+        "class_indices_rules": null,
+        "pairs_match_rules": true,
         "sources": [
           {
             "tool": "statement",
@@ -22064,7 +22066,7 @@
               ],
               "p_as_of": "2026-10-03"
             },
-            "data_date": "2026-10-03"
+            "data_date": null
           }
         ]
       },
@@ -22085,6 +22087,8 @@
         "etf": null,
         "windows": [],
         "fund_return_status": "avaliado",
+        "class_indices_rules": null,
+        "pairs_match_rules": null,
         "sources": [
           {
             "tool": "statement",
@@ -22263,6 +22267,13 @@
           }
         ],
         "fund_return_status": "avaliado",
+        "class_indices_rules": [
+          "TEVA LFT Curto Prazo",
+          "TEVA Tesouro Selic",
+          "Tesouro Selic (LFT)",
+          "Tesouro Selic B3"
+        ],
+        "pairs_match_rules": true,
         "sources": [
           {
             "tool": "statement",
@@ -22282,7 +22293,7 @@
               ],
               "p_as_of": "2026-10-03"
             },
-            "data_date": "2026-10-03"
+            "data_date": "2026-10-01"
           }
         ]
       },
@@ -22303,6 +22314,8 @@
         "etf": null,
         "windows": [],
         "fund_return_status": "avaliado",
+        "class_indices_rules": null,
+        "pairs_match_rules": null,
         "sources": [
           {
             "tool": "statement",

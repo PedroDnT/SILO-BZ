@@ -85,8 +85,9 @@ def classify(extrato: str | None, lamina: str | None, lamina_n: int | None, rule
         filed["lamina"] = normalize(lamina)
     out = {"cdi_like": False, "reason_code": None, "matched": [], "rule_version": rules.version,
            "normalized": dict(filed)}
-    if isinstance(lamina_n, int) and lamina_n > 1:
-        out["reason_code"] = DIVERGES  # the lâmina's classes file different indices: no single benchmark
+    if isinstance(lamina_n, int) and (lamina_n > 1 or (lamina_n == 1 and not normalize(lamina))):
+        # the lâmina's classes file different indices, or some filed one and some none: no single benchmark
+        out["reason_code"] = DIVERGES
         return out
     if not filed:
         out["reason_code"] = NOT_FILED

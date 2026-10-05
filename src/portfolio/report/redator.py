@@ -524,7 +524,7 @@ def template_findings(engine: dict) -> dict:
         if wins[0].get("cdi_pct") is not None:
             txt += (f" O CDI das mesmas datas rendeu {{{{{w}.cdi_pct}}}}, uma diferença de {{{{{w}.net_minus_cdi_pp}}}} em relação ao CDI.")
         if wins[0].get("pct_of_cdi") is not None:  # engine 1.12: only where the engine wrote it (filed benchmark CDI or DI)
-            txt += f" O índice de referência arquivado do fundo é o CDI: o retorno equivale a {{{{{w}.pct_of_cdi}}}}."
+            txt += f" O índice de referência arquivado do fundo é CDI ou DI: o retorno equivale a {{{{{w}.pct_of_cdi}}}}."
         add("retornos", "Retorno líquido em doze meses", txt, ln.get("provenance"))
 
     # equivalentes (engine 1.12): the market equivalent of a fund, beside the class distribution; never a ranking
