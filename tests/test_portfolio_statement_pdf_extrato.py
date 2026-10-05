@@ -133,7 +133,8 @@ def test_renda_variavel_and_current_account():
 def test_ignored_sections_add_nothing():
     """Detalhamento, movimentação, rentabilidade, plan metadata, legends and the index are not positions."""
     st, diag = parse_extrato_pages(extrato_pages())
-    assert diag.sections["ignore"] >= 10 and diag.sections["ignore_page"] == 1
+    # the index and the Disclaimers page: no heading on them opens a table
+    assert diag.sections["ignore"] >= 9 and diag.sections["ignore_page"] == 2
     assert not any("Aplicação" in p.linha_extrato or "TED" in p.linha_extrato for p in st.positions)
 
 
