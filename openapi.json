@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "64",
+    "version": "65",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
-    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Fifty-two set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Four of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`) take a `p_after` cursor so you\n  can walk the series; the other forty-eight ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Three other functions (`search_funds`,\n  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
+    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Fifty-three set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other forty-eight ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Three other functions (`search_funds`,\n  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
       "name": "See repository",
       "url": "https://github.com/PedroDnT/SILO-BZ"
@@ -15566,6 +15566,201 @@
                       "adjusted": {
                         "type": [
                           "boolean",
+                          "null"
+                        ]
+                      },
+                      "source": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/trade_consolidated_history": {
+      "post": {
+        "operationId": "rpc_trade_consolidated_history",
+        "summary": "trade_consolidated_history",
+        "description": "Daily prints of one ticker of B3's consolidated trade file (TradeInformationConsolidatedFile), segment FORWARD only, as published, oldest first: the 46 Brazilian fixed-income ETFs COTAHIST does not carry (IMAB11, B5P211, IRFM11, LFTS11, ...) and 21 other FORWARD tickers. A ticker not held raises 22023 (this function holds only the FORWARD segment; a COTAHIST ticker is in quote_history), never an empty set. The close is last_price. ref_price is B3's reference price, NOT a trade and NEVER a close: a session with no trade carries only ref_price, and last_price (with min_price, max_price, avg_price, trade_count, quantity and notional_brl) is NULL there. There is NO opening price: the file has none and none is filled from another source. notional_brl is this file's volume and is not comparable with COTAHIST's or B3's BDI (BOVA11 on 2026-09-29: R$587,459,700.14 here, R$588,765,462.41 in COTAHIST). Prices are NOT adjusted for distributions: a return from last_price is a price-only return, which understates the real return of an ETF that distributes income (many fixed-income ETFs pay coupons); for one that reinvests the difference is small. Retention: the source's oldest session was 2025-06-10 when checked on 2026-09-30, so history starts there. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last. Or narrow p_from/p_to. Depth is in api.coverage().\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function pages: send `p_after = \"\"` for the first page, then the key copied from the last row; a page shorter than 1000 is the last. `p_after = null` is whole-result mode, which is what refuses.",
+        "tags": [
+          "Quotes"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_ticker": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `(CURRENT_DATE - 365)`."
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `CURRENT_DATE`."
+                  },
+                  "p_after": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
+                  }
+                },
+                "required": [
+                  "p_ticker"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "ticker": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "trade_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "isin": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "segment": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "min_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "max_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "avg_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "last_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ref_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "oscillation_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "trade_count": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "quantity": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "notional_brl": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "file_status": {
+                        "type": [
+                          "string",
                           "null"
                         ]
                       },

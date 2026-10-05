@@ -369,6 +369,43 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
   from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client
   role can read `b3_index_level`.
 
+### The fixed-income ETFs: B3's FORWARD segment (catalog v65)
+
+`api.trade_consolidated_history(p_ticker, p_from, p_to, p_after)`
+(`32_api_trade_consolidated.sql`; research #606,
+`docs/reference/research/portfolio-return-coverage.md`) serves
+`b3_trade_consolidated` (migration 57): B3's TradeInformationConsolidatedFile,
+segment FORWARD only. That segment holds the 46 Brazilian fixed-income ETFs that
+COTAHIST does not carry (IMAB11, B5P211, IRFM11, LFTS11, ...) and 21 other
+tickers (67 on 2026-09-29), so `quote_history` and `panel` have nothing for them.
+
+- **Columns, as published:** ticker, trade_date, isin, segment, min_price,
+  max_price, avg_price, last_price, ref_price, oscillation_pct, trade_count,
+  quantity, notional_brl, file_status, source.
+- **The close is `last_price`.** `ref_price` is B3's reference price, not a trade
+  and never a close: a session with no trade carries only `ref_price`, and
+  `last_price` (with the other prices, count and volume) is NULL there.
+- **No opening price.** The file has none, so there is no open column, and none
+  is ever filled from another source.
+- **`notional_brl` is not comparable** with COTAHIST's volume or B3's BDI
+  (migration 57: BOVA11 on 2026-09-29 is R$587,459,700.14 here against
+  R$588,765,462.41 in COTAHIST).
+- **Not adjusted for distributions.** A return from `last_price` is a price-only
+  return: it understates the real return of an ETF that distributes income (many
+  fixed-income ETFs pay coupons); for one that reinvests the difference is small.
+- **Retention.** The source's oldest session was 2025-06-10 when checked on
+  2026-09-30, so history starts there.
+- **Tickers held only.** A ticker not in the table, a COTAHIST ticker included,
+  raises `22023` saying the function holds only the FORWARD segment and pointing
+  at `quote_history`; it never returns an empty set. A NULL window also raises.
+- **Paging.** Date cursor like `quote_history` and `index_history`.
+  `coverage()` has a `trade_consolidated_history` row (first session held, landed
+  from the `b3` / `trade_consolidated` audit rows).
+- Grants follow `index_history`: DEFINER with an empty `search_path`, revoked
+  from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client role
+  can read `b3_trade_consolidated`. Executed checks:
+  `tests/sql/trade_consolidated_history_behaviour.sql`.
+
 ### The portfolio reads (catalog v51, v54, v61)
 
 Six set-based functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
@@ -828,7 +865,8 @@ series and statement functions in v25/v26.
 set-returning function now fetches one page plus one row and **raises `22023`**
 rather than returning a trimmed result. This file previously stated that "a panel
 cannot be paged" — that stopped being true two catalog versions ago. **`panel`,
-`quote_history`, `fund_nav` and `index_history` page with a `p_after` cursor**; the others
+`quote_history`, `fund_nav`, `index_history` and `trade_consolidated_history`
+page with a `p_after` cursor**; the others
 (`option_history`, `termo_history`, `financials`, `company_financials`,
 `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
 `fund_documents`, `fund_restatements`, `fund_restatement_diff`,

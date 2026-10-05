@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "64";
+export const CONTRACT_VERSION = "65";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -4041,6 +4041,50 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_codneg"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "trade_consolidated_history": {
+    "kind": "rpc",
+    "path": "/rpc/trade_consolidated_history",
+    "description": "Daily prints of one ticker of B3's consolidated trade file (TradeInformationConsolidatedFile), segment FORWARD only, as published, oldest first: the 46 Brazilian fixed-income ETFs COTAHIST does not carry (IMAB11, B5P211, IRFM11, LFTS11, ...) and 21 other FORWARD tickers. A ticker not held raises 22023 (this function holds only the FORWARD segment; a COTAHIST ticker is in quote_history), never an empty set. The close is last_price. ref_price is B3's reference price, NOT a trade and NEVER a close: a session with no trade carries only ref_price, and last_price (with min_price, max_price, avg_price, trade_count, quantity and notional_brl) is NULL there. There is NO opening price: the file has none and none is filled from another source. notional_brl is this file's volume and is not comparable with COTAHIST's or B3's BDI (BOVA11 on 2026-09-29: R$587,459,700.14 here, R$588,765,462.41 in COTAHIST). Prices are NOT adjusted for distributions: a return from last_price is a price-only return, which understates the real return of an ETF that distributes income (many fixed-income ETFs pay coupons); for one that reinvests the difference is small. Retention: the source's oldest session was 2025-06-10 when checked on 2026-09-30, so history starts there. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last. Or narrow p_from/p_to. Depth is in api.coverage().",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_ticker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 365)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        },
+        "p_after": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_ticker"
       ],
       "additionalProperties": false
     }
