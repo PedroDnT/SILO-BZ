@@ -709,10 +709,13 @@ before changing rule 4.
 
 ### Open
 
-1. **Check the B3 audit rows after the next daily run.** The offline suite is
-   green, but no production run has used the new path yet. Look at the `b3` rows
-   in `cvm_ingest_log`: the same `doc_type` values and statuses as before, and
-   `b3_corporate_event_sweep.run_id` matching a real `corporate_events` row.
+1. ~~**Check the B3 audit rows after the next daily run.**~~ Done 2026-10-05:
+   the twelve `b3` `doc_type` values kept their names, and each of the four
+   sweeps of the last three days carries a `run_id` matching its
+   `corporate_events` row. The errors in the week are the source's (BTBTrade
+   504/499 on 10-01, a FORWARD-less 2025-08-13 consolidated file) or the stale
+   monthly caption #473 turned into a skip; `investor_participation` stops at
+   2026-09-30 by design (T+2, the 10-01 reference needs the 10-05 session).
 2. **Phase 4 of candidate 02: CVM.** `CVMIngestor` still has its own start and
    finish code. It is the largest writer and overlaps candidate 03, so plan it
    with 03 before touching code. Not started.
