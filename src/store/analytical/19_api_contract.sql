@@ -4282,10 +4282,11 @@ CREATE OR REPLACE FUNCTION api.panel(
     p_ids     TEXT[],
     -- NULL = each family's default: close_adj for shares and units (the
     -- research universe's ISIN rule), close for every other ticker, option and
-    -- termo, nav for funds. An explicit list is served as asked.
+    -- termo, settlement_rate for futures, nav for funds. An explicit list is
+    -- served as asked.
     p_metrics TEXT[] DEFAULT NULL,
     p_from    DATE   DEFAULT (CURRENT_DATE - 365),
-    -- NULL (the default) = honest window: quote/option/termo arms run to
+    -- NULL (the default) = honest window: quote/option/termo/future arms run to
     -- CURRENT_DATE (a session print is complete by construction), while fund
     -- arms clamp per entity family to latest_complete_period() so a
     -- partially-filed trailing month is not served as if it were the
@@ -4634,6 +4635,47 @@ termo_px AS (
     UNION ALL
     SELECT * FROM termo_day
 ),
+-- B3 futures (B8 phase B): b3_futures_settlement, the B3 Price Report, DI1
+-- from 2018-01-02. Ids are B3's own contract codes (DI1F27), never split into
+-- root and maturity here. Futures are not on the COTAHIST tape, so such a code
+-- resolved to nothing in the arms above, and these rows are disjoint from
+-- them. Month = last session in the month, the real-print convention of
+-- quote_month; (trade_date, ticker) is the table's key, so DISTINCT ON has no
+-- tie to cut. DI1 publishes its settlement twice, as a rate (% a.a., 252
+-- business days) and as a PU, so each is its own metric: one "settlement"
+-- would not say which. Only a settlement B3 marks F (AdjstdQtStin) is served:
+-- the panel has no status column, and the 23 P sessions (2018-02 to 2018-05)
+-- stay in future_series and future_curve, which carry settlement_status.
+future_month AS (
+    SELECT DISTINCT ON (f.ticker, date_trunc('month', f.trade_date))
+        f.ticker,
+        date_trunc('month', f.trade_date)::date AS period,
+        f.settlement_rate,
+        f.settlement_price,
+        f.open_interest
+    FROM public.b3_futures_settlement f
+    JOIN params p ON TRUE
+    WHERE p.freq = 'month'
+      AND f.settlement_status = 'F'
+      AND f.trade_date BETWEEN p.d0 AND p.d1
+      AND f.ticker IN (SELECT ticker FROM tickers)
+    ORDER BY f.ticker, date_trunc('month', f.trade_date), f.trade_date DESC
+),
+future_day AS (
+    SELECT f.ticker, f.trade_date AS period,
+           f.settlement_rate, f.settlement_price, f.open_interest
+    FROM public.b3_futures_settlement f
+    JOIN params p ON TRUE
+    WHERE p.freq = 'day'
+      AND f.settlement_status = 'F'
+      AND f.trade_date BETWEEN p.d0 AND p.d1
+      AND f.ticker IN (SELECT ticker FROM tickers)
+),
+future_px AS (
+    SELECT * FROM future_month
+    UNION ALL
+    SELECT * FROM future_day
+),
 -- fact_fund_monthly does NOT use one period convention. Measured 2026-08-27:
 --   fi / fii / fiagro  first-of-month   2026-07-01
 --   fidc               month-END        2026-07-31   (178,237 rows)
@@ -4776,6 +4818,20 @@ SELECT t.codneg, 'termo', 'derivative', t.period, 'volume', t.volume, 'b3_cotahi
 FROM termo_px t JOIN params p ON TRUE
 WHERE 'volume' = ANY (p.metrics)
 UNION ALL
+SELECT u.ticker, 'future', 'derivative', u.period, 'settlement_rate', u.settlement_rate, 'b3_price_report'
+FROM future_px u JOIN params p ON TRUE
+WHERE ('settlement_rate' = ANY (p.metrics) OR p.default_metrics)
+  AND u.settlement_rate IS NOT NULL
+UNION ALL
+SELECT u.ticker, 'future', 'derivative', u.period, 'settlement_price', u.settlement_price, 'b3_price_report'
+FROM future_px u JOIN params p ON TRUE
+WHERE 'settlement_price' = ANY (p.metrics)
+UNION ALL
+SELECT u.ticker, 'future', 'derivative', u.period, 'open_interest', u.open_interest::numeric, 'b3_price_report'
+FROM future_px u JOIN params p ON TRUE
+WHERE 'open_interest' = ANY (p.metrics)
+  AND u.open_interest IS NOT NULL
+UNION ALL
 SELECT f.cnpj, 'cnpj', f.entity_type, f.period, 'nav', f.nav, 'cvm'
 FROM fund_rows f JOIN params p ON TRUE
 WHERE 'nav' = ANY (p.metrics) AND f.nav IS NOT NULL
@@ -4840,7 +4896,7 @@ LIMIT 1000;
 $$;
 
 COMMENT ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) IS
-    'Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. p_metrics NULL = each family''s default: close_adj for shares and units, close for other tickers, options and termo, nav for funds. close_adj is quote_history''s adjusted close (splits, groupings, bonus shares; anchored to the latest session) and a window it cannot adjust REFUSES 22023 naming ticker, period and cause; close stays raw. Quotes follow the instrument across boards. close_return is p_t/p_{t-1}-1, cash tickers only, with the previous close divided by the share ratio of any split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) between the two prints, so a share-count change never reads as a return (a 1:4 split from 100.00 to 26.00 is +4%). It is NULL across calendar gaps, across a quotation-factor change and across an event whose factor is unreadable or published twice with two factors; it is a price return, not a total return (close_adj holds the adjusted level). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, ''date|id|metric|asset_class'' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.';
+    'Long panel for correlation/factor work. Mix tickers, option/termo codnegs, B3 futures contract codes (DI1F27) + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. p_metrics NULL = each family''s default: close_adj for shares and units, close for other tickers, options and termo, settlement_rate for futures, nav for funds. Futures (b3_price_report, DI1 from 2018-01-02) serve settlement_rate (% a.a., 252 business days), settlement_price (the PU) and open_interest, only for a settlement B3 marks final (F); future_series carries the status. close_adj is quote_history''s adjusted close (splits, groupings, bonus shares; anchored to the latest session) and a window it cannot adjust REFUSES 22023 naming ticker, period and cause; close stays raw. Quotes follow the instrument across boards. close_return is p_t/p_{t-1}-1, cash tickers only, with the previous close divided by the share ratio of any split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) between the two prints, so a share-count change never reads as a return (a 1:4 split from 100.00 to 26.00 is +4%). It is NULL across calendar gaps, across a quotation-factor change and across an event whose factor is unreadable or published twice with two factors; it is a price return, not a total return (close_adj holds the adjusted level). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, ''date|id|metric|asset_class'' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.';
 
 REVOKE ALL ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) TO anon, authenticated;
@@ -5948,7 +6004,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 60,
+  "version": 61,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close_adj` (split-, grouping- and bonus-adjusted) for share and unit tickers, `close` for other tickers and `nav` for CNPJs, and quote_history with no p_fields returns ticker, trade_date and close_adj; that is the call to make unless you actually need another measure — name metrics or fields explicitly only when you will use them (p_fields=['close'] for the raw close). A close_adj window SILO cannot adjust is refused with the cause, never served raw. The wide endpoints are the exception and behave the other way round: quote_latest and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -5959,7 +6015,7 @@ SELECT $json${
         "close_adj",
         "nav"
       ],
-      "means": "p_metrics omitted: close_adj for share and unit tickers, close for every other ticker, option and termo, nav for cnpj ids; an explicit list is served as asked, and a metric absent for an id type simply yields no rows",
+      "means": "p_metrics omitted: close_adj for share and unit tickers, close for every other ticker, option and termo, settlement_rate for futures, nav for cnpj ids; an explicit list is served as asked, and a metric absent for an id type simply yields no rows",
       "grain": "(id, asset_class, date, metric) — a CNPJ filing under two families yields one row per family; p_entity_type narrows to one",
       "to_widen": "pass p_metrics explicitly, e.g. p_metrics=['close','volume']"
     },
@@ -6122,6 +6178,48 @@ SELECT $json${
       "source": "b3_cotahist",
       "meaning": "p_t/p'_{t-1}-1, where p' is the previous stored close divided by the share ratio of every split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) between the two prints: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO. A share-count change never reads as a return: 100.00 before a 1:4 split is 25.00, so a 26.00 close is +4%, not -74%. On the monthly grain the event may sit anywhere between the two month-end prints. NULL (no row) across an event whose factor is unreadable or published twice with two factors. Price only: dividends and JCP still move it, so it is not a total return. Daily: previous session. Monthly: previous calendar month else null.",
       "derived": true
+    },
+    "settlement_rate": {
+      "id_type": [
+        "future"
+      ],
+      "asset_class": [
+        "derivative"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "source": "b3_price_report",
+      "meaning": "Futures settlement as a rate, as B3 publishes it: for DI1, % a.a. on 252 business days. Ids are B3 contract codes (DI1F27: root, B3 month letter, two-digit year; future_curve lists a session's). Only a settlement B3 marks final (F) is served; future_series carries the status. Nothing is rolled or made continuous: a contract stops at maturity. Month = last session. The default for a future."
+    },
+    "settlement_price": {
+      "id_type": [
+        "future"
+      ],
+      "asset_class": [
+        "derivative"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "source": "b3_price_report",
+      "meaning": "Futures settlement price as B3 publishes it: for DI1 the PU (preço unitário). Final (F) settlements only. Month = last session."
+    },
+    "open_interest": {
+      "id_type": [
+        "future"
+      ],
+      "asset_class": [
+        "derivative"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "source": "b3_price_report",
+      "meaning": "Open contracts at the session's close, as B3 publishes them, on sessions with a final (F) settlement. Month = last session, not a sum or an average."
     },
     "nav": {
       "id_type": [
@@ -6854,7 +6952,8 @@ SELECT $json${
     "cnpj",
     "cd_cvm",
     "option",
-    "termo"
+    "termo",
+    "future"
   ],
   "asset_classes": [
     "equity",

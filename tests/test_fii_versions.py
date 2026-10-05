@@ -345,3 +345,14 @@ def test_instrument_activity_recreated_over_latest_view():
     assert "cvm_fii_mensal" not in ia.group(1)
     # 43 sorts after 07, so its definition is the one that survives every apply
     assert sorted(["07_lifecycle.sql", "43_fii_versions.sql"])[-1] == "43_fii_versions.sql"
+
+
+def test_top_fii_yield_reads_the_latest_complete_month():
+    """On 2026-10-04 the newest FII month held 8 early filings with no yield:
+    max(period) returned 0 rows and the zero-byte parquet failed the
+    production build. The table is anchored on the completeness bound."""
+    text = (ROOT / "dashboard/sources/supabase/top_fii_yield.sql").read_text(encoding="utf-8")
+    flat = re.sub(r"\s+", " ", re.sub(r"--[^\n]*", "", text))
+    assert "with anchor as materialized ( select least( latest_complete_period('fii')," in flat
+    assert "and m.period = a.p" in flat
+    assert "m.period = (select max(period)" not in flat

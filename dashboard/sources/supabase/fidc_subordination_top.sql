@@ -15,8 +15,15 @@
 --
 -- ZERO-ROW SAFETY: one-row `row_guard` LEFT JOINed with ON TRUE, so an empty
 -- cvm_fidc_tranche still yields a row.
-with latest as (
-  select max(period) as period from cvm_fidc_tranche
+-- The month is FIDC's latest COMPLETE one, not the latest filed one: on
+-- 2026-10-05 the newest month, 2026-09-30, held 428 early filings against
+-- ~4,400, so max(period) would rank the early filers alone. least() keeps a
+-- cold database on max(period); MATERIALIZED so the clamp runs once.
+with latest as materialized (
+  select least(
+           latest_complete_period('fidc'),
+           (select max(period) from cvm_fidc_tranche)
+         ) as period
 ),
 top_funds as (
   -- l.period is carried through so the LATERAL call below takes a plain column

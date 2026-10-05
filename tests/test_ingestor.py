@@ -73,7 +73,9 @@ def test_daily_annual_plan_keeps_fip_and_cia_slices_separate_from_execution():
         assert {f"fip/{doc_type} 2026" for _, doc_type in FIP_PERIODIC_CONFIGS} <= descriptions
         assert {"cia_aberta/ipe 2026", "cia_aberta/fca_valor_mobiliario 2026",
                 "cia_aberta/itr 2026", "cia_aberta/dfp 2026"} <= descriptions
-        assert len(tasks) == len(FIP_PERIODIC_CONFIGS) + 4
+        # #383: last year's ITR/DFP, only the documents SILO does not hold.
+        assert {"cia_aberta/itr 2025 new versions", "cia_aberta/dfp 2025 new versions"} <= descriptions
+        assert len(tasks) == len(FIP_PERIODIC_CONFIGS) + 6
     finally:
         for task in tasks:
             task.operation.close()

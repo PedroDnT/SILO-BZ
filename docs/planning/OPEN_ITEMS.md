@@ -177,7 +177,24 @@ and `docs.json` remain in the repo but are no longer the source; `scalar/` and
 
 ~~**Blocked 2026-09-25:** DNS record plus Mintlify plan; account action, no repo change.~~
 
-## 8. Production deployments stopped taking the public hostnames
+## 8. ~~Production deployments stopped taking the public hostnames~~ (done)
+
+**Cause found 2026-10-05 (#559), and auto-assignment is back.** Vercel turns off
+the auto-assignment of production domains when production is moved to an older
+deployment, and turns it back on when a deployment is promoted ("After a
+rollback, Vercel turns off auto-assignment of production domains… To restore
+normal deployment behavior, you need to undo the rollback by promoting a
+different deployment", vercel.com/docs/instant-rollback). The 2026-09-18
+manual promote below pinned both hostnames to an existing deployment, which is
+that state. The first promote of a new build, 2026-09-26 (`promote responded
+201`), ended it: since then the newest production build already holds the
+hostnames when the 08:00 UTC check runs. On 2026-10-03 the check's promote of
+`dpl_CWNAEhkR5Avo1mJgQ22cvEgPBR8A`, built that morning, answered `409 … is
+already the current production deployment`. The rename itself did not cause
+it. The audit log that would show the 09-18 action is not readable with the
+project token (403), so the sequence is matched to Vercel's documented rule,
+not read from the log. `promote_dashboard.sh` stays: it is a no-op while
+auto-assignment works, and it is what restores it after the next rollback.
 
 This is the one that bit. Between 2026-09-18 and 2026-09-22 the published site
 did not move at all, while four production deployments went READY on top of it.
@@ -230,7 +247,7 @@ up to 45 minutes for the hook's build to leave BUILDING, and promotes it
 only. The durable fix is the cause below; when Vercel assigns the project
 domains to a production build again, delete the `workflow_run` trigger.
 
-**Blocked 2026-09-25:** the cause needs Pedro: the Vercel audit log or support.
+~~**Blocked 2026-09-25:** the cause needs Pedro: the Vercel audit log or support.~~ Found from Vercel's docs and the Publish Check logs instead; see the top of this item.
 
 1. ~~**`VERCEL_TOKEN` is not set**~~ (done 2026-09-26). Pedro added the
    repository secret; a dispatched Publish Check (run 36212626171) promoted
@@ -238,7 +255,7 @@ domains to a production build again, delete the `workflow_run` trigger.
    and verified it. Checked independently the same hour: `/data/manifest.json`
    is byte-identical on `silo-bz-deloslabs.vercel.app`, `silo-bz.vercel.app`
    and the `git-main` alias. The guard now fixes a freeze, not just detects it.
-2. **The cause** (still open). Find and undo whatever the 2026-09-17/18 alias attempts left
+2. ~~**The cause**~~ (found 2026-10-05, above). Find and undo whatever the 2026-09-17/18 alias attempts left
    behind; they are recorded below because they are the likeliest culprit.
    Pedro does not remember making the change, so there is no memory to rely on
    here — it needs reading the Vercel project's audit log or support.
@@ -287,6 +304,10 @@ status is what PR #242 introduced to stop DB Health crying wolf, so any change
 has to be read together with that gate and its tests.
 
 ## 10. Supabase storage near the plan allowance
+
+**Measured 2026-10-05 (UTC-3): 87.18 GB, 65% of 135 GB** (`pg_database_size`), with
+`cvm_fi_balancete` empty (migration 62). The account table is gone, the database is
+under the 100 GB line, and what is left is the owner's call on a smaller compute size.
 
 **Decided 2026-10-01 (owner): retire `cvm_fi_balancete` behind a summary.** Nothing reads the
 account table (31 GB, 27% of the database, which was 116 GB that day). Steps: (1) the summary
@@ -408,12 +429,12 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 
 | #   | Item                                                                                                                                                                                                                                                           | Needs              |
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| 2a  | `api.screen_restatements`: funds and months with restated filings, by `modalidade`                                                                                                                                                                             | 1b                 |
-| 2b  | Filing punctuality and silent funds, from FNET delivery timestamps                                                                                                                                                                                             | 1b                 |
+| 2a  | ~~`api.screen_restatements`: funds and months with restated filings, by `modalidade`~~ done, catalog v37 (`25_api_filing_screens.sql`)                                                                                                                                                                             | 1b                 |
+| 2b  | ~~Filing punctuality and silent funds, from FNET delivery timestamps~~ done, catalog v37 (`screen_late_filers`, `screen_silent_filers`)                                                                                                                                                                                             | 1b                 |
 | 2c  | B4, field-level restatement diffs (`fnet_document_diff`): designed in [DOCUMENTS.md](DOCUMENTS.md), §11 decided 2026-09-26 (slice 1: FIDC mensal, 2026 backfill); built: ingest (migration 46, `fnet_diff`) and serving (`fund_restatement_diff`, catalog v40) | 1b                 |
 | 2d  | FII keys carry `versao`                                                                                                                                                                                                                                        | gate 1, yes to (2) |
 | 2e  | ~~`fidc_*` caps raise instead of trimming~~ (dropped: gate 1 answered no)                                                                                                                                                                                      | gate 1, yes to (1) |
-| 2f  | B4 backfill of 2025 and earlier: restatement diffs for older years, newest-first, one year per dispatch; depth and runner-time budget set from the 2026 run's runtime and FNET latency (DOCUMENTS.md §11, decision 6)                                          | 2c's 2026 run      |
+| 2f  | B4 backfill of 2025 and earlier: restatement diffs for older years, newest-first, one year per dispatch; depth and runner-time budget set from the 2026 run's runtime and FNET latency (DOCUMENTS.md §11, decision 6). **2026 evidence (2026-10-05):** 16 `fnet`/`diff` runs, all ok, 6.8 min on average and 27.5 at most, 333,988 diff rows; of 20,056 `fnet_document_pair` rows 1,986 are `compared`, 17,976 `unpairable_no_link` (no `cnpjFundo` link yet; decision 4 has them wait for the sweep, now 1/150 of the FII/FIDC registry a night), 88 `unsupported_root`, 6 `declared_mismatch`. Depth is Pedro's call                                          | 2c's 2026 run      |
 
 ### Wave 3
 
@@ -438,8 +459,8 @@ Nothing in wave 2 that depends on these starts until each has an answer.
   (research doc §10, missing sessions). **Served since catalog v42** (`27_api_rates.sql`):
   `future_curve`, `future_series`, `curve`, `curve_history`, live after the
   next analytics apply and a `deploy_mcp.yml` run. **Shown on the dashboard's
-  `/rates` page since 2026-09-30** (curves, breakevens, DI1 open interest). Still open: the futures arm
-  of `api.panel` (`id_type='future'`, phase B). Owner decision: whether
+  `/rates` page since 2026-09-30** (curves, breakevens, DI1 open interest). The futures arm of
+  `api.panel` (`id_type='future'`, phase B) is built (catalog v61). Owner decision: whether
   2021-01-04's DI1 may come from that day's earlier, well-formed versions of
   the Price Report. Owner-only, only if VIX itself is wanted: a signed Cboe
   licence (permissions@cboe.com) before setting the `CBOE_VIX_LICENSED`
@@ -688,10 +709,13 @@ before changing rule 4.
 
 ### Open
 
-1. **Check the B3 audit rows after the next daily run.** The offline suite is
-   green, but no production run has used the new path yet. Look at the `b3` rows
-   in `cvm_ingest_log`: the same `doc_type` values and statuses as before, and
-   `b3_corporate_event_sweep.run_id` matching a real `corporate_events` row.
+1. ~~**Check the B3 audit rows after the next daily run.**~~ Done 2026-10-05:
+   the twelve `b3` `doc_type` values kept their names, and each of the four
+   sweeps of the last three days carries a `run_id` matching its
+   `corporate_events` row. The errors in the week are the source's (BTBTrade
+   504/499 on 10-01, a FORWARD-less 2025-08-13 consolidated file) or the stale
+   monthly caption #473 turned into a skip; `investor_participation` stops at
+   2026-09-30 by design (T+2, the 10-01 reference needs the 10-05 session).
 2. **Phase 4 of candidate 02: CVM.** `CVMIngestor` still has its own start and
    finish code. It is the largest writer and overlaps candidate 03, so plan it
    with 03 before touching code. Not started.
@@ -707,9 +731,15 @@ before changing rule 4.
    drop, count); a read-side seam so SQL rules are not restated in Python.
 6. **Rule 4 says every record passes `DataValidator`, and the CVM ingests do not
    all do it.** Rule and code disagree; which one changes is the owner's call.
-7. **The CNPJ measurement did not cover** CDA, securitization, FIP, the ETF
-   registry or company filings. The rule 4 sentence is true for the files
-   measured, not yet for those.
+7. ~~**The CNPJ measurement did not cover** CDA, securitization, FIP, the ETF
+   registry or company filings.~~ Measured 2026-10-05, every column a field map
+   types `cnpj`, in every member the ingests read: CDA 2026-08 (all blocks,
+   with block 2's `CNPJ_FUNDO_CLASSE_COTA`), FIP trimestral 2023 and
+   quadrimestral 2025/2026, CRI/CRA/OTS informe mensal 2026, DFIN CRA/CRI 2025,
+   IPE and FCA 2026, ITR 2026, DFP 2025, and the ETF seed (187 rows). All have
+   14 digits, so `coerce` pads nothing there either. The one ragged column
+   seen, `CNPJ` in the securitization `cedente_devedor` member (CPFs, text,
+   10 to 33 digits), is not read by any ingest.
 8. **CVM skip versus error is a substring match** on `"Data not found"`, from
    `ValueError(f"Data not found at {url}")` in `cvm_fetcher.py`. B3 and market use
    typed exceptions. A reworded message would turn a skip into an error.
