@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.10",
+  "schema_version": "1.11",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -52,6 +52,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": null,
         "taxa_texto": null,
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -83,6 +84,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": null,
         "taxa_texto": null,
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -114,6 +116,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": null,
         "taxa_texto": null,
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -145,6 +148,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": null,
         "taxa_texto": null,
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -176,6 +180,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": null,
         "taxa_texto": null,
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -207,6 +212,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": null,
         "taxa_texto": null,
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -238,6 +244,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": null,
         "taxa_texto": null,
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -269,6 +276,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": null,
         "taxa_texto": null,
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -300,6 +308,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": "2028-03-15",
         "taxa_texto": "105,00% do CDI",
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -352,6 +361,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": "2027-06-15",
         "taxa_texto": "CDI + 0,50%",
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -383,6 +393,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": "2031-10-15",
         "taxa_texto": "IPCA + 8,74%",
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -414,6 +425,7 @@
         "data_posicao": "2026-09-30",
         "vencimento": "2030-09-15",
         "taxa_texto": "15,41% a.a.",
+        "data_aplicacao": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -19016,6 +19028,2269 @@
       }
     }
   },
+  "tax": {
+    "status": "partial",
+    "reason": "Há linhas sem regra de imposto; cada linha informa o motivo.",
+    "errors": [],
+    "reason_codes": [
+      "imposto_linhas_sem_regra"
+    ],
+    "position_date": "2026-09-30",
+    "note": "Fatos por posição a partir das regras versionadas em src/portfolio/rules/tax/ (nota #611). Valores em R$ são estimativas; nenhuma linha é recomendação. Sem total de imposto da carteira.",
+    "labels": {
+      "estimate": "estimativa",
+      "check": "a conferir",
+      "info": "informativo; não é recomendação",
+      "exempt": "isento",
+      "date_missing": "alíquota entre {lo} e {hi} conforme o prazo; data de aplicação não informada, a conferir",
+      "regime": "opção do participante; não informada"
+    },
+    "rules_note": "docs/reference/research/tax-rules-by-instrument.md",
+    "rules_files": [
+      {
+        "file": "src/portfolio/rules/tax/cdb.yaml",
+        "instrument": "cdb",
+        "version": 1,
+        "valid_from": "2005-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "cd4356eae67baa4bd1d42fd193d0755bfd869bfd0b3f839c7a7635ecac9d69c0",
+        "not_verified": []
+      },
+      {
+        "file": "src/portfolio/rules/tax/cra.yaml",
+        "instrument": "cra",
+        "version": 1,
+        "valid_from": "2006",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "501e90a6e835aeb12ae1de06caf907f7864f26e2cf15a0977f2e1851369b963b",
+        "not_verified": [
+          "valid_from: a nota dá só o ano (2006, Lei 11.311)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/cri.yaml",
+        "instrument": "cri",
+        "version": 1,
+        "valid_from": "2005-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "06a06ddce90bd2b13599046f81e8195aa71fdd998712e94ff7129541ac51339a",
+        "not_verified": []
+      },
+      {
+        "file": "src/portfolio/rules/tax/debenture.yaml",
+        "instrument": "debenture",
+        "version": 1,
+        "valid_from": "2005-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "92012cb9b6c1fbb362c8d9fa503a8088135e703729a84e3959733cc3b73e1d66",
+        "not_verified": []
+      },
+      {
+        "file": "src/portfolio/rules/tax/debenture_incentivized.yaml",
+        "instrument": "debenture_incentivized",
+        "version": 1,
+        "valid_from": "2011",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "e4822e2df26b3e9ba286fce5ae263a87f3a15fc0c2e4299fdce23059ab1dbb8b",
+        "not_verified": [
+          "condições do art. 1º §1º-B e §1º-C e o ato ministerial de projeto prioritário não foram lidos (nota #611, seção 6)",
+          "valid_from: a nota dá só o ano (2011)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/etf_equity.yaml",
+        "instrument": "etf_equity",
+        "version": 1,
+        "valid_from": "2024-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "b804786ed419f29cf7d78cefa611275c3b675109dc1017368c98330a81703e24",
+        "not_verified": []
+      },
+      {
+        "file": "src/portfolio/rules/tax/etf_fixed_income.yaml",
+        "instrument": "etf_fixed_income",
+        "version": 1,
+        "valid_from": "2014",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "04ad0bec63e0b660239ee2b9f2c1cc3a0520afa94f976db52b460bc763cc42b6",
+        "not_verified": [
+          "valid_from: a nota dá só o ano (2014, art. 113 II)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/fii.yaml",
+        "instrument": "fii",
+        "version": 1,
+        "valid_from": "2024-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "731fc2b81bea31d6b7fe0f86ed26d7323702caeb4fb97114225bed0d53514cc8",
+        "not_verified": []
+      },
+      {
+        "file": "src/portfolio/rules/tax/fund_equity.yaml",
+        "instrument": "fund_equity",
+        "version": 1,
+        "valid_from": "2024-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "231f286dd4add7a6780558f86e4b90bd4fd0c1bfb5adb879f0231b8f36a98dcc",
+        "not_verified": []
+      },
+      {
+        "file": "src/portfolio/rules/tax/fund_long.yaml",
+        "instrument": "fund_long",
+        "version": 1,
+        "valid_from": "2024-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "b1968ad805f164f542d6ec5895a05add33c493d79bb71500158535618774b1d2",
+        "not_verified": [
+          "contagem do prazo de cada parcela tributada pelo come-cotas: matéria de IN RFB, não lida (nota #611, seção 6)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/fund_short.yaml",
+        "instrument": "fund_short",
+        "version": 1,
+        "valid_from": "2024-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "374020c57aacb4dae6e8475627af73cddbb4797bae48f207c31ce856d85ca9a8",
+        "not_verified": [
+          "contagem do prazo de cada parcela tributada pelo come-cotas: matéria de IN RFB, não lida (nota #611, seção 6)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/iof.yaml",
+        "instrument": "iof",
+        "version": 1,
+        "valid_from": "2026-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "a9c2e4548f0116f7ea9189f7859a3e8e8b5d008d9610446a97eebe4a9de11ea2",
+        "not_verified": [
+          "ADC 96: liminar do relator em vigor, aguardando o Plenário; uma votação posterior pode mudar o IOF sobre aportes do VGBL (nota #611, seção 6)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/lca.yaml",
+        "instrument": "lca",
+        "version": 1,
+        "valid_from": "2006",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "489d67053f9f89ce211a01edbce415f316af76fefdc15782fe700eef64848e70",
+        "not_verified": [
+          "valid_from: a nota dá só o ano (2006, Lei 11.311)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/lci.yaml",
+        "instrument": "lci",
+        "version": 1,
+        "valid_from": "2005-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "da0a0c2e3f7133f755b3d7250d9aebc020d623341b0c3df759326932ad2f1a1a",
+        "not_verified": [
+          "IOF: a LCI não está na lista de alíquota zero do art. 32 §2º, então a tabela de 30 dias se aplica pelo texto; um prazo mínimo do CMN que torne isso irrelevante não foi verificado (nota #611, seção 6)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/pension_progressive.yaml",
+        "instrument": "pension_progressive",
+        "version": 1,
+        "valid_from": "2026-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "3f84f6210aec5272f27b93c679caf6c9e49de62f23b8a224526c55af482cf751",
+        "not_verified": [
+          "a tabela progressiva anual de 2026 (soma das tabelas mensais) não foi calculada (nota #611, seção 6)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/pension_regressive.yaml",
+        "instrument": "pension_regressive",
+        "version": 1,
+        "valid_from": "2005-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "3cae92a54253e5979e1247f1f8f84559d67254e2476887276a6ac444f0dabd39",
+        "not_verified": [
+          "data de vigência da regra de opção (Lei 14.803/2024): a nota não a dá",
+          "se o PGBL está fora do IOF sobre aportes do VGBL não foi verificado (nota #611, seção 6)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/person.yaml",
+        "instrument": "person",
+        "version": 1,
+        "valid_from": "2026-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "e649c7ae9fa7dd7b862539c6738bf87e1d47d13ac861b6c02303455d0712b01c",
+        "not_verified": [
+          "mecânica da tributação mínima (deduções do art. 16-A §3º e redutor do art. 16-B) lida mas não modelada (nota #611, seção 6)"
+        ]
+      },
+      {
+        "file": "src/portfolio/rules/tax/shares.yaml",
+        "instrument": "shares",
+        "version": 1,
+        "valid_from": "2005-01-01",
+        "valid_to": null,
+        "in_force": true,
+        "sha256": "0c53fb567bb4346e3ff0ceddf566519a960ed16820fd0ad1934839a8598a9766",
+        "not_verified": []
+      }
+    ],
+    "not_covered": [
+      {
+        "tipo": "tesouro",
+        "text": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra."
+      },
+      {
+        "tipo": "FIDC",
+        "text": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra."
+      },
+      {
+        "tipo": "FIP",
+        "text": "FIP: fora da nota #611 (seção 6); sem arquivo de regra."
+      }
+    ],
+    "lines": [
+      {
+        "line_no": 1,
+        "linha_extrato": "NTN-B 2035",
+        "tipo": "tesouro",
+        "valor_brl": 412351.0,
+        "fee": {
+          "status": "nao_se_aplica",
+          "label": "estimativa",
+          "basis": null,
+          "kind": null,
+          "rate_pct_year": null,
+          "per_year_brl": null,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
+          "notes": [],
+          "loading": null,
+          "sources": []
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "sem_regra",
+          "status_label": "sem regra",
+          "selection_reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra.",
+          "instrument": null,
+          "instrument_label": null,
+          "rules_file": null,
+          "candidates": [],
+          "rate_today_pct": null,
+          "rate_text": null,
+          "exempt": false,
+          "article": null,
+          "rule_source": null,
+          "bracket": null,
+          "outcomes": null,
+          "other_events": [],
+          "come_cotas": [],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "imposto_sem_regra",
+            "reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra.",
+            "sources": []
+          },
+          "reason_code": "imposto_sem_regra",
+          "reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra."
+        },
+        "pension": null,
+        "optimization": [],
+        "iof": null,
+        "a_conferir": [],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 1
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 2,
+        "linha_extrato": "PETROBRAS PN",
+        "tipo": "ação",
+        "valor_brl": 988000.0,
+        "fee": {
+          "status": "nao_se_aplica",
+          "label": "estimativa",
+          "basis": null,
+          "kind": null,
+          "rate_pct_year": null,
+          "per_year_brl": null,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
+          "notes": [],
+          "loading": null,
+          "sources": []
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "condicional",
+          "status_label": "a conferir",
+          "selection_reason": null,
+          "instrument": "shares",
+          "instrument_label": "ações",
+          "rules_file": "src/portfolio/rules/tax/shares.yaml",
+          "candidates": [
+            {
+              "instrument": "shares",
+              "label": "ações",
+              "rules_file": "src/portfolio/rules/tax/shares.yaml",
+              "event": "sale",
+              "base": "net_gain_month",
+              "exempt": false,
+              "table": "fixed",
+              "unit": null,
+              "rates_pct": [
+                15.0
+              ],
+              "rate_today_pct": 15.0,
+              "rate_today_text": "15%",
+              "article": "Lei 11.033/2004, art. 2º, I e II",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/shares.yaml",
+                "source_id": "l11033_art2",
+                "act": "Lei 11.033/2004",
+                "article": "art. 2º, I e II",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+                "quote": "I - 20% (vinte por cento), no caso de operação daytrade ; ... II - 15% (quinze por cento), nas demais hipóteses."
+              }
+            }
+          ],
+          "rate_today_pct": 15.0,
+          "rate_text": "15%",
+          "exempt": false,
+          "article": "Lei 11.033/2004, art. 2º, I e II",
+          "rule_source": {
+            "rules_file": "src/portfolio/rules/tax/shares.yaml",
+            "source_id": "l11033_art2",
+            "act": "Lei 11.033/2004",
+            "article": "art. 2º, I e II",
+            "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+            "quote": "I - 20% (vinte por cento), no caso de operação daytrade ; ... II - 15% (quinze por cento), nas demais hipóteses."
+          },
+          "bracket": null,
+          "outcomes": [
+            "15% (Lei 11.033/2004, art. 2º, I e II)",
+            "total das alienações de ações no mês: até R$ 20.000 o ganho é isento (Lei 11.033, art. 3º, I)"
+          ],
+          "other_events": [
+            {
+              "event": "isenção (sale)",
+              "text": "isento quando as alienações de ações no mercado à vista no mês somam até R$ 20.000 (não vale para day trade)",
+              "rates_pct": [
+                0.0
+              ],
+              "article": "Lei 11.033/2004, art. 3º, I",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/shares.yaml",
+                "source_id": "l11033_art3_i",
+                "act": "Lei 11.033/2004",
+                "article": "art. 3º, I",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+                "quote": "os ganhos líquidos auferidos por pessoa física em operações no mercado à vista de ações nas bolsas de valores e em operações com ouro ativo financeiro cujo valor das alienações, realizadas em cada mês, seja igual ou inferior a R$ 20.000,00 (vinte mil reais)"
+              }
+            }
+          ],
+          "come_cotas": [],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "aliquota_depende_de_condicao",
+            "reason": "a alíquota depende de condição que o extrato não mostra",
+            "sources": []
+          },
+          "reason_code": null,
+          "reason": null
+        },
+        "pension": null,
+        "optimization": [],
+        "iof": null,
+        "a_conferir": [
+          {
+            "id": "alienacoes_do_mes",
+            "text": "total das alienações de ações no mês: até R$ 20.000 o ganho é isento (Lei 11.033, art. 3º, I)",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": "src/portfolio/rules/tax/shares.yaml"
+          },
+          {
+            "id": "day_trade",
+            "text": "operação de day trade: 20% (Lei 11.033, art. 2º, I), sem a isenção de R$ 20.000",
+            "label": "a conferir",
+            "decides_rate": false,
+            "rules_file": "src/portfolio/rules/tax/shares.yaml"
+          }
+        ],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 2
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 3,
+        "linha_extrato": "GERAÇÃO L. PAR FIA",
+        "tipo": "fundo",
+        "valor_brl": 264615.0,
+        "fee": {
+          "status": "estimada",
+          "label": "estimativa",
+          "basis": "taxa de administração divulgada x valor da posição no extrato",
+          "kind": "fixa",
+          "rate_pct_year": 2.0,
+          "per_year_brl": 5292.3,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "divulgada",
+          "notes": [
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
+            "taxa de performance não estimada"
+          ],
+          "loading": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "condicional",
+          "status_label": "a conferir",
+          "selection_reason": "classe ANBIMA 'Ações' arquivada no Extrato da CVM",
+          "instrument": "fund_equity",
+          "instrument_label": "fundo de ações (FIA)",
+          "rules_file": "src/portfolio/rules/tax/fund_equity.yaml",
+          "candidates": [
+            {
+              "instrument": "fund_equity",
+              "label": "fundo de ações (FIA)",
+              "rules_file": "src/portfolio/rules/tax/fund_equity.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": false,
+              "table": "fixed",
+              "unit": null,
+              "rates_pct": [
+                15.0
+              ],
+              "rate_today_pct": 15.0,
+              "rate_today_text": "15%",
+              "article": "Lei 14.754/2023, art. 24",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_equity.yaml",
+                "source_id": "l14754_art24",
+                "act": "Lei 14.754/2023",
+                "article": "art. 24",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+                "quote": "ficarão sujeitos à retenção na fonte do IRRF à alíquota de 15% (quinze por cento), na data da distribuição de rendimentos, da amortização ou do resgate de cotas."
+              }
+            }
+          ],
+          "rate_today_pct": 15.0,
+          "rate_text": "15%",
+          "exempt": false,
+          "article": "Lei 14.754/2023, art. 24",
+          "rule_source": {
+            "rules_file": "src/portfolio/rules/tax/fund_equity.yaml",
+            "source_id": "l14754_art24",
+            "act": "Lei 14.754/2023",
+            "article": "art. 24",
+            "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+            "quote": "ficarão sujeitos à retenção na fonte do IRRF à alíquota de 15% (quinze por cento), na data da distribuição de rendimentos, da amortização ou do resgate de cotas."
+          },
+          "bracket": null,
+          "outcomes": [
+            "15% (Lei 14.754/2023, art. 24)",
+            "se a carteira do fundo tem ao menos 67% em ações (art. 21); abaixo disso o cotista passa à regra do art. 17, com come-cotas (art. 21 §3º)"
+          ],
+          "other_events": [],
+          "come_cotas": [
+            {
+              "applies": false,
+              "rate_pct": null,
+              "text": "come-cotas: não se aplica (fundo de ações (FIA))",
+              "article": "Lei 14.754/2023, art. 18",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_equity.yaml",
+                "source_id": "l14754_art18",
+                "act": "Lei 14.754/2023",
+                "article": "art. 18",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+                "quote": "Ficarão também sujeitos ... os Fundos de Investimento em Ações (FIAs)"
+              }
+            }
+          ],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "aliquota_depende_de_condicao",
+            "reason": "a alíquota depende de condição que o extrato não mostra",
+            "sources": []
+          },
+          "reason_code": null,
+          "reason": null
+        },
+        "pension": null,
+        "optimization": [
+          {
+            "kind": "come_cotas",
+            "label": "informativo; não é recomendação",
+            "applies": false,
+            "rate_pct": null,
+            "text": "come-cotas: não se aplica (fundo de ações (FIA))",
+            "article": "Lei 14.754/2023, art. 18",
+            "rule_source": {
+              "rules_file": "src/portfolio/rules/tax/fund_equity.yaml",
+              "source_id": "l14754_art18",
+              "act": "Lei 14.754/2023",
+              "article": "art. 18",
+              "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+              "quote": "Ficarão também sujeitos ... os Fundos de Investimento em Ações (FIAs)"
+            }
+          }
+        ],
+        "iof": null,
+        "a_conferir": [
+          {
+            "id": "fia_67_pct",
+            "text": "se a carteira do fundo tem ao menos 67% em ações (art. 21); abaixo disso o cotista passa à regra do art. 17, com come-cotas (art. 21 §3º)",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": "src/portfolio/rules/tax/fund_equity.yaml"
+          }
+        ],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 3
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 4,
+        "linha_extrato": "XP BANCOS FIC",
+        "tipo": "fundo",
+        "valor_brl": 1387809.9,
+        "fee": {
+          "status": "faixa",
+          "label": "estimativa",
+          "basis": "taxa de administração divulgada x valor da posição no extrato",
+          "kind": "faixa",
+          "rate_pct_year": null,
+          "per_year_brl": null,
+          "rate_min_pct_year": 0.15,
+          "rate_max_pct_year": 0.3,
+          "per_year_min_brl": 2081.71,
+          "per_year_max_brl": 4163.43,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "faixa divulgada",
+          "notes": [
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
+            "taxa de performance não estimada"
+          ],
+          "loading": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "candidatos",
+          "status_label": "a conferir",
+          "selection_reason": "o extrato não diz se o fundo é de longo ou de curto prazo",
+          "instrument": null,
+          "instrument_label": null,
+          "rules_file": null,
+          "candidates": [
+            {
+              "instrument": "fund_long",
+              "label": "fundo com come-cotas, longo prazo",
+              "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": false,
+              "table": "holding",
+              "unit": "days",
+              "rates_pct": [
+                22.5,
+                20.0,
+                17.5,
+                15.0
+              ],
+              "rate_today_pct": null,
+              "rate_today_text": null,
+              "article": "Lei 11.033/2004, art. 1º, I a IV",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+                "source_id": "l11033_art1",
+                "act": "Lei 11.033/2004",
+                "article": "art. 1º, I a IV",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+                "quote": "I - 22,5% ... em aplicações com prazo de até 180 (cento e oitenta) dias; II - 20% ... de 181 (cento e oitenta e um) dias até 360 ... III - 17,5% ... de 361 ... até 720 ... IV - 15% (quinze por cento), em aplicações com prazo acima de 720 (setecentos e vinte) dias."
+              }
+            },
+            {
+              "instrument": "fund_short",
+              "label": "fundo com come-cotas, curto prazo",
+              "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": false,
+              "table": "holding",
+              "unit": "months",
+              "rates_pct": [
+                22.5,
+                20.0
+              ],
+              "rate_today_pct": null,
+              "rate_today_text": null,
+              "article": "Lei 11.053/2004, art. 6º caput e §2º",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+                "source_id": "l11053_art6",
+                "act": "Lei 11.053/2004",
+                "article": "art. 6º caput e §2º",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11053.htm",
+                "quote": "I - 22,5% ... em aplicações com prazo de até 6 (seis) meses; II - 20% (vinte por cento), em aplicações com prazo acima de 6 (seis) meses."
+              }
+            }
+          ],
+          "rate_today_pct": null,
+          "rate_text": null,
+          "exempt": false,
+          "article": null,
+          "rule_source": null,
+          "bracket": {
+            "min_pct": 15.0,
+            "max_pct": 22.5,
+            "text": "alíquota entre 15% e 22,5% conforme o prazo e a regra que se aplica (fundo com come-cotas, longo prazo ou fundo com come-cotas, curto prazo); data de aplicação não informada, a conferir"
+          },
+          "outcomes": null,
+          "other_events": [],
+          "come_cotas": [
+            {
+              "applies": true,
+              "rate_pct": 15.0,
+              "text": "come-cotas: sim, 15% no último dia útil de maio e de novembro (fundo com come-cotas, longo prazo)",
+              "article": "Lei 14.754/2023, art. 17 §1º, I",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+                "source_id": "l14754_art17_p1_i",
+                "act": "Lei 14.754/2023",
+                "article": "art. 17 §1º, I",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+                "quote": "a) 15% (quinze por cento), na data da tributação periódica ... b) o percentual complementar necessário para totalizar a alíquota prevista nos incisos I, II, III e IV do caput do art. 1º da Lei nº 11.033"
+              }
+            },
+            {
+              "applies": true,
+              "rate_pct": 20.0,
+              "text": "come-cotas: sim, 20% no último dia útil de maio e de novembro (fundo com come-cotas, curto prazo)",
+              "article": "Lei 14.754/2023, art. 17 §1º, II",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+                "source_id": "l14754_art17_p1_ii",
+                "act": "Lei 14.754/2023",
+                "article": "art. 17 §1º, II",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+                "quote": "II - nos fundos de que trata o art. 6º da Lei nº 11.053 ... a) 20% (vinte por cento), na data da tributação periódica"
+              }
+            }
+          ],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "mais_de_uma_regra",
+            "reason": "mais de uma regra possível (fundo com come-cotas, longo prazo ou fundo com come-cotas, curto prazo): sem valor em R$",
+            "sources": []
+          },
+          "reason_code": null,
+          "reason": null
+        },
+        "pension": null,
+        "optimization": [
+          {
+            "kind": "come_cotas",
+            "label": "informativo; não é recomendação",
+            "applies": true,
+            "rate_pct": 15.0,
+            "text": "come-cotas: sim, 15% no último dia útil de maio e de novembro (fundo com come-cotas, longo prazo)",
+            "article": "Lei 14.754/2023, art. 17 §1º, I",
+            "rule_source": {
+              "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+              "source_id": "l14754_art17_p1_i",
+              "act": "Lei 14.754/2023",
+              "article": "art. 17 §1º, I",
+              "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+              "quote": "a) 15% (quinze por cento), na data da tributação periódica ... b) o percentual complementar necessário para totalizar a alíquota prevista nos incisos I, II, III e IV do caput do art. 1º da Lei nº 11.033"
+            }
+          },
+          {
+            "kind": "come_cotas",
+            "label": "informativo; não é recomendação",
+            "applies": true,
+            "rate_pct": 20.0,
+            "text": "come-cotas: sim, 20% no último dia útil de maio e de novembro (fundo com come-cotas, curto prazo)",
+            "article": "Lei 14.754/2023, art. 17 §1º, II",
+            "rule_source": {
+              "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+              "source_id": "l14754_art17_p1_ii",
+              "act": "Lei 14.754/2023",
+              "article": "art. 17 §1º, II",
+              "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+              "quote": "II - nos fundos de que trata o art. 6º da Lei nº 11.053 ... a) 20% (vinte por cento), na data da tributação periódica"
+            }
+          }
+        ],
+        "iof": null,
+        "a_conferir": [
+          {
+            "id": "data_aplicacao",
+            "text": "data de aplicação não informada no extrato",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": null
+          },
+          {
+            "id": "fundo_longo_ou_curto",
+            "text": "se o fundo é de longo prazo ou de curto prazo (carteira com prazo médio de até 365 dias): a classificação tributária do fundo não está no extrato",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": "src/portfolio/rules/tax/fund_long.yaml"
+          },
+          {
+            "id": "carencia_fundo",
+            "text": "carência do fundo: resgate antes da carência paga IOF de 0,5% ao dia (Decreto 6.306, art. 31)",
+            "label": "a conferir",
+            "decides_rate": false,
+            "rules_file": "src/portfolio/rules/tax/fund_long.yaml"
+          }
+        ],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 4
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 5,
+        "linha_extrato": "XP LIQUIDEZ FIC",
+        "tipo": "fundo",
+        "valor_brl": 902591.9,
+        "fee": {
+          "status": "sem_taxa",
+          "label": "estimativa",
+          "basis": "taxa de administração divulgada x valor da posição no extrato",
+          "kind": "zero_informado",
+          "rate_pct_year": null,
+          "per_year_brl": null,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "0 informado; a conferir",
+          "notes": [
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
+            "taxa de performance não estimada"
+          ],
+          "loading": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "candidatos",
+          "status_label": "a conferir",
+          "selection_reason": "o extrato não diz se o fundo é de longo ou de curto prazo",
+          "instrument": null,
+          "instrument_label": null,
+          "rules_file": null,
+          "candidates": [
+            {
+              "instrument": "fund_long",
+              "label": "fundo com come-cotas, longo prazo",
+              "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": false,
+              "table": "holding",
+              "unit": "days",
+              "rates_pct": [
+                22.5,
+                20.0,
+                17.5,
+                15.0
+              ],
+              "rate_today_pct": null,
+              "rate_today_text": null,
+              "article": "Lei 11.033/2004, art. 1º, I a IV",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+                "source_id": "l11033_art1",
+                "act": "Lei 11.033/2004",
+                "article": "art. 1º, I a IV",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+                "quote": "I - 22,5% ... em aplicações com prazo de até 180 (cento e oitenta) dias; II - 20% ... de 181 (cento e oitenta e um) dias até 360 ... III - 17,5% ... de 361 ... até 720 ... IV - 15% (quinze por cento), em aplicações com prazo acima de 720 (setecentos e vinte) dias."
+              }
+            },
+            {
+              "instrument": "fund_short",
+              "label": "fundo com come-cotas, curto prazo",
+              "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": false,
+              "table": "holding",
+              "unit": "months",
+              "rates_pct": [
+                22.5,
+                20.0
+              ],
+              "rate_today_pct": null,
+              "rate_today_text": null,
+              "article": "Lei 11.053/2004, art. 6º caput e §2º",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+                "source_id": "l11053_art6",
+                "act": "Lei 11.053/2004",
+                "article": "art. 6º caput e §2º",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11053.htm",
+                "quote": "I - 22,5% ... em aplicações com prazo de até 6 (seis) meses; II - 20% (vinte por cento), em aplicações com prazo acima de 6 (seis) meses."
+              }
+            }
+          ],
+          "rate_today_pct": null,
+          "rate_text": null,
+          "exempt": false,
+          "article": null,
+          "rule_source": null,
+          "bracket": {
+            "min_pct": 15.0,
+            "max_pct": 22.5,
+            "text": "alíquota entre 15% e 22,5% conforme o prazo e a regra que se aplica (fundo com come-cotas, longo prazo ou fundo com come-cotas, curto prazo); data de aplicação não informada, a conferir"
+          },
+          "outcomes": null,
+          "other_events": [],
+          "come_cotas": [
+            {
+              "applies": true,
+              "rate_pct": 15.0,
+              "text": "come-cotas: sim, 15% no último dia útil de maio e de novembro (fundo com come-cotas, longo prazo)",
+              "article": "Lei 14.754/2023, art. 17 §1º, I",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+                "source_id": "l14754_art17_p1_i",
+                "act": "Lei 14.754/2023",
+                "article": "art. 17 §1º, I",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+                "quote": "a) 15% (quinze por cento), na data da tributação periódica ... b) o percentual complementar necessário para totalizar a alíquota prevista nos incisos I, II, III e IV do caput do art. 1º da Lei nº 11.033"
+              }
+            },
+            {
+              "applies": true,
+              "rate_pct": 20.0,
+              "text": "come-cotas: sim, 20% no último dia útil de maio e de novembro (fundo com come-cotas, curto prazo)",
+              "article": "Lei 14.754/2023, art. 17 §1º, II",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+                "source_id": "l14754_art17_p1_ii",
+                "act": "Lei 14.754/2023",
+                "article": "art. 17 §1º, II",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+                "quote": "II - nos fundos de que trata o art. 6º da Lei nº 11.053 ... a) 20% (vinte por cento), na data da tributação periódica"
+              }
+            }
+          ],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "mais_de_uma_regra",
+            "reason": "mais de uma regra possível (fundo com come-cotas, longo prazo ou fundo com come-cotas, curto prazo): sem valor em R$",
+            "sources": []
+          },
+          "reason_code": null,
+          "reason": null
+        },
+        "pension": null,
+        "optimization": [
+          {
+            "kind": "come_cotas",
+            "label": "informativo; não é recomendação",
+            "applies": true,
+            "rate_pct": 15.0,
+            "text": "come-cotas: sim, 15% no último dia útil de maio e de novembro (fundo com come-cotas, longo prazo)",
+            "article": "Lei 14.754/2023, art. 17 §1º, I",
+            "rule_source": {
+              "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+              "source_id": "l14754_art17_p1_i",
+              "act": "Lei 14.754/2023",
+              "article": "art. 17 §1º, I",
+              "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+              "quote": "a) 15% (quinze por cento), na data da tributação periódica ... b) o percentual complementar necessário para totalizar a alíquota prevista nos incisos I, II, III e IV do caput do art. 1º da Lei nº 11.033"
+            }
+          },
+          {
+            "kind": "come_cotas",
+            "label": "informativo; não é recomendação",
+            "applies": true,
+            "rate_pct": 20.0,
+            "text": "come-cotas: sim, 20% no último dia útil de maio e de novembro (fundo com come-cotas, curto prazo)",
+            "article": "Lei 14.754/2023, art. 17 §1º, II",
+            "rule_source": {
+              "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+              "source_id": "l14754_art17_p1_ii",
+              "act": "Lei 14.754/2023",
+              "article": "art. 17 §1º, II",
+              "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+              "quote": "II - nos fundos de que trata o art. 6º da Lei nº 11.053 ... a) 20% (vinte por cento), na data da tributação periódica"
+            }
+          }
+        ],
+        "iof": null,
+        "a_conferir": [
+          {
+            "id": "data_aplicacao",
+            "text": "data de aplicação não informada no extrato",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": null
+          },
+          {
+            "id": "fundo_longo_ou_curto",
+            "text": "se o fundo é de longo prazo ou de curto prazo (carteira com prazo médio de até 365 dias): a classificação tributária do fundo não está no extrato",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": "src/portfolio/rules/tax/fund_long.yaml"
+          },
+          {
+            "id": "carencia_fundo",
+            "text": "carência do fundo: resgate antes da carência paga IOF de 0,5% ao dia (Decreto 6.306, art. 31)",
+            "label": "a conferir",
+            "decides_rate": false,
+            "rules_file": "src/portfolio/rules/tax/fund_long.yaml"
+          }
+        ],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 5
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 6,
+        "linha_extrato": "MN I FIDC",
+        "tipo": "FIDC",
+        "valor_brl": 750000.0,
+        "fee": {
+          "status": "sem_taxa",
+          "label": "estimativa",
+          "basis": "taxa de administração divulgada x valor da posição no extrato",
+          "kind": null,
+          "rate_pct_year": null,
+          "per_year_brl": null,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "taxa divulgada não encontrada",
+          "notes": [
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
+            "taxa de performance não estimada"
+          ],
+          "loading": null,
+          "sources": []
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "sem_regra",
+          "status_label": "sem regra",
+          "selection_reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra.",
+          "instrument": null,
+          "instrument_label": null,
+          "rules_file": null,
+          "candidates": [],
+          "rate_today_pct": null,
+          "rate_text": null,
+          "exempt": false,
+          "article": null,
+          "rule_source": null,
+          "bracket": null,
+          "outcomes": null,
+          "other_events": [],
+          "come_cotas": [],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "imposto_sem_regra",
+            "reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra.",
+            "sources": []
+          },
+          "reason_code": "imposto_sem_regra",
+          "reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra."
+        },
+        "pension": null,
+        "optimization": [],
+        "iof": null,
+        "a_conferir": [],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 6
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 7,
+        "linha_extrato": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+        "tipo": "fundo",
+        "valor_brl": 770616.5,
+        "fee": {
+          "status": "estimada",
+          "label": "estimativa",
+          "basis": "taxa de administração divulgada x valor da posição no extrato",
+          "kind": "fixa",
+          "rate_pct_year": 1.5,
+          "per_year_brl": 11559.25,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "divulgada",
+          "notes": [
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
+            "taxa de performance não estimada"
+          ],
+          "loading": null,
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 17,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "candidatos",
+          "status_label": "a conferir",
+          "selection_reason": "o extrato não diz se o fundo é de longo ou de curto prazo",
+          "instrument": null,
+          "instrument_label": null,
+          "rules_file": null,
+          "candidates": [
+            {
+              "instrument": "fund_long",
+              "label": "fundo com come-cotas, longo prazo",
+              "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": false,
+              "table": "holding",
+              "unit": "days",
+              "rates_pct": [
+                22.5,
+                20.0,
+                17.5,
+                15.0
+              ],
+              "rate_today_pct": null,
+              "rate_today_text": null,
+              "article": "Lei 11.033/2004, art. 1º, I a IV",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+                "source_id": "l11033_art1",
+                "act": "Lei 11.033/2004",
+                "article": "art. 1º, I a IV",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+                "quote": "I - 22,5% ... em aplicações com prazo de até 180 (cento e oitenta) dias; II - 20% ... de 181 (cento e oitenta e um) dias até 360 ... III - 17,5% ... de 361 ... até 720 ... IV - 15% (quinze por cento), em aplicações com prazo acima de 720 (setecentos e vinte) dias."
+              }
+            },
+            {
+              "instrument": "fund_short",
+              "label": "fundo com come-cotas, curto prazo",
+              "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": false,
+              "table": "holding",
+              "unit": "months",
+              "rates_pct": [
+                22.5,
+                20.0
+              ],
+              "rate_today_pct": null,
+              "rate_today_text": null,
+              "article": "Lei 11.053/2004, art. 6º caput e §2º",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+                "source_id": "l11053_art6",
+                "act": "Lei 11.053/2004",
+                "article": "art. 6º caput e §2º",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11053.htm",
+                "quote": "I - 22,5% ... em aplicações com prazo de até 6 (seis) meses; II - 20% (vinte por cento), em aplicações com prazo acima de 6 (seis) meses."
+              }
+            }
+          ],
+          "rate_today_pct": null,
+          "rate_text": null,
+          "exempt": false,
+          "article": null,
+          "rule_source": null,
+          "bracket": {
+            "min_pct": 15.0,
+            "max_pct": 22.5,
+            "text": "alíquota entre 15% e 22,5% conforme o prazo e a regra que se aplica (fundo com come-cotas, longo prazo ou fundo com come-cotas, curto prazo); data de aplicação não informada, a conferir"
+          },
+          "outcomes": null,
+          "other_events": [],
+          "come_cotas": [
+            {
+              "applies": true,
+              "rate_pct": 15.0,
+              "text": "come-cotas: sim, 15% no último dia útil de maio e de novembro (fundo com come-cotas, longo prazo)",
+              "article": "Lei 14.754/2023, art. 17 §1º, I",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+                "source_id": "l14754_art17_p1_i",
+                "act": "Lei 14.754/2023",
+                "article": "art. 17 §1º, I",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+                "quote": "a) 15% (quinze por cento), na data da tributação periódica ... b) o percentual complementar necessário para totalizar a alíquota prevista nos incisos I, II, III e IV do caput do art. 1º da Lei nº 11.033"
+              }
+            },
+            {
+              "applies": true,
+              "rate_pct": 20.0,
+              "text": "come-cotas: sim, 20% no último dia útil de maio e de novembro (fundo com come-cotas, curto prazo)",
+              "article": "Lei 14.754/2023, art. 17 §1º, II",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+                "source_id": "l14754_art17_p1_ii",
+                "act": "Lei 14.754/2023",
+                "article": "art. 17 §1º, II",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+                "quote": "II - nos fundos de que trata o art. 6º da Lei nº 11.053 ... a) 20% (vinte por cento), na data da tributação periódica"
+              }
+            }
+          ],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "mais_de_uma_regra",
+            "reason": "mais de uma regra possível (fundo com come-cotas, longo prazo ou fundo com come-cotas, curto prazo): sem valor em R$",
+            "sources": []
+          },
+          "reason_code": null,
+          "reason": null
+        },
+        "pension": null,
+        "optimization": [
+          {
+            "kind": "come_cotas",
+            "label": "informativo; não é recomendação",
+            "applies": true,
+            "rate_pct": 15.0,
+            "text": "come-cotas: sim, 15% no último dia útil de maio e de novembro (fundo com come-cotas, longo prazo)",
+            "article": "Lei 14.754/2023, art. 17 §1º, I",
+            "rule_source": {
+              "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
+              "source_id": "l14754_art17_p1_i",
+              "act": "Lei 14.754/2023",
+              "article": "art. 17 §1º, I",
+              "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+              "quote": "a) 15% (quinze por cento), na data da tributação periódica ... b) o percentual complementar necessário para totalizar a alíquota prevista nos incisos I, II, III e IV do caput do art. 1º da Lei nº 11.033"
+            }
+          },
+          {
+            "kind": "come_cotas",
+            "label": "informativo; não é recomendação",
+            "applies": true,
+            "rate_pct": 20.0,
+            "text": "come-cotas: sim, 20% no último dia útil de maio e de novembro (fundo com come-cotas, curto prazo)",
+            "article": "Lei 14.754/2023, art. 17 §1º, II",
+            "rule_source": {
+              "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
+              "source_id": "l14754_art17_p1_ii",
+              "act": "Lei 14.754/2023",
+              "article": "art. 17 §1º, II",
+              "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+              "quote": "II - nos fundos de que trata o art. 6º da Lei nº 11.053 ... a) 20% (vinte por cento), na data da tributação periódica"
+            }
+          }
+        ],
+        "iof": null,
+        "a_conferir": [
+          {
+            "id": "data_aplicacao",
+            "text": "data de aplicação não informada no extrato",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": null
+          },
+          {
+            "id": "fundo_longo_ou_curto",
+            "text": "se o fundo é de longo prazo ou de curto prazo (carteira com prazo médio de até 365 dias): a classificação tributária do fundo não está no extrato",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": "src/portfolio/rules/tax/fund_long.yaml"
+          },
+          {
+            "id": "carencia_fundo",
+            "text": "carência do fundo: resgate antes da carência paga IOF de 0,5% ao dia (Decreto 6.306, art. 31)",
+            "label": "a conferir",
+            "decides_rate": false,
+            "rules_file": "src/portfolio/rules/tax/fund_long.yaml"
+          }
+        ],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 7
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 8,
+        "linha_extrato": "HGLG11 CSHG LOGISTICA FII",
+        "tipo": "FII",
+        "valor_brl": 175440.0,
+        "fee": {
+          "status": "sem_taxa",
+          "label": "estimativa",
+          "basis": "taxa de administração divulgada x valor da posição no extrato",
+          "kind": null,
+          "rate_pct_year": null,
+          "per_year_brl": null,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "taxa divulgada não encontrada",
+          "notes": [
+            "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
+            "taxa de performance não estimada"
+          ],
+          "loading": null,
+          "sources": []
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "aliquota_hoje",
+          "status_label": "alíquota de hoje",
+          "selection_reason": null,
+          "instrument": "fii",
+          "instrument_label": "FII",
+          "rules_file": "src/portfolio/rules/tax/fii.yaml",
+          "candidates": [
+            {
+              "instrument": "fii",
+              "label": "FII",
+              "rules_file": "src/portfolio/rules/tax/fii.yaml",
+              "event": "sale",
+              "base": "net_gain_month",
+              "exempt": false,
+              "table": "fixed",
+              "unit": null,
+              "rates_pct": [
+                20.0
+              ],
+              "rate_today_pct": 20.0,
+              "rate_today_text": "20%",
+              "article": "Lei 8.668/1993, art. 18, I e II (redação da Lei 9.779/1999)",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fii.yaml",
+                "source_id": "l8668_art18",
+                "act": "Lei 8.668/1993",
+                "article": "art. 18, I e II (redação da Lei 9.779/1999)",
+                "url": "https://www.planalto.gov.br/ccivil_03/LEIS/L8668.htm",
+                "quote": "Os ganhos de capital e rendimentos auferidos na alienação ou no resgate de quotas dos fundos de investimento imobiliário, por qualquer beneficiário ... sujeitam-se à incidência do imposto de renda à alíquota de vinte por cento: I - na fonte, no caso de resgate; II - às mesmas normas aplicáveis aos ganhos de capital ou ganhos líquidos auferidos em operações de renda variável, nos demais casos."
+              }
+            }
+          ],
+          "rate_today_pct": 20.0,
+          "rate_text": "20%",
+          "exempt": false,
+          "article": "Lei 8.668/1993, art. 18, I e II (redação da Lei 9.779/1999)",
+          "rule_source": {
+            "rules_file": "src/portfolio/rules/tax/fii.yaml",
+            "source_id": "l8668_art18",
+            "act": "Lei 8.668/1993",
+            "article": "art. 18, I e II (redação da Lei 9.779/1999)",
+            "url": "https://www.planalto.gov.br/ccivil_03/LEIS/L8668.htm",
+            "quote": "Os ganhos de capital e rendimentos auferidos na alienação ou no resgate de quotas dos fundos de investimento imobiliário, por qualquer beneficiário ... sujeitam-se à incidência do imposto de renda à alíquota de vinte por cento: I - na fonte, no caso de resgate; II - às mesmas normas aplicáveis aos ganhos de capital ou ganhos líquidos auferidos em operações de renda variável, nos demais casos."
+          },
+          "bracket": null,
+          "outcomes": null,
+          "other_events": [
+            {
+              "event": "distribution",
+              "rates_pct": [
+                20.0
+              ],
+              "article": "Lei 8.668/1993, art. 17",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fii.yaml",
+                "source_id": "l8668_art17",
+                "act": "Lei 8.668/1993",
+                "article": "art. 17",
+                "url": "https://www.planalto.gov.br/ccivil_03/LEIS/L8668.htm",
+                "quote": "sujeitam-se à incidência do imposto de renda na fonte, à alíquota de vinte por cento"
+              }
+            },
+            {
+              "event": "isenção (distribution)",
+              "text": "rendimentos distribuídos isentos se as cotas são negociadas só em bolsa ou balcão organizado, o fundo tem ao menos 100 cotistas, a pessoa tem menos de 10% e as pessoas ligadas menos de 30%",
+              "rates_pct": [
+                0.0
+              ],
+              "article": "Lei 11.033/2004, art. 3º, III (redação da Lei 14.130/2021)",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fii.yaml",
+                "source_id": "l11033_art3_iii",
+                "act": "Lei 11.033/2004",
+                "article": "art. 3º, III (redação da Lei 14.130/2021)",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+                "quote": "os rendimentos distribuídos pelos Fundos de Investimento Imobiliário e pelos Fundos de Investimento nas Cadeias Produtivas Agroindustriais (Fiagro) cujas cotas sejam admitidas à negociação exclusivamente em bolsas de valores ou no mercado de balcão organizado"
+              }
+            }
+          ],
+          "come_cotas": [
+            {
+              "applies": false,
+              "rate_pct": null,
+              "text": "come-cotas: não se aplica (FII)",
+              "article": "Lei 14.754/2023, art. 39",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/fii.yaml",
+                "source_id": "l14754_art39",
+                "act": "Lei 14.754/2023",
+                "article": "art. 39",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+                "quote": "Ficam ressalvadas do disposto nesta Lei as regras aplicáveis aos seguintes fundos ... I - os Fundos de Investimento Imobiliário (FII) ... V - os fundos de investimento de que trata a Lei nº 12.431 ... VII - os ETFs de Renda Fixa"
+              }
+            }
+          ],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "data_aplicacao_nao_informada",
+            "reason": "data de aplicação não informada: sem valor em R$",
+            "sources": []
+          },
+          "reason_code": null,
+          "reason": null
+        },
+        "pension": null,
+        "optimization": [
+          {
+            "kind": "come_cotas",
+            "label": "informativo; não é recomendação",
+            "applies": false,
+            "rate_pct": null,
+            "text": "come-cotas: não se aplica (FII)",
+            "article": "Lei 14.754/2023, art. 39",
+            "rule_source": {
+              "rules_file": "src/portfolio/rules/tax/fii.yaml",
+              "source_id": "l14754_art39",
+              "act": "Lei 14.754/2023",
+              "article": "art. 39",
+              "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm",
+              "quote": "Ficam ressalvadas do disposto nesta Lei as regras aplicáveis aos seguintes fundos ... I - os Fundos de Investimento Imobiliário (FII) ... V - os fundos de investimento de que trata a Lei nº 12.431 ... VII - os ETFs de Renda Fixa"
+            }
+          }
+        ],
+        "iof": null,
+        "a_conferir": [
+          {
+            "id": "fii_isencao_rendimentos",
+            "text": "isenção dos rendimentos distribuídos: cotas negociadas só em bolsa ou balcão organizado, ao menos 100 cotistas, participação da pessoa abaixo de 10% e das pessoas ligadas abaixo de 30% (Lei 11.033, art. 3º, III e §1º)",
+            "label": "a conferir",
+            "decides_rate": false,
+            "rules_file": "src/portfolio/rules/tax/fii.yaml"
+          }
+        ],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 8
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 9,
+        "linha_extrato": "CDB BANCO EXEMPLO",
+        "tipo": "CDB",
+        "valor_brl": 270000.0,
+        "fee": {
+          "status": "nao_se_aplica",
+          "label": "estimativa",
+          "basis": null,
+          "kind": null,
+          "rate_pct_year": null,
+          "per_year_brl": null,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
+          "notes": [],
+          "loading": null,
+          "sources": []
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "faixa",
+          "status_label": "a conferir",
+          "selection_reason": null,
+          "instrument": "cdb",
+          "instrument_label": "CDB",
+          "rules_file": "src/portfolio/rules/tax/cdb.yaml",
+          "candidates": [
+            {
+              "instrument": "cdb",
+              "label": "CDB",
+              "rules_file": "src/portfolio/rules/tax/cdb.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": false,
+              "table": "holding",
+              "unit": "days",
+              "rates_pct": [
+                22.5,
+                20.0,
+                17.5,
+                15.0
+              ],
+              "rate_today_pct": null,
+              "rate_today_text": null,
+              "article": "Lei 11.033/2004, art. 1º, I a IV",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/cdb.yaml",
+                "source_id": "l11033_art1",
+                "act": "Lei 11.033/2004",
+                "article": "art. 1º, I a IV",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+                "quote": "I - 22,5% ... em aplicações com prazo de até 180 (cento e oitenta) dias; II - 20% ... de 181 (cento e oitenta e um) dias até 360 ... III - 17,5% ... de 361 ... até 720 ... IV - 15% (quinze por cento), em aplicações com prazo acima de 720 (setecentos e vinte) dias."
+              }
+            }
+          ],
+          "rate_today_pct": null,
+          "rate_text": null,
+          "exempt": false,
+          "article": "Lei 11.033/2004, art. 1º, I a IV",
+          "rule_source": {
+            "rules_file": "src/portfolio/rules/tax/cdb.yaml",
+            "source_id": "l11033_art1",
+            "act": "Lei 11.033/2004",
+            "article": "art. 1º, I a IV",
+            "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+            "quote": "I - 22,5% ... em aplicações com prazo de até 180 (cento e oitenta) dias; II - 20% ... de 181 (cento e oitenta e um) dias até 360 ... III - 17,5% ... de 361 ... até 720 ... IV - 15% (quinze por cento), em aplicações com prazo acima de 720 (setecentos e vinte) dias."
+          },
+          "bracket": {
+            "min_pct": 15.0,
+            "max_pct": 22.5,
+            "text": "alíquota entre 15% e 22,5% conforme o prazo; data de aplicação não informada, a conferir"
+          },
+          "outcomes": null,
+          "other_events": [],
+          "come_cotas": [],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "data_aplicacao_nao_informada",
+            "reason": "data de aplicação não informada: sem valor em R$",
+            "sources": []
+          },
+          "reason_code": null,
+          "reason": null
+        },
+        "pension": null,
+        "optimization": [],
+        "iof": null,
+        "a_conferir": [
+          {
+            "id": "data_aplicacao",
+            "text": "data de aplicação não informada no extrato",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": null
+          }
+        ],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 9
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 10,
+        "linha_extrato": "LCA BANCO EXEMPLO",
+        "tipo": "LCA",
+        "valor_brl": 120000.0,
+        "fee": {
+          "status": "nao_se_aplica",
+          "label": "estimativa",
+          "basis": null,
+          "kind": null,
+          "rate_pct_year": null,
+          "per_year_brl": null,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
+          "notes": [],
+          "loading": null,
+          "sources": []
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "isento",
+          "status_label": "isento",
+          "selection_reason": null,
+          "instrument": "lca",
+          "instrument_label": "LCA",
+          "rules_file": "src/portfolio/rules/tax/lca.yaml",
+          "candidates": [
+            {
+              "instrument": "lca",
+              "label": "LCA",
+              "rules_file": "src/portfolio/rules/tax/lca.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": true,
+              "table": "fixed",
+              "unit": null,
+              "rates_pct": [
+                0.0
+              ],
+              "rate_today_pct": 0.0,
+              "rate_today_text": "0%",
+              "article": "Lei 11.033/2004, art. 3º, IV (redação da Lei 11.311/2006)",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/lca.yaml",
+                "source_id": "l11033_art3_iv",
+                "act": "Lei 11.033/2004",
+                "article": "art. 3º, IV (redação da Lei 11.311/2006)",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+                "quote": "a remuneração produzida por Certificado de Depósito Agropecuário - CDA, Warrant Agropecuário - WA, Certificado de Direitos Creditórios do Agronegócio - CDCA, Letra de Crédito do Agronegócio - LCA e Certificado de Recebíveis do Agronegócio - CRA"
+              }
+            }
+          ],
+          "rate_today_pct": 0.0,
+          "rate_text": "isento",
+          "exempt": true,
+          "article": "Lei 11.033/2004, art. 3º, IV (redação da Lei 11.311/2006)",
+          "rule_source": {
+            "rules_file": "src/portfolio/rules/tax/lca.yaml",
+            "source_id": "l11033_art3_iv",
+            "act": "Lei 11.033/2004",
+            "article": "art. 3º, IV (redação da Lei 11.311/2006)",
+            "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+            "quote": "a remuneração produzida por Certificado de Depósito Agropecuário - CDA, Warrant Agropecuário - WA, Certificado de Direitos Creditórios do Agronegócio - CDCA, Letra de Crédito do Agronegócio - LCA e Certificado de Recebíveis do Agronegócio - CRA"
+          },
+          "bracket": null,
+          "outcomes": null,
+          "other_events": [],
+          "come_cotas": [],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "isento_sem_imposto",
+            "reason": "isento: nenhum imposto de renda",
+            "sources": []
+          },
+          "reason_code": null,
+          "reason": null
+        },
+        "pension": null,
+        "optimization": [
+          {
+            "kind": "equivalencia_bruta",
+            "label": "informativo; não é recomendação",
+            "exempt_rate_text": "CDI + 0,50%",
+            "term_days": null,
+            "brackets": [
+              {
+                "cdb_rate_pct": 22.5,
+                "factor": 1.2903,
+                "equivalent_pct": null,
+                "equivalent_text": null
+              },
+              {
+                "cdb_rate_pct": 20.0,
+                "factor": 1.25,
+                "equivalent_pct": null,
+                "equivalent_text": null
+              },
+              {
+                "cdb_rate_pct": 17.5,
+                "factor": 1.2121,
+                "equivalent_pct": null,
+                "equivalent_text": null
+              },
+              {
+                "cdb_rate_pct": 15.0,
+                "factor": 1.1765,
+                "equivalent_pct": null,
+                "equivalent_text": null
+              }
+            ],
+            "text": "equivalência bruta X / (1 - alíquota): fator 1,2903 na faixa de 22,5%; fator 1,2500 na faixa de 20%; fator 1,2121 na faixa de 17,5%; fator 1,1765 na faixa de 15%; a taxa impressa (CDI + 0,50%) não é convertida (data de aplicação ou vencimento não informados: as quatro faixas do CDB)",
+            "article": "Lei 11.033/2004, art. 1º, I a IV",
+            "rule_source": {
+              "rules_file": "src/portfolio/rules/tax/cdb.yaml",
+              "source_id": "l11033_art1",
+              "act": "Lei 11.033/2004",
+              "article": "art. 1º, I a IV",
+              "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+              "quote": "I - 22,5% ... em aplicações com prazo de até 180 (cento e oitenta) dias; II - 20% ... de 181 (cento e oitenta e um) dias até 360 ... III - 17,5% ... de 361 ... até 720 ... IV - 15% (quinze por cento), em aplicações com prazo acima de 720 (setecentos e vinte) dias."
+            }
+          }
+        ],
+        "iof": null,
+        "a_conferir": [],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 10
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 11,
+        "linha_extrato": "CRA AGRO EXEMPLO",
+        "tipo": "CRA",
+        "valor_brl": 95000.0,
+        "fee": {
+          "status": "nao_se_aplica",
+          "label": "estimativa",
+          "basis": null,
+          "kind": null,
+          "rate_pct_year": null,
+          "per_year_brl": null,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
+          "notes": [],
+          "loading": null,
+          "sources": []
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "isento",
+          "status_label": "isento",
+          "selection_reason": null,
+          "instrument": "cra",
+          "instrument_label": "CRA",
+          "rules_file": "src/portfolio/rules/tax/cra.yaml",
+          "candidates": [
+            {
+              "instrument": "cra",
+              "label": "CRA",
+              "rules_file": "src/portfolio/rules/tax/cra.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": true,
+              "table": "fixed",
+              "unit": null,
+              "rates_pct": [
+                0.0
+              ],
+              "rate_today_pct": 0.0,
+              "rate_today_text": "0%",
+              "article": "Lei 11.033/2004, art. 3º, IV (redação da Lei 11.311/2006)",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/cra.yaml",
+                "source_id": "l11033_art3_iv",
+                "act": "Lei 11.033/2004",
+                "article": "art. 3º, IV (redação da Lei 11.311/2006)",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+                "quote": "a remuneração produzida por Certificado de Depósito Agropecuário - CDA, Warrant Agropecuário - WA, Certificado de Direitos Creditórios do Agronegócio - CDCA, Letra de Crédito do Agronegócio - LCA e Certificado de Recebíveis do Agronegócio - CRA"
+              }
+            }
+          ],
+          "rate_today_pct": 0.0,
+          "rate_text": "isento",
+          "exempt": true,
+          "article": "Lei 11.033/2004, art. 3º, IV (redação da Lei 11.311/2006)",
+          "rule_source": {
+            "rules_file": "src/portfolio/rules/tax/cra.yaml",
+            "source_id": "l11033_art3_iv",
+            "act": "Lei 11.033/2004",
+            "article": "art. 3º, IV (redação da Lei 11.311/2006)",
+            "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+            "quote": "a remuneração produzida por Certificado de Depósito Agropecuário - CDA, Warrant Agropecuário - WA, Certificado de Direitos Creditórios do Agronegócio - CDCA, Letra de Crédito do Agronegócio - LCA e Certificado de Recebíveis do Agronegócio - CRA"
+          },
+          "bracket": null,
+          "outcomes": null,
+          "other_events": [],
+          "come_cotas": [],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "isento_sem_imposto",
+            "reason": "isento: nenhum imposto de renda",
+            "sources": []
+          },
+          "reason_code": null,
+          "reason": null
+        },
+        "pension": null,
+        "optimization": [
+          {
+            "kind": "equivalencia_bruta",
+            "label": "informativo; não é recomendação",
+            "exempt_rate_text": "IPCA + 8,74%",
+            "term_days": null,
+            "brackets": [
+              {
+                "cdb_rate_pct": 22.5,
+                "factor": 1.2903,
+                "equivalent_pct": null,
+                "equivalent_text": null
+              },
+              {
+                "cdb_rate_pct": 20.0,
+                "factor": 1.25,
+                "equivalent_pct": null,
+                "equivalent_text": null
+              },
+              {
+                "cdb_rate_pct": 17.5,
+                "factor": 1.2121,
+                "equivalent_pct": null,
+                "equivalent_text": null
+              },
+              {
+                "cdb_rate_pct": 15.0,
+                "factor": 1.1765,
+                "equivalent_pct": null,
+                "equivalent_text": null
+              }
+            ],
+            "text": "equivalência bruta X / (1 - alíquota): fator 1,2903 na faixa de 22,5%; fator 1,2500 na faixa de 20%; fator 1,2121 na faixa de 17,5%; fator 1,1765 na faixa de 15%; a taxa impressa (IPCA + 8,74%) não é convertida (data de aplicação ou vencimento não informados: as quatro faixas do CDB)",
+            "article": "Lei 11.033/2004, art. 1º, I a IV",
+            "rule_source": {
+              "rules_file": "src/portfolio/rules/tax/cdb.yaml",
+              "source_id": "l11033_art1",
+              "act": "Lei 11.033/2004",
+              "article": "art. 1º, I a IV",
+              "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+              "quote": "I - 22,5% ... em aplicações com prazo de até 180 (cento e oitenta) dias; II - 20% ... de 181 (cento e oitenta e um) dias até 360 ... III - 17,5% ... de 361 ... até 720 ... IV - 15% (quinze por cento), em aplicações com prazo acima de 720 (setecentos e vinte) dias."
+            }
+          }
+        ],
+        "iof": null,
+        "a_conferir": [],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 11
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 12,
+        "linha_extrato": "DEB ENERGIA EXEMPLO",
+        "tipo": "debênture",
+        "valor_brl": 60000.0,
+        "fee": {
+          "status": "nao_se_aplica",
+          "label": "estimativa",
+          "basis": null,
+          "kind": null,
+          "rate_pct_year": null,
+          "per_year_brl": null,
+          "rate_min_pct_year": null,
+          "rate_max_pct_year": null,
+          "per_year_min_brl": null,
+          "per_year_max_brl": null,
+          "third_party": false,
+          "third_party_label": null,
+          "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
+          "notes": [],
+          "loading": null,
+          "sources": []
+        },
+        "holding": {
+          "data_aplicacao": null,
+          "days_held": null,
+          "text": "data de aplicação não informada no extrato",
+          "sources": []
+        },
+        "tax": {
+          "status": "candidatos",
+          "status_label": "a conferir",
+          "selection_reason": "o extrato não diz se a debênture é incentivada (Lei 12.431) ou comum; a de infraestrutura da Lei 14.801 é comum para a pessoa física",
+          "instrument": null,
+          "instrument_label": null,
+          "rules_file": null,
+          "candidates": [
+            {
+              "instrument": "debenture",
+              "label": "debênture comum",
+              "rules_file": "src/portfolio/rules/tax/debenture.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": false,
+              "table": "holding",
+              "unit": "days",
+              "rates_pct": [
+                22.5,
+                20.0,
+                17.5,
+                15.0
+              ],
+              "rate_today_pct": null,
+              "rate_today_text": null,
+              "article": "Lei 11.033/2004, art. 1º, I a IV",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/debenture.yaml",
+                "source_id": "l11033_art1",
+                "act": "Lei 11.033/2004",
+                "article": "art. 1º, I a IV",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm",
+                "quote": "I - 22,5% ... em aplicações com prazo de até 180 (cento e oitenta) dias; II - 20% ... de 181 (cento e oitenta e um) dias até 360 ... III - 17,5% ... de 361 ... até 720 ... IV - 15% (quinze por cento), em aplicações com prazo acima de 720 (setecentos e vinte) dias."
+              }
+            },
+            {
+              "instrument": "debenture_incentivized",
+              "label": "debênture incentivada (Lei 12.431)",
+              "rules_file": "src/portfolio/rules/tax/debenture_incentivized.yaml",
+              "event": "redemption",
+              "base": "income",
+              "exempt": true,
+              "table": "fixed",
+              "unit": null,
+              "rates_pct": [
+                0.0
+              ],
+              "rate_today_pct": 0.0,
+              "rate_today_text": "0%",
+              "article": "Lei 12.431/2011, art. 2º, I (redação da Lei 13.043/2014)",
+              "rule_source": {
+                "rules_file": "src/portfolio/rules/tax/debenture_incentivized.yaml",
+                "source_id": "l12431_art2",
+                "act": "Lei 12.431/2011",
+                "article": "art. 2º, I (redação da Lei 13.043/2014)",
+                "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12431.htm",
+                "quote": "I - 0% (zero por cento), quando auferidos por pessoa física"
+              }
+            }
+          ],
+          "rate_today_pct": null,
+          "rate_text": null,
+          "exempt": false,
+          "article": null,
+          "rule_source": null,
+          "bracket": {
+            "min_pct": 0.0,
+            "max_pct": 22.5,
+            "text": "alíquota entre 0% e 22,5% conforme o prazo e a regra que se aplica (debênture comum ou debênture incentivada (Lei 12.431)); data de aplicação não informada, a conferir"
+          },
+          "outcomes": null,
+          "other_events": [],
+          "come_cotas": [],
+          "estimate": {
+            "label": "estimativa",
+            "tax_brl": null,
+            "gain_12m_brl": null,
+            "net_return_12m_pct": null,
+            "rate_pct": null,
+            "basis": null,
+            "reason_code": "mais_de_uma_regra",
+            "reason": "mais de uma regra possível (debênture comum ou debênture incentivada (Lei 12.431)): sem valor em R$",
+            "sources": []
+          },
+          "reason_code": null,
+          "reason": null
+        },
+        "pension": null,
+        "optimization": [],
+        "iof": null,
+        "a_conferir": [
+          {
+            "id": "data_aplicacao",
+            "text": "data de aplicação não informada no extrato",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": null
+          },
+          {
+            "id": "debenture_lei_12431",
+            "text": "se a debênture é incentivada (Lei 12.431, art. 2º) ou comum; uma debênture de infraestrutura da Lei 14.801 é comum para a pessoa física, e o nome \"incentivada\" no extrato não decide: a escritura ou o prospecto dizem qual",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": "src/portfolio/rules/tax/debenture.yaml"
+          },
+          {
+            "id": "data_emissao",
+            "text": "data de emissão do ativo: a alíquota zero vale só para emissões até 2030-12-31",
+            "label": "a conferir",
+            "decides_rate": true,
+            "rules_file": "src/portfolio/rules/tax/debenture_incentivized.yaml"
+          }
+        ],
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 12
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      }
+    ],
+    "person": {
+      "flags": [
+        {
+          "id": "dividends",
+          "line_nos": [
+            2
+          ],
+          "flagged": true,
+          "rate_pct": 10.0,
+          "text": "dividendos: acima de R$ 50.000 no mês, de uma mesma empresa para a mesma pessoa, retenção de 10% sobre o total pago; exceto lucros apurados até 2025 com distribuição aprovada até 31/12/2025",
+          "article": "Lei 9.250/1995 (pela Lei 15.270/2025), art. 6º-A",
+          "rule_source": {
+            "rules_file": "src/portfolio/rules/tax/person.yaml",
+            "source_id": "l9250_art6a",
+            "act": "Lei 9.250/1995 (pela Lei 15.270/2025)",
+            "article": "art. 6º-A",
+            "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/lei/l15270.htm",
+            "quote": "em montante superior a R$ 50.000,00 (cinquenta mil reais) em um mesmo mês fica sujeito à retenção na fonte do Imposto sobre a Renda das Pessoas Físicas à alíquota de 10% (dez por cento) sobre o total do valor pago"
+          },
+          "computed": false
+        },
+        {
+          "id": "jcp",
+          "line_nos": [
+            2
+          ],
+          "flagged": true,
+          "rate_pct": 17.5,
+          "text": "juros sobre capital próprio (JCP): retenção na fonte de 17,5% na data do pagamento ou crédito",
+          "article": "Lei 9.249/1995 (pela LC 224/2025, art. 8º), art. 9º §2º",
+          "rule_source": {
+            "rules_file": "src/portfolio/rules/tax/person.yaml",
+            "source_id": "l9249_art9_p2",
+            "act": "Lei 9.249/1995 (pela LC 224/2025, art. 8º)",
+            "article": "art. 9º §2º",
+            "url": "https://www.planalto.gov.br/ccivil_03/leis/lcp/Lcp224.htm",
+            "quote": "Os juros ficarão sujeitos à incidência do imposto sobre a renda na fonte à alíquota de 17,5% (dezessete inteiros e cinco décimos por cento) na data do pagamento ou do crédito ao beneficiário."
+          },
+          "computed": false
+        }
+      ],
+      "minimum_tax": {
+        "text": "depende da renda total anual; fora do escopo",
+        "computed": false,
+        "excluded_income": [
+          "LCI",
+          "CRI",
+          "LCA",
+          "CRA",
+          "ativos da Lei 12.431, art. 2º e 3º",
+          "rendimentos distribuídos por FII e Fiagro (com 100 cotistas)",
+          "títulos e valores mobiliários isentos ou com alíquota zero, exceto rendimentos de ações e demais participações societárias"
+        ],
+        "article": "Lei 9.250/1995 (pela Lei 15.270/2025), art. 16-A caput e §2º",
+        "rule_source": {
+          "rules_file": "src/portfolio/rules/tax/person.yaml",
+          "source_id": "l9250_art16a",
+          "act": "Lei 9.250/1995 (pela Lei 15.270/2025)",
+          "article": "art. 16-A caput e §2º",
+          "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/lei/l15270.htm",
+          "quote": "A partir do exercício de 2027, ano-calendário de 2026, a pessoa física cuja soma de todos os rendimentos recebidos no ano-calendário seja superior a R$ 600.000,00 (seiscentos mil reais) fica sujeita à tributação mínima"
+        },
+        "excluded_income_rule_source": {
+          "rules_file": "src/portfolio/rules/tax/person.yaml",
+          "source_id": "l9250_art16a_p1",
+          "act": "Lei 9.250/1995 (pela Lei 15.270/2025)",
+          "article": "art. 16-A §1º, V, VI e XI",
+          "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/lei/l15270.htm",
+          "quote": "os rendimentos de títulos e valores mobiliários isentos ou sujeitos à alíquota zero ... exceto os rendimentos de ações e demais participações societárias"
+        }
+      },
+      "a_conferir": [
+        {
+          "id": "dividendos_mesma_empresa_mes",
+          "text": "dividendos recebidos no mês da mesma empresa, inclusive de outras contas",
+          "label": "a conferir",
+          "rules_file": "src/portfolio/rules/tax/person.yaml"
+        },
+        {
+          "id": "renda_total_anual",
+          "text": "renda total anual da pessoa (tributação mínima acima de R$ 600.000)",
+          "label": "a conferir",
+          "rules_file": "src/portfolio/rules/tax/person.yaml"
+        }
+      ],
+      "rules_file": "src/portfolio/rules/tax/person.yaml"
+    },
+    "n_lines": 12,
+    "n_with_rule": 10,
+    "n_without_rule": 2,
+    "n_tax_estimated": 0,
+    "n_fee_estimated": 2
+  },
   "assumptions": [
     {
       "id": "fee_units",
@@ -19064,6 +21339,10 @@
     {
       "id": "returns",
       "text": "Retorno por posição (esquema 1.10): 12 e 6 meses até o mês da posição, em valores de fim de mês servidos pelo SILO (cota mensal do fundo; fechamento com proventos da ação; fechamento sem proventos de ETF e FII). O retorno bruto é uma estimativa: líquido mais a taxa de administração divulgada do bloco de taxas, metade dela em 6 meses. Volatilidade amostral dos retornos mensais vezes raiz de 12; perda de Sharpe = taxa anual sobre volatilidade anualizada. Sem limiar, sem total da carteira e sem ranking."
+    },
+    {
+      "id": "tax",
+      "text": "Taxa e imposto por posição (esquema 1.11): regras dos arquivos versionados em src/portfolio/rules/tax/, copiadas da nota #611 com artigo e citação. A taxa paga por ano é a do bloco de taxas (taxa divulgada x valor da posição), estimativa. O imposto em R$ é estimativa: alíquota de hoje x ganho de 12 meses do bloco de retorno, só com a data de aplicação impressa no extrato; sem ela, a faixa de alíquotas e nenhum valor. Nenhuma data é suposta; condições que o extrato não mostra ficam a conferir; nada é recomendação."
     },
     {
       "id": "movement_class",
@@ -19145,6 +21424,13 @@
       "reason": "Há linhas sem retorno avaliado; cada linha informa o motivo.",
       "reason_codes": [
         "linhas_sem_retorno"
+      ]
+    },
+    "tax": {
+      "status": "partial",
+      "reason": "Há linhas sem regra de imposto; cada linha informa o motivo.",
+      "reason_codes": [
+        "imposto_linhas_sem_regra"
       ]
     }
   },

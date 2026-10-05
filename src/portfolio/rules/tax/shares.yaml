@@ -1,0 +1,50 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+schema: silo.tax_rule/0.1
+instrument: shares
+label: ações
+version: 1
+valid_from: "2005-01-01"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: l11033_art2
+    act: Lei 11.033/2004
+    article: art. 2º, I e II
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm
+    accessed: "2026-10-05"
+    quote: "I - 20% (vinte por cento), no caso de operação daytrade ; ... II - 15% (quinze por cento), nas demais hipóteses."
+  - id: l11033_art3_i
+    act: Lei 11.033/2004
+    article: art. 3º, I
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm
+    accessed: "2026-10-05"
+    quote: "os ganhos líquidos auferidos por pessoa física em operações no mercado à vista de ações nas bolsas de valores e em operações com ouro ativo financeiro cujo valor das alienações, realizadas em cada mês, seja igual ou inferior a R$ 20.000,00 (vinte mil reais)"
+ir:
+  events:
+    - event: sale
+      primary: true
+      withheld_at_source: false
+      definitive: true
+      base: net_gain_month
+      rate: { table: fixed, rate: 0.15 }
+      source: l11033_art2
+  periodic: null
+  exemptions:
+    - applies_to: sale
+      condition: monthly_sales_le
+      value: 20000
+      label: "isento quando as alienações de ações no mercado à vista no mês somam até R$ 20.000 (não vale para day trade)"
+      source: l11033_art3_i
+iof:
+  applies: false
+  rule: zero_rate
+engine_cannot_observe:
+  - id: alienacoes_do_mes
+    text: "total das alienações de ações no mês: até R$ 20.000 o ganho é isento (Lei 11.033, art. 3º, I)"
+    decides_rate: true
+  - id: day_trade
+    text: "operação de day trade: 20% (Lei 11.033, art. 2º, I), sem a isenção de R$ 20.000"
+    decides_rate: false
+not_verified: []

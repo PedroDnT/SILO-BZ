@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.10)
+# Portfolio engine output (schema 1.11)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,15 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.11 (owner's resolution of #613, 2026-10-05; rules from `docs/reference/research/tax-rules-by-instrument.md` (#611)
+and `pension-plan-data.md` (#612)). Keys were added, none renamed, retyped or removed: a new top-level section `tax`
+(below), placed after `returns`, with its `section_status` entry and the assumption `tax`; `statement.positions[]`
+gains `data_aplicacao` (the spreadsheet's new optional column, null when not printed). New reason codes in
+`common.REASON_TEXT`: `imposto_sem_regra`, `imposto_linhas_sem_regra`, `data_aplicacao_nao_informada`,
+`aliquota_depende_de_condicao`, `mais_de_uma_regra`, `ganho_12m_indisponivel`, `aplicacao_dentro_da_janela`,
+`ganho_12m_nao_positivo`, `previdencia_sem_estimativa`, `isento_sem_imposto`. The block makes no tool call, so no
+call id moves. The report does not show it yet.
 
 1.10 (owner's resolution of #610, 2026-10-05; inputs `docs/reference/research/portfolio-return-coverage.md`
 (#606) and `quota-net-of-fees.md` (#631)). Keys were added, none renamed, retyped or removed: a new top-level
@@ -175,7 +184,7 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
 
 `schema_version`, `generated_at_utc`, `engine` (`version`, `client`, `params`), `statement`,
 `identification`, `fees`, `look_through`, `indexer`, `sector`, `restatements`, `risk_signals`, `movement`,
-`concentration` (1.7), `allocation` and `risks` (1.8), `returns` (1.10), `assumptions`, `section_status`, `provenance`.
+`concentration` (1.7), `allocation` and `risks` (1.8), `returns` (1.10), `tax` (1.11), `assumptions`, `section_status`, `provenance`.
 
 - `engine.params`: `cda_month` (default: position month - 4), `fee_month` (default: position
   month - 1), `movement_month` (default: the position month when the position date is a month-end, else the
@@ -184,7 +193,7 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
   `coverage()`-driven default exists.
 - `assumptions[]`: `{id, text}`, each a reading the engine could not verify (`fee_units`,
   `weight_in_root`, `position_date`, `valuation`, `direct_tesouro`, `economic_group`,
-  `abnormal_movement`, `movement_class`, `risks` (1.8), `returns` (1.10)). The report states the ones that touch what it says.
+  `abnormal_movement`, `movement_class`, `risks` (1.8), `returns` (1.10), `tax` (1.11)). The report states the ones that touch what it says.
 - `section_status`: `{section: {status, reason, reason_codes}}`, for a cover-page summary.
 - `provenance[]`: every tool call in order: `call_id`, `id` (`p<call_id>`), `tool`, `args`,
   `requested_at_utc`, `row_count` (null on error), `error` (verbatim, null on success). No trimming;
@@ -205,7 +214,8 @@ lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titu
   and what the statement itself prints, all null for a spreadsheet that has not got them:
   `vencimento`, `taxa_texto` (the rate exactly as printed), `estrategia_corretora` and
   `classe_corretora` (the broker's own labels), `conta_ref`, `contas[]` (the per-account lines of
-  a consolidated position: `conta_ref`, `titular_ref`, `valor_brl`, ...), `source`. The valuation
+  a consolidated position: `conta_ref`, `titular_ref`, `valor_brl`, ...), `source`, `data_aplicacao` (1.11: the
+  application date as printed; null when not printed, and a merged position keeps it only when every line agrees). The valuation
   of a line is always the statement's. Added within 1.8 for the BTG extrato read by OCR
   (`statement_ocr`, its labels drawn as outlines): `fonte_texto` (`"ocr"` when the name, code,
   emissor and rate were read by OCR; the numbers still come from the PDF's text layer; null
@@ -595,6 +605,60 @@ The CDI is `macro_series('CDI', base month, position date)`, compounded by B3's 
 `1 + rate/100` truncated at 16 decimals, multiplied over the rates dated from the base date inclusive to the end
 date exclusive, the product rounded to 8. A ticker's dates are its sessions; a fund's are the last business day
 of the base and end months in the CDI's own calendar.
+
+## `tax`
+
+1.11, fee paid and tax per position (`src/portfolio/tax.py`, issue #613). Rules: one YAML per instrument type in
+`src/portfolio/rules/tax/` (`cdb`, `lci`, `lca`, `cri`, `cra`, `debenture`, `debenture_incentivized`, `fii`, `shares`,
+`etf_equity`, `etf_fixed_income`, `fund_long`, `fund_short`, `fund_equity`, `pension_regressive`,
+`pension_progressive`) plus `iof.yaml` and `person.yaml`, schema `silo.tax_rule/0.1` (section 5 of the #611 note).
+Every rate, article, URL and quote is the note's; Tesouro Direto, FIDC and FIP have no file (`not_covered`). Keys:
+`status`, `reason`, `errors`, `reason_codes`, `position_date`, `note`, `labels` (`estimate` "estimativa", `check`
+"a conferir", `info` "informativo; não é recomendação", `exempt` "isento", `date_missing`, `regime`), `rules_note`,
+`rules_files[]` (`file`, `instrument`, `version`, `valid_from`, `valid_to`, `in_force`, `sha256`, `not_verified`),
+`not_covered[]`, `lines[]`, `person`, `n_lines`, `n_with_rule`, `n_without_rule`, `n_tax_estimated`, `n_fee_estimated`.
+No portfolio total of tax.
+
+A line (every statement line, in order): `line_no`, `linha_extrato`, `tipo`, `valor_brl`, `fee`, `holding`
+(`data_aplicacao`, `days_held`, `text`, `sources`), `tax`, `pension` (PGBL/VGBL lines only), `optimization[]`, `iof`,
+`a_conferir[]` (`id`, `text`, `label` "a conferir", `decides_rate`, `rules_file`: every `engine_cannot_observe` item
+of the line's rule files, plus `data_aplicacao` when the rate depends on a date not printed), `sources`.
+
+- `fee`: the fee block's headline, never fetched again. `status` `estimada` (`per_year_brl`, `rate_pct_year`: a fixed
+  disclosed fee, a newer lâmina's, or an ETF site fee counted as a cost, with `third_party` and `third_party_label`),
+  `faixa` (`per_year_min_brl`, `per_year_max_brl`, `rate_min_pct_year`, `rate_max_pct_year`), `sem_taxa` (no usable
+  fee: `fee_status` carries the fee block's label) or `nao_se_aplica` (no fee line: shares, credit, Tesouro); `label`
+  "estimativa", `basis`, `kind`, `notes` (nothing added for a fund of funds, Art. 98; no performance-fee estimate),
+  `loading` (pension lines: `nao_informado`, the statement prints no loading fee), `sources`.
+- `tax`: `status` `aliquota_hoje` (one rule, one rate, no hidden condition), `condicional` (one rule whose rate a
+  condition the statement cannot show decides: `outcomes`), `faixa` (`bracket.text` is "alíquota entre X% e Y%
+  conforme o prazo; data de aplicação não informada, a conferir", or the ETF repricing-term bracket), `candidatos`
+  (more than one rule file applies: `candidates[]`, `bracket`), `isento`, `previdencia` or `sem_regra`;
+  `selection_reason`, `instrument`, `instrument_label`, `rules_file`, `candidates[]` (`instrument`, `label`,
+  `rules_file`, `event`, `base`, `exempt`, `table`, `unit`, `rates_pct`, `rate_today_pct`, `rate_today_text`,
+  `article`, `rule_source`), `rate_today_pct`, `rate_text`, `exempt`, `article`, `rule_source` (`rules_file`,
+  `source_id`, `act`, `article`, `url`, `quote`), `bracket`, `outcomes`, `other_events[]`, `come_cotas[]` (a mark:
+  `applies` true, false or null, `text`, `article`), `estimate`, `reason_code`, `reason`.
+- `tax.estimate`: `label` "estimativa", `tax_brl` = rate today x `gain_12m_brl`, `gain_12m_brl` = value x r / (1 + r)
+  with r the return block's 12-month `net_return_pct`, `net_return_12m_pct`, `rate_pct`, `basis`, `reason_code`,
+  `reason`, `sources`. A figure only for `aliquota_hoje` with `data_aplicacao` printed and on or before the window's
+  base date, and a positive gain; otherwise null with the code. A date is never assumed.
+- `pension`: `plan` (`PGBL` | `VGBL` | null, from the statement's table heading), `regime` (always null),
+  `regime_label`, `base` and `base_text` (PGBL on the whole redemption, VGBL on the income only), `regressive`
+  (`table` of `over_years`/`up_to_years`/`rate_pct`, `rate_today_pct` only with a printed start date, `text`),
+  `progressive` (`advance_rate_pct` 15, `text` "15% antecipado; ajuste anual pela tabela progressiva, depende da renda
+  total; não estimado"), `irrevocable`, `irrevocable_text` ("irretratável"), and their `rule_source`s.
+- `optimization[]`, each `label` "informativo; não é recomendação": `proxima_faixa` (`date`, `days`, `from_pct`,
+  `to_pct`, "em N dias a alíquota cai de X% para Y%", only with the date), `equivalencia_bruta` (exempt lines:
+  `brackets[]` of `cdb_rate_pct`, `factor` = 1 / (1 - alíquota), `equivalent_pct` for "N% do CDI" or "N% a.a." only;
+  one bracket when application date and maturity give the term, else the four) and `come_cotas`. No imperative verb.
+- `iof`: null unless the application date shows fewer than 30 days held: `days_held`, `rate_pct` (0 for the art. 32
+  §2º zero-rate operations, else null), `text` ("IOF regressivo nos primeiros 30 dias; a conferir": the note does not
+  quote the Anexo's table), `article`, `rule_source`.
+
+`person`: `flags[]` (`dividends`, `jcp`: `line_nos` of share lines, `rate_pct`, `text`, `article`, `computed` false),
+`minimum_tax` (`text` "depende da renda total anual; fora do escopo", `excluded_income[]`, `computed` false),
+`a_conferir[]`, `rules_file`. No figure.
 
 ## The report's view (mapping)
 

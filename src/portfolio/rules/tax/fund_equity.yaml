@@ -1,0 +1,49 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+schema: silo.tax_rule/0.1
+instrument: fund_equity
+label: fundo de ações (FIA)
+version: 1
+valid_from: "2024-01-01"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: l14754_art24
+    act: Lei 14.754/2023
+    article: art. 24
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm
+    accessed: "2026-10-05"
+    quote: "ficarão sujeitos à retenção na fonte do IRRF à alíquota de 15% (quinze por cento), na data da distribuição de rendimentos, da amortização ou do resgate de cotas."
+  - id: l14754_art18
+    act: Lei 14.754/2023
+    article: art. 18
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm
+    accessed: "2026-10-05"
+    quote: "Ficarão também sujeitos ... os Fundos de Investimento em Ações (FIAs)"
+  - id: l14754_art21
+    act: Lei 14.754/2023
+    article: art. 21
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm
+    accessed: "2026-10-05"
+    quote: "serão considerados como FIAs os fundos que possuírem carteira composta de, no mínimo, 67% (sessenta e sete por cento)"
+ir:
+  events:
+    - event: redemption
+      primary: true
+      withheld_at_source: true
+      definitive: true
+      base: income
+      rate: { table: fixed, rate: 0.15 }
+      source: l14754_art24
+  periodic: null
+  periodic_source: l14754_art18
+  exemptions: []
+iof:
+  applies: false
+  rule: zero_rate
+engine_cannot_observe:
+  - id: fia_67_pct
+    text: "se a carteira do fundo tem ao menos 67% em ações (art. 21); abaixo disso o cotista passa à regra do art. 17, com come-cotas (art. 21 §3º)"
+    decides_rate: true
+not_verified: []

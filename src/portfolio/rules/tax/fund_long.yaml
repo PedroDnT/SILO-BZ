@@ -1,0 +1,64 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+schema: silo.tax_rule/0.1
+instrument: fund_long
+label: fundo com come-cotas, longo prazo
+version: 1
+valid_from: "2024-01-01"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: l14754_art17
+    act: Lei 14.754/2023
+    article: art. 17, I e II
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm
+    accessed: "2026-10-05"
+    quote: "I - no último dia útil dos meses de maio e novembro; ou II - na data da distribuição de rendimentos, da amortização ou do resgate de cotas, caso ocorra antes."
+  - id: l14754_art17_p1_i
+    act: Lei 14.754/2023
+    article: art. 17 §1º, I
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14754.htm
+    accessed: "2026-10-05"
+    quote: "a) 15% (quinze por cento), na data da tributação periódica ... b) o percentual complementar necessário para totalizar a alíquota prevista nos incisos I, II, III e IV do caput do art. 1º da Lei nº 11.033"
+  - id: l11033_art1
+    act: Lei 11.033/2004
+    article: art. 1º, I a IV
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm
+    accessed: "2026-10-05"
+    quote: "I - 22,5% ... em aplicações com prazo de até 180 (cento e oitenta) dias; II - 20% ... de 181 (cento e oitenta e um) dias até 360 ... III - 17,5% ... de 361 ... até 720 ... IV - 15% (quinze por cento), em aplicações com prazo acima de 720 (setecentos e vinte) dias."
+ir:
+  events:
+    - event: redemption
+      primary: true
+      withheld_at_source: true
+      definitive: true
+      base: income
+      rate:
+        table: holding
+        unit: days
+        rows:
+          - { min: 0, max: 180, rate: 0.225 }
+          - { min: 181, max: 360, rate: 0.20 }
+          - { min: 361, max: 720, rate: 0.175 }
+          - { min: 721, max: null, rate: 0.15 }
+      source: l11033_art1
+  periodic:
+    dates: [last_business_day_may, last_business_day_nov]
+    rate: 0.15
+    complement_to: holding table of the redemption event
+    source: l14754_art17_p1_i
+    dates_source: l14754_art17
+  exemptions: []
+iof:
+  applies: true
+  rule: iof_30_day_table
+engine_cannot_observe:
+  - id: fundo_longo_ou_curto
+    text: "se o fundo é de longo prazo ou de curto prazo (carteira com prazo médio de até 365 dias): a classificação tributária do fundo não está no extrato"
+    decides_rate: true
+  - id: carencia_fundo
+    text: "carência do fundo: resgate antes da carência paga IOF de 0,5% ao dia (Decreto 6.306, art. 31)"
+    decides_rate: false
+not_verified:
+  - "contagem do prazo de cada parcela tributada pelo come-cotas: matéria de IN RFB, não lida (nota #611, seção 6)"

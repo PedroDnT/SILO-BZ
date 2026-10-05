@@ -319,6 +319,8 @@ def _aggregate(line_no: int, members: list[tuple[int | None, Position]], titular
         codigo_conferido=_all_checked([p.codigo_conferido for p in ps]),
         taxa_conferida=_all_checked([p.taxa_conferida for p in ps]) if taxa is not None else None,
         ajustes_ocr=tuple(dict.fromkeys(a for p in ps for a in p.ajustes_ocr)),
+        # engine 1.11: one application date only when every merged line prints the same one; never a guess
+        data_aplicacao=first.data_aplicacao if _all_equal([p.data_aplicacao for p in ps]) else None,
     )
 
 

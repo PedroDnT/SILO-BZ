@@ -1,0 +1,79 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+# One file for PGBL and VGBL (plan: pgbl | vgbl inside), as the note proposes.
+schema: silo.tax_rule/0.1
+instrument: pension_progressive
+label: PGBL e VGBL, regime progressivo
+version: 1
+valid_from: "2026-01-01"
+valid_to: null
+position_date_checked: "2026-09-30"
+plans: [pgbl, vgbl]
+sources:
+  - id: l11053_art3
+    act: Lei 11.053/2004
+    article: art. 3º, I e II
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11053.htm
+    accessed: "2026-10-05"
+    quote: "sujeitam-se à incidência de imposto de renda na fonte à alíquota de 15% (quinze por cento), como antecipação do devido na declaração de ajuste da pessoa física, calculado sobre: I - os valores de resgate, no caso de planos de previdência, inclusive FAPI; II - os rendimentos, no caso de seguro de vida com cláusula de cobertura por sobrevivência."
+  - id: l11482_art1_xii
+    act: Lei 11.482/2007
+    article: art. 1º, XII e parágrafo único (redação da Lei 15.191/2025)
+    url: https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2007/lei/l11482.htm
+    accessed: "2026-10-05"
+    quote: "O imposto de renda anual devido ... será calculado de acordo com tabela progressiva anual correspondente à soma das tabelas progressivas mensais"
+  - id: l15270_art3a
+    act: Lei 9.250/1995 (pela Lei 15.270/2025)
+    article: art. 3º-A
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/lei/l15270.htm
+    accessed: "2026-10-05"
+    quote: "A partir do mês de janeiro do ano-calendário de 2026, será concedida redução do imposto sobre os rendimentos tributáveis sujeitos à incidência mensal"
+  - id: l11053_art1_p6
+    act: Lei 11.053/2004
+    article: art. 1º §6º (redação da Lei 14.803/2024)
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11053.htm
+    accessed: "2026-10-05"
+    quote: "A opção de que trata o caput deste artigo poderá ser exercida até o momento da obtenção do benefício ou da requisição do primeiro resgate ... e será irretratável."
+ir:
+  events:
+    - event: redemption
+      primary: true
+      withheld_at_source: true
+      definitive: false
+      base_by_plan:
+        pgbl: gross_redemption
+        vgbl: income
+      base_source: l11053_art3
+      rate:
+        table: progressive
+        advance_rate: 0.15
+        advance_source: l11053_art3
+        annual_table_source: l11482_art1_xii
+        reduction_source: l15270_art3a
+        text: "15% antecipado; ajuste anual pela tabela progressiva, depende da renda total; não estimado"
+      source: l11053_art3
+  periodic: null
+  exemptions: []
+  option:
+    irrevocable: true
+    source: l11053_art1_p6
+iof:
+  applies: false
+  rule: vgbl_contributions
+engine_cannot_observe:
+  - id: regime_tributario
+    text: "regime tributário do plano (regressivo ou progressivo): opção do participante por contrato, não informada no extrato"
+    decides_rate: true
+  - id: renda_total
+    text: "renda tributável total da pessoa no ano: decide o ajuste anual pela tabela progressiva"
+    decides_rate: true
+  - id: carregamento
+    text: "taxa de carregamento do plano: não impressa no extrato; não incluída"
+    decides_rate: false
+  - id: aportes_vgbl_ano
+    plans: [vgbl]
+    text: "aportes em VGBL no ano, em todas as seguradoras: acima de R$ 600.000 pagam IOF de 5% sobre o excedente (Decreto 6.306, art. 22 §1º V)"
+    decides_rate: false
+not_verified:
+  - "a tabela progressiva anual de 2026 (soma das tabelas mensais) não foi calculada (nota #611, seção 6)"

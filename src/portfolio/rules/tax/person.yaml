@@ -1,0 +1,77 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Not an instrument: the 2026 rules at the level of the person. The engine flags
+# them with their rule and computes no figure (owner's resolution of #613, Q26).
+schema: silo.tax_rule/0.1
+instrument: person
+label: regras da pessoa física (2026)
+version: 1
+valid_from: "2026-01-01"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: l9250_art6a
+    act: Lei 9.250/1995 (pela Lei 15.270/2025)
+    article: art. 6º-A
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/lei/l15270.htm
+    accessed: "2026-10-05"
+    quote: "em montante superior a R$ 50.000,00 (cinquenta mil reais) em um mesmo mês fica sujeito à retenção na fonte do Imposto sobre a Renda das Pessoas Físicas à alíquota de 10% (dez por cento) sobre o total do valor pago"
+  - id: l9250_art6a_exc
+    act: Lei 9.250/1995 (pela Lei 15.270/2025)
+    article: art. 6º-A, exceções
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/lei/l15270.htm
+    accessed: "2026-10-05"
+    quote: "I - relativos a resultados apurados até o ano-calendário de 2025; II - cuja distribuição tenha sido aprovada até 31 de dezembro de 2025"
+  - id: l9249_art9_p2
+    act: Lei 9.249/1995 (pela LC 224/2025, art. 8º)
+    article: art. 9º §2º
+    url: https://www.planalto.gov.br/ccivil_03/leis/lcp/Lcp224.htm
+    accessed: "2026-10-05"
+    quote: "Os juros ficarão sujeitos à incidência do imposto sobre a renda na fonte à alíquota de 17,5% (dezessete inteiros e cinco décimos por cento) na data do pagamento ou do crédito ao beneficiário."
+  - id: l9250_art16a
+    act: Lei 9.250/1995 (pela Lei 15.270/2025)
+    article: art. 16-A caput e §2º
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/lei/l15270.htm
+    accessed: "2026-10-05"
+    quote: "A partir do exercício de 2027, ano-calendário de 2026, a pessoa física cuja soma de todos os rendimentos recebidos no ano-calendário seja superior a R$ 600.000,00 (seiscentos mil reais) fica sujeita à tributação mínima"
+  - id: l9250_art16a_p1
+    act: Lei 9.250/1995 (pela Lei 15.270/2025)
+    article: art. 16-A §1º, V, VI e XI
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/lei/l15270.htm
+    accessed: "2026-10-05"
+    quote: "os rendimentos de títulos e valores mobiliários isentos ou sujeitos à alíquota zero ... exceto os rendimentos de ações e demais participações societárias"
+rules:
+  dividends:
+    rate: 0.10
+    threshold_brl_month_per_company: 50000
+    text: "dividendos: acima de R$ 50.000 no mês, de uma mesma empresa para a mesma pessoa, retenção de 10% sobre o total pago; exceto lucros apurados até 2025 com distribuição aprovada até 31/12/2025"
+    source: l9250_art6a
+    exception_source: l9250_art6a_exc
+    applies_to_tipos: ["ação"]
+  jcp:
+    rate: 0.175
+    text: "juros sobre capital próprio (JCP): retenção na fonte de 17,5% na data do pagamento ou crédito"
+    source: l9249_art9_p2
+    applies_to_tipos: ["ação"]
+  minimum_tax:
+    text: "depende da renda total anual; fora do escopo"
+    threshold_brl_year: 600000
+    source: l9250_art16a
+    excluded_income_source: l9250_art16a_p1
+    excluded_income:
+      - LCI
+      - CRI
+      - LCA
+      - CRA
+      - ativos da Lei 12.431, art. 2º e 3º
+      - rendimentos distribuídos por FII e Fiagro (com 100 cotistas)
+      - títulos e valores mobiliários isentos ou com alíquota zero, exceto rendimentos de ações e demais participações societárias
+engine_cannot_observe:
+  - id: dividendos_mesma_empresa_mes
+    text: "dividendos recebidos no mês da mesma empresa, inclusive de outras contas"
+    decides_rate: true
+  - id: renda_total_anual
+    text: "renda total anual da pessoa (tributação mínima acima de R$ 600.000)"
+    decides_rate: true
+not_verified:
+  - "mecânica da tributação mínima (deduções do art. 16-A §3º e redutor do art. 16-B) lida mas não modelada (nota #611, seção 6)"

@@ -1,0 +1,49 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+schema: silo.tax_rule/0.1
+instrument: debenture
+label: debênture comum
+version: 1
+valid_from: "2005-01-01"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: l11033_art1
+    act: Lei 11.033/2004
+    article: art. 1º, I a IV
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11033.htm
+    accessed: "2026-10-05"
+    quote: "I - 22,5% ... em aplicações com prazo de até 180 (cento e oitenta) dias; II - 20% ... de 181 (cento e oitenta e um) dias até 360 ... III - 17,5% ... de 361 ... até 720 ... IV - 15% (quinze por cento), em aplicações com prazo acima de 720 (setecentos e vinte) dias."
+  - id: l14801_art3_p2
+    act: Lei 14.801/2024
+    article: art. 3º §2º
+    url: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2024/lei/l14801.htm
+    accessed: "2026-10-05"
+    quote: "A alíquota zero estabelecida no art. 1º da Lei nº 12.431, de 24 de junho de 2011, não se aplica aos rendimentos decorrentes das debêntures de que trata o art. 2º desta Lei."
+ir:
+  events:
+    - event: redemption
+      primary: true
+      withheld_at_source: true
+      definitive: true
+      base: income
+      rate:
+        table: holding
+        unit: days
+        rows:
+          - { min: 0, max: 180, rate: 0.225 }
+          - { min: 181, max: 360, rate: 0.20 }
+          - { min: 361, max: 720, rate: 0.175 }
+          - { min: 721, max: null, rate: 0.15 }
+      source: l11033_art1
+  periodic: null
+  exemptions: []
+iof:
+  applies: false
+  rule: zero_rate
+engine_cannot_observe:
+  - id: debenture_lei_12431
+    text: 'se a debênture é incentivada (Lei 12.431, art. 2º) ou comum; uma debênture de infraestrutura da Lei 14.801 é comum para a pessoa física, e o nome "incentivada" no extrato não decide: a escritura ou o prospecto dizem qual'
+    decides_rate: true
+not_verified: []

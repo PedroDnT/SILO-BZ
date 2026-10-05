@@ -1,0 +1,60 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Not an instrument: the IOF rules the instrument files name in `iof.rule`.
+# The note quotes only the Anexo's first and last rows ("01" / "96" and "30" / "00"),
+# not the whole table, so no per-day rate is written here: the engine prints the
+# fixed text below and the article.
+schema: silo.tax_rule/0.1
+instrument: iof
+label: IOF
+version: 1
+valid_from: "2026-01-01"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: d6306_art32
+    act: Decreto 6.306/2007
+    article: art. 32 e Anexo
+    url: https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2007/decreto/d6306.htm
+    accessed: "2026-10-05"
+    quote: "O IOF será cobrado à alíquota de um por cento ao dia sobre o valor do resgate, cessão ou repactuação, limitado ao rendimento da operação, em função do prazo, conforme tabela constante do Anexo"
+  - id: d6306_art32_p2
+    act: Decreto 6.306/2007
+    article: art. 32 §2º, III a VII
+    url: https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2007/decreto/d6306.htm
+    accessed: "2026-10-05"
+    quote: "III - do mercado de renda variável, inclusive as realizadas em bolsas de valores ... IV - de resgate de cotas dos fundos e clubes de investimento em ações ... V - com ... Letra de Crédito do Agronegócio - LCA, e com Certificado de Recebíveis do Agronegócio - CRA ... VI - com debêntures ..., com Certificados de Recebíveis Imobiliários ... e com Letras Financeiras ... VII - de negociação de cotas de Fundos de Índice de Renda Fixa em bolsas de valores"
+  - id: d6306_art31
+    act: Decreto 6.306/2007
+    article: art. 31
+    url: https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2007/decreto/d6306.htm
+    accessed: "2026-10-05"
+    quote: "O IOF será cobrado à alíquota de zero vírgula cinco por cento ao dia sobre o valor de resgate de quotas de fundos de investimento ... antes de completado o prazo de carência para crédito dos rendimentos."
+  - id: d6306_art22_p1_v
+    act: Decreto 6.306/2007
+    article: art. 22 §1º, V (redação do Decreto 12.499/2025; ADC 96)
+    url: https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2007/decreto/d6306.htm
+    accessed: "2026-10-05"
+    quote: "nos aportes destinados ao custeio de plano de seguro de vida com cobertura por sobrevivência pagos por pessoa física a partir de 1º de janeiro de 2026, desde que a somatória dos valores aportados em todos os planos de titularidade do segurado no ano, ainda que de seguradoras distintas, seja superior a R$ 600.000,00 (seiscentos mil reais): 5% (cinco por cento) sobre o valor que exceder a R$ 600.000,00 (seiscentos mil reais) ao ano"
+rules:
+  iof_30_day_table:
+    window_days: 30
+    text: "IOF regressivo nos primeiros 30 dias; a conferir"
+    table_quoted_in_note: false
+    source: d6306_art32
+  zero_rate:
+    # the note's section 2 row: "Zero rate: ... (§2º III–VII)"; the quote lists the operations, not a number
+    zero_rate: true
+    text: "IOF à alíquota zero"
+    source: d6306_art32_p2
+  grace_period:
+    text: "resgate antes da carência do fundo: IOF de 0,5% ao dia, limitado ao rendimento"
+    source: d6306_art31
+  vgbl_contributions:
+    rate: 0.05
+    threshold_brl_year: 600000
+    text: "IOF de 5% sobre os aportes em VGBL do ano acima de R$ 600.000, somadas todas as seguradoras"
+    source: d6306_art22_p1_v
+engine_cannot_observe: []
+not_verified:
+  - "ADC 96: liminar do relator em vigor, aguardando o Plenário; uma votação posterior pode mudar o IOF sobre aportes do VGBL (nota #611, seção 6)"

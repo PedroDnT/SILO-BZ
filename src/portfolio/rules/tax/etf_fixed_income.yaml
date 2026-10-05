@@ -1,0 +1,61 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+schema: silo.tax_rule/0.1
+instrument: etf_fixed_income
+label: ETF de renda fixa
+version: 1
+valid_from: "2014"
+valid_to: null
+position_date_checked: "2026-09-30"
+sources:
+  - id: l13043_art2
+    act: Lei 13.043/2014
+    article: art. 2º, I a III, §1º e §4º
+    url: https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2014/lei/l13043.htm
+    accessed: "2026-10-05"
+    quote: "I - 25% ... prazo médio de repactuação igual ou inferior a 180 (cento e oitenta) dias; II - 20% ... superior a cento e oitenta dias e igual ou inferior a 720 ... III - 15% ... superior a 720 (setecentos e vinte) dias."
+  - id: l13043_art2_p1
+    act: Lei 13.043/2014
+    article: art. 2º §1º
+    url: https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2014/lei/l13043.htm
+    accessed: "2026-10-05"
+    quote: "à alíquota de 30% (trinta por cento) durante o prazo do descumprimento"
+  - id: l13043_art2_p4
+    act: Lei 13.043/2014
+    article: art. 2º §4º
+    url: https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2014/lei/l13043.htm
+    accessed: "2026-10-05"
+    quote: "incidirá na fonte e exclusivamente por ocasião do resgate ou da alienação das cotas ou da distribuição de rendimentos"
+ir:
+  events:
+    - event: sale_redemption_or_distribution
+      primary: true
+      withheld_at_source: true
+      definitive: true
+      base: income
+      rate:
+        table: fund_repricing_term
+        unit: days
+        rows:
+          - { min: 0, max: 180, rate: 0.25 }
+          - { min: 181, max: 720, rate: 0.20 }
+          - { min: 721, max: null, rate: 0.15 }
+        breach_rate: 0.30
+        breach_source: l13043_art2_p1
+      source: l13043_art2
+  periodic: null
+  periodic_source: l13043_art2_p4
+  exemptions: []
+iof:
+  applies: false
+  rule: zero_rate
+engine_cannot_observe:
+  - id: prazo_medio_repactuacao
+    text: "prazo médio de repactuação da carteira do ETF: decide a alíquota de 25%, 20% ou 15% (Lei 13.043, art. 2º)"
+    decides_rate: true
+  - id: regra_75_pct
+    text: "se o ETF mantém ao menos 75% em ativos do índice: abaixo disso, 30% durante o descumprimento (art. 2º §1º)"
+    decides_rate: true
+not_verified:
+  - "valid_from: a nota dá só o ano (2014, art. 113 II)"

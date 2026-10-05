@@ -1,0 +1,84 @@
+# Tax rule file (#613). Every rate, article, URL and quote is copied from
+# docs/reference/research/tax-rules-by-instrument.md (#611), never from memory.
+# Schema: section 5 of that note (silo.tax_rule/0.1); read by src/portfolio/tax.py.
+# One file for PGBL and VGBL (plan: pgbl | vgbl inside), as the note proposes.
+schema: silo.tax_rule/0.1
+instrument: pension_regressive
+label: PGBL e VGBL, regime regressivo
+version: 1
+valid_from: "2005-01-01"
+valid_to: null
+position_date_checked: "2026-09-30"
+plans: [pgbl, vgbl]
+sources:
+  - id: l11053_art1
+    act: Lei 11.053/2004
+    article: art. 1º, I a VI
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11053.htm
+    accessed: "2026-10-05"
+    quote: "I - 35% ... prazo de acumulação inferior ou igual a 2 (dois) anos; II - 30% ... superior a 2 ... e inferior ou igual a 4 ... III - 25% ... IV - 20% ... V - 15% ... VI - 10% (dez por cento), para recursos com prazo de acumulação superior a 10 (dez) anos."
+  - id: l11053_art1_p2
+    act: Lei 11.053/2004
+    article: art. 1º §2º
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11053.htm
+    accessed: "2026-10-05"
+    quote: "será definitivo"
+  - id: l11053_art1_p6
+    act: Lei 11.053/2004
+    article: art. 1º §6º (redação da Lei 14.803/2024)
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11053.htm
+    accessed: "2026-10-05"
+    quote: "A opção de que trata o caput deste artigo poderá ser exercida até o momento da obtenção do benefício ou da requisição do primeiro resgate ... e será irretratável."
+  - id: l11053_art3
+    act: Lei 11.053/2004
+    article: art. 3º, I e II
+    url: https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11053.htm
+    accessed: "2026-10-05"
+    quote: "sujeitam-se à incidência de imposto de renda na fonte à alíquota de 15% (quinze por cento), como antecipação do devido na declaração de ajuste da pessoa física, calculado sobre: I - os valores de resgate, no caso de planos de previdência, inclusive FAPI; II - os rendimentos, no caso de seguro de vida com cláusula de cobertura por sobrevivência."
+ir:
+  events:
+    - event: redemption
+      primary: true
+      withheld_at_source: true
+      definitive: true
+      definitive_source: l11053_art1_p2
+      base_by_plan:
+        pgbl: gross_redemption
+        vgbl: income
+      base_source: l11053_art3
+      rate:
+        table: holding
+        unit: years
+        rows:
+          - { min: 0, max: 2, rate: 0.35 }
+          - { min: 2, max: 4, rate: 0.30 }
+          - { min: 4, max: 6, rate: 0.25 }
+          - { min: 6, max: 8, rate: 0.20 }
+          - { min: 8, max: 10, rate: 0.15 }
+          - { min: 10, max: null, rate: 0.10 }
+      source: l11053_art1
+  periodic: null
+  exemptions: []
+  option:
+    irrevocable: true
+    source: l11053_art1_p6
+iof:
+  applies: false
+  rule: vgbl_contributions
+engine_cannot_observe:
+  - id: regime_tributario
+    text: "regime tributário do plano (regressivo ou progressivo): opção do participante por contrato, não informada no extrato"
+    decides_rate: true
+  - id: data_de_cada_aporte
+    text: "data de cada aporte: no regime regressivo cada aporte conta o próprio prazo de acumulação"
+    decides_rate: true
+  - id: carregamento
+    text: "taxa de carregamento do plano: não impressa no extrato; não incluída"
+    decides_rate: false
+  - id: aportes_vgbl_ano
+    plans: [vgbl]
+    text: "aportes em VGBL no ano, em todas as seguradoras: acima de R$ 600.000 pagam IOF de 5% sobre o excedente (Decreto 6.306, art. 22 §1º V)"
+    decides_rate: false
+not_verified:
+  - "data de vigência da regra de opção (Lei 14.803/2024): a nota não a dá"
+  - "se o PGBL está fora do IOF sobre aportes do VGBL não foi verificado (nota #611, seção 6)"
