@@ -244,6 +244,13 @@ if [[ -z "$OWNER_URL" ]]; then
   OWNER_URL="$SUPABASE_POOLER_URL"
   write_env SUPABASE_POOLER_URL "$OWNER_URL"
 fi
+# A value copied into .env often carries quotes or a stray space; psql would read
+# it as a database name and look for a local server.
+OWNER_URL="${OWNER_URL#"${OWNER_URL%%[![:space:]]*}"}"
+OWNER_URL="${OWNER_URL%"${OWNER_URL##*[![:space:]]}"}"
+case "$OWNER_URL" in
+  \'*\'|\"*\") OWNER_URL="${OWNER_URL:1:${#OWNER_URL}-2}" ;;
+esac
 if ! try_login "$OWNER_URL"; then
   warn "could not connect with SUPABASE_POOLER_URL from $ENV_FILE: fix it there and re-run"
   exit 1

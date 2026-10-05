@@ -268,13 +268,25 @@ ask_secret NEW_DB_PASSWORD "Paste the new database password (hidden):"
 # The password goes in through the environment, never through argv.
 with_password() {  # with_password URL
   URL="$1" PW="$NEW_DB_PASSWORD" python3 - <<'PY'
-import os, urllib.parse as u
-p = u.urlsplit(os.environ["URL"])
-if not p.hostname or not p.username:
+import os, re, urllib.parse as u
+# The old URL is only read for its user, scheme and host: the old password in it
+# is being replaced, so it may hold characters that break a strict URL parse
+# (a "/", "?" or "#" that was never percent-encoded) and is never parsed.
+url = os.environ["URL"].strip()
+if len(url) >= 2 and url[0] == url[-1] and url[0] in "'\"":
+    url = url[1:-1].strip()
+m = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*)://(.*)$", url, re.S)
+if not m or m.group(1) not in ("postgres", "postgresql"):
+    raise SystemExit("the URL in .env does not start with postgresql:// (quotes and spaces are fine)")
+if "@" not in m.group(2):
+    raise SystemExit("the URL in .env has no user@host part")
+userinfo, hostpart = m.group(2).rsplit("@", 1)  # the host part has no "@"
+user = userinfo.split(":", 1)[0]
+tail = u.urlsplit("//" + hostpart)
+if not user or not tail.hostname:
     raise SystemExit("the URL in .env has no user or host")
-host = p.hostname + (f":{p.port}" if p.port else "")
-print(u.urlunsplit((p.scheme, f"{p.username}:{u.quote(os.environ['PW'], safe='')}@{host}",
-                    p.path, p.query, p.fragment)))
+query = f"?{tail.query}" if tail.query else ""
+print(f"{m.group(1)}://{user}:{u.quote(os.environ['PW'], safe='')}@{tail.netloc}{tail.path}{query}")
 PY
 }
 NEW_POOLER=$(with_password "$OLD_POOLER") || { warn "could not rebuild the pooler URL"; exit 1; }
