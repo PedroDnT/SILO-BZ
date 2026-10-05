@@ -79,7 +79,7 @@ Leave `p_ids` empty and name a family with `p_entity_type`: the panel selects th
 | `sacado_top1` | cnpj | fidc | month | `cvm` | Exposure to the single largest debtor (tab VIII rank 1, as filed). Anonymized in the source. |
 | `sacado_top25` | cnpj | fidc | month | `cvm` | Sum of the ranks the fund filed (1..n, n ≤ 25); nothing imputed. Can exceed `receivables` for ~2% of funds, served as filed, never capped. |
 
-A metric asked outside its asset classes (`catalog().applicability`) gives **no rows** for those ids, not nulls or zeros. FIDC `delinquency` is null through 2024-12 and filed from 2025-01.
+A metric asked outside its asset classes (`catalog().applicability`) gives **no rows** for those ids, not nulls or zeros. FIDC `delinquency` starts in 2013-01 and is on every row from 2020-11; before that a fund with no tab VI row is null, not zero (`catalog().regime_breaks`).
 
 <Warning>
   **`freq=day` is quotes only.** No CVM fundamental is daily, so `nav` with `p_freq: "day"` returns the quote rows and nothing else. Mix asset classes at `freq=month`, where the B3 value is the **last real session in the month**. Aligning a monthly NAV to a daily calendar would require filling, and this API does not fill.
