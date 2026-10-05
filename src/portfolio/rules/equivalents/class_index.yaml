@@ -24,47 +24,47 @@
 pairs:
   - class: "AÇÕES - ATIVO - SMALL CAPS"
     index: "SMLL (Small Cap)"
-    status: proposta
+    status: aprovada
     rationale: "ANBIMA Small Caps invests in companies outside the largest by market value; SMLL is B3's small-cap index."
   - class: "AÇÕES - ATIVO - DIVIDENDOS"
     index: "IDIV (Dividendos)"
-    status: proposta
+    status: aprovada
     rationale: "ANBIMA Dividendos invests in dividend-paying stocks; IDIV is B3's dividend index."
   - class: "AÇÕES - ATIVO - SUSTENTABILIDADE / GOVERNANÇA"
     index: "ISE (Sustentabilidade)"
-    status: proposta
+    status: aprovada
     rationale: "Sustainability objective; ISE is B3's corporate sustainability index (the class also holds governance funds; the IGCT ETF is inactive)."
   - class: "RENDA FIXA SIMPLES"
     index: "Tesouro Selic (LFT)"
-    status: proposta
+    status: aprovada
     rationale: "RF Simples holds at least 95% in federal bonds or equivalent low-risk paper and follows the Selic/CDI; the index is LFT."
   - class: "RENDA FIXA SIMPLES"
     index: "Tesouro Selic B3"
-    status: proposta
+    status: aprovada
     rationale: "Same objective as Tesouro Selic (LFT): B3's LFT index, another spelling in the registry."
   - class: "RENDA FIXA SIMPLES"
     index: "TEVA Tesouro Selic"
-    status: proposta
+    status: aprovada
     rationale: "Same objective as Tesouro Selic (LFT): TEVA's LFT index."
   - class: "RENDA FIXA SIMPLES"
     index: "TEVA LFT Curto Prazo"
-    status: proposta
+    status: aprovada
     rationale: "Same objective as Tesouro Selic (LFT): TEVA's short-dated LFT index."
   - class: "RENDA FIXA BAIXA DURAÇÃO - SOBERANO"
     index: "Tesouro Selic (LFT)"
-    status: proposta
+    status: aprovada
     rationale: "Low duration, sovereign only: floating-rate federal bonds, which is what the LFT index holds."
   - class: "RENDA FIXA BAIXA DURAÇÃO - SOBERANO"
     index: "Tesouro Selic B3"
-    status: proposta
+    status: aprovada
     rationale: "Same objective as Tesouro Selic (LFT): B3's LFT index, another spelling in the registry."
   - class: "RENDA FIXA BAIXA DURAÇÃO - SOBERANO"
     index: "TEVA Tesouro Selic"
-    status: proposta
+    status: aprovada
     rationale: "Same objective as Tesouro Selic (LFT): TEVA's LFT index."
   - class: "RENDA FIXA BAIXA DURAÇÃO - SOBERANO"
     index: "TEVA LFT Curto Prazo"
-    status: proposta
+    status: aprovada
     rationale: "Same objective as Tesouro Selic (LFT): TEVA's short-dated LFT index."
 
 # Classes deliberately left without an index, with the reason. Not read by SQL.

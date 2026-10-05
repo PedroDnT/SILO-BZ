@@ -2263,17 +2263,17 @@ COMMENT ON FUNCTION api.portfolio_fund_terms(TEXT[]) IS
 CREATE OR REPLACE VIEW public.portfolio_class_index AS
 SELECT v.classe_anbima, v.underlying_index, v.status
 FROM (VALUES
-    ('AÇÕES - ATIVO - SMALL CAPS', 'SMLL (Small Cap)', 'proposta'),
-    ('AÇÕES - ATIVO - DIVIDENDOS', 'IDIV (Dividendos)', 'proposta'),
-    ('AÇÕES - ATIVO - SUSTENTABILIDADE / GOVERNANÇA', 'ISE (Sustentabilidade)', 'proposta'),
-    ('RENDA FIXA SIMPLES', 'Tesouro Selic (LFT)', 'proposta'),
-    ('RENDA FIXA SIMPLES', 'Tesouro Selic B3', 'proposta'),
-    ('RENDA FIXA SIMPLES', 'TEVA Tesouro Selic', 'proposta'),
-    ('RENDA FIXA SIMPLES', 'TEVA LFT Curto Prazo', 'proposta'),
-    ('RENDA FIXA BAIXA DURAÇÃO - SOBERANO', 'Tesouro Selic (LFT)', 'proposta'),
-    ('RENDA FIXA BAIXA DURAÇÃO - SOBERANO', 'Tesouro Selic B3', 'proposta'),
-    ('RENDA FIXA BAIXA DURAÇÃO - SOBERANO', 'TEVA Tesouro Selic', 'proposta'),
-    ('RENDA FIXA BAIXA DURAÇÃO - SOBERANO', 'TEVA LFT Curto Prazo', 'proposta')
+    ('AÇÕES - ATIVO - SMALL CAPS', 'SMLL (Small Cap)', 'aprovada'),
+    ('AÇÕES - ATIVO - DIVIDENDOS', 'IDIV (Dividendos)', 'aprovada'),
+    ('AÇÕES - ATIVO - SUSTENTABILIDADE / GOVERNANÇA', 'ISE (Sustentabilidade)', 'aprovada'),
+    ('RENDA FIXA SIMPLES', 'Tesouro Selic (LFT)', 'aprovada'),
+    ('RENDA FIXA SIMPLES', 'Tesouro Selic B3', 'aprovada'),
+    ('RENDA FIXA SIMPLES', 'TEVA Tesouro Selic', 'aprovada'),
+    ('RENDA FIXA SIMPLES', 'TEVA LFT Curto Prazo', 'aprovada'),
+    ('RENDA FIXA BAIXA DURAÇÃO - SOBERANO', 'Tesouro Selic (LFT)', 'aprovada'),
+    ('RENDA FIXA BAIXA DURAÇÃO - SOBERANO', 'Tesouro Selic B3', 'aprovada'),
+    ('RENDA FIXA BAIXA DURAÇÃO - SOBERANO', 'TEVA Tesouro Selic', 'aprovada'),
+    ('RENDA FIXA BAIXA DURAÇÃO - SOBERANO', 'TEVA LFT Curto Prazo', 'aprovada')
 ) AS v(classe_anbima, underlying_index, status);
 REVOKE ALL ON public.portfolio_class_index FROM PUBLIC, anon, authenticated;
 COMMENT ON VIEW public.portfolio_class_index IS
@@ -2430,7 +2430,7 @@ BEGIN
                     WHEN t.fee IS NULL OR t.fee <= 0 OR t.fee > 5 THEN 'taxa_nao_utilizavel'
                     WHEN t.dt > v_as_of THEN 'taxa_data_futura'
                     WHEN t.usable IS NOT TRUE THEN 'taxa_defasada_comparacao'
-                    WHEN COALESCE(g.n, 0) < 30 THEN 'pares_insuficientes'
+                    WHEN COALESCE(g.n_fund, 0) < 30 THEN 'pares_insuficientes'
                     ELSE NULL END AS why
         FROM targets t LEFT JOIN stats g ON g.cls = t.cls AND g.fc = t.fc AND g.scope = t.scope
     ), page AS MATERIALIZED (
@@ -2470,7 +2470,7 @@ REVOKE ALL ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) TO silo_api;
 COMMENT ON FUNCTION api.portfolio_fee_peers(TEXT[], DATE) IS
-    'Administration fee comparison (catalog v63; ETF peers v66), one row per distinct input CNPJ. Latest CVM Extrato only, not a historical backtest: p_as_of (default today) dates the comparison, excludes future documents and fees older than 36 months. Fund peers have a FI quota in the three reference months ending in p_as_of month, the SAME filed ANBIMA class, FUNDO_COTAS S/N and TP_FUNDO_CLASSE FI/CLASSES - FIF. ETF peers (v66, #609): CVM files no ANBIMA class for an ETF, so an active ETF (cvm_etf_registry.is_active) joins a class only when its underlying_index is mapped to that class in public.portfolio_class_index (the owner-reviewed src/portfolio/rules/equivalents/class_index.yaml, never inferred from a name); it is a peer of every FUNDO_COTAS and scope cell of the class, once per CNPJ. Its fee is the third-party etfsbrasil.com.br value (etf_market_snapshot.taxa_adm_pct, the newest snapshot with a fee dated no later than p_as_of, as portfolio_fees serves etf_site_taxa_adm), never a CVM-disclosed fee; the same 0 < fee <= 5 and 36-month rules apply. n_peers = n_fund_peers + n_etf_peers; at least 30 usable fees in that combined group, the target included when eligible; no broader fallback. n_excluded counts unusable fund fees, n_etf_excluded mapped ETFs with no usable fee; peer_fee_oldest/newest date the usable fund documents, etf_peer_fee_oldest/newest the ETF snapshots; etf_peer_tickers and etf_peer_fee_source name the ETFs and say their fee is third-party. p25/median/p75 are annual administration fees over the combined group, percentile is midrank (half weight for ties), difference_pp is target minus median. No performance fee, expense ratio, alternative or saving estimate. not_compared carries a reason_code and NULL comparison statistics. Source values are never rescaled. 1 to 200 CNPJs per call, punctuation stripped and padded to 14 digits; invalid input or more than 200 raises 22023; one page, never trimmed.';
+    'Administration fee comparison (catalog v63; ETF peers v66), one row per distinct input CNPJ. Latest CVM Extrato only, not a historical backtest: p_as_of (default today) dates the comparison, excludes future documents and fees older than 36 months. Fund peers have a FI quota in the three reference months ending in p_as_of month, the SAME filed ANBIMA class, FUNDO_COTAS S/N and TP_FUNDO_CLASSE FI/CLASSES - FIF. ETF peers (v66, #609): CVM files no ANBIMA class for an ETF, so an active ETF (cvm_etf_registry.is_active) joins a class only when its underlying_index is mapped to that class in public.portfolio_class_index (the owner-reviewed src/portfolio/rules/equivalents/class_index.yaml, never inferred from a name); it is a peer of every FUNDO_COTAS and scope cell of the class, once per CNPJ. Its fee is the third-party etfsbrasil.com.br value (etf_market_snapshot.taxa_adm_pct, the newest snapshot with a fee dated no later than p_as_of, as portfolio_fees serves etf_site_taxa_adm), never a CVM-disclosed fee; the same 0 < fee <= 5 and 36-month rules apply. n_peers = n_fund_peers + n_etf_peers; at least 30 usable FUND fees (the target included when eligible), and ETFs never make a group qualify (owner, #609 Q18): they join a group that already has 30 funds; no broader fallback. n_excluded counts unusable fund fees, n_etf_excluded mapped ETFs with no usable fee; peer_fee_oldest/newest date the usable fund documents, etf_peer_fee_oldest/newest the ETF snapshots; etf_peer_tickers and etf_peer_fee_source name the ETFs and say their fee is third-party. p25/median/p75 are annual administration fees over the combined group, percentile is midrank (half weight for ties), difference_pp is target minus median. No performance fee, expense ratio, alternative or saving estimate. not_compared carries a reason_code and NULL comparison statistics. Source values are never rescaled. 1 to 200 CNPJs per call, punctuation stripped and padded to 14 digits; invalid input or more than 200 raises 22023; one page, never trimmed.';
 
 -- Class return distribution (#609, catalog v66). What an equivalent ETF's return
 -- is set against: for one ANBIMA class as filed in the Extrato and one

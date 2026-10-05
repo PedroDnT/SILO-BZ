@@ -1271,15 +1271,12 @@ INSERT INTO etf_market_snapshot (ticker, snapshot_date, source, cnpj, taxa_adm_p
 DO $$
 DECLARE r RECORD;
 BEGIN
-    -- The FIF cohort had 29 fund peers (pares_insuficientes above); one ETF makes 30.
+    -- The FIF cohort has 29 fund peers and one ETF: ETFs never make a group qualify (owner, #609 Q18),
+    -- so the cell stays pares_insuficientes with the ETF still counted apart.
     SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000061'], DATE '2026-10-05');
-    IF r.status <> 'compared' OR r.n_peers <> 30 OR r.n_fund_peers <> 29 OR r.n_etf_peers <> 1
-       OR r.n_etf_excluded <> 2 OR r.etf_peer_tickers <> ARRAY['PEQA11'] OR r.n_excluded <> 0
-       OR r.p25_pct_year <> 1 OR r.median_pct_year <> 1 OR r.percentile_pct <> 51.6667
-       OR r.etf_peer_fee_oldest <> DATE '2026-10-01' OR r.etf_peer_fee_newest <> DATE '2026-10-01'
-       OR r.etf_peer_fee_source NOT LIKE 'third-party site (etfsbrasil%not a CVM filing'
-       OR r.peer_fee_newest <> DATE '2026-09-30' THEN
-        RAISE EXCEPTION 'ETF peers: %', row_to_json(r);
+    IF r.status = 'compared' OR r.reason_code <> 'pares_insuficientes' OR r.n_fund_peers <> 29
+       OR r.n_etf_peers <> 1 OR r.median_pct_year IS NOT NULL OR r.percentile_pct IS NOT NULL THEN
+        RAISE EXCEPTION 'ETFs made a 29-fund cell qualify: %', row_to_json(r);
     END IF;
     -- The same ETF joins every FUNDO_COTAS and scope cell of the class.
     SELECT * INTO r FROM api.portfolio_fee_peers(ARRAY['98000000000001'], DATE '2026-10-05');
