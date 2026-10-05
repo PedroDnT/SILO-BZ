@@ -77,7 +77,7 @@ jobs:
           elif grep -qi "already exists" <<<"$out"; then
             echo "R2 bucket silo-diagnosis-traces already exists"
           else
-            echo "$out" | tail -n 5
+            echo "$out" | grep -v "^\s*$" | head -n 40
             echo "::error::could not create the R2 bucket silo-diagnosis-traces: R2 must be enabled on the account and CLOUDFLARE_API_TOKEN needs Workers R2 Storage: Edit"
             exit 1
           fi
