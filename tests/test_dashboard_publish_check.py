@@ -60,6 +60,8 @@ elif "/v6/deployments" in url and "state=BUILDING" in url:
     n.write_text(str(seen + 1))
     body = '{"deployments":[{"uid":"dpl_BUILDING"}]}' if seen < int(os.environ.get("INFLIGHT_POLLS", "0")) \
         else '{"deployments":[]}'
+elif "/v6/deployments" in url and "state=" not in url:
+    body = os.environ.get("LATEST_JSON", '{"deployments":[{"uid":"dpl_NEW","state":"READY"}]}')
 elif "/v6/deployments" in url:
     body = os.environ.get("DEPLOYMENTS_JSON", '{"deployments":[{"uid":"dpl_NEW"}]}')
 elif url.startswith(f"https://{os.environ['PUBLIC_HOST']}/"):
@@ -143,6 +145,23 @@ def test_a_201_that_does_not_move_the_site_still_fails(run):
     assert p.returncode == 1
     assert "::error::" in p.stdout
     assert "still does not match" in p.stdout
+
+
+def test_a_failed_newest_build_is_not_success_even_when_the_site_matches(run):
+    """2026-10-04: the production build died on a zero-row source. Both
+    hostnames still served the previous build, so they matched and the check
+    went green while the site sat a day behind."""
+    p, _ = run(token="tok", public="SAME", branch="SAME",
+               LATEST_JSON='{"deployments":[{"uid":"dpl_FAILED","state":"ERROR"}]}')
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert "dpl_FAILED ended in ERROR" in p.stdout
+    assert "previous build dpl_NEW" in p.stdout
+
+
+def test_a_newest_build_still_running_is_not_a_failure(run):
+    p, _ = run(token="tok", public="SAME", branch="SAME",
+               LATEST_JSON='{"deployments":[{"uid":"dpl_LATER","state":"BUILDING"}]}')
+    assert p.returncode == 0, p.stdout + p.stderr
 
 
 def test_an_unreadable_deployment_list_does_not_report_success(run):

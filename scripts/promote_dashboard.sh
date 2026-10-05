@@ -125,11 +125,34 @@ code=$(curl -sS --max-time 30 -o /tmp/promote.out -w '%{http_code}' -X POST \
 echo "  promote responded $code"
 cat /tmp/promote.out 2>/dev/null || true
 
+# A failed build leaves the site on the previous one, and the previous one is
+# what both hostnames serve, so the comparison below passes. On 2026-10-04 the
+# production build died on a zero-row source ("too small to be a Parquet
+# file"), this check went green, and the public site sat a day behind with
+# nothing red. So the newest production deployment, in any state, is read too:
+# if it ended in ERROR, publishing the previous build is not success.
+latest=$(curl -sS --max-time 30 "${auth[@]}" \
+    "$API/v6/deployments?projectId=$VERCEL_PROJECT_ID&target=production&limit=1&$q" \
+    | python3 -c 'import json,sys; d=(json.load(sys.stdin).get("deployments") or [{}])[0]; print(d.get("uid") or d.get("id") or "", d.get("state") or d.get("readyState") or "")' 2>/dev/null)
+latest_id=${latest%% *}
+latest_state=${latest#* }
+
+failed_build() {
+    if [ "$latest_state" = "ERROR" ] && [ "$latest_id" != "$newest" ]; then
+        echo "::error::the newest production build $latest_id ended in ERROR; the" \
+             "public host serves the previous build $newest. Read the Vercel build" \
+             "log of $latest_id: the data on the site is not today's."
+        return 0
+    fi
+    return 1
+}
+
 # The promote is asynchronous, so the answer is the site, not the status code.
 for i in $(seq 1 "$VERIFY_TRIES"); do
     echo "verify $i/$VERIFY_TRIES:"
     if report; then
         echo "Published: the public host now serves the branch alias's build."
+        failed_build && exit 1
         exit 0
     fi
     sleep "$VERIFY_DELAY"
