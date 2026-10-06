@@ -305,7 +305,7 @@ def test_html_delivery_skips_pdf_and_has_client_constraints(app, monkeypatch):
         'client_constraints': '{"profile":"conservador","horizon_date":"2027-01-01","liquidity_brl":"1000","liquidity_date":"2027-01-01"}',
     })
     assert r.status_code == 200 and r.mimetype == 'text/html'
-    assert b'Brief para a reuni' in r.data
+    assert b'Resumo para a reuni' in r.data
     assert b'<details id="apendice">' in r.data
     assert b'conservador' in r.data and b'suitability' in r.data
     assert r.headers['Cache-Control'] == 'no-store'

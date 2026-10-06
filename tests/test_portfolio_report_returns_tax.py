@@ -357,3 +357,43 @@ def test_a_view_without_contribution_renders_nothing(view):
     v2 = copy.deepcopy(view)
     v2["returns"]["contribution"] = None
     assert render._contribution_html(v2) == ""
+
+
+# Page 1, "Resumo para a reunião" (report restructure, stage 1) -----------------------------------------------
+
+
+def _page1(view):
+    html = render.render_html(view, render.Narrative(status="unknown"))
+    return html, html.split('<section class="brief" id="resumo">')[1].split("</section>")[0]
+
+
+def test_page_one_lists_points_to_check_by_name_from_engine_facts(view):
+    _, page = _page1(view)
+    assert "Pontos a conferir com o cliente" in page
+    assert "Emissor acima do limite do FGC" in page and "BANCO EXEMPLO" in page  # an issuer, never an L-id
+    assert "Informe reapresentado" in page and "Cota fora da faixa da classe" in page
+    assert re.search(r"\bL\d+\b", page) is None
+    assert len(re.findall(r"<li>", page.split("Pontos a conferir")[1].split("</ul>")[0])) <= 4
+
+
+def test_page_one_states_the_cost_with_its_coverage_and_what_was_not_assessed(view):
+    _, page = _page1(view)
+    s = view["fees"]["summary"]
+    assert values.format_value(view, "fees.summary.adm_disclosed_fixed_per_year_brl") in page
+    for k in ("coverage_fixed_fund_value_pct", "coverage_range_fund_value_pct", "coverage_without_fee_fund_value_pct"):
+        assert values.format_value(view, f"fees.summary.{k}") in page
+    assert "Não é o custo total" in page and "Não avaliado" in page
+    assert s["adm_disclosed_fixed_per_year_brl"] is not None
+
+
+def test_the_contents_links_point_to_sections_that_exist_and_the_aviso_has_its_anchor(view):
+    html, page = _page1(view)
+    targets = re.findall(r'href="#([^"]+)"', page)
+    assert targets and all(f'id="{t}"' in html for t in targets)
+    assert 'id="s-o-que-nao-foi-possivel-avaliar"' in html and '<h2 id="aviso">Aviso</h2>' in html
+
+
+def test_the_appendix_no_longer_repeats_the_summary_findings(view):
+    html = render.render_html(view, render.Narrative(status="complete", kept=[
+        Finding(id="f1", section="resumo", title="T1", text="Texto do resumo.", citations=["p1"])]))
+    assert html.count("Texto do resumo.") == 1  # page 1 only, not again in the appendix

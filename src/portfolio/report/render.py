@@ -12,6 +12,7 @@ from __future__ import annotations
 import html
 import os
 import re
+import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -1347,35 +1348,68 @@ def _client_fit_section(engine: dict) -> str:
     return "".join(out)
 
 
-def _brief(engine: dict, narrative: Narrative) -> str:
-    # The same checked GPT findings, selected rather than another paid model call.
-    out = ['<section class="brief"><h2>Brief para a reunião</h2>',
-           f"<p>Carteira: {v(engine, 'portfolio.total_brl')} · posições: {v(engine, 'portfolio.n_lines')} · não identificadas: {v(engine, 'portfolio.n_unknown')}</p>",
-           _findings_html(engine, replace(narrative, kept=[f for f in narrative.kept if f.section == "resumo"][:3]), "resumo")]
+def _points_to_check(engine: dict) -> list[str]:
+    """Page 1, "Pontos a conferir com o cliente": facts the engine already flags, in fixed wording with placeholders
+    (the Redator types nothing here), at most four, each naming a fund or issuer and never an action. FGC issuers above
+    the limit, restated fund reports, and funds that left their class's range at the strong level. Never "atenção"
+    rows of the risk table, which stay in that table (owner's rule)."""
+    kinds: list[list[str]] = [[], [], []]
+    fgc = (engine.get("concentration") or {}).get("fgc") or {}
+    for i, it in enumerate(fgc.get("issuers") or []):
+        if it.get("above_limit"):
+            q = f"concentration.fgc.issuers[{i}]"
+            kinds[0].append(f"<li><strong>Emissor acima do limite do FGC.</strong> {v(engine, q + '.issuer')} soma "
+                       f"{v(engine, q + '.eligible_value_brl')} em CDB, LCI e LCA, {v(engine, q + '.excess_brl')} acima de "
+                       f"{v(engine, 'concentration.fgc.limit_brl')}; a conferir: o limite é por CPF e instituição.</li>")
+    for i, it in enumerate((engine.get("restatements") or {}).get("items") or []):
+        q = f"restatements.items[{i}]"
+        kinds[1].append(f"<li><strong>Informe reapresentado.</strong> {v(engine, q + '.fund_name')} reapresentou o informe de "
+                   f"{v(engine, q + '.competencia')}; {v(engine, q + '.n_fields_changed')} campos mudaram; "
+                   f"{v(engine, q + '.assessment')}.</li>")
+    for i, it in enumerate((engine.get("movement") or {}).get("strong") or []):
+        q = f"movement.strong[{i}]"
+        kinds[2].append(f"<li><strong>Cota fora da faixa da classe.</strong> {v(engine, q + '.fund_name')}, em "
+                   f"{v(engine, q + '.month')}: retorno {v(engine, q + '.own_value_pct')} contra a média da classe "
+                   f"{v(engine, q + '.class_mean_pct')} ({v(engine, q + '.class_as_filed')}).</li>")
+    # one of each kind first, then the rest, so a long list of one kind does not push the others off the page
+    out: list[str] = []
+    for rank in range(max(map(len, kinds))):
+        out += [k[rank] for k in kinds if len(k) > rank]
+    return out[:4]
+
+
+def _resumo(engine: dict, narrative: Narrative, toc: list[tuple[str, str]]) -> str:
+    """Page 1: who and when, what to check, what it costs and how much of the portfolio that covers, what was not
+    assessed, and a contents list. Every figure is the engine's, printed through ``v``; nothing is aggregated here."""
+    out = ['<section class="brief" id="resumo"><h2>Resumo para a reunião</h2>']
+    constraints = ("restrições do cliente não informadas" if not ((engine.get("client_fit") or {}).get("declared"))
+                   else "restrições do cliente declaradas na seção própria")
+    out.append(f"<p>Carteira de {v(engine, 'portfolio.total_brl')} · {v(engine, 'portfolio.n_lines')} posições · "
+               f"{v(engine, 'portfolio.n_identified')} identificadas · {constraints}</p>")
+    out.append("<h3>Pontos a conferir com o cliente</h3>")
+    pts = _points_to_check(engine)
+    out.append("<ul>" + "".join(pts) + "</ul>" if pts else
+               "<p>As telas que rodaram não apontaram ponto a conferir. O que não foi possível avaliar está abaixo.</p>")
+    out.append(_findings_html(engine, replace(narrative, kept=[f for f in narrative.kept if f.section == "resumo"][:3]), "resumo"))
     fees = (engine.get("fees") or {}).get("summary") or {}
     if fees.get("adm_disclosed_fixed_per_year_brl") is not None:
-        out.append(f"<h3>Taxas</h3><p>{v(engine, 'fees.summary.adm_disclosed_fixed_per_year_brl')} por ano em administração fixa divulgada; ETFs e estimativas à parte no apêndice. Não representa custo total.</p>")
+        out.append(f"<h3>Custo</h3><p><strong>{v(engine, 'fees.summary.adm_disclosed_fixed_per_year_brl')} por ano</strong> "
+                   f"({v(engine, 'fees.summary.adm_disclosed_fixed_portfolio_pct')} da carteira): só a taxa de administração "
+                   f"divulgada, nos fundos que somam {v(engine, 'fees.summary.coverage_fixed_fund_value_pct')} do valor em fundos. "
+                   f"{v(engine, 'fees.summary.coverage_range_fund_value_pct')} têm só uma faixa de taxa (à parte) e "
+                   f"{v(engine, 'fees.summary.coverage_without_fee_fund_value_pct')} não têm taxa utilizável. Não é o custo total.</p>")
     else:
-        out.append("<h3>Taxas</h3><p>Não avaliado: total de administração fixa divulgada indisponível.</p>")
-    out.append('<h3>Riscos prioritários</h3><ul>')
-    risks = (engine.get("risks") or {}).get("rows") or []
-    for i, row in list(enumerate(risks))[:3]:
-        q = f"risks.rows[{i}]"
-        out.append(f"<li>{v(engine, q + '.risk')}: {v(engine, q + '.severity_label') if row.get('status') == 'avaliado' else 'não avaliado'}.</li>")
-    if not risks:
-        out.append('<li>Não avaliado: telas de risco indisponíveis.</li>')
-    out.append('</ul><h3>Retorno por posição</h3>')
+        out.append("<h3>Custo</h3><p>Não avaliado: total de administração fixa divulgada indisponível.</p>")
     ret = engine.get("returns") or {}
-    for i, cov in enumerate(ret.get("coverage") or []):
-        out.append(f"<p>{e(cov.get('id'))}: cobertura {v(engine, f'returns.coverage[{i}].coverage_portfolio_value_pct')}. Sem retorno total da carteira.</p>")
-    out.append('<ul>')
-    for i, row in list(enumerate(ret.get("lines") or []))[:3]:
-        w = (row.get("windows") or [{}])[0]
-        q = f"returns.lines[{i}]"
-        value = v(engine, q + '.windows[0].net_return_pct') if w.get('status') == 'avaliado' else 'não avaliado'
-        out.append(f"<li>{v(engine, q + '.line_id')}: {value}; {e(row.get('basis_label'))}.</li>")
-    out.append('</ul><h3>Limitações que mudam a leitura</h3><p>Dados ausentes não são zero. Cobertura parcial, proventos e datas estão no apêndice; grupo econômico não avaliado.</p>')
-    out.append('<a href="#apendice">Abrir análise detalhada</a></section>')
+    parts = []
+    if (engine.get("portfolio") or {}).get("n_unknown"):
+        parts.append(f"{v(engine, 'portfolio.n_unknown')} posições não identificadas")
+    if ret.get("n_not_evaluated"):
+        parts.append(f"retorno de {v(engine, 'returns.n_not_evaluated')} de {v(engine, 'returns.n_lines')} posições")
+    out.append("<h3>Não avaliado</h3><p>" + ("; ".join(parts) if parts else "Nenhuma posição ficou de fora das telas principais")
+               + '. Dados ausentes não são zero. Detalhes na seção <a href="#s-o-que-nao-foi-possivel-avaliar">O que não foi possível avaliar</a>.</p>')
+    out.append('<h3>Nesta análise</h3><p class="toc">' + " · ".join(f'<a href="#{sid}">{e(t)}</a>' for sid, t in toc) + "</p>")
+    out.append('<p class="cit">Não é recomendação de investimento. <a href="#aviso">Aviso ao final do relatório.</a></p></section>')
     return "".join(out)
 
 
@@ -1383,13 +1417,16 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
     template = (TEMPLATES / "report.html").read_text(encoding="utf-8")
     css = (TEMPLATES / "report.css").read_text(encoding="utf-8")
 
+    toc: list[tuple[str, str]] = []
+
     def section(title: str, body: str) -> str:
-        return f"<section><h2>{e(title)}</h2>\n{body}\n</section>"
+        sid = "s-" + re.sub(r"[^a-z0-9]+", "-", unicodedata.normalize("NFD", title.lower()).encode("ascii", "ignore").decode()).strip("-")
+        toc.append((sid, title))
+        return f'<section id="{sid}"><h2>{e(title)}</h2>\n{body}\n</section>'
 
     corpo = [
-        section("Resumo", _findings_html(engine, narrative, "resumo")
-                + (f"<h3>{e(SECTION_TITLES['achados'])}</h3>" + _findings_html(engine, narrative, "achados")
-                   if narrative.status == "complete" and any(f.section == "achados" for f in narrative.kept) else "")),
+        *([section("Achados", _findings_html(engine, narrative, "achados"))]
+          if narrative.status == "complete" and any(f.section == "achados" for f in narrative.kept) else []),
         *([section("Principais riscos", _risks_section(engine) + _findings_html(engine, narrative, "riscos"))]
           if engine.get("risks") else []),
         *([section("Quanto a carteira paga em taxas", _fee_headline_section(engine))]
@@ -1423,7 +1460,7 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
         "css": css,
         "meta": meta,
         "aviso": aviso,
-        "corpo": _brief(engine, narrative) + (section("Restrições declaradas do cliente", _client_fit_section(engine)) if engine.get("client_fit") else "") + '<details id="apendice"><summary>Apêndice: análise completa</summary>' + "\n".join(corpo) + "</details>",
+        "corpo": _resumo(engine, narrative, toc) + (section("Restrições declaradas do cliente", _client_fit_section(engine)) if engine.get("client_fit") else "") + '<details id="apendice"><summary>Apêndice: análise completa</summary>' + "\n".join(corpo) + "</details>",
         "fontes": _sources(engine),
         "assinatura": e(signature(assinatura)),
         "aviso_legal": DISCLAIMER_HTML,

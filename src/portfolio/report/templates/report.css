@@ -54,3 +54,4 @@ table.riscos td:nth-child(5) { width: 14%; white-space: nowrap; }
 @media print { details > summary { display: none; } details > * { display: block !important; } .brief { font-size: 10pt; } }
 
 .brief h3 { margin: 8px 0 3px; } .brief p { margin: 4px 0; } .brief .achado { margin-bottom: 4px; }
+.brief .toc { line-height: 1.7; } .brief .toc a { white-space: nowrap; }
