@@ -302,8 +302,9 @@ def _html(engine, provider="fake", signature=None):
 def test_html_has_every_required_section_and_no_leftover_placeholders(engine):
     html_text, narrative = _html(engine)
     assert narrative.status == "complete"
-    for title in ("Resumo para a reunião", "Achados", "Identificação linha a linha", "Custo em taxas", "Exposição", "Reapresentações",
-                  "Sinais de risco", "O que não foi possível avaliar", "Metodologia e limitações"):
+    for title in ("Resumo para a reunião", "Achados", "O que a carteira tem",
+                  "Informes reapresentados e movimento incomum", "O que não foi possível avaliar",
+                  "Como cada posição foi identificada", "Taxa por fundo", "Metodologia e limitações"):
         assert f"<h2>{title}</h2>" in html_text
     assert "{{" not in html_text and "}}" not in html_text
     assert "SILO" in html_text

@@ -174,8 +174,8 @@ def test_the_gaps_say_why_a_chart_is_missing(engine):
 
 def test_the_report_places_risks_and_the_fee_headline_after_the_summary(view):
     html_text, _ = build.build(view, "fake")
-    order = [html_text.index(f"<h2>{t}</h2>") for t in ("Resumo para a reunião", "Principais riscos", "Quanto a carteira paga em taxas",
-                                                         "Identificação linha a linha", "Custo em taxas")]
+    order = [html_text.index(f"<h2>{t}</h2>") for t in ("Resumo para a reunião", "O que pede atenção", "Quanto a carteira paga em taxas",
+                                                         "Como cada posição foi identificada", "Taxa por fundo")]
     assert order == sorted(order)
     # nine charts, and the exposure-origin flow diagram is one figure per asset (five assets in the demo)
     assert html_text.count('<figure class="grafico">') == 9 + len(view["lookthrough"]["exposure_origin"]) == 14
@@ -373,7 +373,7 @@ def test_the_demo_engine_carries_the_risks_and_the_report_view_copies_them(engin
     assert sev == sorted(sev)
     assert [r["id"] for r in view["risks"]["rows"]] == [r["id"] for r in rows]
     html_text, _ = build.build(view, "fake")
-    section = html_text.split("<h2>Principais riscos</h2>")[1].split("<h2>")[0]
+    section = html_text.split("<h2>Todos os riscos e seus limites</h2>")[1].split("<h2>")[0]
     for i, r in enumerate(view["risks"]["rows"]):
         assert render.e(r["risk"]) in section
         if r["status"] == "avaliado":
