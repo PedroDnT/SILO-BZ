@@ -532,8 +532,9 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   the same US$1.00 cap (at most US$0.30 of it, LLM and Exa), 5 searches per item,
   180 s. It ships `on` since 2026-10-06 (`SILO_INVESTIGATOR` in `wrangler.jsonc`,
   owner's Q49, in place of a supervised run first). **Owner review:** the coordinator
-  domains in `src/portfolio/rules/investigator/coordinators.yaml` are all
-  `proposta`. Still open: the report's HTML section, `portfolio_instruments`
+  domains in `src/portfolio/rules/investigator/coordinators.yaml`: BTG (2026-10-05)
+  and XP (2026-10-06) are `aprovada`; more can be proposed from
+  `docs/reference/research/issue-document-sites.md`. Still open: the report's HTML section, `portfolio_instruments`
   serving the CRA/CRI ISIN (branch `demo/instruments-isin`), and a read path from
   R2 for the document cache.
 - Report LLM (owner, 2026-10-03): the Anthropic key has no credits, so the Redator and

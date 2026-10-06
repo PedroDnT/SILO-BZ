@@ -3,7 +3,7 @@
 # coordinated them, so an APPROVED coordinator's domain joins the "official domains" the investigator's Exa
 # fallback searches first, beside CVM, B3, the securitizadora and the issuer.
 #
-# The owner approves this file, as src/portfolio/rules/equivalents/class_index.yaml (BTG approved 2026-10-05, #605 Q39; XP waits for its legal name). Only `aprovada`
+# The owner approves this file, as src/portfolio/rules/equivalents/class_index.yaml (BTG approved 2026-10-05 and XP 2026-10-06, #605 Q39). Only `aprovada`
 # entries are used; a `proposta` entry is read by nothing until the owner changes its status.
 #
 # Rules:
@@ -41,14 +41,19 @@ coordinators:
       2026-10-05): an anúncio de início naming BANCO BTG PACTUAL S.A., CNPJ 30.306.294/0001-45, as Coordenador
       Líder, with its documents at https://www.btgpactual.com/investment-banking.
     checked_on: "2026-10-05"
-  - cnpj: null
+  - cnpj: "02332886000104"
     names:
       - "XP INVESTIMENTOS CORRETORA DE CAMBIO, TITULOS E VALORES MOBILIARIOS S.A"
+      - "XP INVESTIMENTOS CCTVM S.A"
     domains: ["ofertaspublicas.xpi.com.br"]
-    status: proposta
+    status: aprovada
     evidence: >-
-      https://ofertaspublicas.xpi.com.br/ (fetched 2026-10-05): "Ofertas públicas", "Ofertas em andamento",
+      https://ofertaspublicas.xpi.com.br/ (fetched 2026-10-06): "Ofertas públicas", "Ofertas em andamento",
       listing CRA, CRI and debenture offers with their aviso ao mercado, prospecto, lâmina and anúncio de
-      início. The legal name and CNPJ were not read from an issue document here: confirm the name before
-      approving.
-    checked_on: "2026-10-05"
+      início. The legal name and CNPJ are not on that page; three other sources agree (2026-10-06): XP's
+      own page https://conteudos.xpi.com.br/pesquisar/ ("A XP Investimentos CCTVM S/A, inscrita sob o CNPJ:
+      02.332.886/0001-04"), a document XP filed on Fundos.NET
+      (https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?cvm=true&id=31389, "XP INVESTIMENTOS
+      CORRETORA DE CÂMBIO, TÍTULOS E VALORES MOBILIÁRIOS S.A., inscrita no CNPJ/MF sob o nº
+      02.332.886/0001-04") and ANBIMA's institution profile. Approved by the owner on 2026-10-06.
+    checked_on: "2026-10-06"

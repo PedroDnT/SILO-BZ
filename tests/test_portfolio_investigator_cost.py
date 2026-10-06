@@ -190,12 +190,13 @@ def test_a_proposed_coordinator_is_never_used(tmp_path):
     assert coordinators.approved_domains("OUTRO BANCO PROPOSTO S.A.", entries) == []
     assert coordinators.proposed_match("OUTRO BANCO PROPOSTO S.A.", entries)
     assert coordinators.approved_domains("cnpj 90.000.000/0010-00", entries) == ["ofertas.coordenador-sintetico.com.br"]
-    # the repository's file loads. The owner approved the two BTG entries on 2026-10-05 (#605, Q39); the XP entry
-    # stays a proposal until its legal name is confirmed from an issue document.
+    # the repository's file loads. The owner approved the two BTG entries on 2026-10-05 and the XP entry on
+    # 2026-10-06 (#605, Q39).
     real = coordinators.load()
     assert real and all(c.evidence.startswith("http") for c in real)
-    assert {d for c in real if c.status == "aprovada" for d in c.domains} == {"btgpactual.com"}
-    assert [c.status for c in real if "ofertaspublicas.xpi.com.br" in c.domains] == ["proposta"]
+    assert {d for c in real if c.status == "aprovada" for d in c.domains} == {
+        "btgpactual.com", "ofertaspublicas.xpi.com.br"}
+    assert [(c.status, c.cnpj) for c in real if "ofertaspublicas.xpi.com.br" in c.domains] == [("aprovada", "02332886000104")]
     bad = tmp_path / "bad.yaml"
     bad.write_text(COORD_YAML.replace("status: aprovada", "status: ok"), encoding="utf-8")
     with pytest.raises(ValueError):
