@@ -87,3 +87,31 @@ def test_the_routes_are_owner_only_and_read_only_keys():
     page = src[src.index("const TRACES_PAGE"):]
     assert "localStorage" not in page and "sessionStorage" not in page and "?token" not in page
     assert "textContent" in page and "innerHTML" not in page
+
+
+def test_the_flow_lists_each_line_with_what_it_puts_in():
+    flows = json.loads(_call('x.exposureFlows(doc, "petr4")'))
+    assert len(flows) == 1
+    f = flows[0]
+    assert f["ativo"]["label"].startswith("PETR4") and f["extrato_em"] and f["cda_mes"]
+    direct = next(s for s in f["fontes"] if s["direto"])
+    fund = next(s for s in f["fontes"] if not s["direto"])
+    assert direct["nome"] == "PETROBRAS PN" and direct["exposicao_brl"] == 988000.0 and direct["posicao_brl"] == 988000.0
+    assert direct["peso_no_fundo_pct"] is None and direct["cda"] is None
+    assert fund["nome"] == "GERAÇÃO L. PAR FIA" and fund["cda"] == "2026-05"
+    assert round(fund["peso_no_fundo_pct"], 2) == 16.59 and fund["posicao_brl"] > fund["exposicao_brl"]
+    # the age of the CDA is two engine dates apart in calendar months, never a clock reading
+    assert fund["cda_idade_meses"] == 4 and sum(s["exposicao_brl"] for s in f["fontes"]) == pytest.approx(f["ativo"]["total_brl"])
+
+
+def test_the_flow_of_an_asset_in_one_line_is_empty():
+    assert json.loads(_call('x.exposureFlows(doc, "XXXX99")')) == []
+
+
+def test_the_page_script_draws_with_text_nodes_and_no_template_literals():
+    src = INDEX_TS.read_text(encoding="utf-8")
+    start = src.index("<script>", src.index("const TRACES_PAGE"))
+    script = src[start:src.index("</script>", start)]
+    # the page is a TS template literal: a backtick, ${ or backslash in it would be consumed by TypeScript
+    assert "`" not in script and "${" not in script and "\\" not in script
+    assert "innerHTML" not in script and script.count("textContent") >= 3
