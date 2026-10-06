@@ -114,9 +114,10 @@ def trace_summary(engine: dict) -> dict:
 
 
 def trace_bundle(otlp: dict, rec: "trace.RunRecord") -> bytes:
-    """What ``GET /trace/<id>`` answers: the OTLP/JSON trace and the masked engine JSON (base64, keyed by
-    ``artifacts/<sha256>.json``). The PDF is not in it: the Worker already holds the answer it forwarded."""
-    arts = trace.artifact_objects(rec.engine_json, None)
+    """What ``GET /trace/<id>`` answers: the OTLP/JSON trace, the masked engine JSON and the report's HTML (base64,
+    keyed by ``artifacts/<sha256>.json`` and ``.html``). The PDF is not in it: the Worker already holds the answer
+    it forwarded."""
+    arts = trace.artifact_objects(rec.engine_json, None, rec.html)
     return json.dumps({
         "trace_id": trace.trace_id_of(otlp),
         "trace": otlp,
@@ -415,6 +416,7 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client,
                     log.warning("report failed: %s", type(exc).__name__)
                     raise _Refusal(502, type(exc).__name__) from None
                 rec.narrative = narrative
+                rec.html = html_text.encode("utf-8")  # kept in the trace for the owner's page, PDF or not
                 rec.report_end_ns = time.time_ns()
                 if output_format == "html":
                     return done(Response(html_text, mimetype="text/html", headers={

@@ -7,7 +7,7 @@
 //                 `Authorization: Bearer`, returns the PDF, then stops it
 // GET  /traces    the owner's trace page (static shell, no data): asks for the token, lists runs, shows where an
 //                 asset's exposure comes from and downloads a run's PDF
-// GET  /api/traces, /api/traces/exposure, /api/traces/pdf
+// GET  /api/traces, /api/traces/exposure, /api/traces/pdf, /api/traces/report, /api/traces/agents, /api/traces/investigation
 //                 need the same token; read the private R2 bucket through the binding (see below)
 // Anything else   404
 //
@@ -25,6 +25,7 @@
 // Holder, CPF and account are masked by the engine's readers before any of it
 // exists. No KV, D1 or DO storage of our own.
 import { Container, ContainerProxy, getContainer } from "@cloudflare/containers";
+import { agentTimeline, type InvestigationDoc, investigationView } from "./agents";
 import { type EngineDoc, exposureFlows, exposureText, topGroups, traceRootAttribute } from "./exposure";
 
 // The outbound allow-list runs through ContainerProxy, which must be exported.
@@ -51,7 +52,7 @@ const TOKEN_HEADER = "x-demo-token";
 // The engine names each run's trace here; never passed to the client (not in PASS_HEADERS).
 const TRACE_HEADER = "x-silo-trace-id";
 const TRACE_ID = /^[0-9a-f]{32}$/;
-const SHA256_KEY = /^artifacts\/[0-9a-f]{64}\.json$/;
+const SHA256_KEY = /^artifacts\/[0-9a-f]{64}\.(json|html)$/;
 // The owner's trace page reads only keys of these two shapes: no other path reaches the bucket.
 const TRACE_KEY = /^traces\/\d{4}\/\d{2}\/\d{2}\/[0-9a-f]{32}\.json$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -279,8 +280,9 @@ async function storeTrace(bucket: R2Bucket, container: { fetch: (r: Request) => 
 	for (const [key, b64] of Object.entries(bundle.artifacts ?? {})) {
 		if (!SHA256_KEY.test(key)) continue;
 		const body = fromBase64(b64);
-		if (`artifacts/${await sha256Hex(body)}.json` !== key) continue;
-		puts.push(bucket.put(key, body, { httpMetadata: { contentType: "application/json" } }));
+		const ext = key.endsWith(".html") ? "html" : "json";
+		if (`artifacts/${await sha256Hex(body)}.${ext}` !== key) continue;
+		puts.push(bucket.put(key, body, { httpMetadata: { contentType: ext === "html" ? "text/html; charset=utf-8" : "application/json" } }));
 	}
 	for (const [key, b64] of Object.entries(bundle.documents ?? {})) {
 		const m = DOC_KEY.exec(key);
@@ -378,6 +380,48 @@ async function tracePdf(url: URL, env: Env): Promise<Response> {
 	});
 }
 
+// The report's HTML as the engine built it and the Worker stored it (holder, CPF and account masked), sent as
+// text for the page to show in a sandboxed frame. Its own policy lets it carry no script and no request.
+async function traceReport(url: URL, env: Env): Promise<Response> {
+	const read = await readTrace(env, url.searchParams.get("key"));
+	if (read instanceof Response) return read;
+	const sha = traceRootAttribute(read.trace, "app.html.sha256");
+	if (!sha || !SHA256.test(sha)) return erro(422, "Este trace não guardou o relatório em HTML (execuções anteriores a esta função, ou que falharam antes do relatório).");
+	const html = await env.TRACES.get(`artifacts/${sha}.html`);
+	if (!html) return erro(404, "O HTML deste trace não está no bucket.");
+	return new Response(html.body, {
+		status: 200,
+		headers: {
+			"content-type": "text/html; charset=utf-8",
+			"content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; sandbox",
+			"cache-control": "no-store",
+			"x-silo-origin": "worker",
+		},
+	});
+}
+
+// The run as the agents lived it: each span with its start, duration, model, tokens and cost.
+async function traceAgents(url: URL, env: Env): Promise<Response> {
+	const read = await readTrace(env, url.searchParams.get("key"));
+	if (read instanceof Response) return read;
+	const timeline = agentTimeline(read.trace);
+	if (!timeline) return erro(422, "Este trace não tem spans.");
+	return json(200, timeline);
+}
+
+// What the investigator did and found, from the engine JSON of the run.
+async function traceInvestigation(url: URL, env: Env): Promise<Response> {
+	const read = await readTrace(env, url.searchParams.get("key"));
+	if (read instanceof Response) return read;
+	const sha = traceRootAttribute(read.trace, "app.engine_json.sha256");
+	if (!sha || !SHA256.test(sha)) return erro(422, "Este trace não tem o JSON do motor (a execução falhou antes de terminar).");
+	const art = await env.TRACES.get(`artifacts/${sha}.json`);
+	if (!art) return erro(404, "O JSON do motor deste trace não está no bucket.");
+	const view = investigationView(JSON.parse(await art.text()) as InvestigationDoc);
+	if (!view) return erro(422, "Este JSON do motor não tem a seção do investigador.");
+	return json(200, view);
+}
+
 const PAGE_HEADERS = {
 	"content-security-policy":
 		"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
@@ -413,6 +457,9 @@ export default {
 				if (pathname === "/api/traces") return await listTraces(url, env);
 				if (pathname === "/api/traces/exposure") return await traceExposure(url, env);
 				if (pathname === "/api/traces/pdf") return await tracePdf(url, env);
+				if (pathname === "/api/traces/report") return await traceReport(url, env);
+				if (pathname === "/api/traces/agents") return await traceAgents(url, env);
+				if (pathname === "/api/traces/investigation") return await traceInvestigation(url, env);
 			} catch {
 				// Nothing is logged: a trace that does not read as JSON, or an R2 hiccup, is one plain error.
 				return erro(500, "Não foi possível ler este trace.");
@@ -556,6 +603,13 @@ pre { white-space: pre-wrap; word-break: break-word; border: 1px solid var(--lin
 .t-m { fill: var(--muted); }
 .t-tag-direct { fill: var(--direct); font-weight: 700; }
 .t-tag-fund { fill: var(--fund); font-weight: 700; }
+.card { border: 1px solid var(--line); border-radius: 6px; padding: .6rem .75rem; margin: 0 0 .5rem; }
+.card strong { display: block; margin-bottom: .15rem; }
+.card div { color: var(--muted); font-size: .9rem; word-break: break-word; }
+.card a { color: var(--accent); }
+.bar { height: 8px; background: var(--line); border-radius: 4px; margin: .35rem 0; }
+.bar span { display: block; height: 8px; background: var(--accent); border-radius: 4px; min-width: 2px; }
+.sum { color: var(--fg); font-size: .95rem; margin: 0 0 .75rem; }
 .t-halo { paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; font-weight: 700; }
 </style>
 </head>
@@ -570,7 +624,15 @@ pre { white-space: pre-wrap; word-break: break-word; border: 1px solid var(--lin
 <ul id="traces"></ul>
 <div id="detail" hidden>
 <h2 id="detail-title"></h2>
-<div class="row"><button id="pdf">Baixar o PDF</button></div>
+<div class="row"><button class="main" id="html">Ver o relatório em HTML</button><button id="pdf">Baixar o PDF</button></div>
+<div class="row"><button id="print" type="button" hidden>Imprimir / salvar PDF</button></div>
+<iframe id="report" title="Relatório da execução" sandbox="allow-same-origin allow-modals" style="width:100%;height:80vh;border:0;margin-top:.5rem" hidden></iframe>
+<h2>Agentes desta execução</h2>
+<div class="row"><button id="agents">Ver a linha do tempo dos agentes</button></div>
+<div id="agents-out"></div>
+<h2>O que o investigador achou</h2>
+<div class="row"><button id="inv">Ver o investigador</button></div>
+<div id="inv-out"></div>
 <h2>Exposição a um ativo</h2>
 <ul id="groups"></ul>
 <label for="ticker">Ou um código (ex.: PETR4)</label>
@@ -671,6 +733,117 @@ function drawFlow(host, f) {
     host.appendChild(p);
   });
 }
+const fmtn = (v, d) => v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const usd = (v) => "US$ " + fmtn(v, 4);
+const dur = (s) => (s >= 60 ? Math.floor(s / 60) + " min " + Math.round(s % 60) + " s" : fmtn(s, 1) + " s");
+function card(host, title, lines, bar) {
+  const d = document.createElement("div");
+  d.className = "card";
+  const h = document.createElement("strong");
+  h.textContent = title;
+  d.appendChild(h);
+  if (bar) {
+    const b = document.createElement("div");
+    b.className = "bar";
+    const sp = document.createElement("span");
+    sp.style.marginLeft = bar.from + "%";
+    sp.style.width = bar.width + "%";
+    b.appendChild(sp);
+    d.appendChild(b);
+  }
+  for (const l of lines) {
+    if (!l) continue;
+    const p = document.createElement("div");
+    p.textContent = l;
+    d.appendChild(p);
+  }
+  host.appendChild(d);
+  return d;
+}
+function link(card, url) {
+  if (!url) return;
+  const p = document.createElement("div");
+  if (url.indexOf("https://") === 0) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = url;
+    p.appendChild(a);
+  } else {
+    p.textContent = url;
+  }
+  card.appendChild(p);
+}
+function summary(host, text) {
+  const p = document.createElement("p");
+  p.className = "sum";
+  p.textContent = text;
+  host.appendChild(p);
+}
+function showAgents(t) {
+  const host = $("agents-out");
+  host.replaceChildren();
+  const head = ["HTTP " + (t.http === null ? "?" : t.http), "total " + dur(t.total_s)];
+  if (t.custo_usd !== null) head.push("custo " + usd(t.custo_usd));
+  if (t.revisao_do_motor) head.push("motor " + t.revisao_do_motor);
+  if (t.esquema) head.push("esquema " + t.esquema);
+  summary(host, head.join(" · "));
+  if (t.etapa_que_falhou) summary(host, "Falhou na etapa " + t.etapa_que_falhou + (t.tipo_do_erro ? " (" + t.tipo_do_erro + ")" : "") + ".");
+  const total = t.total_s > 0 ? t.total_s : 1;
+  for (const r of t.linhas) {
+    const lines = ["começa em +" + dur(r.inicio_s) + ", dura " + dur(r.duracao_s) + (r.estado === "ok" || r.estado === "erro" ? " · " + r.estado : "")];
+    if (r.modelo) lines.push("modelo " + r.modelo + (r.chamadas !== null ? " · " + r.chamadas + " chamada(s)" : ""));
+    if (r.tokens_entrada !== null || r.tokens_saida !== null) {
+      lines.push("tokens: entrada " + (r.tokens_entrada === null ? "?" : r.tokens_entrada) + ", saída " + (r.tokens_saida === null ? "?" : r.tokens_saida) + (r.tokens_raciocinio ? " (raciocínio " + r.tokens_raciocinio + ")" : ""));
+    }
+    if (r.buscas_exa !== null) lines.push(r.buscas_exa + " busca(s) no Exa");
+    if (r.custo_usd !== null) lines.push("custo " + usd(r.custo_usd));
+    for (const n of r.notas) lines.push(n);
+    for (const x of r.removidos) lines.push("o revisor removeu: " + (x.secao || "?") + " (" + (x.regra || "?") + ")" + (x.inteiro ? ", o achado inteiro" : ""));
+    card(host, r.nome, lines, { from: Math.min(100 * r.inicio_s / total, 99), width: Math.max(100 * r.duracao_s / total, 1) });
+  }
+}
+function showInvestigation(v) {
+  const host = $("inv-out");
+  host.replaceChildren();
+  if (!v.ligado) {
+    summary(host, "O investigador estava desligado nesta execução." + (v.motivo ? " " + v.motivo : ""));
+    return;
+  }
+  const head = ["estado " + (v.estado || "?"), "buscas " + v.buscas.usadas + (v.buscas.limite ? " de " + v.buscas.limite : "")];
+  if (v.custo.total_usd !== null) head.push("custo " + usd(v.custo.total_usd) + (v.custo.exa_usd !== null ? " (Exa " + usd(v.custo.exa_usd) + ")" : ""));
+  summary(host, head.join(" · "));
+  const c = v.contagens;
+  summary(host, "fatos " + (c.facts || 0) + " (nível A " + (c.tier_a || 0) + ", nível B " + (c.tier_b || 0) + ") · divergências " + (c.divergences || 0) + " · documentos lidos " + (c.documents_read || 0) + ", não lidos " + (c.documents_not_read || 0) + (v.descartados ? " · " + v.descartados : ""));
+  if (v.busca_na_web.disponivel === false) summary(host, v.busca_na_web.nota || "Busca na web indisponível.");
+  if (v.modelos.extrator) summary(host, "modelo de extração " + v.modelos.extrator + (v.modelos.juiz ? " · juiz " + v.modelos.juiz : " · sem juiz"));
+  const h1 = document.createElement("h2");
+  h1.textContent = "Itens investigados";
+  host.appendChild(h1);
+  if (!v.gatilhos.length) summary(host, "Nenhuma linha ativou o investigador.");
+  for (const g of v.gatilhos) card(host, "Linha " + (g.linha === null ? "?" : g.linha) + (g.nome_da_linha ? " · " + g.nome_da_linha : "") + " · " + (g.tipo || ""), [g.identificadores, g.mensagem, g.buscas !== null ? g.buscas + " busca(s) · " + g.fontes_tentadas + " fonte(s) tentada(s)" : null]);
+  const h2 = document.createElement("h2");
+  h2.textContent = "Fatos encontrados";
+  host.appendChild(h2);
+  if (!v.fatos.length) summary(host, "Nenhum fato com citação passou pela verificação.");
+  for (const f of v.fatos) {
+    const d = card(host, (f.campo || "fato") + (f.assunto ? " · " + f.assunto : "") + " · linha " + (f.linha === null ? "?" : f.linha), [
+      f.valor, f.citacao ? "citação: " + f.citacao : null, "nível " + (f.nivel || "?") + ": " + (f.nivel_rotulo || ""),
+      f.documento ? "documento: " + f.documento + (f.data_do_documento ? " (" + f.data_do_documento + ")" : "") : null,
+      f.fonte ? "fonte: " + f.fonte : null, f.confere,
+    ]);
+    link(d, f.url);
+  }
+  const h3 = document.createElement("h2");
+  h3.textContent = "Documentos consultados";
+  host.appendChild(h3);
+  if (!v.documentos.length) summary(host, "Nenhum documento foi consultado.");
+  for (const x of v.documentos) {
+    const d = card(host, x.titulo || "(sem título)", [(x.fonte || "") + " · " + (x.estado || "") + (x.cache ? " · cache " + x.cache : "")]);
+    link(d, x.url);
+  }
+}
 async function showExposure(ticker) {
   $("out").hidden = false;
   $("out").textContent = "Lendo...";
@@ -688,6 +861,11 @@ async function openTrace(t) {
   $("groups").replaceChildren();
   $("flow").replaceChildren();
   $("out").hidden = true;
+  $("report").hidden = true;
+  $("report").srcdoc = "";
+  $("print").hidden = true;
+  $("agents-out").replaceChildren();
+  $("inv-out").replaceChildren();
   say("Lendo os ativos repetidos entre linhas...");
   try {
     const j = await (await api("/api/traces/exposure?key=" + encodeURIComponent(key))).json();
@@ -709,6 +887,38 @@ $("list").addEventListener("click", async () => {
   } catch (e) { say(e.message); }
 });
 $("go").addEventListener("click", () => { const t = $("ticker").value.trim(); if (t && key) showExposure(t); });
+$("html").addEventListener("click", async () => {
+  if (!key) return;
+  say("Lendo o relatório...");
+  try {
+    $("report").srcdoc = await (await api("/api/traces/report?key=" + encodeURIComponent(key))).text();
+    $("report").hidden = false;
+    $("print").hidden = false;
+    say("");
+    $("report").scrollIntoView();
+  } catch (e) { say(e.message); }
+});
+$("print").addEventListener("click", () => {
+  const frame = $("report");
+  frame.contentDocument.querySelectorAll("details").forEach((d) => { d.open = true; });
+  frame.contentWindow.print();
+});
+$("agents").addEventListener("click", async () => {
+  if (!key) return;
+  say("Lendo os agentes...");
+  try {
+    showAgents(await (await api("/api/traces/agents?key=" + encodeURIComponent(key))).json());
+    say("");
+  } catch (e) { say(e.message); }
+});
+$("inv").addEventListener("click", async () => {
+  if (!key) return;
+  say("Lendo o investigador...");
+  try {
+    showInvestigation(await (await api("/api/traces/investigation?key=" + encodeURIComponent(key))).json());
+    say("");
+  } catch (e) { say(e.message); }
+});
 $("pdf").addEventListener("click", async () => {
   if (!key) return;
   say("Baixando o PDF...");
