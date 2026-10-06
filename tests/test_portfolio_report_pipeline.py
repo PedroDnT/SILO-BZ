@@ -302,7 +302,7 @@ def _html(engine, provider="fake", signature=None):
 def test_html_has_every_required_section_and_no_leftover_placeholders(engine):
     html_text, narrative = _html(engine)
     assert narrative.status == "complete"
-    for title in ("Resumo", "Identificação linha a linha", "Custo em taxas", "Exposição", "Reapresentações",
+    for title in ("Resumo para a reunião", "Achados", "Identificação linha a linha", "Custo em taxas", "Exposição", "Reapresentações",
                   "Sinais de risco", "O que não foi possível avaliar", "Metodologia e limitações"):
         assert f"<h2>{title}</h2>" in html_text
     assert "{{" not in html_text and "}}" not in html_text
@@ -324,7 +324,7 @@ def test_every_unknown_section_appears_with_a_fixed_label(engine):
     for name, sec in engine["sections"].items():
         if sec["status"] in ("partial", "unknown"):
             assert f"<strong>{name}</strong>: {render.SECTION_STATUS_LABELS[sec['status']]}." in html_text
-            assert sec["reason"] not in html_text.split("O que não foi possível avaliar")[1].split("Metodologia")[0]
+            assert sec["reason"] not in html_text.split("<h2>O que não foi possível avaliar</h2>")[1].split("Metodologia")[0]
 
 
 def test_footer_lists_sources_with_data_dates(engine):

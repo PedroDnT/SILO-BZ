@@ -169,12 +169,12 @@ def test_the_gaps_say_why_a_chart_is_missing(engine):
     assert "Diagrama do look-through" in titles and "Gráfico de vencimentos" in titles
     assert charts.lookthrough_chart(v) == "" and charts.maturity_chart(v) == ""
     html_text = render.render_html(v, render.Narrative(status="complete"))
-    assert "Diagrama do look-through" in html_text.split("O que não foi possível avaliar")[1]
+    assert "Diagrama do look-through" in html_text.split("<h2>O que não foi possível avaliar</h2>")[1]
 
 
 def test_the_report_places_risks_and_the_fee_headline_after_the_summary(view):
     html_text, _ = build.build(view, "fake")
-    order = [html_text.index(f"<h2>{t}</h2>") for t in ("Resumo", "Principais riscos", "Quanto a carteira paga em taxas",
+    order = [html_text.index(f"<h2>{t}</h2>") for t in ("Resumo para a reunião", "Principais riscos", "Quanto a carteira paga em taxas",
                                                          "Identificação linha a linha", "Custo em taxas")]
     assert order == sorted(order)
     # nine charts, and the exposure-origin flow diagram is one figure per asset (five assets in the demo)
