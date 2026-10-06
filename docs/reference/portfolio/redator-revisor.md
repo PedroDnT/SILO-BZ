@@ -113,3 +113,7 @@ The report is meant to run in the Cloudflare Container behind the upload page (s
 ## Not verified
 
 No live model call has been made with either provider; the sample report comes from a synthetic fixture. The engine schema the report reads is `engine-output.md`.
+
+## Brief and client constraints
+
+See [brief-client-fit.md](brief-client-fit.md). The additive `client_fit` field records declared constraints and deterministic maturity/cash checks; it never approves suitability. The brief reuses checked findings, and HTML delivery skips PDF generation until the browser print/save request.

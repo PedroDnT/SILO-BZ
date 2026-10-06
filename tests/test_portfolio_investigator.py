@@ -515,7 +515,7 @@ def test_engine_off_by_default_is_not_applicable_and_on_runs_last():
     stmt = read_statement(TEMPLATE)
     client = FakeClient(load_fake_rows(FAKE_ROWS), clock=CLOCK)
     off = run_engine(stmt, client, default_params(stmt.position_date), clock=CLOCK)
-    assert off["schema_version"] == "1.13" and off["investigation"]["status"] == "not_applicable"
+    assert off["schema_version"] == "1.14" and off["investigation"]["status"] == "not_applicable"
     assert off["section_status"]["investigation"]["reason_codes"] == ["investigador_desligado"]
     assert list(off).index("investigation") == list(off).index("equivalents") + 1
 

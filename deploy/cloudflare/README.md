@@ -142,3 +142,5 @@ cut. The OpenAI provider's limit is 32,000 since (owner's choice, 2026-10-04).
   covers the live stream only.
 - No custom domain, no rate limit beyond the token, `max_instances` and the
   provider's spend limit.
+
+The upload UI requests HTML, shows the brief and optional declared client constraints, and uses the browser print/save dialog only on request. API PDF callers remain supported; HTML-only traces have no PDF artifact. See `docs/reference/portfolio/brief-client-fit.md`.

@@ -293,3 +293,31 @@ def test_zero_findings_drafted_is_a_complete_narrative(monkeypatch):
     monkeypatch.setattr(revisor, "check", lambda engine, findings: revisor.RevisorResult(kept=[], removed=[], notes=[]))
     n = build.make_narrative({}, SimpleNamespace(name="fake", model="fake", meter=build.llm.CostMeter()), llm_review=False)
     assert n.status == "complete" and n.reason_code is None and n.kept == []
+
+
+def test_html_delivery_skips_pdf_and_has_client_constraints(app, monkeypatch):
+    def forbidden_pdf(*args):
+        raise AssertionError('HTML must not render a PDF')
+    monkeypatch.setattr(server, 'html_to_pdf', forbidden_pdf)
+    r = app.post('/diagnose', headers=_auth(), data={
+        'file': (io.BytesIO(TEMPLATE.read_bytes()), 'statement.xlsx'),
+        'output_format': 'html',
+        'client_constraints': '{"profile":"conservador","horizon_date":"2027-01-01","liquidity_brl":"1000","liquidity_date":"2027-01-01"}',
+    })
+    assert r.status_code == 200 and r.mimetype == 'text/html'
+    assert b'Brief para a reuni' in r.data
+    assert b'<details id="apendice">' in r.data
+    assert b'conservador' in r.data and b'suitability' in r.data
+    assert r.headers['Cache-Control'] == 'no-store'
+    assert "default-src 'none'" in r.headers['Content-Security-Policy']
+
+
+def test_client_constraints_refused_before_engine(app, monkeypatch):
+    def forbidden_engine(*args, **kwargs):
+        raise AssertionError('invalid input must not call engine')
+    monkeypatch.setattr(server, 'run_engine', forbidden_engine)
+    r = app.post('/diagnose', headers=_auth(), data={
+        'file': (io.BytesIO(TEMPLATE.read_bytes()), 'statement.xlsx'),
+        'client_constraints': '{"horizon_date":"2000-01-01"}',
+    })
+    assert r.status_code == 400

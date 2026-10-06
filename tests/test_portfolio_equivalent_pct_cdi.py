@@ -334,7 +334,7 @@ def view(engine) -> dict:
 
 
 def test_the_demo_carries_both_and_every_gap_has_a_fixed_text(engine):
-    assert engine["schema_version"] == "1.13" and list(engine).index("equivalents") == list(engine).index("tax") + 1
+    assert engine["schema_version"] == "1.14" and list(engine).index("equivalents") == list(engine).index("tax") + 1
     eqs = engine["equivalents"]
     assert {ln["status"] for ln in eqs["lines"]} == {"encontrado", "sem_equivalente"}
     for ln in eqs["lines"]:

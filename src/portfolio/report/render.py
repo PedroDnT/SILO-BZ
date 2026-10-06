@@ -12,7 +12,7 @@ from __future__ import annotations
 import html
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -1297,6 +1297,58 @@ def _sources(engine: dict) -> str:
     return "<ul>" + "".join(items) + "</ul>" + tail
 
 
+def _client_fit_section(engine: dict) -> str:
+    fit = engine.get("client_fit") or {}
+    declared = fit.get("declared") or {}
+    out = ["<p>" + e(fit.get("note", "Restrições do cliente não informadas.")) + "</p>"]
+    labels = {"profile": "Perfil declarado", "horizon_date": "Horizonte", "liquidity_date": "Data da necessidade", "liquidity_brl": "Necessidade em R$"}
+    out += [f"<p>{e(labels[k])}: {v(engine, 'client_fit.declared.' + k)}</p>" for k, val in declared.items() if k in labels]
+    out.append("<p>" + e(fit.get("profile_assessment", "Perfil não avaliado.")) + "</p>")
+    for key, label in (("horizon", "Horizonte"), ("liquidity", "Liquidez")):
+        item = fit.get(key) or {}
+        out.append(f"<p><strong>{label}</strong>: {e(item.get('status', 'nao_avaliado'))}. {e(item.get('note'))}</p>")
+        if key == "horizon" and item.get("status") != "nao_avaliado":
+            out.append("<p>Crédito além do horizonte: " + e(", ".join("L" + str(n) for n in item.get("line_nos_after_horizon", [])) or "nenhum identificado") +
+                       "; sem vencimento: " + e(", ".join("L" + str(n) for n in item.get("line_nos_without_maturity", [])) or "nenhum identificado") + ".</p>")
+        else:
+            for name, lab in (("cash_brl", "Caixa"), ("required_brl", "Necessidade"), ("unproven_brl", "Parcela não comprovada em caixa")):
+                if name in item:
+                    out.append(f"<p>{lab}: {v(engine, 'client_fit.liquidity.' + name)}</p>")
+    return "".join(out)
+
+
+def _brief(engine: dict, narrative: Narrative) -> str:
+    # The same checked GPT findings, selected rather than another paid model call.
+    out = ['<section class="brief"><h2>Brief para a reunião</h2>',
+           f"<p>Carteira: {v(engine, 'portfolio.total_brl')} · posições: {v(engine, 'portfolio.n_lines')} · não identificadas: {v(engine, 'portfolio.n_unknown')}</p>",
+           _findings_html(engine, replace(narrative, kept=[f for f in narrative.kept if f.section == "resumo"][:3]), "resumo")]
+    fees = (engine.get("fees") or {}).get("summary") or {}
+    if fees.get("adm_disclosed_fixed_per_year_brl") is not None:
+        out.append(f"<h3>Taxas</h3><p>{v(engine, 'fees.summary.adm_disclosed_fixed_per_year_brl')} por ano em administração fixa divulgada; ETFs e estimativas à parte no apêndice. Não representa custo total.</p>")
+    else:
+        out.append("<h3>Taxas</h3><p>Não avaliado: total de administração fixa divulgada indisponível.</p>")
+    out.append('<h3>Riscos prioritários</h3><ul>')
+    risks = (engine.get("risks") or {}).get("rows") or []
+    for i, row in list(enumerate(risks))[:3]:
+        q = f"risks.rows[{i}]"
+        out.append(f"<li>{v(engine, q + '.risk')}: {v(engine, q + '.severity_label') if row.get('status') == 'avaliado' else 'não avaliado'}.</li>")
+    if not risks:
+        out.append('<li>Não avaliado: telas de risco indisponíveis.</li>')
+    out.append('</ul><h3>Retorno por posição</h3>')
+    ret = engine.get("returns") or {}
+    for i, cov in enumerate(ret.get("coverage") or []):
+        out.append(f"<p>{e(cov.get('id'))}: cobertura {v(engine, f'returns.coverage[{i}].coverage_portfolio_value_pct')}. Sem retorno total da carteira.</p>")
+    out.append('<ul>')
+    for i, row in list(enumerate(ret.get("lines") or []))[:3]:
+        w = (row.get("windows") or [{}])[0]
+        q = f"returns.lines[{i}]"
+        value = v(engine, q + '.windows[0].net_return_pct') if w.get('status') == 'avaliado' else 'não avaliado'
+        out.append(f"<li>{v(engine, q + '.line_id')}: {value}; {e(row.get('basis_label'))}.</li>")
+    out.append('</ul><h3>Limitações que mudam a leitura</h3><p>Dados ausentes não são zero. Cobertura parcial, proventos e datas estão no apêndice; grupo econômico não avaliado.</p>')
+    out.append('<a href="#apendice">Abrir análise detalhada</a></section>')
+    return "".join(out)
+
+
 def render_html(engine: dict, narrative: Narrative, assinatura: str | None = None) -> str:
     template = (TEMPLATES / "report.html").read_text(encoding="utf-8")
     css = (TEMPLATES / "report.css").read_text(encoding="utf-8")
@@ -1341,7 +1393,7 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
         "css": css,
         "meta": meta,
         "aviso": aviso,
-        "corpo": "\n".join(corpo),
+        "corpo": _brief(engine, narrative) + (section("Restrições declaradas do cliente", _client_fit_section(engine)) if engine.get("client_fit") else "") + '<details id="apendice"><summary>Apêndice: análise completa</summary>' + "\n".join(corpo) + "</details>",
         "fontes": _sources(engine),
         "assinatura": e(signature(assinatura)),
         "aviso_legal": DISCLAIMER_HTML,

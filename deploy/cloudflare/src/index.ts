@@ -228,6 +228,9 @@ async function diagnose(request: Request, env: Env, ctx: ExecutionContext): Prom
 		})(),
 	);
 	const headers = new Headers({ "cache-control": "no-store", "x-silo-origin": "engine" });
+	if ((res.headers.get("content-type") ?? "").startsWith("text/html")) {
+		headers.set("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'");
+	}
 	for (const name of PASS_HEADERS) {
 		const v = res.headers.get(name);
 		if (v) headers.set(name, v);
@@ -377,7 +380,7 @@ async function tracePdf(url: URL, env: Env): Promise<Response> {
 
 const PAGE_HEADERS = {
 	"content-security-policy":
-		"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
+		"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
 	"referrer-policy": "no-referrer",
 	"x-robots-tag": "noindex",
 };
@@ -392,7 +395,7 @@ export default {
 		if (pathname === "/" && (request.method === "GET" || request.method === "HEAD")) {
 			return reply(200, PAGE, "text/html; charset=utf-8", {
 				"content-security-policy":
-					"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
+					"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
 				"referrer-policy": "no-referrer",
 			});
 		}
@@ -450,11 +453,22 @@ button[disabled] { opacity: .6; cursor: wait; }
 <input id="token" type="password" autocomplete="off" required>
 <label for="file">Extratos (um por conta)</label>
 <input id="file" type="file" accept=".xlsx,.pdf" multiple required>
+<fieldset><legend>Restrições do cliente (opcional)</legend>
+<label for="profile">Perfil declarado</label><select id="profile"><option value="">Não informado</option><option value="conservador">Conservador</option><option value="moderado">Moderado</option><option value="arrojado">Arrojado</option></select>
+<label for="horizon">Data do horizonte de investimento</label><input id="horizon" type="date">
+<label for="needDate">Data da necessidade de liquidez</label><input id="needDate" type="date">
+<label for="need">Valor necessário (R$)</label><input id="need" type="number" min="0" step="0.01">
+<p>Checagem factual; não aprova produtos nem substitui suitability. Não informe nome ou documentos.</p></fieldset>
 <button id="go" type="submit">Gerar diagnóstico</button>
 </form>
-<div id="status" role="status" aria-live="polite"></div>
+<div id="status" role="status" aria-live="polite"></div><button id="print" type="button" hidden>Imprimir / salvar PDF</button><iframe id="report" title="Diagnóstico de carteira" sandbox="allow-same-origin allow-modals" style="width:100%;height:80vh;border:0" hidden></iframe>
 </main>
 <script>
+document.getElementById("print").addEventListener("click", () => {
+  const frame = document.getElementById("report");
+  frame.contentDocument.querySelectorAll("details").forEach(d => d.open = true);
+  frame.contentWindow.print();
+});
 const f = document.getElementById("f"), go = document.getElementById("go"), st = document.getElementById("status");
 f.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -465,21 +479,27 @@ f.addEventListener("submit", async (e) => {
   if (total > 10 * 1024 * 1024) { st.textContent = "Arquivos grandes demais: o limite é 10 MB no total."; return; }
   const body = new FormData();
   for (const f of files) body.append("file", f);
+  body.append("output_format", "html");
+  const constraints = {};
+  for (const [id, key] of [["profile", "profile"], ["horizon", "horizon_date"], ["needDate", "liquidity_date"], ["need", "liquidity_brl"]]) {
+    const value = document.getElementById(id).value;
+    if (value !== "") constraints[key] = value;
+  }
+  if (constraints.liquidity_brl && !constraints.liquidity_date) { st.textContent = "Informe a data da necessidade de liquidez."; return; }
+  if (Object.keys(constraints).length) body.append("client_constraints", JSON.stringify(constraints));
+  document.getElementById("report").hidden = true;
+  document.getElementById("print").hidden = true;
   go.disabled = true;
   st.textContent = "Gerando o diagnóstico. Isso leva alguns minutos; mantenha esta página aberta.";
   try {
     // multipart: the browser sets the content-type with its boundary, and the Worker forwards it.
     const r = await fetch("/diagnose", { method: "POST", headers: { "x-demo-token": token }, body });
     if (r.ok) {
-      const blob = await r.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "diagnostico.pdf";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-      st.textContent = "Pronto: o PDF foi baixado.";
+      const frame = document.getElementById("report");
+      frame.srcdoc = await r.text();
+      frame.hidden = false;
+      document.getElementById("print").hidden = false;
+      st.textContent = "Pronto: brief e análise disponíveis abaixo. O PDF é salvo somente quando solicitado.";
     } else {
       let msg = "Erro " + r.status + ".";
       try { const j = await r.json(); if (j && j.erro) msg = j.erro; } catch (_) {}
