@@ -100,13 +100,13 @@ schedule or a permission, and retiring an agent are all PRs to this file.
 | -------- | ---------------------------- | ------------------------ | ---------- | ----------------------------------------- | ---------- | ------------------- |
 | Scout    | `.claude/agents/scout.md`    | Mondays 10:00            | TBD        | web read; COMPETITIVE_GAPS.md only        | 1 draft PR | disable the routine |
 | Builder  | `.claude/agents/builder.md`  | Wednesdays 10:00         | TBD        | own branch; no schema apply, deploy or DB | 1 draft PR | disable the routine |
-| Sentinel | `.claude/agents/sentinel.md` | daily 09:00              | TBD        | read-only                                 | 1 issue    | disable the routine |
+| Sentinel | `.claude/agents/sentinel.md` | daily 08:51              | `trig_012S452r8KbfeRNkua8DVwzr` | read-only                            | 1 issue    | disable the routine |
 
 All three prompt files exist (written 2026-09-25). A routine id is filled in
 by the owner's session when that routine is created, one at a time, after
 the labels exist; until a row has one, that agent does not run.
 
-The Sentinel's 09:00 sits after the 06:00 ingest, 07:30 DB Health and the
+The Sentinel's 08:51 (05:51 UTC-3) sits after the 06:00 ingest, 07:30 DB Health and the
 08:00 watchdog and publish check, so it reads a day whose own-side state has
 settled.
 
@@ -226,7 +226,7 @@ not hold and the prompts were written (§6).
 | Smallest test (§5)                 | **passed** 2026-09-24: PR #291, 0 human-edited lines, green first CI                                                                                        |
 | Prompt files `.claude/agents/*.md` | **written** 2026-09-25: `scout.md`, `builder.md`, `sentinel.md`                                                                                             |
 | Labels `ready-for-agent`, `agent:<name>` | `ready-for-agent` exists (triage); the three `agent:<name>` are created by `scripts/setup_agents_wizard.sh` (each prompt no-ops while its label is missing) |
-| Routines                           | none; every routine id above is TBD, filled by the owner's session after merge                                                                              |
+| Routines                           | **Sentinel created** 2026-10-06 in claude.ai (repo attached, Sonnet, public mode, daily 08:51 UTC). Builder and Scout stay TBD, paused by the owner until the Sentinel has run about 2 weeks |
 | Sentinel's read-only DB credential | script ready (`docs/reference/security/sentinel_readonly_role.sql`), run by the owner by hand; until `SENTINEL_DATABASE_URL` is set, the Sentinel runs in public mode |
 
 Order from here: create the labels, then schedule the routines one at a

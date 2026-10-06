@@ -372,7 +372,7 @@ The inputs added to `backfill.yml` stay, so the loads are repeatable:
 `bacen_only = true`, `bacen_sources = sgs`, `bacen_start = 1980-01-01`,
 `ibge = true`.
 
-## 13. B7 agent loop: test passed, prompts written, nothing scheduled
+## 13. B7 agent loop: Sentinel scheduled, Builder and Scout paused
 
 [AGENTS.md](AGENTS.md) is approved (2026-09-24). The manual Builder run on FIDC
 informe `tab_X_7` (AGENTS.md §5) passed: PR #291 merged on 2026-09-24 with 0
@@ -388,6 +388,25 @@ public API only.
 `bash scripts/setup_agents_wizard.sh` (2026-10-05) walks the owner through the
 labels, the Sentinel role and its own cloud environment; the routines are then
 created from a Claude session, which fills in the §3a registry.
+
+**2026-10-06: the Sentinel is scheduled** (`trig_012S452r8KbfeRNkua8DVwzr`, daily
+08:51 UTC, public mode). The owner chose to run only the Sentinel and to judge
+it after about 2 weeks before the Builder and the Scout get routines. What the
+setup showed:
+
+- A routine made through the Claude Code MCP (`create_trigger`) has no
+  repository and no GitHub access (403). Create it in claude.ai, Routines,
+  with the repository attached. Remove the connectors it offers: the Sentinel
+  is read-only.
+- The routine's environment must allow `dados.cvm.gov.br`,
+  `fnet.bmfbovespa.com.br` and the Supabase REST host in its network policy.
+  The first test run got 403 from the proxy on all three.
+- A raw TCP connection from the cloud sandbox to the Postgres pooler timed
+  out (HTTPS worked), so the Sentinel's database mode is not usable there.
+- First test with the network open: checks A (CVM headers) and C
+  (`coverage()`) ran with no drift. Check B (FNET) did not finish: it needs
+  about 15 paced day crawls, which is more than the foreground wait allowed.
+  Open: make check B fit a run.
 
 ## 14. The gaps backlog: resolution plan (2026-09-24)
 
