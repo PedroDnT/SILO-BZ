@@ -15,9 +15,12 @@ and Pentágono came back `unknown` (readable text, but whether a login or captch
 
 Three things the table does not say loudly enough:
 
-- **BTG was not found.** The run opened btgpactual.com but did not reach the "Banco de Emissões" the owner
-  described, and the more-than-100-issues claim is unverified. The BTG entries in
-  `src/portfolio/rules/investigator/coordinators.yaml` were approved by the owner from his own knowledge of the site, not from this note.
+- **BTG's list was not reached.** The run opened btgpactual.com and did not get to the "Banco de Emissões" the
+  owner described, and the more-than-100-issues claim is unverified. The page renders with JavaScript:
+  `coordinators.yaml` records that a plain fetch of `https://www.btgpactual.com/investment-banking` returned only the
+  cookie banner (2026-10-05), which is the likely reason a page reader sees no list. The two BTG entries do not
+  stand on this note: they stand on CVM anúncios de início that name each BTG entity as Coordenador Líder and
+  point to that page (evidence field of each entry, owner approval 2026-10-05, #605 Q39).
 - **"public" means the page text was readable without signing in.** It does not mean every download link is
   open, and some gateways show only titles or links, so they need a browser check before an agent depends on them.
 - **No page proved that its search takes a CETIP/B3 code.** Several show the ISIN or the IF code on the issue
@@ -89,7 +92,7 @@ These were looked for and not confirmed. "Not verified" is not proof that the pa
 CNPJ 02.332.886/0001-04. Three sources agree: XP's own page (conteudos.xpi.com.br, "A XP Investimentos CCTVM S/A,
 inscrita sob o CNPJ: 02.332.886/0001-04"), a document it filed on Fundos.NET (id 31389, same CNPJ in the
 administrator's own words) and ANBIMA's institution profile. The `ofertaspublicas.xpi.com.br` page itself shows no CNPJ.
-The XP entry in `coordinators.yaml` stays `proposta`: approving it is the owner's call (Q39).
+The owner approved the XP entry on 2026-10-06 (Q39), with that name and CNPJ.
 
 ## Caveats on the data
 
