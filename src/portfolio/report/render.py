@@ -551,8 +551,38 @@ def _returns_section(engine: dict) -> str:
                                         for w in ln.get("windows") or []):
         notes.append(v(engine, f"{b}.pct_of_cdi_note"))
     out.append("<ul>" + "".join(f"<li class=cit>{n}</li>" for n in notes if n and n != "—") + "</ul>")
+    out.append(_contribution_html(engine))
     if r.get("status") in ("partial", "unknown") and r.get("reason"):
         out.append(f'<p><span class="tag unk">{e(SECTION_STATUS_LABELS.get(r["status"], r["status"]))}</span> {v(engine, f"{b}.reason")}.</p>')
+    return "\n".join(out)
+
+
+def _contribution_html(engine: dict) -> str:
+    """Engine 1.15: how much each line added to the return of the evaluated part, per window, back-cast from today's
+    values (the statement has no flows). Labelled retroactive; the total is the evaluated part's return with its
+    coverage, never the portfolio's. Lines are in statement order."""
+    c = (engine.get("returns") or {}).get("contribution")
+    if not c or not c.get("windows"):
+        return ""
+    b = "returns.contribution"
+    out = [f'<h3>Contribuição por posição <span class="tag est">{v(engine, f"{b}.label")}</span></h3>',
+           f"<p class=cit>{v(engine, f'{b}.note')}</p>"]
+    for i, w in enumerate(c["windows"]):
+        q = f"{b}.windows[{i}]"
+        label = e(WINDOW_LABEL.get(w.get("id"), w.get("id")))
+        if w.get("status") != "avaliado":
+            out.append(f'<p>{label}: <span class="tag unk">não avaliado</span> {v(engine, f"{q}.reason")}.</p>')
+            continue
+        rows = []
+        for k, ln in enumerate(w.get("lines") or []):
+            lq = f"{q}.lines[{k}]"
+            rows.append([f"{v(engine, f'{lq}.line_id')} {v(engine, f'{lq}.instrument')}", v(engine, f"{lq}.net_return_pct"),
+                         v(engine, f"{lq}.start_weight_pct"), v(engine, f"{lq}.contribution_pp")])
+        out.append(f"<p><strong>{label}</strong>: soma das contribuições = retorno só das {v(engine, f'{q}.n_lines')} linhas "
+                   f"avaliadas, <span class=v>{v(engine, f'{q}.covered_return_pct')}</span> ({v(engine, f'{q}.coverage_portfolio_value_pct')} "
+                   "do valor da carteira); não é o retorno da carteira.</p>")
+        out.append(_table([("Linha", False), ("Retorno líquido", True), ("Peso no início (retroativo)", True),
+                           ("Contribuição", True)], rows))
     return "\n".join(out)
 
 

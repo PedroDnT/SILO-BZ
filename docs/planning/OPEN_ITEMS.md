@@ -497,6 +497,9 @@ addendum Q36) is computed only for a fund whose own filed benchmark (Extrato `PA
 `INDICE_REFER`, served by `portfolio_fees` since catalog v68) is CDI or DI by the spelling list
 `src/portfolio/rules/benchmark_cdi.yaml`. Remaining: fixed-income ETFs stay "não avaliado" until
 `api.trade_consolidated_history` (catalog v65, #632) is deployed to the live MCP.
+The per-asset performance attribution (owner, 2026-10-06) is the retroactive contribution of engine 1.15,
+`returns.contribution`: back-cast from today's values, labelled, with the evaluated part's coverage and no portfolio
+total.
 
 **Superseded by map #510 (2026-10-03).** #340 and #341–#345 were closed as not
 planned on 2026-09-30. The demo is now map #510 (label `demo-diagnostico`),

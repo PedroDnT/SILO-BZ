@@ -212,7 +212,7 @@ def test_cdb_with_date_rate_today_article_and_next_bracket():
 def test_missing_date_never_gives_a_figure_in_the_demo():
     doc = json.loads(FIXTURE.read_text(encoding="utf-8"))
     tax = doc["tax"]
-    assert doc["schema_version"] == "1.14" and doc["section_status"]["tax"]["status"] == tax["status"]
+    assert doc["schema_version"] == "1.15" and doc["section_status"]["tax"]["status"] == tax["status"]
     assert all(p["data_aplicacao"] is None for p in doc["statement"]["positions"])
     assert tax["n_tax_estimated"] == 0
     for ln in tax["lines"]:

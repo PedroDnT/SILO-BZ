@@ -248,7 +248,70 @@ def compute_returns(
         "n_evaluated": sum(ln["status"] == EVALUATED for ln in out),
         "n_not_evaluated": sum(ln["status"] == NOT_EVALUATED for ln in out),
         "coverage": coverage,
+        "contribution": _contribution(out, coverage),  # engine 1.15
     }
+
+
+# ---------------------------------------------------------------------------
+# Retroactive contribution (engine 1.15)
+# ---------------------------------------------------------------------------
+
+CONTRIBUTION_LABEL = "contribuição retroativa"
+NOTE_CONTRIBUTION = (
+    "Contribuição retroativa: o extrato dá as posições em uma data e nenhum fluxo. O valor no início da janela de cada "
+    "linha é o valor atual dividido por 1 mais o retorno líquido da janela; o peso é esse valor sobre a soma dos valores "
+    "iniciais das linhas avaliadas; a contribuição é o peso vezes o retorno. Supõe que não houve aporte nem resgate. A "
+    "soma é o retorno só da parte avaliada, nunca da carteira inteira."
+)
+
+
+def _contribution(lines: list[dict[str, Any]], coverage: dict[str, Any]) -> dict[str, Any]:
+    """Per window: each evaluated line's share of the return of the evaluated part, back-cast from today's values.
+
+    start value = value / (1 + r); weight = start value / sum of the start values; contribution = weight x r. The sum of
+    the contributions is the return of the evaluated lines taken together, exactly (sum of the end values over the sum
+    of the start values, minus 1). Lines are in statement order; nothing is ranked."""
+    out: dict[str, Any] = {}
+    for wid, _n, _f, _note in WINDOWS:
+        rows = []
+        for ln in lines:
+            w = ln["windows"][wid]
+            r, value = dec(w.get("net_return_pct")), dec(ln.get("valor_brl"))
+            if w["status"] != EVALUATED or r is None or value is None or r <= Decimal(-100):
+                continue
+            rows.append((ln, value, r, value / (1 + r / 100)))
+        start_total = sum((s for *_x, s in rows), Decimal("0"))
+        end_total = sum((v for _l, v, _r, _s in rows), Decimal("0"))
+        if not rows or start_total <= 0:
+            out[wid] = {"status": NOT_EVALUATED, "reason_code": "linhas_sem_retorno", "covered_return_pct": None,
+                        "n_lines": 0, "lines": [], **_cov(coverage, wid)}
+            continue
+        out[wid] = {
+            "status": EVALUATED,
+            "reason_code": None,
+            "covered_return_pct": float(((end_total / start_total - 1) * 100).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+            "start_value_brl": brl(start_total),
+            "end_value_brl": brl(end_total),
+            "n_lines": len(rows),
+            **_cov(coverage, wid),
+            "lines": [
+                {
+                    "line_no": ln["line_no"],
+                    "linha_extrato": ln["linha_extrato"],
+                    "valor_brl": ln["valor_brl"],
+                    "net_return_pct": float(r),
+                    "start_value_brl": brl(s),
+                    "start_weight_pct": pct(s, start_total),
+                    "contribution_pp": float((s / start_total * r).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+                }
+                for ln, _v, r, s in rows
+            ],
+        }
+    return {"label": CONTRIBUTION_LABEL, "note": NOTE_CONTRIBUTION, "windows": out}
+
+
+def _cov(coverage: dict[str, Any], wid: str) -> dict[str, Any]:
+    return {"coverage_portfolio_value_pct": coverage[wid]["coverage_portfolio_value_pct"]}
 
 
 # ---------------------------------------------------------------------------
