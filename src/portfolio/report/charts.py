@@ -291,137 +291,275 @@ def lookthrough_chart(view: dict) -> str:
                   "Só os caminhos que o motor abriu; o peso é o do ativo na carteira inteira.")
 
 
-# --- d2. where the exposure to one asset comes from (owner's decision Q42 = A, 2026-10-05) ------------------------------
+# --- d2. where the exposure to one asset comes from: an arrow flow diagram (Q42 = A, 2026-10-05; redrawn 2026-10-06) ---
+#
+# One diagram per asset, left to right: a box per statement line that holds the asset (the line's own name first, then
+# "linha N", its type and its position), a ribbon from each box to the asset's box with an arrowhead at the right end,
+# and the asset's box (code and ISIN, the engine's total in R$ and as a percent of the portfolio). A ribbon's thickness
+# is its line's R$ exposure to the asset, geometry only; the text on it is ``format_value`` of the view paths of
+# ``lookthrough.exposure_origin`` (built by ``adapt._exposure_origin``). The percent of the fund is the engine's
+# ``weight_in_line`` times 100, taken in the adapter and printed through a ``_pct`` path. Plain SVG, no library: weasyprint
+# has no JavaScript, and the engine image installs only ``deploy/cloudflare/engine/requirements.txt``.
 
 DIRECT_FILL = SERIES
-VIA_FILLS = ("#1baf7a", "#eda100", "#e87ba4", "#4a3aa7", "#008300")  # categorical slots 3 to 7 of the dataviz reference
+# categorical slots 3 to 7 of the dataviz reference, and a sixth (sienna) so six lines reached through funds (the cap)
+# never share a colour
+VIA_FILLS = ("#1baf7a", "#eda100", "#e87ba4", "#4a3aa7", "#008300", "#a0522d")
 ORIGIN_CAVEAT = ("A parte via fundo é a carteira do fundo no mês da CDA, não na data do extrato; fundos sem CDA no mês "
                  "não são abertos, então o total é um piso. Ações ON e PN da mesma companhia (como PETR3 e PETR4) são "
-                 "ativos diferentes aqui. Peso no fundo: fração do fundo na CDA, não em %.")
-ORIGIN_BAR_H = 14
-ORIGIN_TEXT_X = 16
-ORIGIN_DETAIL_SIZE = 8
-
-
-def _seg_path(x: float, y: float, w: float, h: float, round_left: bool, round_right: bool, r: float = RADIUS) -> str:
-    """A bar segment: rounded only at the ends of the whole bar, square where it touches its neighbour."""
-    r = min(r, w / 2, h / 2)
-    rl, rr = (r if round_left else 0.0), (r if round_right else 0.0)
-    d = f"M{x + rl:.1f},{y:.1f} H{x + w - rr:.1f} "
-    if rr:
-        d += f"A{rr:.1f},{rr:.1f} 0 0 1 {x + w:.1f},{y + rr:.1f} "
-    d += f"V{y + h - rr:.1f} "
-    if rr:
-        d += f"A{rr:.1f},{rr:.1f} 0 0 1 {x + w - rr:.1f},{y + h:.1f} "
-    d += f"H{x + rl:.1f} "
-    if rl:
-        d += f"A{rl:.1f},{rl:.1f} 0 0 1 {x:.1f},{y + h - rl:.1f} "
-    d += f"V{y + rl:.1f} "
-    if rl:
-        d += f"A{rl:.1f},{rl:.1f} 0 0 1 {x + rl:.1f},{y:.1f} "
-    return d + "Z"
+                 "ativos diferentes aqui. A espessura da seta é proporcional ao valor da linha (com um mínimo para as "
+                 "pequenas); o % do fundo é o peso do ativo na carteira do fundo na CDA.")
+ORIGIN_NAME_SIZE = FONT_SIZE      # box name, asset code
+ORIGIN_SMALL_SIZE = 7.5           # the module's smallest size: box detail line, tag
+ORIGIN_LABEL_SIZE = 8             # the text on an arrow
+ORIGIN_LEFT_W = 205
+ORIGIN_RIGHT_W = 124
+ORIGIN_BOX_H = 36                 # two text lines and room
+ORIGIN_ARROW_L = 9
+ORIGIN_CURVE_W = 95               # horizontal run of the S-curve; the flat part before it carries the label
+ORIGIN_T_MAX = 22                 # thickness of the largest ribbon
+ORIGIN_T_MIN = 3                  # a tiny slice stays visible
+ORIGIN_LINE_H = 10.5
+ORIGIN_ROW_GAP = 10
+ORIGIN_WRAP_CHAR_W = 0.55         # estimated glyph width (em) for wrapping the arrow label (measured 0.53 on the render)
+ORIGIN_BOLD_CAPS_W = 0.7          # estimated glyph width (em) of a bold upper-case name, the widest a box name gets
 
 
 def _positive(v: Any) -> bool:
     return is_number(v) and v > 0
 
 
-def _origin_detail(view: dict, q: str, seg: dict) -> str:
-    """The second line of a via-fund segment: weight inside the fund and the CDA month with its age. Every figure is
-    ``format_value`` of the segment's own path; a part the engine did not carry is left out."""
-    parts = []
-    if is_number(seg.get("weight_in_line")):
-        parts.append(f"peso no fundo: {format_value(view, f'{q}.weight_in_line')}")
+def _tint(hex_colour: str, k: float = 0.6) -> str:
+    """The colour mixed with white (``k`` of white), a literal hex: a ribbon is lighter than its box stripe."""
+    c = [int(hex_colour[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(v * (1 - k) + 255 * k):02x}" for v in c)
+
+
+def _fit(text: Any, max_px: float, size: float, char_em: float = 0.6) -> str:
+    """``truncate`` for a text of another size than the module's base one (``char_em``: estimated glyph width in em)."""
+    s = "" if text is None else str(text)
+    n = max(4, int(max_px / (char_em * size)))
+    return s if len(s) <= n else s[: n - 1].rstrip() + "…"
+
+
+def _wrap(text: str, max_px: float, size: float) -> list[str]:
+    """Greedy word wrap on an estimated glyph width; a single word longer than the line is kept whole."""
+    per_line = max(8, int(max_px / (ORIGIN_WRAP_CHAR_W * size)))
+    lines: list[str] = []
+    cur = ""
+    for word in text.replace("R$ ", "R$\0").split(" "):  # never break between "R$" and its number
+        if cur and len(cur) + 1 + len(word) > per_line:
+            lines.append(cur)
+            cur = word
+        else:
+            cur = f"{cur} {word}" if cur else word
+    return [ln.replace("\0", " ") for ln in (lines + [cur] if cur else lines)]
+
+
+def _cda_text(view: dict, q: str, seg: dict) -> str:
+    """"CDA 05/2026 (4 meses antes do extrato)": the CDA month and its age against the statement; "" when the engine
+    carried no month."""
+    if not seg.get("cda_month"):
+        return ""
+    text = f"CDA {format_value(view, f'{q}.cda_month')}"
+    age = seg.get("cda_age_months")
+    if is_number(age):
+        if age == 0:
+            text += " (no mês do extrato)"
+        else:
+            text += f" ({format_value(view, f'{q}.cda_age_months')} {'mês' if age == 1 else 'meses'} antes do extrato)"
+    return text
+
+
+def _arrow_label(view: dict, q: str, seg: dict) -> list[str]:
+    """The text on an arrow, as lines. Direct: "direta: R$ x". Via a fund: "via fundo: 16,59% do fundo = R$ x", then
+    the CDA month and its age; a fund that holds the asset by several paths says so instead of a weight (weights are
+    not summed)."""
+    value = format_value(view, f"{q}.value_brl")
+    if seg.get("direct"):
+        return [f"direta: {value}"]
+    if is_number(seg.get("weight_in_line_pct")):
+        pct = seg["weight_in_line_pct"]
+        # two decimals would print a real, tiny weight as "0,00%": say it is below the precision instead
+        pct_txt = "menos de 0,01%" if 0 < pct < 0.005 else format_value(view, f"{q}.weight_in_line_pct")
+        lines = [f"via fundo: {pct_txt} do fundo = {value}"]
     elif is_number(seg.get("n_paths")):
-        parts.append(f"{format_value(view, f'{q}.n_paths')} caminhos dentro do fundo (peso não somado)")
-    if seg.get("cda_month"):
-        text = f"CDA de {format_value(view, f'{q}.cda_month')}"
-        age = seg.get("cda_age_months")
-        if is_number(age):
-            if age == 0:
-                text += ", no mês do extrato"
-            else:
-                text += f", {format_value(view, f'{q}.cda_age_months')} {'mês' if age == 1 else 'meses'} antes do extrato"
-        parts.append(text)
-    return " · ".join(parts)
+        lines = [f"via fundo: {value}",
+                 f"{format_value(view, f'{q}.n_paths')} caminhos dentro do fundo (peso não somado)"]
+    else:
+        lines = [f"via fundo: {value}"]
+    cda = _cda_text(view, q, seg)
+    return lines + [cda] if cda else lines
+
+
+def _box_name(seg: dict) -> str:
+    name = seg.get("name")
+    return str(name) if name else f"linha {seg.get('line_no')}"
+
+
+def _box_detail(view: dict, q: str, seg: dict, max_px: float | None = None) -> str:
+    """"linha 3 · fundo · posição R$ 264.615,00": the statement's own type and position value; a part the statement
+    did not carry is left out. With ``max_px`` only the type is shortened (then dropped), never the number: a cut
+    amount would read as another amount."""
+    head = f"linha {format_value(view, f'{q}.line_no')}" if is_number(seg.get("line_no")) else "linha"
+    tail = f"posição {format_value(view, f'{q}.position_brl')}" if is_number(seg.get("position_brl")) else ""
+    tipo = str(seg["tipo"]) if seg.get("tipo") else ""
+
+    def join(t: str) -> str:
+        return " · ".join(x for x in (head, t, tail) if x)
+
+    if max_px is None or len(join(tipo)) * 0.6 * ORIGIN_SMALL_SIZE <= max_px:
+        return join(tipo)
+    room = int(max_px / (0.6 * ORIGIN_SMALL_SIZE)) - len(join("")) - 3
+    return join(tipo[: room - 1].rstrip() + "…" if tipo and room >= 4 else "")
+
+
+def _asset_lines(label: Any) -> list[str]:
+    """The group label ``<asset_key> (<isin>)`` on two lines; any other label on one."""
+    text = "" if label is None else str(label)
+    if text.endswith(")") and " (" in text:
+        i = text.rindex(" (")
+        return [text[:i], text[i + 1:]]
+    return [text]
+
+
+def _origin_diagram(view: dict, gi: int, g: dict) -> str:
+    """One asset's diagram, or "" when it has no positive total or no line with a positive exposure to draw."""
+    base = f"lookthrough.exposure_origin[{gi}]"
+    segs = [(i, s) for i, s in enumerate(g.get("segments") or []) if isinstance(s, dict)]
+    drawn = sorted(((i, s) for i, s in segs if _positive(s.get("value_brl")) and not s.get("hidden")),
+                   key=lambda t: -t[1]["value_brl"])
+    if not _positive(g.get("total_brl")) or not drawn:
+        return ""
+    unseen = [(i, s) for i, s in segs if not _positive(s.get("value_brl"))]
+    overflow = g.get("overflow") if isinstance(g.get("overflow"), dict) else None
+    vmax = drawn[0][1]["value_brl"]
+    x0 = ORIGIN_LEFT_W
+    xe = WIDTH - ORIGIN_RIGHT_W - ORIGIN_ARROW_L
+    xa = xe - ORIGIN_CURVE_W
+    xm = (xa + xe) / 2
+    label_w = xa - x0 - 8
+
+    # rows: the label above the flat part of the ribbon, the box centred on the ribbon
+    rows = []
+    top = 0.0
+    via_n = 0
+    for i, s in drawn:
+        q = f"{base}.segments[{i}]"
+        colour = DIRECT_FILL if s.get("direct") else VIA_FILLS[via_n % len(VIA_FILLS)]
+        via_n += 0 if s.get("direct") else 1
+        t = max(ORIGIN_T_MIN, ORIGIN_T_MAX * s["value_brl"] / vmax)
+        label = [ln for raw in _arrow_label(view, q, s) for ln in _wrap(raw, label_w, ORIGIN_LABEL_SIZE)]
+        band_top = top + max(len(label) * ORIGIN_LINE_H + 3, ORIGIN_BOX_H / 2 - t / 2)
+        cy = band_top + t / 2
+        bottom = max(band_top + t, cy + ORIGIN_BOX_H / 2) + ORIGIN_ROW_GAP
+        rows.append({"i": i, "q": q, "s": s, "colour": colour, "t": t, "label": label, "band_top": band_top, "cy": cy})
+        top = bottom
+    left_h = top - ORIGIN_ROW_GAP
+
+    # the asset's box: one arrival slot per ribbon, an arrowhead wider than the ribbon
+    slots = [max(r["t"] + 6, 10) + 3 for r in rows]
+    asset = _asset_lines(g.get("asset"))
+    total_txt = format_value(view, f"{base}.total_brl")
+    pct_txt = f"{format_value(view, f'{base}.total_pct')} da carteira" if is_number(g.get("total_pct")) else ""
+    n_text = len(asset) + 1 + (1 if pct_txt else 0)
+    right_h = max(sum(slots) + 6, n_text * ORIGIN_LINE_H + 14)
+    h = max(left_h, right_h)
+    left_off, right_off = (h - left_h) / 2, (h - right_h) / 2
+    slot_y = right_off + (right_h - sum(slots)) / 2
+
+    parts: list[str] = []
+    for r, slot in zip(rows, slots):
+        s, q, t, colour = r["s"], r["q"], r["t"], r["colour"]
+        cy = r["cy"] + left_off
+        ye = slot_y + slot / 2
+        slot_y += slot
+        yt, yb, yet, yeb = cy - t / 2, cy + t / 2, ye - t / 2, ye + t / 2
+        title = f"{_box_name(s)}: " + " · ".join(r["label"])
+        parts.append(f'<g><title>{escape(title)}</title>')
+        parts.append(f'<path d="M{x0},{yt:.2f} H{xa:.1f} C{xm:.1f},{yt:.2f} {xm:.1f},{yet:.2f} {xe:.1f},{yet:.2f} '
+                     f'V{yeb:.2f} C{xm:.1f},{yeb:.2f} {xm:.1f},{yb:.2f} {xa:.1f},{yb:.2f} H{x0} Z" '
+                     f'fill="{_tint(colour)}" stroke="{colour}" stroke-width="0.6" class="ribbon"/>')
+        hb = max(t + 6, 10)
+        parts.append(f'<path d="M{xe:.1f},{ye - hb / 2:.1f} L{xe + ORIGIN_ARROW_L},{ye:.1f} L{xe:.1f},{ye + hb / 2:.1f} Z" '
+                     f'fill="{colour}" class="arrowhead"/>')
+        for k, line in enumerate(r["label"]):
+            ly = r["band_top"] + left_off - 3 - (len(r["label"]) - 1 - k) * ORIGIN_LINE_H
+            parts.append(_text(x0 + 8, ly, line, fill=INK, size=ORIGIN_LABEL_SIZE))
+        # the statement line's box: name first, then line number, type and position; a tag says direct or via a fund
+        by = cy - ORIGIN_BOX_H / 2
+        tag = "direta" if s.get("direct") else "via fundo"
+        tag_w = len(tag) * ORIGIN_SMALL_SIZE * 0.6 + 10
+        parts.append(f'<rect x="0.5" y="{by:.1f}" width="{ORIGIN_LEFT_W - 1}" height="{ORIGIN_BOX_H}" rx="4" '
+                     f'fill="{SURFACE}" stroke="{BASELINE}" stroke-width="1" class="line-box"/>')
+        parts.append(f'<rect x="1.5" y="{by + 1:.1f}" width="4" height="{ORIGIN_BOX_H - 2}" rx="2" fill="{colour}"/>')
+        parts.append(_text(12, by + 14, _fit(_box_name(s), ORIGIN_LEFT_W - 12 - tag_w - 12, ORIGIN_NAME_SIZE, ORIGIN_BOLD_CAPS_W), fill=INK,
+                           weight="bold", size=ORIGIN_NAME_SIZE))
+        parts.append(f'<rect x="{ORIGIN_LEFT_W - 6 - tag_w:.1f}" y="{by + 5:.1f}" width="{tag_w:.1f}" height="13" rx="6.5" '
+                     f'fill="{_tint(colour, 0.8)}" stroke="{colour}" stroke-width="0.6"/>')
+        parts.append(_text(ORIGIN_LEFT_W - 6 - tag_w / 2, by + 14.2, tag, anchor="middle", fill=INK, size=ORIGIN_SMALL_SIZE))
+        parts.append(_text(12, by + 28, _box_detail(view, q, s, ORIGIN_LEFT_W - 12 - 8), size=ORIGIN_SMALL_SIZE))
+        parts.append("</g>")
+    bx = WIDTH - ORIGIN_RIGHT_W
+    parts.append(f'<rect x="{bx}" y="{right_off:.1f}" width="{ORIGIN_RIGHT_W - 0.5}" height="{right_h:.1f}" rx="4" '
+                 f'fill="{NODE_FILL}" stroke="{NODE_STROKE}" stroke-width="1" class="asset-box"/>')
+    ty = right_off + (right_h - n_text * ORIGIN_LINE_H) / 2 + 8
+    for k, line in enumerate(asset):
+        parts.append(_text(bx + 8, ty, _fit(line, ORIGIN_RIGHT_W - 14, ORIGIN_NAME_SIZE, ORIGIN_BOLD_CAPS_W if k == 0 else 0.6), fill=INK,
+                           weight="bold" if k == 0 else "normal",
+                           size=ORIGIN_NAME_SIZE))
+        ty += ORIGIN_LINE_H
+    parts.append(_text(bx + 8, ty, total_txt, fill=INK, weight="bold", size=ORIGIN_NAME_SIZE))
+    ty += ORIGIN_LINE_H
+    if pct_txt:
+        parts.append(_text(bx + 8, ty, pct_txt, size=ORIGIN_LABEL_SIZE))
+
+    # lines that are not drawn: no positive R$ (zero, negative or missing), and the smaller ones past the cap
+    texts_below: list[str] = []
+    for i, s in unseen:
+        q = f"{base}.segments[{i}]"
+        tail = f", {_box_detail(view, q, s).split(' · ')[0]}: {format_value(view, f'{q}.value_brl')}"
+        head = "Não desenhada (exposição zero, negativa ou ausente): "
+        name_px = WIDTH - (len(head) + len(tail)) * 0.6 * ORIGIN_LABEL_SIZE
+        texts_below.append(head + _fit(_box_name(s), name_px, ORIGIN_LABEL_SIZE) + tail)
+    if overflow and is_number(overflow.get("n_lines")):
+        texts_below.append(f"+{format_value(view, f'{base}.overflow.n_lines')} linhas menores: "
+                           f"{format_value(view, f'{base}.overflow.value_brl')} (não desenhadas)")
+    for k, text in enumerate(texts_below):
+        parts.append(_text(0, h + 14 + k * (ORIGIN_LINE_H + 2), text, size=ORIGIN_LABEL_SIZE))
+    height = h + 2 if not texts_below else h + 14 + (len(texts_below) - 1) * (ORIGIN_LINE_H + 2) + 4
+    shown = [f"{_box_name(s)}, {'direta' if s.get('direct') else 'via fundo'}, "
+             f"{format_value(view, f'{base}.segments[{i}].value_brl')}" for i, s in drawn]
+    label = (f"Origem da exposição a {g.get('asset')}: total {total_txt}"
+             + (f", {pct_txt}" if pct_txt else "") + ". Linhas: " + "; ".join(shown))
+    body = f"<title>{escape(label)}</title>" + "".join(parts)
+    return _svg(height, body, label)
 
 
 def exposure_origin_chart(view: dict) -> str:
-    """Per asset held through more than one statement line, one stacked bar: the asset's total exposure
-    (``total_brl``, ``total_pct``: the engine's) split into one segment per statement line, the direct holding and each
-    fund the asset is reached through (``lookthrough.exposure_origin``, built by ``adapt``).
+    """Per asset held through more than one statement line, an arrow flow diagram of where its exposure comes from:
+    a box per statement line (name, line number, type, position), a ribbon to the asset's box whose thickness is the
+    line's R$ exposure, and the asset's box with the engine's total and portfolio percent
+    (``lookthrough.exposure_origin``, built by ``adapt``). One figure per asset, each with the same fixed caveat under it.
 
-    Under each bar, one row per segment with the line and its R$; a via-fund row adds the asset's weight in that fund
-    and the CDA month with its age against the statement. A segment with no positive R$ is never a bar: it is listed
-    as text. Nothing when no asset has a positive total (the "Sobreposição" table still lists every group)."""
+    A line with no positive R$ is never a ribbon: it is listed as text under the diagram, and so is the rest of a
+    group past the cap of lines. Nothing when no asset has a positive total (the "Sobreposição" table still lists every
+    group)."""
     groups = resolve(view, "lookthrough.exposure_origin")
-    if not isinstance(groups, list) or not any(isinstance(g, dict) and _positive(g.get("total_brl")) for g in groups):
+    if not isinstance(groups, list):
         return ""
-    parts: list[str] = []
-    summary: list[str] = []
-    y = 0.0
-    for gi, g in enumerate(groups):
-        if not isinstance(g, dict):
-            continue
-        base = f"lookthrough.exposure_origin[{gi}]"
-        segs = g.get("segments") or []
-        total_txt = format_value(view, f"{base}.total_brl")
-        if is_number(g.get("total_pct")):
-            total_txt += f" · {format_value(view, f'{base}.total_pct')} da carteira"
-        parts.append(_text(0, y + 9, truncate(g.get("asset"), WIDTH - 12 - len(total_txt) * CHAR_W), fill=INK, weight="bold"))
-        parts.append(_text(WIDTH, y + 9, total_txt, anchor="end"))
-        summary.append(f"{g.get('asset')}, {total_txt}")
-        drawn = [(i, s) for i, s in enumerate(segs) if isinstance(s, dict) and _positive(s.get("value_brl"))]
-        bar_y = y + 14
-        vsum = sum(s["value_brl"] for _, s in drawn) if _positive(g.get("total_brl")) else 0
-        x = 0.0
-        via_n = 0
-        fills: dict[int, str] = {}
-        for k, (i, s) in enumerate(drawn):
-            if s.get("direct"):
-                fills[i] = DIRECT_FILL
-            else:
-                fills[i] = VIA_FILLS[via_n % len(VIA_FILLS)]
-                via_n += 1
-            w = max(WIDTH * s["value_brl"] / vsum, 1.5)
-            q = f"{base}.segments[{i}]"
-            title = (f"{'direta' if s.get('direct') else 'via'}: {s.get('name')}: {format_value(view, f'{q}.value_brl')}")
-            parts.append(f'<path d="{_seg_path(x, bar_y, w, ORIGIN_BAR_H, k == 0, k == len(drawn) - 1)}" fill="{fills[i]}" '
-                         f'stroke="{SURFACE}" stroke-width="1"><title>{escape(title)}</title></path>')
-            x += w
-        ry = bar_y + ORIGIN_BAR_H + 10 if drawn and vsum else y + 14
-        if not (drawn and vsum):
-            parts.append(_text(0, ry + 9, "Sem exposição positiva a desenhar; ver a tabela de sobreposição.", fill=INK_2))
-            ry += 14
-        for i, s in enumerate(segs):
-            if not isinstance(s, dict):
-                continue
-            q = f"{base}.segments[{i}]"
-            who = ("direta · " if s.get("direct") else "via · ") + truncate(s.get("name"), 380)
-            value_txt = format_value(view, f"{q}.value_brl")
-            if i in fills:
-                parts.append(f'<rect x="0" y="{ry:.1f}" width="10" height="10" rx="2" fill="{fills[i]}"/>')
-                parts.append(_text(ORIGIN_TEXT_X, ry + 8.5, who, fill=INK))
-                parts.append(_text(WIDTH, ry + 8.5, value_txt, anchor="end", fill=INK))
-            else:  # zero, negative or missing: never a bar
-                parts.append(_text(ORIGIN_TEXT_X, ry + 8.5, f"{who} (não desenhada: exposição negativa, zero ou ausente)", fill=INK_2))
-                parts.append(_text(WIDTH, ry + 8.5, value_txt, anchor="end", fill=INK_2))
-            ry += 14
-            detail = "" if s.get("direct") else _origin_detail(view, q, s)
-            if detail:
-                parts.append(_text(ORIGIN_TEXT_X, ry + 4, detail, fill=INK_2, size=ORIGIN_DETAIL_SIZE))
-                ry += 12
-        y = ry + 12
-    height = y - 12
     note = ORIGIN_CAVEAT
     if resolve(view, "lookthrough.economic_group_assessed") is not True and resolve(view, "lookthrough.economic_group_note"):
         note += " " + format_value(view, "lookthrough.economic_group_note")
     if "sem_carteira_cda" in (resolve(view, "sections.lookthrough.reason_codes") or []):
         note += " Neste extrato: " + REASON_TEXT["sem_carteira_cda"] + "."
-    svg = _svg(height, "".join(parts),
-               "Origem da exposição aos maiores ativos que aparecem em mais de uma linha do extrato: " + "; ".join(summary))
-    return figure(svg, "De onde vem a exposição ao mesmo ativo: direta e por cada fundo (valor e % da carteira)", note,
-                  note_below=True)
+    figures = []
+    for gi, g in enumerate(groups):
+        svg = _origin_diagram(view, gi, g) if isinstance(g, dict) else ""
+        if svg:
+            figures.append(figure(svg, f"De onde vem a exposição a {g.get('asset')}: uma seta por linha do extrato "
+                                       "(valor da linha e % da carteira do ativo)", note, note_below=True))
+    return "".join(figures)
 
 
 # --- e. fee cost -------------------------------------------------------------------------------------------------------

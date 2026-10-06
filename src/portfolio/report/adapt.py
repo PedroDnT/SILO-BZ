@@ -478,6 +478,8 @@ def _lookthrough_view(eng: dict, names: dict[int, str]) -> dict:
 
 
 ORIGIN_ASSETS = 5
+ORIGIN_MAX_LINES = 6      # statement lines drawn for one asset; with more, only the ORIGIN_SHOWN_LINES largest are
+ORIGIN_SHOWN_LINES = 5
 CENTAVO = 0.01
 
 
@@ -512,16 +514,27 @@ def _asset_match(label: Any, exposure: dict) -> bool:
     return bool(tokens & {str(exposure.get(k)).strip().upper() for k in ("asset_key", "isin") if exposure.get(k)})
 
 
-def _origin_segment(eng: dict, line: dict, label: Any, position_date: Any) -> dict:
+def _num(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _origin_segment(eng: dict, line: dict, label: Any, position_date: Any, positions: dict[int, dict]) -> dict:
     """One statement line of an asset: the direct holding or the fund the asset is reached through.
 
-    The weight inside the fund and the CDA month are copied from the line's ``look_through.lines[].exposures[]`` rows
-    for the asset, and only when those rows add up to the group's value for the line (to the centavo per row), so a
-    row of another path can never be shown as this segment's. With several rows (the fund holds the asset through more
-    than one path) the weights are not summed here: the segment shows the R$ and the number of paths."""
-    seg = {"line_id": f"L{line['line_no']}", "name": line.get("linha_extrato"), "direct": bool(line.get("direct")),
-           "value_brl": line.get("exposure_brl"), "weight_in_line": None, "cda_month": None, "cda_age_months": None,
-           "n_paths": None}
+    The line's own name (``linha_extrato``), type (``tipo``) and position value (``valor_brl``, found by ``line_no`` in
+    ``statement.positions[]``; None when the statement has no number there, never a guess) are copied. The weight
+    inside the fund and the CDA month are copied from the line's ``look_through.lines[].exposures[]`` rows for the
+    asset, and only when those rows add up to the group's value for the line (to the centavo per row), so a row of
+    another path can never be shown as this segment's. ``weight_in_line_pct`` is the engine's ``weight_in_line`` (a
+    fraction) times 100, so the chart prints a percent through a ``_pct`` path (owner's Q44 recommendation) and the
+    fraction stays beside it. With several rows (the fund holds the asset through more than one path) the weights are
+    not summed here: the segment shows the R$ and the number of paths."""
+    pos = positions.get(line["line_no"]) or {}
+    seg = {"line_no": line["line_no"], "name": line.get("linha_extrato"),
+           "tipo": pos.get("tipo"), "direct": bool(line.get("direct")),
+           "position_brl": pos.get("valor_brl") if _num(pos.get("valor_brl")) else None,
+           "value_brl": line.get("exposure_brl"), "weight_in_line": None, "weight_in_line_pct": None,
+           "cda_month": None, "cda_age_months": None, "n_paths": None, "hidden": False}
     if seg["direct"]:
         return seg
     fund = next((x for x in eng["look_through"].get("lines") or [] if x.get("line_no") == line["line_no"]), None)
@@ -537,10 +550,25 @@ def _origin_segment(eng: dict, line: dict, label: Any, position_date: Any) -> di
         seg["cda_month"] = period
         seg["cda_age_months"] = cda_age_months(period, position_date)
     if len(rows) == 1:
-        seg["weight_in_line"] = rows[0].get("weight_in_line")
+        w = rows[0].get("weight_in_line")
+        seg["weight_in_line"] = w
+        seg["weight_in_line_pct"] = round(w * 100, 6) if _num(w) else None
     else:
         seg["n_paths"] = len(rows)
     return seg
+
+
+def _mark_overflow(segments: list[dict]) -> dict | None:
+    """With more than ``ORIGIN_MAX_LINES`` lines of positive exposure, the chart draws the ``ORIGIN_SHOWN_LINES``
+    largest and one text row for the rest. Mark the rest (``hidden``) and return their count and R$ sum, the second
+    figure ``adapt`` computes for this chart (a sum of engine values, so the segments still add up to the total)."""
+    positive = sorted((s for s in segments if _num(s.get("value_brl")) and s["value_brl"] > 0), key=lambda s: -s["value_brl"])
+    if len(positive) <= ORIGIN_MAX_LINES:
+        return None
+    rest = positive[ORIGIN_SHOWN_LINES:]
+    for s in rest:
+        s["hidden"] = True
+    return {"n_lines": len(rest), "value_brl": round(sum(s["value_brl"] for s in rest), 2)}
 
 
 def _exposure_origin(eng: dict) -> list[dict]:
@@ -548,15 +576,18 @@ def _exposure_origin(eng: dict) -> list[dict]:
     largest assets (``kind == "mesmo_ativo"``, by ``total_exposure_brl``) that appear in more than one statement line.
     The chart's data only: the engine's total and portfolio percent, and one segment per statement line."""
     position_date = eng["statement"].get("position_date")
+    positions = {p["line_no"]: p for p in eng["statement"]["positions"]}
     groups = [g for g in eng["look_through"]["shared_exposure"]["groups"]
               if g.get("kind") == "mesmo_ativo" and len(g.get("lines") or []) > 1
               and isinstance(g.get("total_exposure_brl"), (int, float))]
     groups.sort(key=lambda g: -g["total_exposure_brl"])
-    return [
-        {"asset": g.get("label"), "total_brl": g["total_exposure_brl"], "total_pct": g.get("total_exposure_portfolio_pct"),
-         "segments": [_origin_segment(eng, ln, g.get("label"), position_date) for ln in g["lines"]]}
-        for g in groups[:ORIGIN_ASSETS]
-    ]
+    out = []
+    for g in groups[:ORIGIN_ASSETS]:
+        segments = [_origin_segment(eng, ln, g.get("label"), position_date, positions) for ln in g["lines"]]
+        out.append({"asset": g.get("label"), "total_brl": g["total_exposure_brl"],
+                    "total_pct": g.get("total_exposure_portfolio_pct"), "segments": segments,
+                    "overflow": _mark_overflow(segments)})
+    return out
 
 
 TREE_FUNDS = 5
