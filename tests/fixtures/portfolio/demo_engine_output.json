@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.13",
+  "schema_version": "1.14",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -23287,5 +23287,17 @@
       "error": null,
       "id": "p52"
     }
-  ]
+  ],
+  "client_fit": {
+    "status": "nao_avaliado",
+    "declared": {},
+    "profile_assessment": "não avaliado: faltam objetivos, experiência e capacidade de suportar perdas; perfil declarado não aprova produtos",
+    "note": "Checagem factual de restrições declaradas; não é suitability nem recomendação.",
+    "horizon": {
+      "status": "nao_avaliado"
+    },
+    "liquidity": {
+      "status": "nao_avaliado"
+    }
+  }
 }

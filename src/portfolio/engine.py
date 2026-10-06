@@ -41,7 +41,7 @@ from src.portfolio.terms import attach_to_identification, fetch_fund_terms
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.13"
+SCHEMA_VERSION = "1.14"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -301,7 +301,10 @@ def run_engine(
     params: EngineParams | None = None,
     clock=utc_now,
     investigator: Any = None,
+    client_constraints: dict | None = None,
 ) -> dict[str, Any]:
+    from src.portfolio import client_fit
+    declared = client_fit.validate_input(client_constraints, stmt.position_date)
     params = params or default_params(stmt.position_date)
     n_read = len(stmt.positions)
     stmt, n_merged = merge_same_identity(stmt)  # engine 1.7: one asset listed on several lines is one position
@@ -366,6 +369,7 @@ def run_engine(
         },
         "provenance": [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance],
     }
+    doc["client_fit"] = client_fit.compute(doc, declared)
     # engine 1.8: the main risks read the sections above, so they are built last and placed after them
     risks = compute_risks(doc)
     doc = _insert_after(doc, "liquidity", "risks", risks)

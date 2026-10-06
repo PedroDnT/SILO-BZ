@@ -35,3 +35,5 @@ are in git history.
 - `docs/reference/DATA_INVENTORY.md` — what is held, what is served, what is neither.
 - `docs/reference/DATABASE_MAINTENANCE.md` — the ongoing upkeep runbook.
 - `docs/reference/API.md` — the read contract.
+
+Brief and client constraints (#607, #614): [contract](../reference/portfolio/brief-client-fit.md); implementation `demo/brief-client-fit`, live validation pending.

@@ -1,0 +1,1 @@
+| 2026-10-05 | demo/brief-client-fit | #607: short brief with checked narrative, fees, risks, return coverage and expandable appendix; upload page renders HTML and prints only on request. #614: optional declared profile/horizon/liquidity input; factual maturity and cash checks, no suitability approval. Offline engine/server/report checks; live deploy pending. |

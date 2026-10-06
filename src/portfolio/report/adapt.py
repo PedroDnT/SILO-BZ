@@ -1329,6 +1329,8 @@ def to_view(eng: dict) -> dict:
     equivalents = _equivalents_view(eng)
     if equivalents is not None:
         view["equivalents"] = equivalents
+    if "client_fit" in eng:
+        view["client_fit"] = eng["client_fit"]
     view["gaps"] = _gaps_view(eng, view["sections"], view["fees"], view["risk_screens"], movement)
     view["gaps"] += _chart_and_risk_gaps(eng, view)
     return view

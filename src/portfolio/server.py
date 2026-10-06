@@ -345,6 +345,19 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client,
         try:
             _authorized()
             stage = "upload"
+            output_format = request.form.get("output_format", "pdf")
+            if output_format not in ("html", "pdf"):
+                raise _Refusal(400)
+            constraints = None
+            if request.form.get("client_constraints"):
+                try:
+                    from src.portfolio.client_fit import validate_input
+                    constraints = json.loads(request.form["client_constraints"])
+                    # Date validation needs the statement date and occurs after the reader.
+                    if not isinstance(constraints, dict):
+                        raise ValueError("invalid constraints")
+                except (ValueError, TypeError):
+                    raise _Refusal(400) from None
             parts = _upload()
             size = sum(len(d) for d in parts)
             fmts = [_sniff(d) or "-" for d in parts]
@@ -373,6 +386,13 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client,
                 meter = llm.CostMeter()  # one per report: the investigator books first, the Redator and Revisor after
                 investigator = investigator_factory(meter)
                 extra = {"investigator": investigator} if investigator is not None else {}
+                from src.portfolio.client_fit import validate_input
+                try:
+                    constraints = validate_input(constraints, stmt.position_date)
+                except (ValueError, TypeError):
+                    raise _Refusal(400) from None
+                if constraints is not None:
+                    extra["client_constraints"] = constraints
                 doc = run_engine(stmt, client_factory(), default_params(stmt.position_date), **extra)
                 pending = getattr(getattr(getattr(investigator, "deps", None), "cache", None), "pending", None)
                 rec.documents = pending() if callable(pending) else {}  # public documents read once (#605, Q35)
@@ -394,6 +414,14 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client,
                     raise _Refusal(502, type(exc).__name__) from None
                 rec.narrative = narrative
                 rec.report_end_ns = time.time_ns()
+                if output_format == "html":
+                    return done(Response(html_text, mimetype="text/html", headers={
+                        "Cache-Control": "no-store",
+                        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'",
+                        "X-Silo-Narrative": str(narrative.status),
+                        "X-Silo-Cost-Usd": f"{narrative.cost_usd:.4f}",
+                        **narrative_headers(narrative),
+                    }), 200)
                 stage = "pdf"
                 pdf_path = html_to_pdf(html_text, work / "diagnostico.pdf")
                 pdf = pdf_path.read_bytes()

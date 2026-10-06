@@ -800,3 +800,7 @@ before changing rule 4.
    columns are now tested through `daily_update`.)
 10. **Stale remote branch `claude/audit-row-gaps`** (merged as #495, with later
     commits lost; the follow-up went out as #496). Delete only if the owner says so.
+
+## Brief and client constraints (#607, #614)
+
+Implemented on `demo/brief-client-fit`: brief, expandable appendix, HTML upload delivery with browser PDF on request, optional declared client constraints and factual maturity/cash checks. Profile suitability remains not assessed. Deploy and live owner-portfolio validation pending. Contract: `docs/reference/portfolio/brief-client-fit.md`.

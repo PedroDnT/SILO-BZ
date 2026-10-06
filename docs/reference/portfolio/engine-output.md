@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.13)
+# Portfolio engine output (schema 1.14)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,8 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.14 (#607/#614): additive `client_fit`, with validated declared constraints and factual cash/maturity checks; no suitability approval. See [contract](brief-client-fit.md).
 
 1.13 (#609 owner's resolution and #606 addendum Q36, 2026-10-05; catalog v68). Keys were added, none renamed, retyped
 or removed. A new top-level section `equivalents` (below), placed after `tax` and before `investigation` (1.12), with its `section_status` entry and the
@@ -899,3 +901,7 @@ existing `lookup`, `quote_latest`, `company_financials`, `short_interest`, `fidc
 `fund_restatements`, `fund_restatement_diff` and the `screen_*` tools. Default client: the public
 read-only MCP `silo-mcp`; fallback `PostgrestClient`. Neither was exercised over a network from the
 build sandbox.
+
+## Brief and client constraints
+
+See [brief-client-fit.md](brief-client-fit.md). The additive `client_fit` field records declared constraints and deterministic maturity/cash checks; it never approves suitability. The brief reuses checked findings, and HTML delivery skips PDF generation until the browser print/save request.

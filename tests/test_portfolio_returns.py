@@ -393,7 +393,7 @@ def test_a_failed_series_call_is_recorded_and_the_line_is_not_evaluated():
 def test_demo_return_block():
     doc = json.loads(FIXTURE.read_text(encoding="utf-8"))
     r = doc["returns"]
-    assert doc["schema_version"] == "1.13" and list(doc).index("returns") == list(doc).index("risks") + 1
+    assert doc["schema_version"] == "1.14" and list(doc).index("returns") == list(doc).index("risks") + 1
     by = {ln["line_no"]: ln for ln in r["lines"]}
     assert {n for n, ln in by.items() if ln["status"] == "avaliado"} == {2, 3, 4, 5, 7, 8}
     assert by[1]["reason_code"] == "retorno_tesouro_sem_serie" and by[6]["reason_code"] == "retorno_fidc_sem_classe"
