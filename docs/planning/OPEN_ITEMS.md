@@ -530,8 +530,8 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - Cost cap US$1.00 per report; investigator cap 20 searches per report. The
   investigator is built (engine 1.12, #605, branch `demo/investigator`): inside
   the same US$1.00 cap (at most US$0.30 of it, LLM and Exa), 5 searches per item,
-  180 s. **Owner action:** it ships `off` (`SILO_INVESTIGATOR` in `wrangler.jsonc`);
-  run it once, supervised, then turn it on. **Owner review:** the coordinator
+  180 s. It ships `on` since 2026-10-06 (`SILO_INVESTIGATOR` in `wrangler.jsonc`,
+  owner's Q49, in place of a supervised run first). **Owner review:** the coordinator
   domains in `src/portfolio/rules/investigator/coordinators.yaml` are all
   `proposta`. Still open: the report's HTML section, `portfolio_instruments`
   serving the CRA/CRI ISIN (branch `demo/instruments-isin`), and a read path from
