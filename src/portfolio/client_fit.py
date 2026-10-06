@@ -30,7 +30,7 @@ def validate_input(raw, position_date):
             raise ValueError('invalid amount')
         if not result.get('liquidity_date'):
             raise ValueError('liquidity date required')
-        result['liquidity_brl'] = str(n)
+        result['liquidity_brl'] = float(n)
     return result or None
 
 
@@ -56,7 +56,7 @@ def compute(doc, declared):
         cash = next((b for b in buckets if b['bucket_id'] == 'caixa'), None)
         if cash is not None:
             available = Decimal(str(cash['value_brl']))
-            required = Decimal(declared['liquidity_brl'])
+            required = Decimal(str(declared['liquidity_brl']))
             result['liquidity'] = {'status': 'coberto_em_caixa' if available >= required else 'nao_comprovado',
                                    'cash_brl': float(available), 'required_brl': float(required),
                                    'unproven_brl': float(max(required - available, Decimal(0))),

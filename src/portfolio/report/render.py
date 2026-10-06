@@ -1302,7 +1302,7 @@ def _client_fit_section(engine: dict) -> str:
     declared = fit.get("declared") or {}
     out = ["<p>" + e(fit.get("note", "Restrições do cliente não informadas.")) + "</p>"]
     labels = {"profile": "Perfil declarado", "horizon_date": "Horizonte", "liquidity_date": "Data da necessidade", "liquidity_brl": "Necessidade em R$"}
-    out += [f"<p>{e(labels[k])}: {e(val)}</p>" for k, val in declared.items() if k in labels]
+    out += [f"<p>{e(labels[k])}: {v(engine, 'client_fit.declared.' + k)}</p>" for k, val in declared.items() if k in labels]
     out.append("<p>" + e(fit.get("profile_assessment", "Perfil não avaliado.")) + "</p>")
     for key, label in (("horizon", "Horizonte"), ("liquidity", "Liquidez")):
         item = fit.get(key) or {}

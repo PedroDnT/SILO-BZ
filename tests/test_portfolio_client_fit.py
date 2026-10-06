@@ -47,3 +47,10 @@ def test_brief_precedes_details_and_preserves_missing_values():
     assert 'total de administração fixa divulgada indisponível' in html
     assert 'Texto interpretativo indisponível' in html
     assert 'Sem retorno total da carteira' not in html  # no return series was supplied
+
+
+def test_declared_amount_is_numeric_not_an_identity_string():
+    from src.portfolio.report.redator import assert_masked
+    declared = validate_input({'liquidity_brl': '10000000000', 'liquidity_date': '2027-01-01'}, date(2026, 9, 30))
+    assert isinstance(declared['liquidity_brl'], float)
+    assert_masked({'masked': True, 'client_fit': compute(doc(), declared)})
