@@ -9,6 +9,8 @@ Container, at `https://silo-demo-health.<account subdomain>.workers.dev`.
 | `GET /`          | the upload page (Portuguese): access code, statement files (one per account), downloads `diagnostico.pdf`                                                                                                                                                   |
 | `GET /health`    | `200 ok` from the Worker itself, public, no Container                                                                                                                                                                                    |
 | `POST /diagnose` | the statement (template `.xlsx` or BTG `.pdf`, extrato or performance report; raw body, or one multipart `file` part per account, consolidated; at most 10 MB in all). Token as `x-demo-token` or `Authorization: Bearer`; `401` without it, `503` if the secret is unset, `413` over 10 MB. Returns the engine's answer |
+| `GET /traces`    | the owner's trace page (Portuguese), a static shell with no data: asks for the access code (kept in memory only), lists the stored runs of the last 7 days, shows where an asset's exposure comes from (direct and through each fund, with the CDA month) and downloads a run's stored PDF. Works on a phone |
+| `GET /api/traces`, `/api/traces/exposure`, `/api/traces/pdf` | what that page calls; same token as `/diagnose`, `GET` only. Read the private bucket through the `TRACES` binding, only through keys of the two strict shapes `traces/YYYY/MM/DD/<32 hex>.json` and `artifacts/<64 hex>.json` or `.pdf`; `no-store`; nothing logged |
 | anything else    | `404`                                                                                                                                                                                                                                    |
 
 Each upload gets its own Durable Object, so its own Container instance and disk;
@@ -18,6 +20,11 @@ covers a client that went away). The Worker forwards the upload with
 attachment name and the engine's `X-Silo-*` headers (narrative status,
 provider, cost in US$, seconds, failing stage). Every answer carries
 `X-Silo-Origin: worker` or `engine`.
+
+The trace page is the owner's way to read what a run stored without a terminal (the engine JSON and the
+PDF hold portfolio data, with holder, CPF and account masked, so they never go through GitHub: the repository is
+public). `src/exposure.ts` holds the pure functions; `tests/test_worker_exposure.py` checks that its text is
+the same as `scripts/trace_view.py exposure`.
 
 Files: `wrangler.jsonc` (Container `standard-1`, `max_instances` 3, image
 `engine/Dockerfile` built from the repository root, LLM defaults as `vars`,
