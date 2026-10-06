@@ -114,7 +114,7 @@ def test_a_missing_window_keeps_its_position_and_a_failed_window_is_a_gap(engine
 
 
 def test_returns_section_shows_each_window_beside_the_cdi_and_never_a_total(html):
-    sec = section(html, "Retorno por posição")
+    sec = section(html, "Retorno por posição em detalhe")
     txt = text_of(sec)
     for needle in ("26,00%", "12,27%", "14,42%", "6,91%", "11,58 p.p.", "-6,64 p.p.", "09/2025 a 09/2026", "03/2026 a 09/2026",
                    "30/09/2025 a 30/09/2026", "12 observações; estimativa ruidosa", "-7,83%", "03/2026 a 07/2026",
@@ -442,3 +442,47 @@ def test_two_lines_with_the_same_name_keep_their_statement_order():
     names = render._line_names({"lines": [{"line_id": "L1", "instrument": "CDB A"}, {"line_id": "L2", "instrument": "CDB A"},
                                           {"line_id": "L3", "instrument": "LCI B"}]})
     assert names["L1"] == "CDB A (linha 1 do extrato)" and names["L2"] == "CDB A (linha 2 do extrato)" and names["L3"] == "LCI B"
+
+
+# Section order and the annex, report restructure stage 3 ---------------------------------------------------------
+
+
+BODY_ORDER = ("Resumo para a reunião", "O que pede atenção", "Achados", "Quanto a carteira paga em taxas", "O que a carteira tem",
+              "Concentração e liquidez", "Retorno passado contra o CDI", "Taxa e imposto por posição",
+              "Informes reapresentados e movimento incomum", "O que não foi possível avaliar")
+ANNEX = ("Como cada posição foi identificada", "Crédito direto no registro da CVM", "Detalhe da exposição", "Taxa por fundo", "Todos os riscos e seus limites",
+         "Retorno por posição em detalhe", "ETF comparável (não é recomendação)", "Metodologia e limitações")
+
+
+def test_the_body_answers_in_the_order_a_cio_asks_and_the_evidence_is_in_the_annex(built_demo):
+    h2 = re.findall(r"<h2[^>]*>([^<]*)</h2>", built_demo)
+    body = [t for t in h2 if t in BODY_ORDER]
+    assert body == [t for t in BODY_ORDER if t in h2] and len(body) == len(BODY_ORDER)
+    annex_html = built_demo.split('<details id="apendice">')[1].split("</details>")[0]
+    assert [t for t in re.findall(r"<h2[^>]*>([^<]*)</h2>", annex_html)] == list(ANNEX)
+    assert all(f"<h2>{t}</h2>" not in built_demo.split('<details id="apendice">')[0] for t in ANNEX)
+
+
+def test_the_body_risk_table_has_four_columns_and_only_atencao_and_moderado_rows(view, built_demo):
+    sec = built_demo.split("<h2>O que pede atenção</h2>")[1].split("</section>")[0]
+    assert re.findall(r"<th[^>]*>([^<]*)</th>", sec) == ["Risco", "Valor", "Nível", "O que significa"]
+    rows = view["risks"]["rows"]
+    shown = {r["risk"] for r in rows if r["status"] == "avaliado" and r["severity"] in ("atencao", "moderado")}
+    hidden = {r["risk"] for r in rows} - shown
+    assert shown and all(render.e(x) in sec for x in shown)
+    assert not any(render.e(x) in sec for x in hidden)
+    assert "Limites" not in sec
+
+
+def test_the_body_return_table_has_one_row_per_evaluated_position_and_no_total(view, built_demo):
+    sec = built_demo.split("<h2>Retorno passado contra o CDI</h2>")[1].split("</section>")[0]
+    first = sec.split("<table")[1].split("</table>")[0]
+    assert re.findall(r"<th[^>]*>([^<]*)</th>", first) == ["Posição", "Retorno líquido em 12 meses", "CDI nas mesmas datas", "Líquido menos CDI"]
+    evaluated = [ln for ln in view["returns"]["lines"] if ln["windows"][0]["status"] == "avaliado"]
+    assert first.count("<tr>") - 1 == len(evaluated) and "retroativa" in sec and "6 meses" not in first
+
+
+def test_the_contents_list_ends_with_the_annex(built_demo):
+    toc = built_demo.split('<p class="toc">')[1].split("</p>")[0]
+    assert toc.rstrip().endswith("Anexo: evidência linha a linha e metodologia</a>")
+    assert 'href="#apendice"' in toc and 'id="apendice"' in built_demo
