@@ -37,3 +37,5 @@ are in git history.
 - `docs/reference/API.md` — the read contract.
 
 Brief and client constraints (#607, #614): [contract](../reference/portfolio/brief-client-fit.md); implementation `demo/brief-client-fit`, live validation pending.
+
+Current closure sequence: [open issue resolution](OPEN_ISSUE_RESOLUTION.md), #658 smoke fix → #607 → #517 real-file evidence → #510 readiness; #628 research separately.

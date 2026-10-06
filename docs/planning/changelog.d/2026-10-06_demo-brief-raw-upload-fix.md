@@ -1,0 +1,1 @@
+| 2026-10-06 | demo/brief-client-fit follow-up | Preserve raw form-urlencoded uploads: parse form fields only for multipart, restoring the smoke's unknown-format 415 instead of consumed-body 400. Regression covers the exact curl wire format, empty body and valid XLSX. Add ordered closure-evidence plan for open #607/#517/#510/#628. |
