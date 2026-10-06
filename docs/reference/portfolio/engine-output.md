@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.14)
+# Portfolio engine output (schema 1.15)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -24,6 +24,7 @@ measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the val
 ## Changes since 1.0
 
 1.14 (#607/#614): additive `client_fit`, with validated declared constraints and factual cash/maturity checks; no suitability approval. See [contract](brief-client-fit.md).
+1.15 (map #510, owner 2026-10-06): additive `returns.contribution`, the retroactive contribution per position and window (see `returns`, below); no portfolio total.
 
 1.13 (#609 owner's resolution and #606 addendum Q36, 2026-10-05; catalog v68). Keys were added, none renamed, retyped
 or removed. A new top-level section `equivalents` (below), placed after `tax` and before `investigation` (1.12), with its `section_status` entry and the
@@ -635,6 +636,17 @@ The CDI is `macro_series('CDI', base month, position date)`, compounded by B3's 
 `1 + rate/100` truncated at 16 decimals, multiplied over the rates dated from the base date inclusive to the end
 date exclusive, the product rounded to 8. A ticker's dates are its sessions; a fund's are the last business day
 of the base and end months in the CDI's own calendar.
+
+**Retroactive contribution** (1.15, owner 2026-10-06; `returns.contribution`). A statement gives positions at one date
+and no flows, so the contribution is back-cast, never a measured attribution. Keys: `label` ("contribuição retroativa"),
+`note`, `windows` (`{12m, 6m}`). A window: `status` (`avaliado` | `nao_avaliado` with `reason_code` `linhas_sem_retorno`),
+`covered_return_pct`, `coverage_portfolio_value_pct` (the same share as `coverage`), `start_value_brl`, `end_value_brl`,
+`n_lines`, `lines[]` (`line_no`, `linha_extrato`, `valor_brl`, `net_return_pct`, `start_value_brl`, `start_weight_pct`,
+`contribution_pp`). For each evaluated line: start value = current value ÷ (1 + r), r the window's `net_return_pct`;
+weight = its start value ÷ the sum of the start values of the evaluated lines; contribution = weight × r. The
+contributions add up to `covered_return_pct`, the return of the evaluated lines taken together (sum of end values ÷ sum
+of start values − 1). It assumes no purchase or redemption in the window. The only total is that of the evaluated part,
+always next to its coverage; there is no portfolio return, mean or ranking, and lines stay in statement order.
 
 "% do CDI" (1.13, #606 addendum Q36). A line's `benchmark` is the filed benchmark the fee block read
 (`fees.lines[i].benchmark_as_filed`): `extrato` (the Extrato's `PARAM_TAXA_PERFM`, the performance fee's index and the

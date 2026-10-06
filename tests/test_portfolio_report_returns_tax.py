@@ -330,3 +330,30 @@ def test_a_large_past_return_is_not_an_exposure_but_a_fee_above_five_still_needs
     v["tax"]["lines"][2]["fee"]["rate_pct_year"] = 7.654321
     res = revisor.check(v, [F("Taxa: {{tax.lines[2].fee.rate_pct_year}}.", "impostos")])
     assert res.kept == [] and "valor extremo (fee)" in res.removed[0].reason
+
+
+# Retroactive contribution (engine 1.15) -------------------------------------------------------------------------
+
+
+def test_the_view_copies_the_contribution_per_window_with_line_ids_and_adds_no_total(view, engine):
+    c = view["returns"]["contribution"]
+    src = engine["returns"]["contribution"]["windows"]
+    assert [w["id"] for w in c["windows"]] == ["12m", "6m"] and "retroativa" in c["label"]
+    w = c["windows"][0]
+    assert w["covered_return_pct"] == src["12m"]["covered_return_pct"] and w["n_lines"] == src["12m"]["n_lines"]
+    assert [x["line_id"] for x in w["lines"]] == [f"L{x['line_no']}" for x in src["12m"]["lines"]]
+    assert set(c) == {"label", "note", "windows"}  # no portfolio total, no ranking field
+
+
+def test_the_report_shows_the_contribution_labelled_with_its_coverage(engine, view):
+    html = render._contribution_html(view)
+    assert "retroativa" in html and "não é o retorno da carteira" in html
+    cov = values.format_value(view, "returns.contribution.windows[0].coverage_portfolio_value_pct")
+    assert cov in html
+    assert "p.p." in html  # contributions are in percentage points
+
+
+def test_a_view_without_contribution_renders_nothing(view):
+    v2 = copy.deepcopy(view)
+    v2["returns"]["contribution"] = None
+    assert render._contribution_html(v2) == ""
