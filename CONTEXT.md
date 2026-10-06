@@ -108,3 +108,33 @@ _Avoid_: Using it as if it were the classification at a past date without saying
 **Benchmark index**:
 A market index level series (Ibovespa) as published by its administrator. An ETF that tracks it, such as BOVA11, is a separate instrument and never substitutes for it.
 _Avoid_: Using an ETF's price as the index.
+
+### Debenture secondary market
+
+**Traded rate**:
+The rate at which a debenture actually changed hands on a session, as the trade register published it. A session with no trade has no traded rate.
+_Avoid_: Filling a session without a trade from the last trade or from an indicative rate.
+
+**Indicative rate**:
+An administrator's daily estimate of where a debenture would trade (ANBIMA's). It is a model output, not a trade.
+_Avoid_: Calling it a market price or a traded rate.
+
+**Contractual rate**:
+The coupon or spread over the indexer that the debenture's deed fixes at issue.
+_Avoid_: Treating it as the market yield.
+
+**Debenture spread**:
+A traded rate's distance from its indexer family's benchmark: the quoted spread for a DI+ debenture, and the real yield minus a duration-matched NTN-B yield for an IPCA+ debenture. A %DI quote is not converted into a spread.
+_Avoid_: One spread across indexer families.
+
+**Ultimate obligor**:
+The entity that must pay a debenture: its issuer, or a guarantor that gave a personal guarantee (fiança, aval) under the deed and its amendments. A bond signal reaches an equity through its ultimate obligor.
+_Avoid_: Treating a collateral provider as an obligor; inferring the obligor from a name or a shared economic group.
+
+**Collateral provider**:
+The entity whose assets secure a debenture (alienação or cessão fiduciária of shares, receivables or property). It owes nothing beyond those assets and may be a third party.
+_Avoid_: Mapping a bond signal to a collateral provider's equity.
+
+**Liquid debenture**:
+In a month, a debenture with an issue value above R$300mm that traded at least R$10mm and on at least 40% of sessions in each of the two prior months (the eligibility rule of a BTG Pactual debenture index). It judges whether observed trades are enough for research; it does not bound what is stored.
+_Avoid_: Treating a debenture outside it as having no price.
