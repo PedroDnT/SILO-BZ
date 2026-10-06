@@ -25,7 +25,7 @@
 // Holder, CPF and account are masked by the engine's readers before any of it
 // exists. No KV, D1 or DO storage of our own.
 import { Container, ContainerProxy, getContainer } from "@cloudflare/containers";
-import { type EngineDoc, exposureText, topGroups, traceRootAttribute } from "./exposure";
+import { type EngineDoc, exposureFlows, exposureText, topGroups, traceRootAttribute } from "./exposure";
 
 // The outbound allow-list runs through ContainerProxy, which must be exported.
 export { ContainerProxy };
@@ -350,7 +350,10 @@ async function traceExposure(url: URL, env: Env): Promise<Response> {
 	if (!ticker) return json(200, { grupos: topGroups(doc, 10), cda: doc.look_through?.cda_month ?? null });
 	if (!TICKER.test(ticker)) return erro(400, "Ticker inválido.");
 	const texto = exposureText(doc, ticker);
-	return json(200, { texto: texto ?? `${ticker.toUpperCase()}: nenhum ativo mantido por mais de uma linha do extrato corresponde a esse código.` });
+	return json(200, {
+		texto: texto ?? `${ticker.toUpperCase()}: nenhum ativo mantido por mais de uma linha do extrato corresponde a esse código.`,
+		fluxos: exposureFlows(doc, ticker),
+	});
 }
 
 // The PDF the run returned, as the Worker stored it (holder, CPF and account masked).
@@ -518,6 +521,22 @@ li { margin: 0 0 .5rem; }
 li button { width: 100%; text-align: left; }
 pre { white-space: pre-wrap; word-break: break-word; border: 1px solid var(--line); border-radius: 6px; padding: .75rem; font: 14px/1.5 ui-monospace, monospace; }
 #status { min-height: 1.5rem; color: var(--muted); }
+:root { --direct: #1f5f8b; --fund: #b8741a; --box: #ffffff; }
+@media (prefers-color-scheme: dark) { :root { --direct: #7fb6dd; --fund: #e0a458; --box: #1f2124; } }
+#flow h3 { font-size: .95rem; margin: 1rem 0 .25rem; }
+#flow svg { display: block; width: 100%; height: auto; margin-bottom: .25rem; }
+.node { fill: var(--box); stroke: var(--line); stroke-width: 1; }
+.node-asset { fill: var(--box); stroke: var(--fg); stroke-width: 1.5; }
+.rib-direct { fill: var(--direct); fill-opacity: .55; }
+.rib-fund { fill: var(--fund); fill-opacity: .55; }
+.arrow-direct { fill: var(--direct); }
+.arrow-fund { fill: var(--fund); }
+.t { fill: var(--fg); font: 11px system-ui, sans-serif; }
+.t-b { font-weight: 700; font-size: 12px; }
+.t-m { fill: var(--muted); }
+.t-tag-direct { fill: var(--direct); font-weight: 700; }
+.t-tag-fund { fill: var(--fund); font-weight: 700; }
+.t-halo { paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -537,6 +556,7 @@ pre { white-space: pre-wrap; word-break: break-word; border: 1px solid var(--lin
 <label for="ticker">Ou um código (ex.: PETR4)</label>
 <input id="ticker" autocomplete="off" autocapitalize="characters">
 <div class="row"><button id="go">Ver origem</button></div>
+<div id="flow"></div>
 <pre id="out" hidden></pre>
 </div>
 </main>
@@ -563,11 +583,81 @@ function item(list, text, onclick) {
   li.appendChild(b);
   list.appendChild(li);
 }
+const NS = "http://www.w3.org/2000/svg";
+function svgEl(name, attrs, text) {
+  const e = document.createElementNS(NS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+const money = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const pct = (v) => v.toFixed(2).replace(".", ",") + "%";
+const short = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+const mmyyyy = (ym) => ym.slice(5, 7) + "/" + ym.slice(0, 4);
+// One asset as arrows: a box per statement line that holds it (its name first, then its line number),
+// a ribbon per line as thick as the R$ it puts in, and the asset on the right. Text only via textContent.
+function drawFlow(host, f) {
+  const src = f.fontes.filter((s) => s.exposicao_brl > 0);
+  const rest = f.fontes.filter((s) => !(s.exposicao_brl > 0));
+  const title = document.createElement("h3");
+  title.textContent = f.ativo.label;
+  host.appendChild(title);
+  const W = 360, LW = 168, RW = 112, RX = W - RW, BH = 94, GAP = 12, XE = RX - 8, SLOT = 14;
+  const n = src.length;
+  const maxV = Math.max.apply(null, src.map((s) => s.exposicao_brl));
+  const thick = src.map((s) => Math.max(5, (30 * s.exposicao_brl) / maxV));
+  const total = thick.reduce((a, b) => a + b, 0) + SLOT * Math.max(n - 1, 0);
+  const leftH = n * BH + (n - 1) * GAP;
+  const RH = Math.max(96, total + 24);
+  const H = Math.max(leftH, RH) + 24;
+  const ry = (H - RH) / 2;
+  const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Origem da exposição a " + f.ativo.label });
+  const cx = LW + (XE - LW) / 2;
+  let slot = ry + (RH - total) / 2;
+  const leftTop = (H - leftH) / 2;
+  src.forEach((s, i) => {
+    const y = leftTop + i * (BH + GAP), yc = y + BH / 2, t = thick[i], sy = slot + t / 2;
+    slot += t + SLOT;
+    const kind = s.direto ? "direct" : "fund";
+    svg.appendChild(svgEl("path", { class: "rib-" + kind, d: "M" + LW + "," + (yc - t / 2) + " C" + cx + "," + (yc - t / 2) + " " + cx + "," + (sy - t / 2) + " " + XE + "," + (sy - t / 2) + " L" + XE + "," + (sy + t / 2) + " C" + cx + "," + (sy + t / 2) + " " + cx + "," + (yc + t / 2) + " " + LW + "," + (yc + t / 2) + " Z" }));
+    svg.appendChild(svgEl("path", { class: "arrow-" + kind, d: "M" + XE + "," + (sy - t / 2 - 4) + " L" + RX + "," + sy + " L" + XE + "," + (sy + t / 2 + 4) + " Z" }));
+    svg.appendChild(svgEl("rect", { class: "node", x: 0, y: y, width: LW, height: BH, rx: 6 }));
+    const longName = s.nome.length > 21;
+    const nameEl = svgEl("text", { class: "t t-b", x: 8, y: y + 16 }, short(s.nome, 25));
+    if (longName) nameEl.setAttribute("style", "font-size:11px");
+    const full = svgEl("title", {}, s.nome);
+    nameEl.appendChild(full);
+    svg.appendChild(nameEl);
+    svg.appendChild(svgEl("text", { class: "t t-m", x: 8, y: y + 31 }, "linha " + s.line_no + (s.tipo ? " · " + s.tipo : "")));
+    svg.appendChild(svgEl("text", { class: "t t-tag-" + kind, x: 8, y: y + 45 }, s.direto ? "direta" : "via fundo"));
+    svg.appendChild(svgEl("text", { class: "t t-tag-" + kind, x: 8, y: y + 59 }, "→ " + money(s.exposicao_brl)));
+    if (s.posicao_brl !== null) svg.appendChild(svgEl("text", { class: "t t-m", x: 8, y: y + 73 }, "posição " + money(s.posicao_brl)));
+    if (!s.direto && s.peso_no_fundo_pct !== null) svg.appendChild(svgEl("text", { class: "t", x: 8, y: y + 87 }, pct(s.peso_no_fundo_pct) + " do fundo" + (s.cda ? " · CDA " + mmyyyy(s.cda) : "")));
+    else if (!s.direto && s.cda) svg.appendChild(svgEl("text", { class: "t", x: 8, y: y + 87 }, "CDA " + mmyyyy(s.cda)));
+  });
+  svg.appendChild(svgEl("rect", { class: "node-asset", x: RX, y: ry, width: RW, height: RH, rx: 6 }));
+  const code = f.ativo.label.split(" ")[0];
+  const codeEl = svgEl("text", { class: "t t-b", x: RX + 8, y: ry + 20 }, short(code, 14));
+  if (code.length > 9) codeEl.setAttribute("style", "font-size:10.5px");
+  svg.appendChild(codeEl);
+  svg.appendChild(svgEl("text", { class: "t t-m", x: RX + 8, y: ry + 36 }, "total"));
+  svg.appendChild(svgEl("text", { class: "t", x: RX + 8, y: ry + 51 }, money(f.ativo.total_brl)));
+  svg.appendChild(svgEl("text", { class: "t t-b", x: RX + 8, y: ry + 70 }, pct(f.ativo.portfolio_pct)));
+  svg.appendChild(svgEl("text", { class: "t t-m", x: RX + 8, y: ry + 84 }, "da carteira"));
+  host.appendChild(svg);
+  rest.forEach((s) => {
+    const p = document.createElement("p");
+    p.textContent = "Sem seta (valor zero ou negativo): " + s.nome + " (linha " + s.line_no + "): " + money(s.exposicao_brl);
+    host.appendChild(p);
+  });
+}
 async function showExposure(ticker) {
   $("out").hidden = false;
   $("out").textContent = "Lendo...";
+  $("flow").replaceChildren();
   try {
     const j = await (await api("/api/traces/exposure?key=" + encodeURIComponent(key) + "&ticker=" + encodeURIComponent(ticker))).json();
+    for (const f of j.fluxos || []) drawFlow($("flow"), f);
     $("out").textContent = j.texto;
   } catch (e) { $("out").textContent = e.message; }
 }
@@ -576,6 +666,7 @@ async function openTrace(t) {
   $("detail").hidden = false;
   $("detail-title").textContent = "Execução de " + when(t.enviado);
   $("groups").replaceChildren();
+  $("flow").replaceChildren();
   $("out").hidden = true;
   say("Lendo os ativos repetidos entre linhas...");
   try {
