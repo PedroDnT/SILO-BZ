@@ -185,6 +185,8 @@ Regras:
 - O mesmo ativo em mais de uma linha do extrato (ou em mais de uma conta) já foi agregado pelo motor em uma posição: isso não é achado. Uma exposição compartilhada com same_position verdadeiro é o mesmo fundo ou ticker em duas linhas, não diversificação nem sobreposição: não escreva achado sobre ela.
 - Nenhum achado é uma resposta válida: se a carteira não tem nada a apontar numa seção, não escreva nada nela; se não tem nada em nenhuma, devolva findings vazio.
 - Tom sóbrio, frases curtas, sem adjetivos de alarme.
+- O título é texto simples: sem algarismo e, de preferência, sem marcador. Um algarismo no título apaga o achado inteiro. Se o título precisa de um valor, deixe-o para o texto.
+- Só escreva um marcador cujo campo existe no JSON e tem valor. Antes de citar um caminho, confira que ele não é nulo, vazio, "—" nem uma lista vazia: sem valor, não escreva a frase. Um marcador sem valor apaga a frase, e uma frase só com marcadores vazios apaga o achado.
 - id: f1, f2, f3... na ordem em que escrever."""
 
 

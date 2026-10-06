@@ -550,3 +550,38 @@ def test_validation_error_is_not_a_bare_pydantic_error():
         pytest.fail("pydantic.ValidationError leaked")
     except llm.LLMValidationError:
         pass
+
+
+def test_openai_effort_can_be_set_per_role(monkeypatch):
+    monkeypatch.setenv("SILO_LLM_EFFORT", "medium")
+    monkeypatch.setenv("SILO_LLM_EFFORT_REVISOR", "low")
+    monkeypatch.delenv("SILO_LLM_EFFORT_REDATOR", raising=False)
+    client = FakeOpenAI(_body())
+    p = llm.OpenAIProvider(client=client)
+    p.role = "redator"
+    p.complete("s", "u", Ok)
+    p.role = "revisor"
+    p.complete("s", "u", Ok)
+    assert [kw["reasoning"] for _k, kw in client.calls] == [{"effort": "medium"}, {"effort": "low"}]
+    monkeypatch.setenv("SILO_LLM_EFFORT_REVISOR", "off")
+    client = FakeOpenAI(_body())
+    p = llm.OpenAIProvider(client=client)
+    p.role = "revisor"
+    p.complete("s", "u", Ok)
+    assert "reasoning" not in client.calls[0][1]
+
+
+def test_an_explicit_effort_wins_over_the_role_variable(monkeypatch):
+    monkeypatch.setenv("SILO_LLM_EFFORT_REVISOR", "low")
+    client = FakeOpenAI(_body())
+    p = llm.OpenAIProvider(client=client, effort="high")
+    p.role = "revisor"
+    p.complete("s", "u", Ok)
+    assert client.calls[0][1]["reasoning"] == {"effort": "high"}
+
+
+def test_the_redator_prompt_forbids_digits_in_titles_and_empty_markers():
+    from src.portfolio.report import redator
+
+    assert "O título é texto simples" in redator.SYSTEM_PROMPT
+    assert "não é nulo, vazio" in redator.SYSTEM_PROMPT

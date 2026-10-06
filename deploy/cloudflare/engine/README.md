@@ -48,6 +48,7 @@ the Cloudflare egress CA is added to it as soon as the platform writes it.
 | `SILO_LLM_PROVIDER` | `anthropic` (default), `openai` or `fake` (no key, deterministic findings) |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | the chosen provider's key |
 | `SILO_LLM_MODEL`, `SILO_LLM_EFFORT`, `SILO_LLM_FALLBACKS` | model overrides (`src/portfolio/report/llm.py`) |
+| `SILO_LLM_EFFORT_REDATOR`, `SILO_LLM_EFFORT_REVISOR` | effort for one role; wins over `SILO_LLM_EFFORT` (unset by default) |
 | `SILO_REPORT_SIGNATURE` | the report's signature line |
 | `SILO_ENGINE_CLIENT` | `mcp` (default, the public read-only `silo-mcp`) or `postgrest`; there is no fake SILO client in the server, so canned rows never meet a real statement |
 | `PORT` | listen port, default 8080 |

@@ -43,6 +43,8 @@ interface Env {
 	SILO_LLM_PROVIDER?: string;
 	SILO_LLM_MODEL?: string;
 	SILO_LLM_EFFORT?: string;
+	SILO_LLM_EFFORT_REDATOR?: string;
+	SILO_LLM_EFFORT_REVISOR?: string;
 	// "allowlist" (default): only the hosts below. "open": internet on.
 	EGRESS?: string;
 }
@@ -117,6 +119,8 @@ export class HealthContainer extends Container<Env> {
 		if (env.SILO_INVESTIGATOR) vars.SILO_INVESTIGATOR = env.SILO_INVESTIGATOR;
 		if (env.SILO_LLM_MODEL) vars.SILO_LLM_MODEL = env.SILO_LLM_MODEL;
 		if (env.SILO_LLM_EFFORT) vars.SILO_LLM_EFFORT = env.SILO_LLM_EFFORT;
+		if (env.SILO_LLM_EFFORT_REDATOR) vars.SILO_LLM_EFFORT_REDATOR = env.SILO_LLM_EFFORT_REDATOR;
+		if (env.SILO_LLM_EFFORT_REVISOR) vars.SILO_LLM_EFFORT_REVISOR = env.SILO_LLM_EFFORT_REVISOR;
 		this.envVars = vars;
 	}
 
