@@ -1,10 +1,10 @@
 name: Portfolio report effort A/B
 
 # Dispatch-only measurement (map #510, owner's request of 2026-10-06 after the 8-9 minute reports):
-# does a lower reasoning effort make the report faster and cheaper, and what does it do to the text?
+# does a lower reasoning effort make the report faster and cheaper, and what does it do to the text? Second run: the Redator keeps its effort, the Revisor drops, with the Redator prompt that bans digits in titles and empty markers.
 #
 # It runs the report stage (Redator and Revisor, the OpenAI provider the deployed demo uses) on ONE fixed,
-# synthetic engine JSON, tests/fixtures/portfolio/demo_engine_output.json, once per effort. Nothing else
+# synthetic engine JSON, tests/fixtures/portfolio/demo_engine_output.json, once per arm (Redator effort and Revisor effort). Nothing else
 # changes between the arms: same input, same model (SILO_LLM_MODEL default), same code. The repository is
 # public, so only synthetic data goes through this workflow, and it uploads the synthetic HTML reports.
 # It reads no database, deploys nothing and writes nothing. Each arm is capped at the report's one
@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   arm:
-    name: effort ${{ matrix.effort }}
+    name: ${{ matrix.arm }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -30,7 +30,13 @@ jobs:
       matrix:
         # none = no reasoning tokens; the OpenAI Responses API lists none, low, medium and high for gpt-5.1
         # (src/portfolio/report/llm.py). medium is today's deployed setting and the baseline.
-        effort: [medium, low, none]
+        # arm = Redator effort / Revisor effort. The first run (2026-10-06) compared one effort for both roles:
+        # medium 234 s, low 84 s, none 79 s. This one keeps the Redator and moves the Revisor, via the per-role
+        # variables SILO_LLM_EFFORT_REDATOR and SILO_LLM_EFFORT_REVISOR (src/portfolio/report/llm.py).
+        include:
+          - {arm: medium-medium, redator: medium, revisor: medium}
+          - {arm: medium-low, redator: medium, revisor: low}
+          - {arm: low-low, redator: low, revisor: low}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
@@ -42,8 +48,9 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SILO_LLM_PROVIDER: openai
-          SILO_LLM_EFFORT: ${{ matrix.effort }}
-          EFFORT: ${{ matrix.effort }}
+          SILO_LLM_EFFORT_REDATOR: ${{ matrix.redator }}
+          SILO_LLM_EFFORT_REVISOR: ${{ matrix.revisor }}
+          EFFORT: ${{ matrix.arm }}
         run: |
           [ -n "$OPENAI_API_KEY" ] || { echo "::error::OPENAI_API_KEY is not set"; exit 1; }
           mkdir -p out
@@ -118,6 +125,6 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: ab-${{ matrix.effort }}
+          name: ab-${{ matrix.arm }}
           path: out/
           retention-days: 14

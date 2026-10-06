@@ -92,7 +92,7 @@ The Redator's and the Revisor's replies are Pydantic v2 models (`FindingsOutput`
 
 | Provider | Model | Key | Notes |
 | --- | --- | --- | --- |
-| `openai` (current, owner's choice 2026-10-04) | `SILO_LLM_MODEL`, default `gpt-5.1` (gpt-6-luna until 2026-10-04: the key gets 403 `model_not_found` on every gpt-6 model; gpt-5.1 is deprecated, shutdown 2027-04-01) | `OPENAI_API_KEY` | Responses API with structured output; reasoning effort `SILO_LLM_EFFORT`, default `medium` (`off` sends none); `store=False`; no hosted tools (web or file search are reserved for the later Investigator) |
+| `openai` (current, owner's choice 2026-10-04) | `SILO_LLM_MODEL`, default `gpt-5.1` (gpt-6-luna until 2026-10-04: the key gets 403 `model_not_found` on every gpt-6 model; gpt-5.1 is deprecated, shutdown 2027-04-01) | `OPENAI_API_KEY` | Responses API with structured output; reasoning effort `SILO_LLM_EFFORT`, default `medium` (`off` sends none), overridable per role by `SILO_LLM_EFFORT_REDATOR` and `SILO_LLM_EFFORT_REVISOR`; `store=False`; no hosted tools (web or file search are reserved for the later Investigator) |
 | `anthropic` | `SILO_LLM_MODEL`, default `claude-opus-5-5` | `ANTHROPIC_API_KEY` | Messages API with structured output; `SILO_LLM_EFFORT`, `SILO_LLM_FALLBACKS` |
 | `fake` | none | none | Deterministic, for tests and offline runs |
 
