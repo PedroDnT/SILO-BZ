@@ -5,6 +5,10 @@
 // POST /diagnose  needs the shared token; starts a fresh engine Container for
 //                 this upload alone, forwards the statement with
 //                 `Authorization: Bearer`, returns the PDF, then stops it
+// GET  /traces    the owner's trace page (static shell, no data): asks for the token, lists runs, shows where an
+//                 asset's exposure comes from and downloads a run's PDF
+// GET  /api/traces, /api/traces/exposure, /api/traces/pdf
+//                 need the same token; read the private R2 bucket through the binding (see below)
 // Anything else   404
 //
 // Clients send the token as `x-demo-token` (the scheme of the first deploy) or
@@ -21,6 +25,7 @@
 // Holder, CPF and account are masked by the engine's readers before any of it
 // exists. No KV, D1 or DO storage of our own.
 import { Container, ContainerProxy, getContainer } from "@cloudflare/containers";
+import { type EngineDoc, exposureText, topGroups, traceRootAttribute } from "./exposure";
 
 // The outbound allow-list runs through ContainerProxy, which must be exported.
 export { ContainerProxy };
@@ -47,6 +52,10 @@ const TOKEN_HEADER = "x-demo-token";
 const TRACE_HEADER = "x-silo-trace-id";
 const TRACE_ID = /^[0-9a-f]{32}$/;
 const SHA256_KEY = /^artifacts\/[0-9a-f]{64}\.json$/;
+// The owner's trace page reads only keys of these two shapes: no other path reaches the bucket.
+const TRACE_KEY = /^traces\/\d{4}\/\d{2}\/\d{2}\/[0-9a-f]{32}\.json$/;
+const SHA256 = /^[0-9a-f]{64}$/;
+const TICKER = /^[A-Za-z0-9]{1,12}$/;
 // Engine 1.12 (#605, Q35): public documents the investigator read, keyed by source, id and the text's SHA-256.
 const DOC_KEY = /^docs\/(fnet|rad|web)\/[A-Za-z0-9_.-]{1,128}\/([0-9a-f]{64})\.txt$/;
 // silo-mcp (and PostgREST) on Supabase, the LLM provider, and (engine 1.12, #605) the investigator's
@@ -292,6 +301,84 @@ async function storeTrace(bucket: R2Bucket, container: { fetch: (r: Request) => 
 	});
 }
 
+// Owner-only reads of the private bucket (ADR 0003), behind the same token as /diagnose. Nothing here
+// logs, caches or stores: the answers carry portfolio data (holder, CPF and account already masked by the
+// engine's readers), so they go out `no-store` to the page that asked and nowhere else.
+async function ownerOnly(request: Request, env: Env): Promise<Response | null> {
+	if (!env.DEMO_ACCESS_TOKEN) return erro(503, "Serviço não configurado.");
+	if (!(await tokenMatches(givenToken(request), env.DEMO_ACCESS_TOKEN))) return erro(401, "Acesso não autorizado.");
+	return null;
+}
+
+function json(status: number, body: unknown): Response {
+	return reply(status, JSON.stringify(body), "application/json; charset=utf-8");
+}
+
+// The last `days` UTC days of traces, newest first (at most 50).
+async function listTraces(url: URL, env: Env): Promise<Response> {
+	const days = Math.min(Math.max(Number(url.searchParams.get("days") ?? "3") || 3, 1), 14);
+	const found: { key: string; size: number; enviado: string }[] = [];
+	for (let d = 0; d < days; d++) {
+		const day = new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 10).replaceAll("-", "/");
+		const page = await env.TRACES.list({ prefix: `traces/${day}/`, limit: 100 });
+		for (const o of page.objects) {
+			if (TRACE_KEY.test(o.key)) found.push({ key: o.key, size: o.size, enviado: o.uploaded.toISOString() });
+		}
+	}
+	found.sort((a, b) => b.enviado.localeCompare(a.enviado));
+	return json(200, { traces: found.slice(0, 50) });
+}
+
+async function readTrace(env: Env, key: string | null): Promise<{ trace: unknown } | Response> {
+	if (!key || !TRACE_KEY.test(key)) return erro(400, "Chave de trace inválida.");
+	const obj = await env.TRACES.get(key);
+	if (!obj) return erro(404, "Trace não encontrado.");
+	return { trace: JSON.parse(await obj.text()) };
+}
+
+// With a ticker: the text of where that asset's exposure comes from. Without: the assets held through
+// several statement lines, largest first.
+async function traceExposure(url: URL, env: Env): Promise<Response> {
+	const read = await readTrace(env, url.searchParams.get("key"));
+	if (read instanceof Response) return read;
+	const sha = traceRootAttribute(read.trace, "app.engine_json.sha256");
+	if (!sha || !SHA256.test(sha)) return erro(422, "Este trace não tem o JSON do motor (a execução falhou antes de terminar).");
+	const art = await env.TRACES.get(`artifacts/${sha}.json`);
+	if (!art) return erro(404, "O JSON do motor deste trace não está no bucket.");
+	const doc = JSON.parse(await art.text()) as EngineDoc;
+	const ticker = (url.searchParams.get("ticker") ?? "").trim();
+	if (!ticker) return json(200, { grupos: topGroups(doc, 10), cda: doc.look_through?.cda_month ?? null });
+	if (!TICKER.test(ticker)) return erro(400, "Ticker inválido.");
+	const texto = exposureText(doc, ticker);
+	return json(200, { texto: texto ?? `${ticker.toUpperCase()}: nenhum ativo mantido por mais de uma linha do extrato corresponde a esse código.` });
+}
+
+// The PDF the run returned, as the Worker stored it (holder, CPF and account masked).
+async function tracePdf(url: URL, env: Env): Promise<Response> {
+	const read = await readTrace(env, url.searchParams.get("key"));
+	if (read instanceof Response) return read;
+	const sha = traceRootAttribute(read.trace, "app.pdf.sha256");
+	if (!sha || !SHA256.test(sha)) return erro(422, "Este trace não tem PDF (a execução não gerou o relatório).");
+	const pdf = await env.TRACES.get(`artifacts/${sha}.pdf`);
+	if (!pdf) return erro(404, "O PDF deste trace não está no bucket.");
+	return new Response(pdf.body, {
+		status: 200,
+		headers: {
+			"content-type": "application/pdf",
+			"content-disposition": 'attachment; filename="diagnostico.pdf"',
+			"cache-control": "no-store",
+			"x-silo-origin": "worker",
+		},
+	});
+}
+
+const PAGE_HEADERS = {
+	"content-security-policy":
+		"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
+	"referrer-policy": "no-referrer",
+	"x-robots-tag": "noindex",
+};
+
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const { pathname } = new URL(request.url);
@@ -308,6 +395,22 @@ export default {
 		}
 		if (pathname === "/diagnose" && request.method === "POST") {
 			return diagnose(request, env, ctx);
+		}
+		if (pathname === "/traces" && (request.method === "GET" || request.method === "HEAD")) {
+			return reply(200, TRACES_PAGE, "text/html; charset=utf-8", PAGE_HEADERS);
+		}
+		if (pathname.startsWith("/api/traces") && request.method === "GET") {
+			const denied = await ownerOnly(request, env);
+			if (denied) return denied;
+			const url = new URL(request.url);
+			try {
+				if (pathname === "/api/traces") return await listTraces(url, env);
+				if (pathname === "/api/traces/exposure") return await traceExposure(url, env);
+				if (pathname === "/api/traces/pdf") return await tracePdf(url, env);
+			} catch {
+				// Nothing is logged: a trace that does not read as JSON, or an R2 hiccup, is one plain error.
+				return erro(500, "Não foi possível ler este trace.");
+			}
 		}
 		return reply(404, "not found\n");
 	},
@@ -384,6 +487,131 @@ f.addEventListener("submit", async (e) => {
   } finally {
     go.disabled = false;
   }
+});
+</script>
+</body>
+</html>
+`;
+
+const TRACES_PAGE = `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Traces do diagnóstico</title>
+<style>
+:root { color-scheme: light dark; --fg: #1d1d1f; --bg: #fafaf7; --muted: #5f6368; --line: #d8d8d2; --accent: #1f5f8b; }
+@media (prefers-color-scheme: dark) { :root { --fg: #ececea; --bg: #17181a; --muted: #a0a4a8; --line: #34363a; --accent: #7fb6dd; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+main { max-width: 40rem; margin: 2rem auto; padding: 0 16px; }
+h1 { font-size: 1.4rem; margin: 0 0 .5rem; }
+h2 { font-size: 1.05rem; margin: 1.5rem 0 .5rem; }
+p { color: var(--muted); margin: 0 0 1rem; }
+input { width: 100%; padding: .6rem; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; font: inherit; }
+button { padding: .6rem 1rem; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+button.main { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+ul { list-style: none; padding: 0; margin: 0; }
+li { margin: 0 0 .5rem; }
+li button { width: 100%; text-align: left; }
+pre { white-space: pre-wrap; word-break: break-word; border: 1px solid var(--line); border-radius: 6px; padding: .75rem; font: 14px/1.5 ui-monospace, monospace; }
+#status { min-height: 1.5rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<h1>Traces do diagnóstico</h1>
+<p>Só para o dono. Mostra as execuções guardadas de forma privada (nome, CPF e conta já mascarados) e de onde vem a exposição a um ativo. O código não fica guardado nesta página.</p>
+<label for="token">Código de acesso</label>
+<input id="token" type="password" autocomplete="off">
+<div class="row"><button class="main" id="list">Listar execuções</button></div>
+<div id="status" role="status" aria-live="polite"></div>
+<ul id="traces"></ul>
+<div id="detail" hidden>
+<h2 id="detail-title"></h2>
+<div class="row"><button id="pdf">Baixar o PDF</button></div>
+<h2>Exposição a um ativo</h2>
+<ul id="groups"></ul>
+<label for="ticker">Ou um código (ex.: PETR4)</label>
+<input id="ticker" autocomplete="off" autocapitalize="characters">
+<div class="row"><button id="go">Ver origem</button></div>
+<pre id="out" hidden></pre>
+</div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let key = null;
+const tok = () => $("token").value.trim();
+const say = (t) => { $("status").textContent = t; };
+const when = (iso) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) + " (UTC-3)";
+async function api(path) {
+  const r = await fetch(path, { headers: { "x-demo-token": tok() } });
+  if (!r.ok) {
+    let msg = "Erro " + r.status + ".";
+    try { const j = await r.json(); if (j && j.erro) msg = j.erro; } catch (_) {}
+    throw new Error(msg);
+  }
+  return r;
+}
+function item(list, text, onclick) {
+  const li = document.createElement("li");
+  const b = document.createElement("button");
+  b.textContent = text;
+  b.addEventListener("click", onclick);
+  li.appendChild(b);
+  list.appendChild(li);
+}
+async function showExposure(ticker) {
+  $("out").hidden = false;
+  $("out").textContent = "Lendo...";
+  try {
+    const j = await (await api("/api/traces/exposure?key=" + encodeURIComponent(key) + "&ticker=" + encodeURIComponent(ticker))).json();
+    $("out").textContent = j.texto;
+  } catch (e) { $("out").textContent = e.message; }
+}
+async function openTrace(t) {
+  key = t.key;
+  $("detail").hidden = false;
+  $("detail-title").textContent = "Execução de " + when(t.enviado);
+  $("groups").replaceChildren();
+  $("out").hidden = true;
+  say("Lendo os ativos repetidos entre linhas...");
+  try {
+    const j = await (await api("/api/traces/exposure?key=" + encodeURIComponent(key))).json();
+    say(j.grupos.length ? "" : "Nenhum ativo aparece em mais de uma linha desta execução.");
+    for (const g of j.grupos) {
+      const code = g.label.split(" ")[0];
+      item($("groups"), g.label + ": " + g.total_brl.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) + " (" + g.portfolio_pct.toFixed(2).replace(".", ",") + "% da carteira, " + g.n_lines + " linhas)", () => showExposure(code));
+    }
+  } catch (e) { say(e.message); }
+}
+$("list").addEventListener("click", async () => {
+  $("traces").replaceChildren();
+  $("detail").hidden = true;
+  say("Listando...");
+  try {
+    const j = await (await api("/api/traces?days=7")).json();
+    say(j.traces.length ? "" : "Nenhuma execução nos últimos 7 dias.");
+    for (const t of j.traces) item($("traces"), when(t.enviado) + " · " + Math.round(t.size / 1024) + " KB", () => openTrace(t));
+  } catch (e) { say(e.message); }
+});
+$("go").addEventListener("click", () => { const t = $("ticker").value.trim(); if (t && key) showExposure(t); });
+$("pdf").addEventListener("click", async () => {
+  if (!key) return;
+  say("Baixando o PDF...");
+  try {
+    const blob = await (await api("/api/traces/pdf?key=" + encodeURIComponent(key))).blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "diagnostico.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    say("Pronto: o PDF foi baixado.");
+  } catch (e) { say(e.message); }
 });
 </script>
 </body>

@@ -48,5 +48,8 @@ not, and it is the one object that holds the unmasked holder.
   the upload's bytes are not stored.
 - The engine keeps one run's bundle in memory until the Worker reads it once
   (`GET /trace/<id>`, bearer token); the upload page tells the user what is kept.
+- The owner reads the bucket through the Worker, not through GitHub: `GET /traces` (a page with no data) and
+  `GET /api/traces*`, behind the same token as `/diagnose` (2026-10-06). The repository is public, so a
+  workflow that printed a run's content would publish it; no workflow reads the traces for display.
 - Human labels on a run go to `feedback/<trace_id>.json` (convention in
   `deploy/cloudflare/README.md`).
