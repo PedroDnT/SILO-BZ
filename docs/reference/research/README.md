@@ -142,3 +142,6 @@ Six notes answer the research tickets of the diagnosis map:
   IN RFB 1.585, Lei 14.801, Cosit 28/2026 and the 2026 acts (MP 1.391 on IOF).
 - [`pension-plan-data.md`](pension-plan-data.md) (#612): what public data says
   about a PGBL or VGBL plan, its loading fee, its FIE and its tax regime.
+- [`issue-document-sites.md`](issue-document-sites.md) (#510): 26 official pages where
+  banks, brokers, securitizadoras and fiduciary agents publish CRA, CRI and
+  debenture issue documents, read on 2026-10-06; BTG's Banco de Emissões not found.
