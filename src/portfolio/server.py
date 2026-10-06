@@ -345,14 +345,16 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client,
         try:
             _authorized()
             stage = "upload"
-            output_format = request.form.get("output_format", "pdf")
+            # curl --data-binary defaults to form-urlencoded: do not parse/consume raw uploads.
+            form = request.form if request.mimetype == "multipart/form-data" else {}
+            output_format = form.get("output_format", "pdf")
             if output_format not in ("html", "pdf"):
                 raise _Refusal(400)
             constraints = None
-            if request.form.get("client_constraints"):
+            if form.get("client_constraints"):
                 try:
                     from src.portfolio.client_fit import validate_input
-                    constraints = json.loads(request.form["client_constraints"])
+                    constraints = json.loads(form["client_constraints"])
                     # Date validation needs the statement date and occurs after the reader.
                     if not isinstance(constraints, dict):
                         raise ValueError("invalid constraints")

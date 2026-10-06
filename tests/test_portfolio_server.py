@@ -321,3 +321,14 @@ def test_client_constraints_refused_before_engine(app, monkeypatch):
         'client_constraints': '{"horizon_date":"2000-01-01"}',
     })
     assert r.status_code == 400
+
+
+def test_curl_default_form_content_type_does_not_consume_raw_upload(app, monkeypatch):
+    # Exact smoke wire format: curl --data-binary sends application/x-www-form-urlencoded.
+    headers = {**_auth(), 'Content-Type': 'application/x-www-form-urlencoded'}
+    r = app.post('/diagnose', data=b'not a statement', headers=headers)
+    assert r.status_code == 415
+    assert app.post('/diagnose', data=b'', headers=headers).status_code == 400
+    _stub_pdf(monkeypatch)
+    r = app.post('/diagnose', data=TEMPLATE.read_bytes(), headers=headers)
+    assert r.status_code == 200 and r.mimetype == 'application/pdf'
