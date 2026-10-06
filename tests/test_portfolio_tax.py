@@ -387,7 +387,7 @@ def test_tesouro_fidc_fip_have_no_rule_and_say_why():
     out = run([pos(1, tipo="tesouro"), pos(2, tipo="FIDC"), pos(3, tipo="FIP")])
     assert out["status"] == "partial" and out["reason_codes"] == ["imposto_linhas_sem_regra"]
     for ln in out["lines"]:
-        assert ln["tax"]["status"] == "sem_regra" and "nota #611" in ln["tax"]["reason"]
+        assert ln["tax"]["status"] == "sem_regra" and "nota #611" not in ln["tax"]["reason"] and "regra" in ln["tax"]["reason"]
 
 
 def test_reason_codes_have_fixed_text():

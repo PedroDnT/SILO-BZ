@@ -186,7 +186,7 @@ def test_the_attention_fund_is_not_named_in_any_movement_finding(view, built):
     html, narrative = built
     name = view["movement"]["table"][0]["fund_name"]  # the atencao fund
     assert view["movement"]["table"][0]["level"] == "atencao"
-    divs = re.findall(r'<div class="achado">(.*?)</div>', html, re.S)
+    divs = re.findall(r'<div class="achado"[^>]*>(.*?)</div>', html, re.S)
     movement = [_text(d) for d in divs if "Movimento incomum" in _text(d)]
     assert len(movement) == 1  # the forte fund; the not-evaluated funds are in the fixed gaps section (engine 1.7)
     assert not any(name in m for m in movement)

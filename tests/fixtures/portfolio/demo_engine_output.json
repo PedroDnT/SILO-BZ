@@ -16161,7 +16161,7 @@
     "reason_codes": [],
     "title": "Principais riscos",
     "note": "Fatos da carteira com um limite fixo; não é previsão de mercado nem recomendação de compra, venda ou manutenção.",
-    "severity_rule": "semáforo fixo: atenção quando o valor é estritamente maior que o limite de atenção; moderado quando é estritamente maior que o limite moderado; baixo nos demais casos. Os limites estão no código do motor (src/portfolio/risks.py) e são os mesmos para toda carteira",
+    "severity_rule": "semáforo fixo: atenção quando o valor é estritamente maior que o limite de atenção; moderado quando é estritamente maior que o limite moderado; baixo nos demais casos. Os limites são fixos no motor do SILO e são os mesmos para toda carteira",
     "thresholds": {
       "concentracao_emissor": {
         "atencao_above_pct": 10.0,
@@ -19876,7 +19876,7 @@
       "imposto_linhas_sem_regra"
     ],
     "position_date": "2026-09-30",
-    "note": "Fatos por posição a partir das regras versionadas em src/portfolio/rules/tax/ (nota #611). Valores em R$ são estimativas; nenhuma linha é recomendação. Sem total de imposto da carteira.",
+    "note": "Fatos por posição a partir das regras de imposto versionadas do SILO, cada uma com artigo e citação. Valores em R$ são estimativas; nenhuma linha é recomendação. Sem total de imposto da carteira.",
     "labels": {
       "estimate": "estimativa",
       "check": "a conferir",
@@ -20095,15 +20095,15 @@
     "not_covered": [
       {
         "tipo": "tesouro",
-        "text": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra."
+        "text": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público."
       },
       {
         "tipo": "FIDC",
-        "text": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra."
+        "text": "FIDC: fora das regras de imposto do SILO; sem regra."
       },
       {
         "tipo": "FIP",
-        "text": "FIP: fora da nota #611 (seção 6); sem arquivo de regra."
+        "text": "FIP: fora das regras de imposto do SILO; sem regra."
       }
     ],
     "lines": [
@@ -20139,7 +20139,7 @@
         "tax": {
           "status": "sem_regra",
           "status_label": "sem regra",
-          "selection_reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra.",
+          "selection_reason": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público.",
           "instrument": null,
           "instrument_label": null,
           "rules_file": null,
@@ -20161,11 +20161,11 @@
             "rate_pct": null,
             "basis": null,
             "reason_code": "imposto_sem_regra",
-            "reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra.",
+            "reason": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público.",
             "sources": []
           },
           "reason_code": "imposto_sem_regra",
-          "reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra."
+          "reason": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público."
         },
         "pension": null,
         "optimization": [],
@@ -21001,7 +21001,7 @@
         "tax": {
           "status": "sem_regra",
           "status_label": "sem regra",
-          "selection_reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra.",
+          "selection_reason": "FIDC: fora das regras de imposto do SILO; sem regra.",
           "instrument": null,
           "instrument_label": null,
           "rules_file": null,
@@ -21023,11 +21023,11 @@
             "rate_pct": null,
             "basis": null,
             "reason_code": "imposto_sem_regra",
-            "reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra.",
+            "reason": "FIDC: fora das regras de imposto do SILO; sem regra.",
             "sources": []
           },
           "reason_code": "imposto_sem_regra",
-          "reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra."
+          "reason": "FIDC: fora das regras de imposto do SILO; sem regra."
         },
         "pension": null,
         "optimization": [],
@@ -22158,7 +22158,7 @@
         "annualized": false
       }
     ],
-    "choice_note": "O ETF é o maior por patrimônio líquido (site de terceiros, na data indicada) entre os ETFs ativos que acompanham um índice ligado à classe ANBIMA do fundo na lista revisada pelo dono (src/portfolio/rules/equivalents/class_index.yaml). Mesmo objetivo; não é recomendação de troca.",
+    "choice_note": "O ETF é o maior por patrimônio líquido (site de terceiros, na data indicada) entre os ETFs ativos que acompanham um índice ligado à classe ANBIMA do fundo na lista de classes revisada pelo dono do SILO. Mesmo objetivo; não é recomendação de troca.",
     "class_note": "Distribuição do retorno líquido de cota dos fundos FI ativos da mesma classe ANBIMA e do mesmo indicador de fundo de cotas (mínimo de 30 fundos), nas mesmas janelas do bloco de retorno.",
     "band_note": "posição do retorno na distribuição da classe (p25, mediana, p75), não um ranking",
     "pl_label": "patrimônio líquido do site etfsbrasil.com.br (fonte de terceiros), não um documento da CVM",

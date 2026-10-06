@@ -397,3 +397,48 @@ def test_the_appendix_no_longer_repeats_the_summary_findings(view):
     html = render.render_html(view, render.Narrative(status="complete", kept=[
         Finding(id="f1", section="resumo", title="T1", text="Texto do resumo.", citations=["p1"])]))
     assert html.count("Texto do resumo.") == 1  # page 1 only, not again in the appendix
+
+
+# Reader text, report restructure stage 2 ---------------------------------------------------------------------------
+
+
+def _reader_text(html):
+    body = html.split("<main>")[1]
+    return re.sub(r"<[^>]+>", " ", body)
+
+
+@pytest.fixture(scope="module")
+def built_demo(view):
+    html, _ = build.build(view, "fake")
+    return html
+
+
+def test_the_reader_text_has_no_engine_codes_or_repo_paths(built_demo):
+    t = _reader_text(built_demo)
+    assert re.search(r"\bL\d+\b", t) is None  # a line is its name
+    assert re.search(r"\[p\d", t) is None  # citations stay in the markup, not in the text
+    assert "api." not in t and "nota #611" not in t and "src/portfolio" not in t
+
+
+def test_citations_stay_in_the_markup_as_data(built_demo):
+    assert re.search(r'class="achado" data-fontes="p\d', built_demo)
+    assert 'data-consultas="' in built_demo
+
+
+def test_a_line_is_named_by_its_instrument_and_not_doubled(view, built_demo):
+    t = _reader_text(built_demo)
+    assert "XP LIQUIDEZ FIC" in t
+    assert "XP LIQUIDEZ FIC XP LIQUIDEZ FIC" not in t
+    assert "<th>Nº no extrato</th>" in built_demo
+
+
+def test_charts_keep_their_own_labels(view):
+    html = "<p>L5</p><svg><text>L5</text></svg>"
+    out = render._readable_lines(html, {"lines": [{"line_id": "L5", "instrument": "FUNDO X"}]})
+    assert out == "<p>FUNDO X</p><svg><text>L5</text></svg>"
+
+
+def test_two_lines_with_the_same_name_keep_their_statement_order():
+    names = render._line_names({"lines": [{"line_id": "L1", "instrument": "CDB A"}, {"line_id": "L2", "instrument": "CDB A"},
+                                          {"line_id": "L3", "instrument": "LCI B"}]})
+    assert names["L1"] == "CDB A (linha 1 do extrato)" and names["L2"] == "CDB A (linha 2 do extrato)" and names["L3"] == "LCI B"
