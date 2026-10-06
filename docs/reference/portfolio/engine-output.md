@@ -741,8 +741,8 @@ A line (every `fundo` line): `line_no`, `linha_extrato`, `fund_name`, `cnpj`, `v
 
 Engine 1.12 (owner's resolution of #605, 2026-10-05; sources from `docs/reference/research/credit-issue-documents.md`,
 #604). Built by `src/portfolio/investigator/`, placed after `equivalents` (1.13), in `section_status`. It runs only when the engine
-is given an investigator: the server builds one with `SILO_INVESTIGATOR=on` (the Worker's var, `off` in the deployed
-demo until the owner's supervised live run, #605 Q37), the CLI never does,
+is given an investigator: the server builds one with `SILO_INVESTIGATOR=on` (the Worker's var, `on` in the deployed
+demo since 2026-10-06, owner's Q49, which replaced the supervised live run of #605 Q37), the CLI never does,
 so the demo fixture carries the section off (`status` `not_applicable`, reason code `investigador_desligado`). A
 failure of the investigator is `status` `unknown` (`investigador_falhou`), never a failed report.
 

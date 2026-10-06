@@ -129,9 +129,9 @@ def test_server_cost_header_and_trace_include_the_investigator(monkeypatch):
     assert attrs("invoke_agent redator")["app.cost_usd"] == 0.0  # the investigator is not counted twice
 
 
-def test_the_deployed_demo_ships_with_the_investigator_off():
+def test_the_deployed_demo_ships_with_the_investigator_on():
     text = (ROOT / "deploy" / "cloudflare" / "wrangler.jsonc").read_text(encoding="utf-8")
-    assert '"SILO_INVESTIGATOR": "off"' in text
+    assert '"SILO_INVESTIGATOR": "on"' in text
 
 
 # --- the coordinator's site ---------------------------------------------------------------------------
