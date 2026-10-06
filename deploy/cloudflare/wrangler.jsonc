@@ -27,10 +27,12 @@
 		"SILO_LLM_MODEL": "gpt-5.1",
 		"SILO_LLM_EFFORT": "medium",
 		// Engine 1.12 (#605): the investigator of official documents. "on" runs it; anything else leaves the
-		// engine's investigation section off. OFF on purpose (owner, #605 Q37): the owner turns it on after
-		// one supervised live run shows its real cost. Under the report's single US$1.00 cap it may book at
-		// most US$0.30 (src/portfolio/investigator/extract.py). Its web fallback needs the EXA_API_KEY secret.
-		"SILO_INVESTIGATOR": "off",
+		// engine's investigation section off. ON by default (owner, 2026-10-06, Q49: "ligar default"; it was off
+		// until one supervised run under #605 Q37). Under the report's single US$1.00 cap it may book at most
+		// US$0.30 (src/portfolio/investigator/extract.py), and its Exa queries are built only from the asset's
+		// public identifiers. Its web fallback needs the EXA_API_KEY secret; without it the section degrades to
+		// Fundos.NET and RAD and says so. Set "off" to turn it off.
+		"SILO_INVESTIGATOR": "on",
 		"EGRESS": "allowlist"
 	},
 	"containers": [
