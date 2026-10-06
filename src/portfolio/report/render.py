@@ -130,10 +130,10 @@ def _findings_html(engine: dict, narrative: Narrative, section: str) -> str:
         return ""
     parts = []
     for f in items:
-        cites = ", ".join(e(c) for c in f.citations)
+        cites = " ".join(e(c) for c in f.citations)  # the provenance ids stay in the markup, not in the text
         parts.append(
-            f'<div class="achado"><strong>{substitute(engine, f.title)}</strong>'
-            f'{substitute(engine, f.text)} <span class="cit">[{cites}]</span></div>'
+            f'<div class="achado" data-fontes="{cites}"><strong>{substitute(engine, f.title)}</strong>'
+            f'{substitute(engine, f.text)}</div>'
         )
     return "\n".join(parts)
 
@@ -176,7 +176,7 @@ def _ident_section(engine: dict) -> str:
         badges = "".join(f' <span class="tag unk">{v(engine, f"{p}.badges[{j}].label")}</span>'
                          for j in range(len(ln.get("badges") or [])))
         rows.append([
-            v(engine, f"{p}.line_id"),
+            e(str(ln.get("line_id") or "")[1:]),  # the statement's own order, no engine code
             v(engine, f"{p}.instrument") + (f"<br><span class=cit>{v(engine, f'{p}.fund_name')}</span>" if ln.get("fund_name") else ""),
             e(ASSET_LABELS.get(ln.get("asset_type"), ln.get("asset_type") or "—")),
             code,
@@ -185,7 +185,7 @@ def _ident_section(engine: dict) -> str:
             f'<span class="tag {tag}">{e(STATUS_LABELS.get(status, status))}</span>{badges}{note}',
         ])
     return _table(
-        [("Linha", False), ("Ativo", False), ("Tipo", False), ("CNPJ / código", False),
+        [("Nº no extrato", False), ("Ativo", False), ("Tipo", False), ("CNPJ / código", False),
          ("Valor", True), ("Peso", True), ("Identificação", False)],
         rows,
     )
@@ -1324,7 +1324,7 @@ def _sources(engine: dict) -> str:
         when = v(engine, f"data_dates.{key}") if key else e(format_value({}, "d", dates.get(src))) if dates.get(src) else "data não informada"
         items.append(f"<li>{e(SOURCE_LABELS.get(src, src))}: dados até {when}</li>")
     endpoints = sorted({str(p.get("endpoint")) for p in engine.get("provenance") or [] if p.get("endpoint")})
-    tail = f"<p class=nota>Consultas ao SILO: {e(', '.join(endpoints))}.</p>" if endpoints else ""
+    tail = f'<p class=nota data-consultas="{e(" ".join(endpoints))}">Cada número vem de uma consulta registrada ao SILO; o registro fica com o rastro da execução.</p>' if endpoints else ""
     return "<ul>" + "".join(items) + "</ul>" + tail
 
 
@@ -1337,7 +1337,7 @@ def _client_fit_section(engine: dict) -> str:
     out.append("<p>" + e(fit.get("profile_assessment", "Perfil não avaliado.")) + "</p>")
     for key, label in (("horizon", "Horizonte"), ("liquidity", "Liquidez")):
         item = fit.get(key) or {}
-        out.append(f"<p><strong>{label}</strong>: {e(item.get('status', 'nao_avaliado'))}. {e(item.get('note'))}</p>")
+        out.append(f"<p><strong>{label}</strong>: {e(str(item.get('status', 'nao_avaliado')).replace('_', ' ').replace('nao ', 'não '))}. {e(item.get('note'))}</p>")
         if key == "horizon" and item.get("status") != "nao_avaliado":
             out.append("<p>Crédito além do horizonte: " + e(", ".join("L" + str(n) for n in item.get("line_nos_after_horizon", [])) or "nenhum identificado") +
                        "; sem vencimento: " + e(", ".join("L" + str(n) for n in item.get("line_nos_without_maturity", [])) or "nenhum identificado") + ".</p>")
@@ -1413,6 +1413,35 @@ def _resumo(engine: dict, narrative: Narrative, toc: list[tuple[str, str]]) -> s
     return "".join(out)
 
 
+_SVG_RE = re.compile(r"(<svg\b.*?</svg>)", re.DOTALL)
+_LINE_ID_RE = re.compile(r"\bL(\d+)\b")
+
+
+def _line_names(engine: dict) -> dict[str, str]:
+    """``L<n>`` to the instrument as printed in the statement, escaped; a name that two lines share keeps its
+    statement order so the reader can tell them apart."""
+    lines = [(str(ln.get("line_id")), str(ln.get("instrument") or "")) for ln in engine.get("lines") or [] if ln.get("line_id")]
+    count: dict[str, int] = {}
+    for _lid, name in lines:
+        count[name] = count.get(name, 0) + 1
+    return {lid: e(name if count[name] == 1 else f"{name} (linha {lid[1:]} do extrato)") for lid, name in lines if name}
+
+
+def _readable_lines(html_text: str, engine: dict) -> str:
+    """The engine's line ids (``L5``) are codes: in the reader's text each is the instrument's name, as the statement
+    prints it. A name already printed beside its code is not doubled, and charts (SVG) keep their own labels."""
+    names = _line_names(engine)
+    if not names:
+        return html_text
+
+    def swap(chunk: str) -> str:
+        for lid, name in sorted(names.items(), key=lambda kv: -len(kv[0])):
+            chunk = chunk.replace(f"{lid} {name}", name)
+        return _LINE_ID_RE.sub(lambda m: names.get(f"L{m.group(1)}", m.group(0)), chunk)
+
+    return "".join(part if _SVG_RE.fullmatch(part) else swap(part) for part in _SVG_RE.split(html_text))
+
+
 def render_html(engine: dict, narrative: Narrative, assinatura: str | None = None) -> str:
     template = (TEMPLATES / "report.html").read_text(encoding="utf-8")
     css = (TEMPLATES / "report.css").read_text(encoding="utf-8")
@@ -1460,7 +1489,9 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
         "css": css,
         "meta": meta,
         "aviso": aviso,
-        "corpo": _resumo(engine, narrative, toc) + (section("Restrições declaradas do cliente", _client_fit_section(engine)) if engine.get("client_fit") else "") + '<details id="apendice"><summary>Apêndice: análise completa</summary>' + "\n".join(corpo) + "</details>",
+        "corpo": _readable_lines(
+            _resumo(engine, narrative, toc) + (section("Restrições declaradas do cliente", _client_fit_section(engine)) if engine.get("client_fit") else "")
+            + '<details id="apendice"><summary>Apêndice: análise completa</summary>' + "\n".join(corpo) + "</details>", engine),
         "fontes": _sources(engine),
         "assinatura": e(signature(assinatura)),
         "aviso_legal": DISCLAIMER_HTML,
