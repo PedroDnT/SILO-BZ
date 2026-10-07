@@ -85,6 +85,13 @@ Sign-in (GitHub OAuth, [`/signin.html`](https://silo-bz-deloslabs.vercel.app/sig
 
 Secrets: `POSTGRES_URL` (Supabase, `sslmode=require`); `VERCEL_DEPLOY_HOOK_URL` (deploy hook of the Vercel project `silo-bz` on `main`, team `deloslabs`; it is the only thing that publishes the site); `APIFY_TOKEN` (optional). Day-to-day upkeep (checks, audit-log triage, partition rollover, symptom to fix): [docs/reference/DATABASE_MAINTENANCE.md](docs/reference/DATABASE_MAINTENANCE.md). Operator tooling: [scripts/README.md](scripts/README.md).
 
+OTC debenture capture (#662) has an initial implementation with retrieval
+vintages and long observations, separate from fixed income ETFs. It is opt-in
+and passed two real one-day exports; coverage/storage checks and rollout remain.
+It adds no public API or
+research-ready bond→equity dataset. Commands and limitations:
+[capture contract](docs/reference/research/debenture-secondary-market-capture.md).
+
 ```bash
 python -m src.pipeline.run_daily                       # incremental
 python -m src.pipeline.run_backfill --start-year 2019  # historical

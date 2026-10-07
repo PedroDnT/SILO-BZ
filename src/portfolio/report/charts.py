@@ -5,7 +5,7 @@ the table beside it prints. A bar's length is geometry only, and no chart has an
 figure on a chart is computed here. Each chart sits next to the table it draws and never replaces it.
 
 A builder returns ``""`` when its data is missing, empty or all zero: no empty chart. The report's "O que não foi
-possível avaliar" section says why (``adapt._chart_and_risk_gaps``).
+possível avaliar" section says why (``sections.report_gaps``).
 
 Print-friendly and weasyprint-safe: literal hex colours on each element (no CSS variables, no patterns, no
 JavaScript, no external fetch), one sans font, thin bars with a rounded data end, a value label at the tip of every

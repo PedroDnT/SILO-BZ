@@ -30,6 +30,7 @@ from src.portfolio.liquidity import compute_liquidity
 from src.portfolio.lookthrough import add_portfolio_shares, compute_lookthrough
 from src.portfolio.market_equivalent import compute_equivalents
 from src.portfolio.movement import compute_movement, default_movement_month
+from src.portfolio import sections
 from src.portfolio.restatements import compute_restatements
 from src.portfolio.returns import compute_returns
 from src.portfolio.risks import compute_risks
@@ -351,52 +352,28 @@ def run_engine(
         "allocation": allocation,
         "liquidity": liquidity,
         "assumptions": ASSUMPTIONS,
-        "section_status": {
-            k: {"status": v["status"], "reason": v["reason"], "reason_codes": list(v.get("reason_codes") or [])}
-            for k, v in (
-                ("identification", ident),
-                ("fees", fees),
-                ("look_through", look),
-                ("indexer", indexer),
-                ("sector", sector),
-                ("restatements", restatements),
-                ("risk_signals", signals),
-                ("movement", movement),
-                ("concentration", concentration),
-                ("allocation", allocation),
-                ("liquidity", liquidity),
-            )
-        },
+        "section_status": {},  # filled below, in the declared order (src/portfolio/sections.py)
         "provenance": [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance],
     }
+    doc["section_status"] = sections.status_of(doc)
     doc["client_fit"] = client_fit.compute(doc, declared)
     # engine 1.8: the main risks read the sections above, so they are built last and placed after them
     risks = compute_risks(doc)
-    doc = _insert_after(doc, "liquidity", "risks", risks)
-    doc["section_status"]["risks"] = {"status": risks["status"], "reason": risks["reason"],
-                                      "reason_codes": list(risks.get("reason_codes") or [])}
+    doc = sections.attach(doc, "risks", risks)
     # engine 1.10: the return block reads the fee block's headline, so it runs last (the earlier call ids do not move)
     returns = compute_returns(lines, fees, client, stmt.position_date, stmt.sum_of_lines)
-    doc = _insert_after(doc, "risks", "returns", returns)
-    doc["section_status"]["returns"] = {"status": returns["status"], "reason": returns["reason"],
-                                        "reason_codes": list(returns.get("reason_codes") or [])}
+    doc = sections.attach(doc, "returns", returns)
     # engine 1.11: fee paid and tax per position; reads the fee and return blocks and makes no call
     tax = compute_tax(lines, fees, returns, stmt.position_date)
-    doc = _insert_after(doc, "returns", "tax", tax)
-    doc["section_status"]["tax"] = {"status": tax["status"], "reason": tax["reason"],
-                                    "reason_codes": list(tax.get("reason_codes") or [])}
+    doc = sections.attach(doc, "tax", tax)
     # engine 1.13: the market equivalent reads the fee comparison and the return block; its calls come after
     # every block's but the investigator's, which reads it
     equivalents = compute_equivalents(lines, fees, returns, client, stmt.position_date,
                                       clock().astimezone(dt.timezone.utc).date(), stmt.sum_of_lines)
-    doc = _insert_after(doc, "tax", "equivalents", equivalents)
-    doc["section_status"]["equivalents"] = {"status": equivalents["status"], "reason": equivalents["reason"],
-                                            "reason_codes": list(equivalents.get("reason_codes") or [])}
+    doc = sections.attach(doc, "equivalents", equivalents)
     # engine 1.12: the investigator of official documents reads the sections above and runs last, behind a flag
     investigation = _investigate(investigator, lines, doc, client, clock)
-    doc = _insert_after(doc, "equivalents", "investigation", investigation)
-    doc["section_status"]["investigation"] = {"status": investigation["status"], "reason": investigation["reason"],
-                                              "reason_codes": list(investigation.get("reason_codes") or [])}
+    doc = sections.attach(doc, "investigation", investigation)
     doc["provenance"] = [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance]
     log.info("engine done: %d tool calls", len(client.provenance))
     return doc
@@ -427,15 +404,6 @@ def _fee_totals_as_portfolio_pct(fees: dict[str, Any], total: Decimal) -> None:
                      ("adm_disclosed_range_high_per_year_brl", "adm_disclosed_range_high_portfolio_pct"),
                      ("estimate_adm_per_year_brl", "estimate_adm_portfolio_pct")):
         t[dst] = float((Decimal(str(t[src])) / total * 100).quantize(Decimal("0.0001"))) if total else None
-
-
-def _insert_after(doc: dict[str, Any], after: str, key: str, value: Any) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for k, v in doc.items():
-        out[k] = v
-        if k == after:
-            out[key] = value
-    return out
 
 
 def _unexplained_values(lines: list[LineId], look: dict[str, Any]) -> dict[int, Decimal]:

@@ -1,0 +1,9 @@
+Negociação Consolidada
+Glossário;https://www.b3.com.br/data/files/E0/10/B2/EB/8E2AB9109B5E99B9AC094EA8/Glossario_Negociacao_Consolidada_balcao.pdf
+
+Data Negócio;Instrumento Financeiro;Código IF;Código ISIN;Emissor;Data Liquidação;Quantidade Negociada;Preço Mínimo;Preço Médio;Preço Máximo;Último Preço;Preço de Referência;Número de Negócios;Volume Financeiro (R$);Classificação do Negócio;Oscilação
+05/10/2026;DEB;TEST11;BRTESTDBS001;EMISSOR TESTE;05/10/2026;100;990,000000;1.000,000000;1.010,000000;1.005,000000;1.020,000000;2;100.000,00;Extragrupo;0,50%
+05/10/2026;DEB;TEST11;BRTESTDBS001;EMISSOR TESTE;06/10/2026;50;990,00;1.000,00;1.010,00;1.005,00;1.020,00;1;50.000,00;Extragrupo;0,50%
+05/10/2026;DEB;TEST11;BRTESTDBS001;EMISSOR TESTE;05/10/2026;10;990,00;1.000,00;1.010,00;1.005,00;1.020,00;1;10.000,00;Intragrupo;0,50%
+05/10/2026;DEB;NULL11;;OUTRO TESTE;05/10/2026;1,5;;;;;900,00;0;0,00;-;-
+05/10/2026;CDB;CDBTEST;;BANCO TESTE;05/10/2026;1;1.000,00;1.000,00;1.000,00;1.000,00;1.000,00;1;1.000,00;-;-
