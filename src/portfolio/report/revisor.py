@@ -29,19 +29,27 @@ from pydantic import BaseModel, ConfigDict
 from src.portfolio.report.llm import LLMError, Provider, validate_output
 from src.portfolio.report.redator import Finding, redator_view
 from src.portfolio.report.values import (
+    BRL,
     MISSING,
+    PCT,
+    PCT_CDI,
     PLACEHOLDER_RE,
     is_number,
     iter_leaves,
     last_key,
     parent_path,
     resolve,
+    unit_of,
 )
 
-# Extreme values (owner's brief). Units follow values.py: *_pct in percent.
+# Extreme values (owner's brief). Each threshold is in the unit the renderer prints the figure in, and the Revisor
+# takes that unit from values.unit_of (the one declared table, UNIT_RULES), never from the key's spelling: only a PCT
+# figure can be an extreme fee or exposure, only a BRL figure an extreme delinquency change. What a figure is (a fee,
+# a coverage share, a delinquency) is still read from its key and section in _extreme; how it is measured is not.
 FEE_PCT_YEAR_MAX = 5.0          # a fee above 5% a.a.
 EXPOSURE_PCT_MAX = 50.0         # an exposure above 50% of the portfolio
 DELINQUENCY_CHANGE_BRL_MAX = 100_000_000.0  # a delinquency change above R$100M
+EXTREME_UNITS = {"fee": PCT, "exposure": PCT, "delinquency_change": BRL}
 
 # Two values confirm each other when they agree to this relative tolerance.
 CONFIRM_REL_TOL = 1e-6
@@ -58,6 +66,7 @@ SOURCE_NAMES = {
 
 # Movimento incomum (owner, 2026-10-03): the text may cite the strong level, the funds with no verdict and the
 # section's own constants. The attention level lives in the table (movement.table, movement.by_line) and nowhere else.
+# A list of view paths, not of units: which part of the section may be text is the owner's rule, not the unit table's.
 MOVEMENT_TEXT_PATHS = (
     "movement.strong[",
     "movement.not_evaluated[",
@@ -78,6 +87,8 @@ _ATENCAO_WORD_RE = re.compile(r"aten[cç][aã]o", re.IGNORECASE)
 # lines[i].fund_name, say) is the same claim: the attention level is a table row, not a finding.
 _MOVEMENT_WORD_RE = re.compile(r"movimento", re.IGNORECASE)
 
+# These two path rules are view shape, which the unit table cannot answer: the row of a list a placeholder sits in,
+# so the Revisor can read that row's own fields (risks.rows[i].text_allowed, returns.windows[j].fee_share_of_annual).
 # Engine 1.8: a risks row whose severity comes only from the attention level of the movement section is table-only.
 _RISK_ROW_RE = re.compile(r"^risks\.rows\[(\d+)\]")
 _RETURN_WINDOW_RE = re.compile(r"^returns\.lines\[\d+\]\.windows\[(\d+)\]")
@@ -126,6 +137,7 @@ def _extreme(engine: dict, path: str, value: Any) -> tuple[str, float] | None:
         return None
     key = last_key(path).lower()
     low_path = path.lower()
+    unit = unit_of(engine, path)
     if low_path.startswith("movement."):
         # A class-relative return, mean or sd is a sample statistic, not an exposure: it carries its own
         # n_peers, class and month, and the section's level rule decides where it may appear.
@@ -134,7 +146,7 @@ def _extreme(engine: dict, path: str, value: Any) -> tuple[str, float] | None:
         # engines 1.10 to 1.13: a past return, the CDI, a class percentile, a volatility, a drawdown or a legal tax rate
         # is not an exposure;
         # only a fee rate under these sections keeps the fee rule (a fee above 5% a.a. needs a second path)
-        if "_pct" in key and ("fee" in key or ".fee." in low_path):
+        if unit == PCT and ("fee" in key or ".fee." in low_path):
             annual = float(value)
             m = _RETURN_WINDOW_RE.match(path)
             if key == "fee_pct_period" and m:  # half the annual fee in the 6-month window
@@ -146,6 +158,8 @@ def _extreme(engine: dict, path: str, value: Any) -> tuple[str, float] | None:
     parent = resolve(engine, parent_path(path))
     leaf = str(parent.get("leaf", "")).lower() if isinstance(parent, dict) else ""
     if "delinquency" in low_path or "inad" in leaf:
+        if unit != BRL:  # the R$100M rule reads reais: a count or a plain diff number of a non-VL_ field is not one
+            return None
         if "change" in key:
             mag = abs(float(value))
         elif key in ("old_num", "new_num", "delinquency_old_brl", "delinquency_new_brl") and isinstance(parent, dict):
@@ -155,7 +169,7 @@ def _extreme(engine: dict, path: str, value: Any) -> tuple[str, float] | None:
         else:
             return None
         return ("delinquency_change", mag) if mag > DELINQUENCY_CHANGE_BRL_MAX else None
-    if "_pct" in key:
+    if unit == PCT:
         if "coverage" in key or "fund_value" in key:
             # engine 1.8: a share of the value held in funds (fee coverage), not a fee rate and not an exposure
             return None
@@ -222,10 +236,12 @@ def check_sentence(engine: dict, sentence: str, sources: set[str]) -> str | None
     if _PCT_CDI_WORDS_RE.search(bare):
         return "'% do CDI' só pelo marcador pct_of_cdi que o motor escreveu"
     for m in _PH_THEN_CDI_RE.finditer(sentence):
+        # not a unit question: cdi_pct is a PCT like any return, and the one figure that is the CDI's own return
         if not _valid_path(m.group(1)) or last_key(m.group(1)) != "cdi_pct":
             return f"'do CDI' depois de um valor que não é o CDI: {{{{{m.group(1)}}}}}"
     for ph in placeholders(sentence):
-        if (_valid_path(ph) and last_key(ph) == "pct_of_cdi" and resolve(engine, ph) not in (None, MISSING)
+        # the renderer prints a PCT_CDI figure as "97,05% do CDI": the same unit_of decides it here
+        if (_valid_path(ph) and unit_of(engine, ph) == PCT_CDI and resolve(engine, ph) not in (None, MISSING)
                 and resolve(engine, parent_path(ph) + ".cdi_like") is not True):
             return f"'% do CDI' em linha cujo índice de referência arquivado não é CDI ou DI: {{{{{ph}}}}}"
     movement_phs = [ph for ph in placeholders(sentence) if ph.lower().startswith("movement.")]
