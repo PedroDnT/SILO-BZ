@@ -355,3 +355,14 @@ def test_runner_reports_a_failed_read_without_text(tmp_path, capsys, monkeypatch
     for asset in ("DEB-CUTI11", "CUTI11"):
         assert asset not in out
     no_originals(out)
+
+
+def test_period_repeated_as_a_page_header_is_still_read():
+    # Newer BTG reports print "Período de ... a ..." at the top of every page, where the
+    # furniture filter strips repeated edge lines; the period must be read before that.
+    header = "Relatório de Performance\nPeríodo de 01/12/2025 a 31/12/2025\n"
+    pages = edit(variant_a_pages(), 1, "Período de 01/12/2025 a 31/12/2025", "")
+    pages = [pages[0]] + [header + pg for pg in pages[1:]]
+    assert len(pages) >= 4
+    st, _ = parse_pdf_pages(pages)
+    assert st.position_date == dt.date(2025, 12, 31)

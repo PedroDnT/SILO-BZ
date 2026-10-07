@@ -116,7 +116,7 @@ jobs:
     # its normal range turns a slow success into a silent no-op.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Shared composite action — same schema bootstrap as daily/watchdog, so the
       # three paths can't drift. Runs once here and the ingest matrix gates on it
@@ -141,8 +141,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
       # Standard library only, so this cannot be the step that fails on a
@@ -155,10 +155,10 @@ jobs:
     needs: apply-schema
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    continue-on-error: true
+    continue-on-error: true  # read-only report plus stale-row cleanup; failure does not block the backfill
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
       - name: Install coverage-query dependency
@@ -256,7 +256,7 @@ jobs:
             2026,
           ]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Skip years outside start_year..end_year
         if: ${{ matrix.year < fromJSON(inputs.start_year) || matrix.year > fromJSON(inputs.end_year) }}
@@ -264,7 +264,7 @@ jobs:
           echo "Skipping FI ${{ matrix.year }} (requested ${{ inputs.start_year }}..${{ inputs.end_year }})"
           exit 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) }}
         with:
           python-version: "3.12"
@@ -488,10 +488,10 @@ jobs:
       matrix:
         entity: [fidc, fii, fiagro, fip, securit, cia_aberta]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
         with:
           python-version: "3.12"
@@ -531,9 +531,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
           cache: pip
@@ -594,9 +594,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
           cache: pip
@@ -630,9 +630,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
           cache: pip
@@ -715,9 +715,9 @@ jobs:
           fi
           echo "FNET fund sweep: $FNET_SWEEP"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
           cache: pip
@@ -770,11 +770,11 @@ jobs:
     needs:
       [backfill-fi, backfill-other, backfill-etf, backfill-bacen, backfill-ibge]
     if: ${{ always() && (inputs.bacen_only == true || inputs.entity == 'all' || inputs.ibge == true) && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
-    continue-on-error: true
+    continue-on-error: true  # one analytical hiccup must not fail a multi-hour backfill that landed
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install PostgreSQL client
         run: |

@@ -1,0 +1,16 @@
+# Dependabot moves the SHA-pinned actions in .github/workflows/ (#686).
+# Each `uses:` line is pinned to a full commit SHA with its tag in a comment;
+# Dependabot updates both in one PR.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # requirements.txt and requirements-dev.txt are pinned with == (#687);
+  # Dependabot proposes the moves. Keep pydantic and openai equal to
+  # requirements-report.txt and deploy/cloudflare/engine/requirements.txt.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly

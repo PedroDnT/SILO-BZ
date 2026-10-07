@@ -192,14 +192,15 @@ async def test_cvm_slice_failures_exit_nonzero_after_other_sources(monkeypatch):
     went red because b3_corporate_events hit SSL EOF. BACEN/B3 must still
     run so a blocked CVM IP does not skip sources that work.
     """
-    from src.pipeline.cvm_pipeline import SliceFailure
+    from src.pipeline.cvm_pipeline import CVMRunFailed, SliceFailure
 
     monkeypatch.delenv("APIFY_TOKEN", raising=False)
     p1, p2, p3, p4, cvm, _bacen, anbima_ing, b3_ing = _patches()
-    cvm.failures = [
+    # daily_update raises once every slice ran (#691), with what did land.
+    cvm.daily_update.side_effect = CVMRunFailed([
         SliceFailure("fii", "mensal_geral", 2026, None, "CVMHostUnreachable"),
         SliceFailure("securit", "cra_mensal", 2026, None, "CVMHostUnreachable"),
-    ]
+    ], {"cvm_fi_diario": 7})
     with p1, p2, p3, p4:
         with pytest.raises(SystemExit) as exc:
             await rd.main()

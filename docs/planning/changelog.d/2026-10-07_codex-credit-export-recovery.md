@@ -1,0 +1,1 @@
+| 2026-10-07 | `codex/credit-export-recovery` | Retry failed DEB exports in smaller session-based slices while preserving unknown edges, original/child audits and successful facts. Parse, coverage and DB failures still refuse. Record real seven-day coverage and local storage measurements; production enablement remains pending. |

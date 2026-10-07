@@ -60,7 +60,7 @@ it.
 ## Step 0: set up, check the budget, pick the item
 
 1. `git fetch origin main`; work from `origin/main`. Install
-   `requirements.txt` into a venv (Python 3.12) so the tests run.
+   `requirements-dev.txt` into a venv (Python 3.12) so the tests run.
 2. Record your provenance from `origin/main`:
    `git log -1 --format=%H -- .claude/agents/builder.md` (the prompt SHA).
 3. With the GitHub tools in your session, list open PRs carrying any of

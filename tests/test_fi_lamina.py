@@ -158,7 +158,7 @@ class TestWiring:
         )
         # The spec's (entity, doc_type) must be what the method logs, or the
         # gap-aware window never sees the month as loaded.
-        assert 'self._log_start(run_id, "fi", "lamina", year, month)' in src
+        assert 'self._audited("fi", "lamina", year, month, work)' in src
         assert '"cvm_fi_lamina"' in re.search(r"_ALL_TABLES: List\[str\] = \[.*?\]", src, re.S).group(0)
 
     def test_migration_and_schema_agree_on_the_table_and_the_view(self):

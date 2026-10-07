@@ -75,10 +75,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
           cache: pip
@@ -97,7 +97,7 @@ jobs:
         run: python scripts/check_cvm_reachable.py
 
       - name: Cache apt packages
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: /var/cache/apt/archives
           key: ${{ runner.os }}-apt-${{ hashFiles('requirements.txt') }}
@@ -209,7 +209,7 @@ jobs:
       # enough to look like a hung connection.
       - name: Analyze tables post-ingest
         if: ${{ !cancelled() && steps.schema.outcome == 'success' && (steps.daily.outcome == 'failure' || success()) && (github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill' || github.event.inputs.mode == 'b3-cash-dividends' || github.event.inputs.mode == 'b3-trade-consolidated'))) }}
-        continue-on-error: true
+        continue-on-error: true  # a killed ANALYZE only skips a stats refresh; no row changes
         run: |
           set +e
           failed=0
@@ -289,7 +289,7 @@ jobs:
       # already landed.
       - name: Trigger dashboard rebuild (Vercel deploy hook)
         if: ${{ !cancelled() && (steps.analytical.outcome == 'success' || success()) && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.rebuild_dashboard == 'true')) }}
-        continue-on-error: true
+        continue-on-error: true  # a failed Vercel hook must not fail an ingest whose data landed
         env:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
         run: |
@@ -378,9 +378,9 @@ jobs:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
       TZ: "America/Sao_Paulo"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
           cache: pip

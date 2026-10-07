@@ -14,7 +14,8 @@ Step 3 of docs/planning/SERVING.md: serving cannot fall over a panel.
   context manager; it is always put back in ``finally``, and closed instead
   of recycled when it can no longer roll back.
 - The pool is built by ``src.store.pg_client.get_pool``, the one pool
-  factory, so a connection setting is fixed in one place.
+  factory, so a connection setting is fixed in one place. It gets the
+  ingest pool's TCP keepalives (``pg_client.KEEPALIVES``).
 - The socket pool itself is built lazily on first checkout (so importing
   ``serve.app`` never dials the database), but exactly once per process.
 """
@@ -26,7 +27,7 @@ import threading
 from contextlib import contextmanager
 from typing import Any, Iterator, Optional
 
-from src.store.pg_client import get_pool
+from src.store.pg_client import KEEPALIVES, get_pool
 
 _DEFAULT_MAXCONN = 10
 _DEFAULT_STATEMENT_TIMEOUT_MS = 15_000
@@ -81,8 +82,13 @@ class ServePool:
                         raise RuntimeError(
                             "POSTGRES_URL or SILO_API_DATABASE_URL must be set"
                         )
+                    # Same TCP keepalives as the ingest pool: a connection
+                    # idle between requests must not be dead at checkout.
                     self._pool = get_pool(
-                        self._dsn, minconn=self._minconn, maxconn=self._maxconn
+                        self._dsn,
+                        minconn=self._minconn,
+                        maxconn=self._maxconn,
+                        **KEEPALIVES,
                     )
         return self._pool
 

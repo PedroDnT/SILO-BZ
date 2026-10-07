@@ -4,25 +4,25 @@
 
 # HTTP / network (CVM + ANBIMA)
 aiohttp==3.14.3
-aiofiles==23.2.1
-dnspython==2.6.1
-httpx>=0.27.0
+aiofiles==25.1.0
+dnspython==2.8.0
+httpx==0.28.1
 
 # Data parsing
 pandas==2.2.3
 # sdk/silo_client prices() returns a polars DataFrame (sdk/pyproject.toml)
 polars==1.44.2
-numpy==1.26.3
-python-dateutil==2.8.2
+numpy==1.26.4
+python-dateutil==2.9.0.post0
 lxml==6.1.0
-openpyxl>=3.1.0
+openpyxl==3.1.5
 
 # BACEN client
 python-bcb==0.3.0
 requests==2.33.0
 
 # Storage
-psycopg2-binary>=2.9
+psycopg2-binary==2.9.13
 
 # Config / runtime
 python-dotenv==1.2.2
@@ -30,16 +30,9 @@ python-dotenv==1.2.2
 # Read API (Flask) — `python -m serve.app` over schema api; not an ingest trigger
 flask>=3.0,<4.0
 
-# Testing
-pytest==9.0.3
-pytest-asyncio==1.4.0
-hypothesis==6.98.3
-# Test-only: tests/test_apply_schema_action.py parses the composite GitHub
-# Action YAML. Without it here the test importorskips and the guard it pins
-# would never actually run in CI.
-PyYAML>=6.0
+# Config parsing at runtime: src/portfolio/ (equivalents, benchmark, tax)
+# loads YAML, so PyYAML stays here and not in requirements-dev.txt.
+PyYAML==6.0.3
 
-# Local dev / offline verification — used by scripts/seed_local_db.py and
-# scripts/run_analysis_local.py to seed and query a local DuckDB file (no
-# Supabase credentials required). Not used by the production pipeline.
-duckdb>=1.0
+# Test and local-dev tools (pytest, hypothesis, duckdb) are in
+# requirements-dev.txt. Dependabot (.github/dependabot.yml) proposes pin moves.

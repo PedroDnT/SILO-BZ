@@ -445,7 +445,7 @@ comments correctly), so author migrations to be psql-clean.
 - If `.venv/bin/pip` is missing, the snapshot venv is empty. Recreate it:
   `sudo apt-get install -y python3.12-venv && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`.
 - `duckdb` is required by the offline verification scripts but is used only for local dev;
-  it is listed in `requirements.txt` under "Local dev / offline verification".
+  it is pinned in `requirements-dev.txt`, not in `requirements.txt` (#687).
 - Git hooks live in `.githooks/` (enabled with `bash scripts/install_hooks.sh`, which sets
   `core.hooksPath`). Only a `pre-commit` hook exists (secret scan + `py_compile`/`bash -n`);
   there is no git pre-push hook.

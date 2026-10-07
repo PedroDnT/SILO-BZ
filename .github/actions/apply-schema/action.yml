@@ -92,6 +92,9 @@ runs:
         # schema.sql failed three times with `column "tp_fundo" does not exist`
         # and the loop retried it as lock contention (90s of sleep, a
         # misleading annotation). Only lock_timeout is retryable.
+        # The rewriter also keeps valid matching unique indexes instead of
+        # replaying DROP/CREATE, and skips absent constraint drops. Genuine
+        # changes still run under the same lock timeout and retry policy.
         export PGOPTIONS="-c lock_timeout=15s -c statement_timeout=0"
 
         apply() {
