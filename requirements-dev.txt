@@ -1,0 +1,15 @@
+# Everything the offline test suite imports that the daily ingest does not.
+# `pip install -r requirements-dev.txt` is the documented setup for tests
+# (AGENTS.md, Commands); test.yml installs this file and nothing by hand.
+# The daily ingest (daily_ingest.yml) installs requirements.txt only.
+-r requirements.txt
+
+# The report layer (src/portfolio/report/) imports pydantic and, for
+# SILO_LLM_PROVIDER=openai, the openai SDK. The pins are copied from
+# requirements-report.txt (the engine image's file); keep them equal when
+# that file moves. WeasyPrint is not here: its tests skip without it.
+pydantic==2.13.4
+openai==3.24.0
+
+# tests/test_research_agent_eval.py
+openai-agents==0.22.3

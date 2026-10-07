@@ -516,11 +516,12 @@ def test_an_older_view_without_the_key_renders_without_the_chart():
 # --- the report and the Redator / Revisor ----------------------------------------------------------------------------------
 
 
-def test_the_report_places_the_chart_after_the_overlap_table(view):
+def test_the_report_keeps_the_overlap_table_in_the_body_and_the_origin_diagrams_in_the_annex(view):
     html_text, _ = build.build(view, "fake")
-    order = [html_text.index(t) for t in ("<h3>Sobreposição</h3>", "<h3>De onde vem a exposição ao mesmo ativo</h3>",
-                                           "<h3>O que está por baixo")]
-    assert order == sorted(order)
+    annex_at = html_text.index('<details id="apendice">')
+    body_order = [html_text.index(t) for t in ("<h3>Sobreposição</h3>", "<h3>O que está por baixo")]
+    assert body_order == sorted(body_order) and body_order[-1] < annex_at
+    assert html_text.index("<h3>De onde vem a exposição ao mesmo ativo</h3>") > annex_at
     assert "{{" not in html_text
 
 

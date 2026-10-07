@@ -18,6 +18,8 @@ import pytest
 import yaml
 
 from src.portfolio.common import REASON_TEXT
+from src.portfolio.report import adapt
+from src.portfolio.report import labels as reader_text
 from src.portfolio.identify import LineId
 from src.portfolio.statement import Position, StatementTotalMismatch, parse_rows
 from src.portfolio.tax import (
@@ -201,7 +203,8 @@ def test_cdb_without_date_shows_the_bracket_and_no_figure():
 def test_cdb_with_date_rate_today_article_and_next_bracket():
     ln = one(pos(tipo="CDB", aplicacao=D - dt.timedelta(days=300)))
     t = ln["tax"]
-    assert t["status"] == "aliquota_hoje" and t["rate_today_pct"] == 20.0 and t["rate_text"] == "20%"
+    assert t["status"] == "aliquota_hoje" and t["rate_today_pct"] == 20.0 and "rate_text" not in t
+    assert reader_text.tax_rate_text(t) == "20%"  # engine 2.0: the report writes the rate as text
     assert t["article"] == "Lei 11.033/2004, art. 1º, I a IV"
     nb = next(o for o in ln["optimization"] if o["kind"] == "proxima_faixa")
     assert nb["days"] == 61 and nb["text"] == "em 61 dias a alíquota cai de 20% para 17,5%"
@@ -212,7 +215,7 @@ def test_cdb_with_date_rate_today_article_and_next_bracket():
 def test_missing_date_never_gives_a_figure_in_the_demo():
     doc = json.loads(FIXTURE.read_text(encoding="utf-8"))
     tax = doc["tax"]
-    assert doc["schema_version"] == "1.14" and doc["section_status"]["tax"]["status"] == tax["status"]
+    assert doc["schema_version"] == "2.0" and doc["section_status"]["tax"]["status"] == tax["status"]
     assert all(p["data_aplicacao"] is None for p in doc["statement"]["positions"])
     assert tax["n_tax_estimated"] == 0
     for ln in tax["lines"]:
@@ -224,7 +227,7 @@ def test_missing_date_never_gives_a_figure_in_the_demo():
 def test_exempt_product_with_article_and_gross_up():
     ln = one(pos(tipo="LCI", aplicacao=dt.date(2024, 1, 10), vencimento=dt.date(2027, 1, 10), taxa="95% do CDI"))
     t = ln["tax"]
-    assert t["status"] == "isento" and t["exempt"] and t["rate_text"] == "isento"
+    assert t["status"] == "isento" and t["exempt"] and reader_text.tax_rate_text(t) == "isento"
     assert t["article"] == "Lei 11.033/2004, art. 3º, II"
     assert t["estimate"]["tax_brl"] is None
     g = next(o for o in ln["optimization"] if o["kind"] == "equivalencia_bruta")
@@ -302,7 +305,9 @@ def test_etf_rule_from_the_return_basis_and_third_party_fee():
                        basis="taxa informada pelo site etfsbrasil.com.br (fonte de terceiros, não é documento da CVM)")
     eq = one(pos(tipo="ETF"), fee_lines=[fee], ret_lines=[ret_12m(1, 5.0, basis="close_sem_proventos")])
     assert eq["tax"]["instrument"] == "etf_equity" and eq["tax"]["rate_today_pct"] == 15.0
-    assert eq["fee"]["third_party"] and "terceiros" in eq["fee"]["third_party_label"] and eq["fee"]["per_year_brl"] == 300.0
+    assert eq["fee"]["third_party"] and "third_party_label" not in eq["fee"] and eq["fee"]["per_year_brl"] == 300.0
+    view = adapt._tax_view({"tax": {"lines": [eq]}, "fees": {"lines": [fee]}})["lines"][0]
+    assert "terceiros" in view["fee"]["third_party_label"]  # the fee block's own basis, added by the report
     rf = one(pos(tipo="ETF"), ret_lines=[{"line_no": 1, "basis": "last_price_etf_renda_fixa", "windows": {}}])
     assert rf["tax"]["instrument"] == "etf_fixed_income" and rf["tax"]["status"] == "faixa"
     assert rf["tax"]["bracket"]["max_pct"] == 30.0
@@ -316,12 +321,14 @@ def test_pgbl_against_vgbl_two_columns_never_one_regime():
     for ln, plan, base in ((pg, "PGBL", "valor total do resgate"), (vg, "VGBL", "somente o rendimento")):
         pe = ln["pension"]
         assert ln["tax"]["status"] == "previdencia" and pe["plan"] == plan and pe["base"] == base
-        assert pe["regime"] is None and pe["regime_label"] == "opção do participante; não informada"
+        assert pe["regime"] is None and "regime_label" not in pe
+        pv = adapt._tax_view({"tax": {"lines": [ln]}})["lines"][0]["pension"]
+        assert pv["regime_label"] == "opção do participante; não informada"
         assert pe["regressive"]["text"] == "tabela completa; data de início não informada, a conferir"
         assert [r["rate_pct"] for r in pe["regressive"]["table"]] == [35.0, 30.0, 25.0, 20.0, 15.0, 10.0]
         assert pe["progressive"]["text"] == ("15% antecipado; ajuste anual pela tabela progressiva, depende da renda "
                                              "total; não estimado")
-        assert "irretratável" in pe["irrevocable_text"] and pe["irrevocable"] is True
+        assert "irretratável" in pv["irrevocable_text"] and pe["irrevocable"] is True
         assert ln["tax"]["estimate"]["tax_brl"] is None
         assert ln["fee"]["loading"]["status"] == "nao_informado"
     assert "aportes_vgbl_ano" in {a["id"] for a in vg["a_conferir"]}
@@ -387,7 +394,7 @@ def test_tesouro_fidc_fip_have_no_rule_and_say_why():
     out = run([pos(1, tipo="tesouro"), pos(2, tipo="FIDC"), pos(3, tipo="FIP")])
     assert out["status"] == "partial" and out["reason_codes"] == ["imposto_linhas_sem_regra"]
     for ln in out["lines"]:
-        assert ln["tax"]["status"] == "sem_regra" and "nota #611" in ln["tax"]["reason"]
+        assert ln["tax"]["status"] == "sem_regra" and "nota #611" not in ln["tax"]["reason"] and "regra" in ln["tax"]["reason"]
 
 
 def test_reason_codes_have_fixed_text():

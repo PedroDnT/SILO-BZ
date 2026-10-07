@@ -6,7 +6,7 @@ OTLP/JSON encoding: attributes as ``[{key, value: {stringValue|intValue|...}}]``
 64-bit integers and nanosecond times as strings, ids as lowercase hex). The
 Worker writes it to the private R2 bucket ``silo-diagnosis-traces`` together with
 the large items, which are separate objects named by their SHA-256
-(``artifact_objects``): the masked engine JSON and the PDF.
+(``artifact_objects``): the masked engine JSON, the report's HTML and the PDF.
 
 Span and attribute names follow the OpenTelemetry GenAI semantic conventions
 pinned in ``GENAI_SEMCONV`` where one exists: ``invoke_agent <name>`` spans with
@@ -131,6 +131,8 @@ class RunRecord:
     narrative: Any = None
     engine_json: bytes | None = None
     pdf: bytes | None = None
+    # the report's HTML (masked like the PDF), kept for the owner's page whatever the output format was
+    html: bytes | None = None
     extra: dict[str, Any] = field(default_factory=dict)
     # engine 1.12: the investigator's read-once cache entries (public documents only), for the Worker to write
     documents: dict[str, bytes] = field(default_factory=dict)
@@ -319,6 +321,8 @@ def build_trace(rec: RunRecord, trace_id: str | None = None) -> dict[str, Any]:
         "app.git_sha": rec.git_sha,
         "app.pdf.sha256": sha256_hex(rec.pdf) if rec.pdf is not None else None,
         "app.pdf.bytes": len(rec.pdf) if rec.pdf is not None else None,
+        "app.html.sha256": sha256_hex(rec.html) if rec.html is not None else None,
+        "app.html.bytes": len(rec.html) if rec.html is not None else None,
         "app.engine_json.sha256": sha256_hex(rec.engine_json) if rec.engine_json is not None else None,
         "app.engine_json.bytes": len(rec.engine_json) if rec.engine_json is not None else None,
         # the report's one meter (engine 1.12: investigator included); without a narrative, what the investigator spent
@@ -369,11 +373,13 @@ def root_attributes(trace: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
-def artifact_objects(engine_json: bytes | None, pdf: bytes | None) -> dict[str, bytes]:
-    """``{key: bytes}`` of the large items, each named by its SHA-256: ``artifacts/<sha>.json`` and ``.pdf``."""
+def artifact_objects(engine_json: bytes | None, pdf: bytes | None, html: bytes | None = None) -> dict[str, bytes]:
+    """``{key: bytes}`` of the large items, each named by its SHA-256: ``artifacts/<sha>.json``, ``.pdf`` and ``.html``."""
     out: dict[str, bytes] = {}
     if engine_json is not None:
         out[f"{ARTIFACT_PREFIX}/{sha256_hex(engine_json)}.json"] = engine_json
     if pdf is not None:
         out[f"{ARTIFACT_PREFIX}/{sha256_hex(pdf)}.pdf"] = pdf
+    if html is not None:
+        out[f"{ARTIFACT_PREFIX}/{sha256_hex(html)}.html"] = html
     return out

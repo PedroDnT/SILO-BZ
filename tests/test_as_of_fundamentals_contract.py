@@ -109,4 +109,4 @@ def test_the_catalog_and_sdk_carry_it() -> None:
     text = " ".join(catalog_payload()["constraints"])
     assert "NOT POINT-IN-TIME UNLESS p_as_of IS GIVEN" in text
     client = (ROOT / "sdk/silo_client/client.py").read_text(encoding="utf-8")
-    assert client.count('"p_as_of": _iso(as_of)') == 5
+    assert client.count('p_as_of=_iso(as_of)') == 5

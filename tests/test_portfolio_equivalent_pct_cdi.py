@@ -222,7 +222,7 @@ def test_a_mapped_class_gets_the_largest_etf_by_pl_set_beside_the_class():
     assert ln["status"] == "encontrado" and ln["reason_code"] is None and ln["label"] == EQ_LABEL == sec["label"]
     etf = ln["etf"]
     assert etf["ticker"] == "SMXX11" and etf["pl_brl"] == 2.5e9 and etf["pl_as_of"] == "2026-10-01"
-    assert etf["fee_pct_year"] == 0.5 and etf["in_fee_peers"] is True and "terceiros" in etf["fee_label"]
+    assert etf["fee_pct_year"] == 0.5 and etf["in_fee_peers"] is True and "fee_label" not in etf  # report text (2.0)
     assert etf["basis"] == "close_sem_proventos" and etf["without_distributions"] is True
     w12, w6 = ln["windows"]
     assert w12["id"] == "12m" and w12["etf_net_return_pct"] == pytest.approx((1.015 ** 12 - 1) * 100, abs=1e-4)
@@ -334,7 +334,7 @@ def view(engine) -> dict:
 
 
 def test_the_demo_carries_both_and_every_gap_has_a_fixed_text(engine):
-    assert engine["schema_version"] == "1.14" and list(engine).index("equivalents") == list(engine).index("tax") + 1
+    assert engine["schema_version"] == "2.0" and list(engine).index("equivalents") == list(engine).index("tax") + 1
     eqs = engine["equivalents"]
     assert {ln["status"] for ln in eqs["lines"]} == {"encontrado", "sem_equivalente"}
     for ln in eqs["lines"]:
@@ -348,14 +348,14 @@ def test_the_demo_carries_both_and_every_gap_has_a_fixed_text(engine):
 
 def test_the_report_shows_the_equivalent_and_pct_of_cdi_where_the_engine_wrote_them(view):
     html = build.build(view, "fake")[0]
-    sec = html.split("<h2>Equivalente de mercado</h2>")[1].split("</section>")[0]
+    sec = html.split("<h2>ETF comparável (não é recomendação)</h2>")[1].split("</section>")[0]
     txt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", sec))
     for needle in ("equivalente de mercado; não é recomendação", "EXLF11", "R$ 4,20 bilhões", "01/10/2026",
                    "fonte de terceiros", "sem proventos", "mediana", REASON_TEXT["equivalente_sem_par"],
                    REASON_TEXT["equivalente_sem_classe"]):
         assert needle in txt, needle
     assert "melhor" not in txt.lower()
-    ret = html.split("<h2>Retorno por posição</h2>")[1].split("</section>")[0]
+    ret = html.split("<h2>Retorno por posição em detalhe</h2>")[1].split("</section>")[0]
     rtxt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", ret.split("<table")[1].split("</table>")[0]))
     shown = re.findall(r"\d+,\d+% do CDI", rtxt)
     expected = [values.format_value(view, f"returns.lines[{i}].windows[{j}].pct_of_cdi")

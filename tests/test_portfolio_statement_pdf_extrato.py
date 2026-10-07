@@ -365,21 +365,13 @@ def server_app(monkeypatch):
     monkeypatch.setenv("SILO_LLM_PROVIDER", "fake")
     pages = {b"%PDF-1 conta A": extrato_pages("top"), b"%PDF-1 conta B": second_account(), b"%PDF-1 perf": variant_a_pages()}
     monkeypatch.setattr(sp, "extract_pages", lambda data: (pages[data], "poppler"))
-    seen = {}
-    real_run = server.run_engine
-
-    def spy(stmt, client, params):
-        seen["stmt"] = stmt
-        return real_run(stmt, client, params)
-
-    monkeypatch.setattr(server, "run_engine", spy)
 
     def fake_pdf(html_text, out_path):
         Path(out_path).write_bytes(b"%PDF-1.7\n% stub\n")
         return Path(out_path)
 
-    monkeypatch.setattr(server, "html_to_pdf", fake_pdf)
-    return server, server.create_app(client_factory=lambda: FakeClient(load_fake_rows(rows))).test_client(), seen
+    app = server.create_app(client_factory=lambda: FakeClient(load_fake_rows(rows)), pdf_renderer=fake_pdf)
+    return server, app.test_client()
 
 
 def _post(client, parts):
@@ -391,13 +383,23 @@ def _post(client, parts):
     )
 
 
+def test_read_uploads_consolidates_several_files(server_app, tmp_path):
+    from src.portfolio import diagnosis
+
+    st = diagnosis.read_uploads([(b"%PDF-1 conta A", "pdf"), (b"%PDF-1 conta B", "pdf"), (b"%PDF-1 perf", "pdf")], tmp_path)
+    assert len(st.accounts) == 3 and st.sum_of_lines == 2 * grand_total() + sum(a.sum_of_lines for a in st.accounts[2:])
+    one = diagnosis.read_uploads([(b"%PDF-1 conta A", "pdf")], tmp_path)
+    assert one.accounts == () and one.sum_of_lines == grand_total()
+    with pytest.raises(diagnosis.UnreadableStatement) as exc:
+        diagnosis.read_uploads([(b"%PDF-1 conta A", "pdf"), (b"%PDF-1 conta A", "pdf")], tmp_path)
+    assert str(exc.value) == exc.value.exc_type  # a type name, never the reader's message
+
+
 def test_server_consolidates_several_files(server_app, caplog, capfd):
-    server, client, seen = server_app
+    server, client = server_app
     caplog.set_level(logging.DEBUG)
     r = _post(client, [(b"%PDF-1 conta A", f"{HOLDER_NAME}.pdf"), (b"%PDF-1 conta B", "b.pdf"), (b"%PDF-1 perf", "c.pdf")])
     assert r.status_code == 200, r.data[:300]
-    st = seen["stmt"]
-    assert len(st.accounts) == 3 and st.sum_of_lines == 2 * grand_total() + sum(a.sum_of_lines for a in st.accounts[2:])
     assert "format=pdf+pdf+pdf files=3" in caplog.text
     out, err = capfd.readouterr()
     text = caplog.text + out + err + str(r.headers)
@@ -405,13 +407,13 @@ def test_server_consolidates_several_files(server_app, caplog, capfd):
 
 
 def test_server_reads_one_extrato_from_the_raw_body(server_app):
-    server, client, seen = server_app
+    server, client = server_app
     r = client.post("/diagnose", data=b"%PDF-1 conta A", headers={"Authorization": f"Bearer {TOKEN}"})
-    assert r.status_code == 200 and seen["stmt"].accounts == () and seen["stmt"].sum_of_lines == grand_total()
+    assert r.status_code == 200 and r.mimetype == "application/pdf"
 
 
 def test_server_refuses_the_same_account_twice_and_an_unknown_part(server_app, caplog, capfd):
-    server, client, _ = server_app
+    server, client = server_app
     caplog.set_level(logging.DEBUG)
     r = _post(client, [(b"%PDF-1 conta A", "a.pdf"), (b"%PDF-1 conta A", "a2.pdf")])
     assert r.status_code == 422 and r.json == {"erro": server.MSG[422]}
@@ -422,7 +424,7 @@ def test_server_refuses_the_same_account_twice_and_an_unknown_part(server_app, c
 
 
 def test_server_limit_is_for_the_whole_upload(server_app):
-    server, client, _ = server_app
+    server, client = server_app
     half = b"%PDF-" + b"0" * (server.MAX_UPLOAD_BYTES // 2)
     r = _post(client, [(half, "a.pdf"), (half, "b.pdf")])
     assert r.status_code == 413

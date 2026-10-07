@@ -237,7 +237,8 @@ def test_gross_is_net_plus_the_fee_blocks_fee_and_half_of_it_for_six_months():
     w12, w6 = one(sec)["windows"]["12m"], one(sec)["windows"]["6m"]
     assert w12["gross_return_est_pct"] == pytest.approx(w12["net_return_pct"] + 2.0, abs=1e-6)
     assert w6["gross_return_est_pct"] == pytest.approx(w6["net_return_pct"] + 1.0, abs=1e-6)
-    assert w12["gross_label"] == "estimativa" and w12["fee_pct_period"] == 2.0 and w6["fee_pct_period"] == 1.0
+    assert w12["fee_pct_period"] == 2.0 and w6["fee_pct_period"] == 1.0
+    assert "gross_label" not in w12  # engine 2.0: the report labels the gross "estimativa" (report/labels.py)
     assert {"tool": "portfolio_fees", "call_id": 99, "args": {}, "data_date": "2026-08-01"} in w12["sources"]
     assert "portfolio_fees" not in [p.tool for p in client.provenance]  # never fetched again
 
@@ -393,7 +394,7 @@ def test_a_failed_series_call_is_recorded_and_the_line_is_not_evaluated():
 def test_demo_return_block():
     doc = json.loads(FIXTURE.read_text(encoding="utf-8"))
     r = doc["returns"]
-    assert doc["schema_version"] == "1.14" and list(doc).index("returns") == list(doc).index("risks") + 1
+    assert doc["schema_version"] == "2.0" and list(doc).index("returns") == list(doc).index("risks") + 1
     by = {ln["line_no"]: ln for ln in r["lines"]}
     assert {n for n, ln in by.items() if ln["status"] == "avaliado"} == {2, 3, 4, 5, 7, 8}
     assert by[1]["reason_code"] == "retorno_tesouro_sem_serie" and by[6]["reason_code"] == "retorno_fidc_sem_classe"
@@ -404,3 +405,49 @@ def test_demo_return_block():
     assert by[4]["fee"]["reason_code"] == "sem_taxa_utilizavel"  # a range, not a single fee
     assert by[8]["without_distributions"] is True
     assert doc["section_status"]["returns"]["reason_codes"] == r["reason_codes"]
+
+
+# 6. Retroactive contribution (engine 1.15) ------------------------------------------------------
+
+
+def _fake_line(no, value, r):
+    w = {"status": "avaliado", "net_return_pct": r} if r is not None else {"status": "nao_avaliado", "net_return_pct": None}
+    return {"line_no": no, "linha_extrato": f"L{no}", "valor_brl": value, "windows": {"12m": w, "6m": dict(w)}}
+
+
+def test_contribution_is_back_cast_from_todays_values_and_sums_to_the_return_of_the_evaluated_part():
+    from src.portfolio.returns import CONTRIBUTION_LABEL, _contribution
+
+    # 110 now after +10% means 100 at the start; 90 now after -10% means 100 at the start
+    lines = [_fake_line(1, 110.0, 10.0), _fake_line(2, 90.0, -10.0), _fake_line(3, 500.0, None)]
+    cov = {w: {"coverage_portfolio_value_pct": 28.57} for w in ("12m", "6m")}
+    c = _contribution(lines, cov)
+    assert c["label"] == CONTRIBUTION_LABEL == "contribuição retroativa"
+    w = c["windows"]["12m"]
+    assert [(x["line_no"], x["start_value_brl"], x["start_weight_pct"], x["contribution_pp"]) for x in w["lines"]] == [
+        (1, 100.0, 50.0, 5.0), (2, 100.0, 50.0, -5.0)]
+    assert w["covered_return_pct"] == 0.0 and w["start_value_brl"] == 200.0 and w["end_value_brl"] == 200.0
+    assert w["n_lines"] == 2 and w["coverage_portfolio_value_pct"] == 28.57  # the line without a return is not in it
+
+
+def test_contribution_without_an_evaluated_line_says_so_and_has_no_return():
+    from src.portfolio.returns import _contribution
+
+    c = _contribution([_fake_line(1, 50.0, None)], {w: {"coverage_portfolio_value_pct": 0.0} for w in ("12m", "6m")})
+    w = c["windows"]["12m"]
+    assert w["status"] == "nao_avaliado" and w["reason_code"] == "linhas_sem_retorno"
+    assert w["covered_return_pct"] is None and w["lines"] == []
+
+
+def test_demo_contribution_sums_to_the_covered_return_and_the_weights_to_100():
+    doc = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    c = doc["returns"]["contribution"]
+    assert "retroativa" in c["label"] and "nunca da carteira inteira" in c["note"]
+    for wid in ("12m", "6m"):
+        w = c["windows"][wid]
+        assert w["status"] == "avaliado"
+        assert sum(x["contribution_pp"] for x in w["lines"]) == pytest.approx(w["covered_return_pct"], abs=1e-3)
+        assert sum(x["start_weight_pct"] for x in w["lines"]) == pytest.approx(100.0, abs=1e-3)
+        assert w["coverage_portfolio_value_pct"] == doc["returns"]["coverage"][wid]["coverage_portfolio_value_pct"]
+        evaluated = [ln["line_no"] for ln in doc["returns"]["lines"] if ln["windows"][wid]["status"] == "avaliado"]
+        assert [x["line_no"] for x in w["lines"]] == evaluated  # statement order, nothing ranked

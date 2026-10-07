@@ -39,21 +39,13 @@ from src.portfolio.identify import LineId
 EQ_LABEL = "equivalente de mercado; não é recomendação"
 EQ_FOUND = "encontrado"
 EQ_NONE = "sem_equivalente"
-PL_LABEL = "patrimônio líquido do site etfsbrasil.com.br (fonte de terceiros), não um documento da CVM"
-FEE_LABEL = ("taxa de administração do site etfsbrasil.com.br (fonte de terceiros), a mesma fonte das taxas de ETF "
-             "na comparação de taxas; não é taxa divulgada à CVM")
 CHOICE_NOTE = ("O ETF é o maior por patrimônio líquido (site de terceiros, na data indicada) entre os ETFs ativos que "
-               "acompanham um índice ligado à classe ANBIMA do fundo na lista revisada pelo dono "
-               "(src/portfolio/rules/equivalents/class_index.yaml). Mesmo objetivo; não é recomendação de troca.")
+               "acompanham um índice ligado à classe ANBIMA do fundo na lista de classes revisada pelo dono "
+               "do SILO. Mesmo objetivo; não é recomendação de troca.")
 BAND_NOTE = "posição do retorno na distribuição da classe (p25, mediana, p75), não um ranking"
 CLASS_NOTE = ("Distribuição do retorno líquido de cota dos fundos FI ativos da mesma classe ANBIMA e do mesmo indicador "
               "de fundo de cotas (mínimo de 30 fundos), nas mesmas janelas do bloco de retorno.")
-BANDS = {
-    "abaixo_p25": "abaixo do p25 da classe",
-    "p25_mediana": "entre o p25 e a mediana da classe",
-    "mediana_p75": "entre a mediana e o p75 da classe",
-    "acima_p75": "acima do p75 da classe",
-}
+# The PL and fee labels and the band text are the report's (src/portfolio/report/labels.py, engine 2.0).
 CLASS_CALL_LIMIT = 50
 # fee-comparison codes that mean it read no class it accepted (the class comes only from an accepted served row)
 NO_CLASS_READ = ("sem_linha_comparacao", "sem_identificacao", "tipo_fora_comparacao", "resposta_inconsistente")
@@ -164,8 +156,6 @@ def compute_equivalents(lines: list[LineId], fees: dict[str, Any], returns: dict
         "choice_note": CHOICE_NOTE,
         "class_note": CLASS_NOTE,
         "band_note": BAND_NOTE,
-        "pl_label": PL_LABEL,
-        "fee_label": FEE_LABEL,
         "lines": out,
         "n_fund_lines": len(out),
         "n_found": len(found),
@@ -251,15 +241,12 @@ def _etf_record(pick: dict, series: dict, comparison: dict, src: dict) -> dict[s
         "segment": pick.get("segment"),
         "pl_brl": brl(dec(pick.get("pl_brl"))),
         "pl_as_of": pick.get("pl_as_of"),
-        "pl_label": PL_LABEL,
         "fee_pct_year": ratio(dec(pick.get("fee_pct_year")), 4),
         "fee_as_of": pick.get("fee_as_of"),
-        "fee_label": FEE_LABEL,
         "fee_reason_code": None if pick.get("fee_pct_year") is not None else "equivalente_sem_taxa",
         "in_fee_peers": pick.get("ticker") in peers,
         "snapshot_source": pick.get("snapshot_source"),
         "basis": basis,
-        "basis_label": _ret.BASIS_LABELS[basis],
         "without_distributions": True,
         "note": _ret.NOTE_ETF,
         "pl_rank": pick.get("pl_rank"),
@@ -314,7 +301,7 @@ def _windows(rec: dict, series: dict, dist: tuple, ret_line: dict | None, end_mo
             "class_status": _ret.NOT_EVALUATED, "class_reason_code": None, "class_reason": None, "class_n_funds": None,
             "class_p25_pct": None, "class_median_pct": None, "class_p75_pct": None,
             "etf_minus_median_pp": None, "fund_minus_median_pp": None,
-            "etf_band": None, "etf_band_label": None, "fund_band": None, "fund_band_label": None,
+            "etf_band": None, "fund_band": None,
             "band_note": BAND_NOTE, "etf_series_reason_code": None, "etf_base_date": None, "etf_end_date": None,
             "class_start_month": None, "class_end_month": None, "class_source_reason": None, "sources": [],
         }
@@ -354,7 +341,6 @@ def _windows(rec: dict, series: dict, dist: tuple, ret_line: dict | None, end_mo
                     v = dec(w[f"{who}_net_return_pct"])
                     if v is not None:
                         b = _band(v, p25, med, p75)
-                        w.update({f"{who}_minus_median_pp": ratio(v - med, 6), f"{who}_band": b,
-                                  f"{who}_band_label": BANDS[b]})
+                        w.update({f"{who}_minus_median_pp": ratio(v - med, 6), f"{who}_band": b})
         out.append(w)
     return out

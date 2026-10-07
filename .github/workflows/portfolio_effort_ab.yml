@@ -1,0 +1,130 @@
+name: Portfolio report effort A/B
+
+# Dispatch-only measurement (map #510, owner's request of 2026-10-06 after the 8-9 minute reports):
+# does a lower reasoning effort make the report faster and cheaper, and what does it do to the text? Second run: the Redator keeps its effort, the Revisor drops, with the Redator prompt that bans digits in titles and empty markers.
+#
+# It runs the report stage (Redator and Revisor, the OpenAI provider the deployed demo uses) on ONE fixed,
+# synthetic engine JSON, tests/fixtures/portfolio/demo_engine_output.json, once per arm (Redator effort and Revisor effort). Nothing else
+# changes between the arms: same input, same model (SILO_LLM_MODEL default), same code. The repository is
+# public, so only synthetic data goes through this workflow, and it uploads the synthetic HTML reports.
+# It reads no database, deploys nothing and writes nothing. Each arm is capped at the report's one
+# US$1.00 meter (llm.COST_CAP_USD); the three arms together are expected to cost well under US$1.00.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portfolio-effort-ab
+  cancel-in-progress: false
+
+jobs:
+  arm:
+    name: ${{ matrix.arm }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # none = no reasoning tokens; the OpenAI Responses API lists none, low, medium and high for gpt-5.1
+        # (src/portfolio/report/llm.py). medium is today's deployed setting and the baseline.
+        # arm = Redator effort / Revisor effort. The first run (2026-10-06) compared one effort for both roles:
+        # medium 234 s, low 84 s, none 79 s. This one keeps the Redator and moves the Revisor, via the per-role
+        # variables SILO_LLM_EFFORT_REDATOR and SILO_LLM_EFFORT_REVISOR (src/portfolio/report/llm.py).
+        include:
+          - {arm: medium-medium, redator: medium, revisor: medium}
+          - {arm: medium-low, redator: medium, revisor: low}
+          - {arm: low-low, redator: low, revisor: low}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the engine's dependencies
+        run: pip install -r deploy/cloudflare/engine/requirements.txt
+      - name: Build the report once at this effort
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SILO_LLM_PROVIDER: openai
+          SILO_LLM_EFFORT_REDATOR: ${{ matrix.redator }}
+          SILO_LLM_EFFORT_REVISOR: ${{ matrix.revisor }}
+          EFFORT: ${{ matrix.arm }}
+        run: |
+          [ -n "$OPENAI_API_KEY" ] || { echo "::error::OPENAI_API_KEY is not set"; exit 1; }
+          mkdir -p out
+          python -u - <<'PY'
+          import json, os, time
+          from src.portfolio.report import adapt, build
+
+          effort = os.environ["EFFORT"]
+          engine = json.load(open("tests/fixtures/portfolio/demo_engine_output.json", encoding="utf-8"))
+          if adapt.is_engine_output(engine):
+              engine = adapt.to_view(engine)
+          t0_ns = time.time_ns()
+          t0 = time.monotonic()
+          html, n = build.build(engine, "openai")
+          total = time.monotonic() - t0
+
+          def role(*names):
+              return [c for c in n.calls if str(c.get("role") or "") in names]
+
+          def ended(cs):
+              ts = [int(c["ended_unix_nano"]) for c in cs if isinstance(c.get("ended_unix_nano"), int)]
+              return max(ts) if ts else None
+
+          red, rev = role("redator"), role("revisor")
+          e_red, e_rev = ended(red), ended(rev)
+
+          def agg(cs):
+              return {
+                  "calls": len(cs),
+                  "input_tokens": sum(int(c.get("input_tokens") or 0) for c in cs),
+                  "output_tokens": sum(int(c.get("output_tokens") or 0) for c in cs),
+                  "reasoning_tokens": sum(int(c.get("reasoning_tokens") or 0) for c in cs),
+                  "cost_usd": round(sum(float(c.get("cost_usd") or 0.0) for c in cs), 4),
+              }
+
+          out = {
+              "effort": effort,
+              "model": n.model,
+              "narrative_status": n.status,
+              "narrative_reason_code": n.reason_code,
+              "seconds_total": round(total, 1),
+              "seconds_redator": round((e_red - t0_ns) / 1e9, 1) if e_red else None,
+              "seconds_revisor": round((e_rev - (e_red or t0_ns)) / 1e9, 1) if e_rev else None,
+              "redator": agg(red),
+              "revisor": agg(rev),
+              "cost_usd": round(n.cost_usd, 4),
+              "findings_kept": len(n.kept),
+              "findings_removed": len(n.removed),
+              "html_bytes": len(html.encode("utf-8")),
+          }
+          # Synthetic input only: the text of what was kept and why the rest was removed is safe to print.
+          out["kept"] = [{"id": f.id, "section": f.section, "title": f.title, "text": f.text, "citations": f.citations}
+                         for f in n.kept]
+          out["removed"] = [{"id": getattr(r, "finding_id", None), "section": getattr(r, "section", None),
+                             "reason": getattr(r, "reason", None)} for r in n.removed]
+          open(f"out/ab-{effort}.json", "w", encoding="utf-8").write(json.dumps(out, ensure_ascii=False, indent=1))
+          open(f"out/report-{effort}.html", "w", encoding="utf-8").write(html)
+          head = {k: v for k, v in out.items() if k not in ("kept", "removed")}
+          print(json.dumps(head, ensure_ascii=False))
+          lines = [f"### effort {effort}", "", "| metric | value |", "| --- | --- |"]
+          for k in ("seconds_total", "seconds_redator", "seconds_revisor", "cost_usd", "findings_kept", "findings_removed", "narrative_status"):
+              lines.append(f"| {k} | {out[k]} |")
+          lines.append(f"| redator tokens (out / reasoning) | {out['redator']['output_tokens']} / {out['redator']['reasoning_tokens']} |")
+          lines.append(f"| revisor tokens (out / reasoning) | {out['revisor']['output_tokens']} / {out['revisor']['reasoning_tokens']} |")
+          open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8").write("\n".join(lines) + "\n")
+          print("--- findings kept ---")
+          for f in out["kept"]:
+              print(f"[{f['section']}] {f['title']}: {f['text']}")
+          print("--- findings removed ---")
+          for r in out["removed"]:
+              print(f"[{r['section']}] {r['id']}: {r['reason']}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ab-${{ matrix.arm }}
+          path: out/
+          retention-days: 14

@@ -84,7 +84,7 @@ REASON_TEXT = {
     "sem_taxa_utilizavel": "sem taxa de administração única divulgada utilizável: retorno bruto, taxa por ponto e perda de Sharpe não calculados",
     "taxa_nao_aplicavel": "ação: sem taxa de administração; retorno bruto e taxa por ponto não se aplicam",
     # engine 1.11: fee paid and tax per position (tax.py)
-    "imposto_sem_regra": "tipo de linha sem regra de imposto na nota #611 (Tesouro Direto, FIDC, FIP ou outro); a conferir",
+    "imposto_sem_regra": "tipo de linha sem regra de imposto no SILO (Tesouro Direto, FIDC, FIP ou outro); a conferir",
     "imposto_linhas_sem_regra": "há linhas sem regra de imposto; cada linha informa o motivo",
     "data_aplicacao_nao_informada": "data de aplicação não informada no extrato: faixa de alíquotas, sem valor em R$",
     "aliquota_depende_de_condicao": "a alíquota depende de condição que o extrato não mostra; a conferir, sem valor em R$",

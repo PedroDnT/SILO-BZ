@@ -68,11 +68,8 @@ CANDIDATES_NO_DATE_TEXT = (
 )
 REPRICING_TEXT = "alíquota entre {lo} e {hi} conforme o prazo médio de repactuação da carteira do ETF; a conferir"
 REGIME_LABEL = "opção do participante; não informada"
-IRREVOCABLE_TEXT = (
-    "A opção pelo regime regressivo ou progressivo pode ser exercida até o primeiro benefício ou resgate e é "
-    "irretratável (Lei 11.053, art. 1º §6º). O relatório mostra os dois regimes e não indica nenhum."
-)
-PENSION_BASE_TEXT = "PGBL: o imposto incide sobre o valor total do resgate. VGBL: só sobre o rendimento."
+# Per-line reader text (status, rate and instrument labels, the pension's fixed sentences) is the report's
+# (src/portfolio/report/labels.py, engine 2.0); the block writes the codes and figures.
 PENSION_BASE = {"PGBL": "valor total do resgate", "VGBL": "somente o rendimento"}
 REGRESSIVE_NO_DATE = "tabela completa; data de início não informada, a conferir"
 FUND_OF_FUNDS_NOTE = (
@@ -84,13 +81,13 @@ FEE_BASIS = "taxa de administração divulgada x valor da posição no extrato"
 LOADING_TEXT = "taxa de carregamento: não impressa no extrato; não incluída"
 NO_FEE_TEXT = "sem taxa de administração (ação, título ou crédito direto)"
 SECTION_NOTE = (
-    "Fatos por posição a partir das regras versionadas em src/portfolio/rules/tax/ (nota #611). Valores em R$ são "
+    "Fatos por posição a partir das regras de imposto versionadas do SILO, cada uma com artigo e citação. Valores em R$ são "
     "estimativas; nenhuma linha é recomendação. Sem total de imposto da carteira."
 )
 NOT_COVERED = [
-    {"tipo": "tesouro", "text": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra."},
-    {"tipo": "FIDC", "text": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra."},
-    {"tipo": "FIP", "text": "FIP: fora da nota #611 (seção 6); sem arquivo de regra."},
+    {"tipo": "tesouro", "text": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público."},
+    {"tipo": "FIDC", "text": "FIDC: fora das regras de imposto do SILO; sem regra."},
+    {"tipo": "FIP", "text": "FIP: fora das regras de imposto do SILO; sem regra."},
 ]
 # Reason codes of this block (their fixed text is in common.REASON_TEXT).
 R_NO_RULE = "imposto_sem_regra"
@@ -338,7 +335,6 @@ def _fee(li: LineId, fee_line: dict | None, pension: bool) -> dict[str, Any]:
         "per_year_min_brl": None,
         "per_year_max_brl": None,
         "third_party": False,
-        "third_party_label": None,
         "fee_status": None,
         "notes": [],
         "loading": {"status": "nao_informado", "text": LOADING_TEXT} if pension else None,
@@ -362,7 +358,6 @@ def _fee(li: LineId, fee_line: dict | None, pension: bool) -> dict[str, Any]:
         out["per_year_brl"] = h.get("per_year_brl")
         if kind == "etf_site":
             out["third_party"] = True
-            out["third_party_label"] = h.get("basis")
     elif kind == "faixa" and h.get("per_year_min_brl") is not None:
         out["status"] = "faixa"
         out["rate_min_pct_year"] = h.get("rate_min_pct_year")
@@ -405,7 +400,6 @@ def _candidate(rf: RuleFile, start: dt.date | None, today: dt.date) -> dict[str,
         "unit": rate.get("unit"),
         "rates_pct": [_pct(r) for r in rates],
         "rate_today_pct": _pct(today_rate) if today_rate is not None else None,
-        "rate_today_text": pct_text(today_rate) if today_rate is not None else None,
         "article": rf.article(ev["source"]),
         "rule_source": rf.source(ev["source"]),
         "_today": today_rate,
@@ -591,7 +585,7 @@ def _pension(rules: dict[str, RuleFile], p, start: dt.date | None, today: dt.dat
     if start is not None:
         c = _candidate(reg, start, today)
         regressive["rate_today_pct"] = c["rate_today_pct"]
-        regressive["text"] = (f"{c['rate_today_text']} para aportes feitos em {start.isoformat()}; cada aporte conta o "
+        regressive["text"] = (f"{pct_text(c['_today'])} para aportes feitos em {start.isoformat()}; cada aporte conta o "
                               f"próprio prazo de acumulação, a conferir")
     pev = prog.primary()
     progressive = {"advance_rate_pct": _pct(pev["rate"]["advance_rate"]), "text": pev["rate"]["text"],
@@ -601,14 +595,11 @@ def _pension(rules: dict[str, RuleFile], p, start: dt.date | None, today: dt.dat
         "plan": plan,
         "plan_source": "título da tabela de previdência no extrato" if plan else None,
         "regime": None,
-        "regime_label": REGIME_LABEL,
         "base": PENSION_BASE.get(plan or "") if plan else None,
-        "base_text": PENSION_BASE_TEXT,
         "base_rule_source": reg.source(rev["base_source"]),
         "regressive": regressive,
         "progressive": progressive,
         "irrevocable": True,
-        "irrevocable_text": IRREVOCABLE_TEXT,
         "irrevocable_rule_source": reg.source(reg.data["ir"]["option"]["source"]),
     }
 
@@ -651,15 +642,15 @@ def _line(li: LineId, rules: dict[str, RuleFile], fee_line: dict | None, ret_lin
         "sources": [statement_source(p.line_no, p.data_posicao)],
     }
     tax: dict[str, Any] = {
-        "status": None, "status_label": None, "selection_reason": why,
-        "instrument": None, "instrument_label": None, "rules_file": None,
-        "candidates": [], "rate_today_pct": None, "rate_text": None, "exempt": False,
+        "status": None, "selection_reason": why,
+        "instrument": None, "rules_file": None,
+        "candidates": [], "rate_today_pct": None, "exempt": False,
         "article": None, "rule_source": None, "bracket": None, "outcomes": None,
         "other_events": [], "come_cotas": [], "estimate": None, "reason_code": None, "reason": None,
     }
     out["tax"] = tax
     if not cands_rf:
-        tax["status"], tax["status_label"] = "sem_regra", "sem regra"
+        tax["status"] = "sem_regra"
         tax["reason_code"] = R_NO_RULE
         tax["reason"] = why if not not_in_force else f"regra fora de vigência na data da posição: {', '.join(not_in_force)}"
         tax["estimate"] = _no_estimate(R_NO_RULE, tax["reason"])
@@ -670,7 +661,7 @@ def _line(li: LineId, rules: dict[str, RuleFile], fee_line: dict | None, ret_lin
         if cc:
             tax["come_cotas"].append(cc)
     if pension:
-        tax["status"], tax["status_label"] = "previdencia", "dois regimes, nenhum indicado"
+        tax["status"] = "previdencia"
         tax["candidates"] = [_public(_candidate(rf, start, today)) for rf in cands_rf]
         tax["estimate"] = _no_estimate(R_PENSION, "previdência: regime não informado; sem estimativa em R$")
         out["pension"] = _pension(rules, p, start, today)
@@ -692,21 +683,21 @@ def _line(li: LineId, rules: dict[str, RuleFile], fee_line: dict | None, ret_lin
             out["optimization"].append(nb)
     if not many:
         c, rf = cands[0], cands_rf[0]
-        tax.update(instrument=rf.name, instrument_label=rf.label, rules_file=rf.file, article=c["article"],
+        tax.update(instrument=rf.name, rules_file=rf.file, article=c["article"],
                    rule_source=c["rule_source"], other_events=_other_events(rf))
         if c["exempt"] and not c["_decides"]:
-            tax.update(status="isento", status_label=EXEMPT_LABEL, exempt=True, rate_today_pct=0.0, rate_text=EXEMPT_LABEL)
+            tax.update(status="isento", exempt=True, rate_today_pct=0.0)
             tax["estimate"] = _no_estimate(R_EXEMPT, "isento: nenhum imposto de renda")
             out["optimization"].append(_gross_up(rules, p, start))
         elif c["table"] == "fund_repricing_term":
             lo, hi = min(c["_rates"]), max(c["_rates"])
-            tax.update(status="faixa", status_label=CHECK_LABEL,
+            tax.update(status="faixa",
                        bracket={"min_pct": _pct(lo), "max_pct": _pct(hi),
                                 "text": REPRICING_TEXT.format(lo=pct_text(lo), hi=pct_text(hi))})
             tax["estimate"] = _no_estimate(R_CONDITION, "a alíquota depende do prazo médio da carteira do ETF")
         elif c["_today"] is None:
             lo, hi = min(c["_rates"]), max(c["_rates"])
-            tax.update(status="faixa", status_label=CHECK_LABEL,
+            tax.update(status="faixa",
                        bracket={"min_pct": _pct(lo), "max_pct": _pct(hi),
                                 "text": DATE_MISSING_TEXT.format(lo=pct_text(lo), hi=pct_text(hi))})
             tax["estimate"] = _no_estimate(R_NO_DATE, "data de aplicação não informada: sem valor em R$")
@@ -714,13 +705,13 @@ def _line(li: LineId, rules: dict[str, RuleFile], fee_line: dict | None, ret_lin
                 a_conferir.insert(0, {"id": "data_aplicacao", "text": "data de aplicação não informada no extrato",
                                       "label": CHECK_LABEL, "decides_rate": True, "rules_file": None})
         else:
-            tax.update(rate_today_pct=c["rate_today_pct"], rate_text=c["rate_today_text"])
+            tax["rate_today_pct"] = c["rate_today_pct"]
             if c["_decides"]:
-                tax.update(status="condicional", status_label=CHECK_LABEL)
-                tax["outcomes"] = [f"{c['rate_today_text']} ({c['article']})"] + [d["text"] for d in c["_decides"]]
+                tax["status"] = "condicional"
+                tax["outcomes"] = [f"{pct_text(c['_today'])} ({c['article']})"] + [d["text"] for d in c["_decides"]]
                 tax["estimate"] = _no_estimate(R_CONDITION, "a alíquota depende de condição que o extrato não mostra")
             else:
-                tax.update(status="aliquota_hoje", status_label="alíquota de hoje")
+                tax["status"] = "aliquota_hoje"
                 if start is None:
                     tax["estimate"] = _no_estimate(R_NO_DATE, "data de aplicação não informada: sem valor em R$")
                 else:
@@ -729,7 +720,7 @@ def _line(li: LineId, rules: dict[str, RuleFile], fee_line: dict | None, ret_lin
         rates = [r for c in cands for r in ([c["_today"]] if c["_today"] is not None else c["_rates"])]
         lo, hi = min(rates), max(rates)
         labels = " ou ".join(c["label"] for c in cands)
-        tax.update(status="candidatos", status_label=CHECK_LABEL,
+        tax.update(status="candidatos",
                    bracket={"min_pct": _pct(lo), "max_pct": _pct(hi),
                             "text": (CANDIDATES_NO_DATE_TEXT if start is None and any(c["table"] == "holding" for c in cands)
                                      else CANDIDATES_TEXT).format(lo=pct_text(lo), hi=pct_text(hi), labels=labels)})

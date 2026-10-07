@@ -113,6 +113,21 @@ def test_quote_latest_ok(client):
     assert client.pool.cur.params == ("PETR4", None)
 
 
+def test_health_hides_driver_message(client, caplog):
+    class _Down:
+        @contextmanager
+        def connection(self):
+            raise RuntimeError("could not connect to host db.secret role silo_api")
+            yield
+
+    app = create_app(pool=_Down())
+    with caplog.at_level("ERROR", logger="serve.app"), app.test_client() as c:
+        rv = c.get("/v1/health")
+    assert rv.status_code == 503
+    assert rv.get_json() == {"ok": False, "error": "database unavailable"}
+    assert "db.secret" in caplog.text
+
+
 def test_bad_ticker_400(client):
     rv = client.get("/v1/quotes/!!!")
     assert rv.status_code == 400

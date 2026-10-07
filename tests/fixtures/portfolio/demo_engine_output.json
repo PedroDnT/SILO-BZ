@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.14",
+  "schema_version": "2.0",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -16161,7 +16161,7 @@
     "reason_codes": [],
     "title": "Principais riscos",
     "note": "Fatos da carteira com um limite fixo; não é previsão de mercado nem recomendação de compra, venda ou manutenção.",
-    "severity_rule": "semáforo fixo: atenção quando o valor é estritamente maior que o limite de atenção; moderado quando é estritamente maior que o limite moderado; baixo nos demais casos. Os limites estão no código do motor (src/portfolio/risks.py) e são os mesmos para toda carteira",
+    "severity_rule": "semáforo fixo: atenção quando o valor é estritamente maior que o limite de atenção; moderado quando é estritamente maior que o limite moderado; baixo nos demais casos. Os limites são fixos no motor do SILO e são os mesmos para toda carteira",
     "thresholds": {
       "concentracao_emissor": {
         "atencao_above_pct": 10.0,
@@ -17121,10 +17121,8 @@
         "name": "NTN-B 2035-05-15",
         "valor_brl": 412351.0,
         "basis": null,
-        "basis_label": null,
         "without_distributions": false,
         "status": "nao_avaliado",
-        "status_label": "não avaliado",
         "reason_code": "retorno_tesouro_sem_serie",
         "reason": "título do Tesouro: o SILO não tem série de preços",
         "fee": null,
@@ -17135,7 +17133,6 @@
         "windows": {
           "12m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_tesouro_sem_serie",
             "reason": "título do Tesouro: o SILO não tem série de preços",
             "base_month": null,
@@ -17165,7 +17162,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -17176,7 +17172,6 @@
           },
           "6m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_tesouro_sem_serie",
             "reason": "título do Tesouro: o SILO não tem série de preços",
             "base_month": null,
@@ -17206,7 +17201,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -17236,10 +17230,8 @@
         "name": "PETROBRAS",
         "valor_brl": 988000.0,
         "basis": "close_total_return",
-        "basis_label": "fechamento com dividendos e JCP reinvestidos (close_total_return); JCP bruto de IR",
         "without_distributions": false,
         "status": "avaliado",
-        "status_label": "avaliado",
         "reason_code": null,
         "reason": null,
         "fee": {
@@ -17350,7 +17342,6 @@
         "windows": {
           "12m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2025-09-01",
@@ -17380,7 +17371,6 @@
             "fee_reason_code": "taxa_nao_aplicavel",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -17416,7 +17406,6 @@
           },
           "6m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2026-03-01",
@@ -17446,7 +17435,6 @@
             "fee_reason_code": "taxa_nao_aplicavel",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -17517,10 +17505,8 @@
         "name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
         "valor_brl": 264615.0,
         "basis": "cota_fundo",
-        "basis_label": "cota mensal do fundo (fund_nav): líquida das taxas do fundo, bruta de IR",
         "without_distributions": false,
         "status": "avaliado",
-        "status_label": "avaliado",
         "reason_code": null,
         "reason": null,
         "fee": {
@@ -17668,7 +17654,6 @@
         "windows": {
           "12m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2025-09-01",
@@ -17698,7 +17683,6 @@
             "fee_reason_code": null,
             "fee_pct_period": 2.0,
             "gross_return_est_pct": 9.782715,
-            "gross_label": "estimativa",
             "fee_per_point": 0.204442,
             "fee_per_point_excluded_from_aggregates": false,
             "fee_per_point_note": "taxa do período dividida pelo retorno bruto estimado do período",
@@ -17746,7 +17730,6 @@
           },
           "6m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2026-03-01",
@@ -17776,7 +17759,6 @@
             "fee_reason_code": null,
             "fee_pct_period": 1.0,
             "gross_return_est_pct": -5.926556,
-            "gross_label": "estimativa",
             "fee_per_point": -0.168732,
             "fee_per_point_excluded_from_aggregates": true,
             "fee_per_point_note": "retorno bruto estimado negativo: valor mostrado como calculado, nunca entra em média, mediana ou ranking",
@@ -17855,10 +17837,8 @@
         "name": "XP BANCOS FIC FIF RENDA FIXA",
         "valor_brl": 1387809.9,
         "basis": "cota_fundo",
-        "basis_label": "cota mensal do fundo (fund_nav): líquida das taxas do fundo, bruta de IR",
         "without_distributions": false,
         "status": "avaliado",
-        "status_label": "avaliado",
         "reason_code": null,
         "reason": null,
         "fee": {
@@ -18007,7 +17987,6 @@
         "windows": {
           "12m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2025-09-01",
@@ -18037,7 +18016,6 @@
             "fee_reason_code": "sem_taxa_utilizavel",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -18085,7 +18063,6 @@
           },
           "6m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2026-03-01",
@@ -18115,7 +18092,6 @@
             "fee_reason_code": "sem_taxa_utilizavel",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -18194,10 +18170,8 @@
         "name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
         "valor_brl": 902591.9,
         "basis": "cota_fundo",
-        "basis_label": "cota mensal do fundo (fund_nav): líquida das taxas do fundo, bruta de IR",
         "without_distributions": false,
         "status": "avaliado",
-        "status_label": "avaliado",
         "reason_code": null,
         "reason": null,
         "fee": {
@@ -18346,7 +18320,6 @@
         "windows": {
           "12m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2025-09-01",
@@ -18376,7 +18349,6 @@
             "fee_reason_code": "sem_taxa_utilizavel",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -18424,7 +18396,6 @@
           },
           "6m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2026-03-01",
@@ -18454,7 +18425,6 @@
             "fee_reason_code": "sem_taxa_utilizavel",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -18533,10 +18503,8 @@
         "name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
         "valor_brl": 750000.0,
         "basis": null,
-        "basis_label": null,
         "without_distributions": false,
         "status": "nao_avaliado",
-        "status_label": "não avaliado",
         "reason_code": "retorno_fidc_sem_classe",
         "reason": "FIDC: o extrato não diz qual classe ou série de cotas a linha detém",
         "fee": null,
@@ -18547,7 +18515,6 @@
         "windows": {
           "12m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_fidc_sem_classe",
             "reason": "FIDC: o extrato não diz qual classe ou série de cotas a linha detém",
             "base_month": null,
@@ -18577,7 +18544,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -18588,7 +18554,6 @@
           },
           "6m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_fidc_sem_classe",
             "reason": "FIDC: o extrato não diz qual classe ou série de cotas a linha detém",
             "base_month": null,
@@ -18618,7 +18583,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -18648,10 +18612,8 @@
         "name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
         "valor_brl": 770616.5,
         "basis": "cota_fundo",
-        "basis_label": "cota mensal do fundo (fund_nav): líquida das taxas do fundo, bruta de IR",
         "without_distributions": false,
         "status": "avaliado",
-        "status_label": "avaliado",
         "reason_code": null,
         "reason": null,
         "fee": {
@@ -18798,7 +18760,6 @@
         "windows": {
           "12m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2025-09-01",
@@ -18828,7 +18789,6 @@
             "fee_reason_code": null,
             "fee_pct_period": 1.5,
             "gross_return_est_pct": 12.476314,
-            "gross_label": "estimativa",
             "fee_per_point": 0.120228,
             "fee_per_point_excluded_from_aggregates": false,
             "fee_per_point_note": "taxa do período dividida pelo retorno bruto estimado do período",
@@ -18876,7 +18836,6 @@
           },
           "6m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2026-03-01",
@@ -18906,7 +18865,6 @@
             "fee_reason_code": null,
             "fee_pct_period": 0.75,
             "gross_return_est_pct": 6.116188,
-            "gross_label": "estimativa",
             "fee_per_point": 0.122625,
             "fee_per_point_excluded_from_aggregates": false,
             "fee_per_point_note": "taxa do período dividida pelo retorno bruto estimado do período",
@@ -18985,10 +18943,8 @@
         "name": "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO",
         "valor_brl": 175440.0,
         "basis": "close_sem_proventos",
-        "basis_label": "fechamento sem proventos (close): variação de preço",
         "without_distributions": true,
         "status": "avaliado",
-        "status_label": "avaliado",
         "reason_code": null,
         "reason": null,
         "fee": {
@@ -19100,7 +19056,6 @@
         "windows": {
           "12m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2025-09-01",
@@ -19130,7 +19085,6 @@
             "fee_reason_code": "sem_taxa_utilizavel",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -19165,7 +19119,6 @@
           },
           "6m": {
             "status": "avaliado",
-            "status_label": "avaliado",
             "reason_code": null,
             "reason": null,
             "base_month": "2026-03-01",
@@ -19195,7 +19148,6 @@
             "fee_reason_code": "sem_taxa_utilizavel",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -19264,10 +19216,8 @@
         "name": null,
         "valor_brl": 270000.0,
         "basis": null,
-        "basis_label": null,
         "without_distributions": false,
         "status": "nao_avaliado",
-        "status_label": "não avaliado",
         "reason_code": "retorno_credito_sem_serie",
         "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
         "fee": null,
@@ -19278,7 +19228,6 @@
         "windows": {
           "12m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_credito_sem_serie",
             "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
             "base_month": null,
@@ -19308,7 +19257,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -19319,7 +19267,6 @@
           },
           "6m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_credito_sem_serie",
             "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
             "base_month": null,
@@ -19349,7 +19296,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -19379,10 +19325,8 @@
         "name": null,
         "valor_brl": 120000.0,
         "basis": null,
-        "basis_label": null,
         "without_distributions": false,
         "status": "nao_avaliado",
-        "status_label": "não avaliado",
         "reason_code": "retorno_credito_sem_serie",
         "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
         "fee": null,
@@ -19393,7 +19337,6 @@
         "windows": {
           "12m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_credito_sem_serie",
             "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
             "base_month": null,
@@ -19423,7 +19366,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -19434,7 +19376,6 @@
           },
           "6m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_credito_sem_serie",
             "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
             "base_month": null,
@@ -19464,7 +19405,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -19494,10 +19434,8 @@
         "name": null,
         "valor_brl": 95000.0,
         "basis": null,
-        "basis_label": null,
         "without_distributions": false,
         "status": "nao_avaliado",
-        "status_label": "não avaliado",
         "reason_code": "retorno_credito_sem_serie",
         "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
         "fee": null,
@@ -19508,7 +19446,6 @@
         "windows": {
           "12m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_credito_sem_serie",
             "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
             "base_month": null,
@@ -19538,7 +19475,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -19549,7 +19485,6 @@
           },
           "6m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_credito_sem_serie",
             "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
             "base_month": null,
@@ -19579,7 +19514,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -19609,10 +19543,8 @@
         "name": null,
         "valor_brl": 60000.0,
         "basis": null,
-        "basis_label": null,
         "without_distributions": false,
         "status": "nao_avaliado",
-        "status_label": "não avaliado",
         "reason_code": "retorno_credito_sem_serie",
         "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
         "fee": null,
@@ -19623,7 +19555,6 @@
         "windows": {
           "12m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_credito_sem_serie",
             "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
             "base_month": null,
@@ -19653,7 +19584,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -19664,7 +19594,6 @@
           },
           "6m": {
             "status": "nao_avaliado",
-            "status_label": "não avaliado",
             "reason_code": "retorno_credito_sem_serie",
             "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
             "base_month": null,
@@ -19694,7 +19623,6 @@
             "fee_reason_code": null,
             "fee_pct_period": null,
             "gross_return_est_pct": null,
-            "gross_label": "estimativa",
             "fee_per_point": null,
             "fee_per_point_excluded_from_aggregates": null,
             "fee_per_point_note": null,
@@ -19730,6 +19658,142 @@
         "coverage_portfolio_value_pct": 72.4462,
         "n_evaluated": 6
       }
+    },
+    "contribution": {
+      "label": "contribuição retroativa",
+      "note": "Contribuição retroativa: o extrato dá as posições em uma data e nenhum fluxo. O valor no início da janela de cada linha é o valor atual dividido por 1 mais o retorno líquido da janela; o peso é esse valor sobre a soma dos valores iniciais das linhas avaliadas; a contribuição é o peso vezes o retorno. Supõe que não houve aporte nem resgate. A soma é o retorno só da parte avaliada, nunca da carteira inteira.",
+      "windows": {
+        "12m": {
+          "status": "avaliado",
+          "reason_code": null,
+          "covered_return_pct": 14.499,
+          "start_value_brl": 3920621.7,
+          "end_value_brl": 4489073.3,
+          "n_lines": 6,
+          "coverage_portfolio_value_pct": 72.4462,
+          "lines": [
+            {
+              "line_no": 2,
+              "linha_extrato": "PETROBRAS PN",
+              "valor_brl": 988000.0,
+              "net_return_pct": 26.002017,
+              "start_value_brl": 784114.43,
+              "start_weight_pct": 19.9997,
+              "contribution_pp": 5.2003
+            },
+            {
+              "line_no": 3,
+              "linha_extrato": "GERAÇÃO L. PAR FIA",
+              "valor_brl": 264615.0,
+              "net_return_pct": 7.782715,
+              "start_value_brl": 245507.83,
+              "start_weight_pct": 6.262,
+              "contribution_pp": 0.4874
+            },
+            {
+              "line_no": 4,
+              "linha_extrato": "XP BANCOS FIC",
+              "valor_brl": 1387809.9,
+              "net_return_pct": 13.994772,
+              "start_value_brl": 1217432.94,
+              "start_weight_pct": 31.052,
+              "contribution_pp": 4.3457
+            },
+            {
+              "line_no": 5,
+              "linha_extrato": "XP LIQUIDEZ FIC",
+              "valor_brl": 902591.9,
+              "net_return_pct": 13.724449,
+              "start_value_brl": 793665.66,
+              "start_weight_pct": 20.2434,
+              "contribution_pp": 2.7783
+            },
+            {
+              "line_no": 7,
+              "linha_extrato": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+              "valor_brl": 770616.5,
+              "net_return_pct": 10.976314,
+              "start_value_brl": 694397.27,
+              "start_weight_pct": 17.7114,
+              "contribution_pp": 1.9441
+            },
+            {
+              "line_no": 8,
+              "linha_extrato": "HGLG11 CSHG LOGISTICA FII",
+              "valor_brl": 175440.0,
+              "net_return_pct": -5.425,
+              "start_value_brl": 185503.57,
+              "start_weight_pct": 4.7315,
+              "contribution_pp": -0.2567
+            }
+          ]
+        },
+        "6m": {
+          "status": "avaliado",
+          "reason_code": null,
+          "covered_return_pct": 6.3594,
+          "start_value_brl": 4220663.07,
+          "end_value_brl": 4489073.3,
+          "n_lines": 6,
+          "coverage_portfolio_value_pct": 72.4462,
+          "lines": [
+            {
+              "line_no": 2,
+              "linha_extrato": "PETROBRAS PN",
+              "valor_brl": 988000.0,
+              "net_return_pct": 12.266715,
+              "start_value_brl": 880047.13,
+              "start_weight_pct": 20.8509,
+              "contribution_pp": 2.5577
+            },
+            {
+              "line_no": 3,
+              "linha_extrato": "GERAÇÃO L. PAR FIA",
+              "valor_brl": 264615.0,
+              "net_return_pct": -6.926556,
+              "start_value_brl": 284307.73,
+              "start_weight_pct": 6.7361,
+              "contribution_pp": -0.4666
+            },
+            {
+              "line_no": 4,
+              "linha_extrato": "XP BANCOS FIC",
+              "valor_brl": 1387809.9,
+              "net_return_pct": 6.784179,
+              "start_value_brl": 1299640.0,
+              "start_weight_pct": 30.7923,
+              "contribution_pp": 2.089
+            },
+            {
+              "line_no": 5,
+              "linha_extrato": "XP LIQUIDEZ FIC",
+              "valor_brl": 902591.9,
+              "net_return_pct": 6.657495,
+              "start_value_brl": 846252.67,
+              "start_weight_pct": 20.0502,
+              "contribution_pp": 1.3348
+            },
+            {
+              "line_no": 7,
+              "linha_extrato": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+              "valor_brl": 770616.5,
+              "net_return_pct": 5.366188,
+              "start_value_brl": 731369.82,
+              "start_weight_pct": 17.3283,
+              "contribution_pp": 0.9299
+            },
+            {
+              "line_no": 8,
+              "linha_extrato": "HGLG11 CSHG LOGISTICA FII",
+              "valor_brl": 175440.0,
+              "net_return_pct": -2.013857,
+              "start_value_brl": 179045.72,
+              "start_weight_pct": 4.2421,
+              "contribution_pp": -0.0854
+            }
+          ]
+        }
+      }
     }
   },
   "tax": {
@@ -19740,7 +19804,7 @@
       "imposto_linhas_sem_regra"
     ],
     "position_date": "2026-09-30",
-    "note": "Fatos por posição a partir das regras versionadas em src/portfolio/rules/tax/ (nota #611). Valores em R$ são estimativas; nenhuma linha é recomendação. Sem total de imposto da carteira.",
+    "note": "Fatos por posição a partir das regras de imposto versionadas do SILO, cada uma com artigo e citação. Valores em R$ são estimativas; nenhuma linha é recomendação. Sem total de imposto da carteira.",
     "labels": {
       "estimate": "estimativa",
       "check": "a conferir",
@@ -19959,15 +20023,15 @@
     "not_covered": [
       {
         "tipo": "tesouro",
-        "text": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra."
+        "text": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público."
       },
       {
         "tipo": "FIDC",
-        "text": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra."
+        "text": "FIDC: fora das regras de imposto do SILO; sem regra."
       },
       {
         "tipo": "FIP",
-        "text": "FIP: fora da nota #611 (seção 6); sem arquivo de regra."
+        "text": "FIP: fora das regras de imposto do SILO; sem regra."
       }
     ],
     "lines": [
@@ -19988,7 +20052,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
           "notes": [],
           "loading": null,
@@ -20002,14 +20065,11 @@
         },
         "tax": {
           "status": "sem_regra",
-          "status_label": "sem regra",
-          "selection_reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra.",
+          "selection_reason": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público.",
           "instrument": null,
-          "instrument_label": null,
           "rules_file": null,
           "candidates": [],
           "rate_today_pct": null,
-          "rate_text": null,
           "exempt": false,
           "article": null,
           "rule_source": null,
@@ -20025,11 +20085,11 @@
             "rate_pct": null,
             "basis": null,
             "reason_code": "imposto_sem_regra",
-            "reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra.",
+            "reason": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público.",
             "sources": []
           },
           "reason_code": "imposto_sem_regra",
-          "reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra."
+          "reason": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público."
         },
         "pension": null,
         "optimization": [],
@@ -20063,7 +20123,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
           "notes": [],
           "loading": null,
@@ -20077,10 +20136,8 @@
         },
         "tax": {
           "status": "condicional",
-          "status_label": "a conferir",
           "selection_reason": null,
           "instrument": "shares",
-          "instrument_label": "ações",
           "rules_file": "src/portfolio/rules/tax/shares.yaml",
           "candidates": [
             {
@@ -20096,7 +20153,6 @@
                 15.0
               ],
               "rate_today_pct": 15.0,
-              "rate_today_text": "15%",
               "article": "Lei 11.033/2004, art. 2º, I e II",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/shares.yaml",
@@ -20109,7 +20165,6 @@
             }
           ],
           "rate_today_pct": 15.0,
-          "rate_text": "15%",
           "exempt": false,
           "article": "Lei 11.033/2004, art. 2º, I e II",
           "rule_source": {
@@ -20205,7 +20260,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "divulgada",
           "notes": [
             "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
@@ -20239,10 +20293,8 @@
         },
         "tax": {
           "status": "condicional",
-          "status_label": "a conferir",
           "selection_reason": "classe ANBIMA 'Ações' arquivada no Extrato da CVM",
           "instrument": "fund_equity",
-          "instrument_label": "fundo de ações (FIA)",
           "rules_file": "src/portfolio/rules/tax/fund_equity.yaml",
           "candidates": [
             {
@@ -20258,7 +20310,6 @@
                 15.0
               ],
               "rate_today_pct": 15.0,
-              "rate_today_text": "15%",
               "article": "Lei 14.754/2023, art. 24",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/fund_equity.yaml",
@@ -20271,7 +20322,6 @@
             }
           ],
           "rate_today_pct": 15.0,
-          "rate_text": "15%",
           "exempt": false,
           "article": "Lei 14.754/2023, art. 24",
           "rule_source": {
@@ -20375,7 +20425,6 @@
           "per_year_min_brl": 2081.71,
           "per_year_max_brl": 4163.43,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "faixa divulgada",
           "notes": [
             "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
@@ -20409,10 +20458,8 @@
         },
         "tax": {
           "status": "candidatos",
-          "status_label": "a conferir",
           "selection_reason": "o extrato não diz se o fundo é de longo ou de curto prazo",
           "instrument": null,
-          "instrument_label": null,
           "rules_file": null,
           "candidates": [
             {
@@ -20431,7 +20478,6 @@
                 15.0
               ],
               "rate_today_pct": null,
-              "rate_today_text": null,
               "article": "Lei 11.033/2004, art. 1º, I a IV",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
@@ -20456,7 +20502,6 @@
                 20.0
               ],
               "rate_today_pct": null,
-              "rate_today_text": null,
               "article": "Lei 11.053/2004, art. 6º caput e §2º",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
@@ -20469,7 +20514,6 @@
             }
           ],
           "rate_today_pct": null,
-          "rate_text": null,
           "exempt": false,
           "article": null,
           "rule_source": null,
@@ -20611,7 +20655,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "0 informado; a conferir",
           "notes": [
             "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
@@ -20645,10 +20688,8 @@
         },
         "tax": {
           "status": "candidatos",
-          "status_label": "a conferir",
           "selection_reason": "o extrato não diz se o fundo é de longo ou de curto prazo",
           "instrument": null,
-          "instrument_label": null,
           "rules_file": null,
           "candidates": [
             {
@@ -20667,7 +20708,6 @@
                 15.0
               ],
               "rate_today_pct": null,
-              "rate_today_text": null,
               "article": "Lei 11.033/2004, art. 1º, I a IV",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
@@ -20692,7 +20732,6 @@
                 20.0
               ],
               "rate_today_pct": null,
-              "rate_today_text": null,
               "article": "Lei 11.053/2004, art. 6º caput e §2º",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
@@ -20705,7 +20744,6 @@
             }
           ],
           "rate_today_pct": null,
-          "rate_text": null,
           "exempt": false,
           "article": null,
           "rule_source": null,
@@ -20847,7 +20885,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "taxa divulgada não encontrada",
           "notes": [
             "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
@@ -20864,14 +20901,11 @@
         },
         "tax": {
           "status": "sem_regra",
-          "status_label": "sem regra",
-          "selection_reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra.",
+          "selection_reason": "FIDC: fora das regras de imposto do SILO; sem regra.",
           "instrument": null,
-          "instrument_label": null,
           "rules_file": null,
           "candidates": [],
           "rate_today_pct": null,
-          "rate_text": null,
           "exempt": false,
           "article": null,
           "rule_source": null,
@@ -20887,11 +20921,11 @@
             "rate_pct": null,
             "basis": null,
             "reason_code": "imposto_sem_regra",
-            "reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra.",
+            "reason": "FIDC: fora das regras de imposto do SILO; sem regra.",
             "sources": []
           },
           "reason_code": "imposto_sem_regra",
-          "reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra."
+          "reason": "FIDC: fora das regras de imposto do SILO; sem regra."
         },
         "pension": null,
         "optimization": [],
@@ -20925,7 +20959,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "divulgada",
           "notes": [
             "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
@@ -20959,10 +20992,8 @@
         },
         "tax": {
           "status": "candidatos",
-          "status_label": "a conferir",
           "selection_reason": "o extrato não diz se o fundo é de longo ou de curto prazo",
           "instrument": null,
-          "instrument_label": null,
           "rules_file": null,
           "candidates": [
             {
@@ -20981,7 +21012,6 @@
                 15.0
               ],
               "rate_today_pct": null,
-              "rate_today_text": null,
               "article": "Lei 11.033/2004, art. 1º, I a IV",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/fund_long.yaml",
@@ -21006,7 +21036,6 @@
                 20.0
               ],
               "rate_today_pct": null,
-              "rate_today_text": null,
               "article": "Lei 11.053/2004, art. 6º caput e §2º",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/fund_short.yaml",
@@ -21019,7 +21048,6 @@
             }
           ],
           "rate_today_pct": null,
-          "rate_text": null,
           "exempt": false,
           "article": null,
           "rule_source": null,
@@ -21161,7 +21189,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "taxa divulgada não encontrada",
           "notes": [
             "Nada somado pelos fundos investidos: a taxa divulgada de um fundo de fundos já inclui a do fundo investido (Art. 98, conforme a resolução de #613).",
@@ -21178,10 +21205,8 @@
         },
         "tax": {
           "status": "aliquota_hoje",
-          "status_label": "alíquota de hoje",
           "selection_reason": null,
           "instrument": "fii",
-          "instrument_label": "FII",
           "rules_file": "src/portfolio/rules/tax/fii.yaml",
           "candidates": [
             {
@@ -21197,7 +21222,6 @@
                 20.0
               ],
               "rate_today_pct": 20.0,
-              "rate_today_text": "20%",
               "article": "Lei 8.668/1993, art. 18, I e II (redação da Lei 9.779/1999)",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/fii.yaml",
@@ -21210,7 +21234,6 @@
             }
           ],
           "rate_today_pct": 20.0,
-          "rate_text": "20%",
           "exempt": false,
           "article": "Lei 8.668/1993, art. 18, I e II (redação da Lei 9.779/1999)",
           "rule_source": {
@@ -21343,7 +21366,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
           "notes": [],
           "loading": null,
@@ -21357,10 +21379,8 @@
         },
         "tax": {
           "status": "faixa",
-          "status_label": "a conferir",
           "selection_reason": null,
           "instrument": "cdb",
-          "instrument_label": "CDB",
           "rules_file": "src/portfolio/rules/tax/cdb.yaml",
           "candidates": [
             {
@@ -21379,7 +21399,6 @@
                 15.0
               ],
               "rate_today_pct": null,
-              "rate_today_text": null,
               "article": "Lei 11.033/2004, art. 1º, I a IV",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/cdb.yaml",
@@ -21392,7 +21411,6 @@
             }
           ],
           "rate_today_pct": null,
-          "rate_text": null,
           "exempt": false,
           "article": "Lei 11.033/2004, art. 1º, I a IV",
           "rule_source": {
@@ -21465,7 +21483,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
           "notes": [],
           "loading": null,
@@ -21479,10 +21496,8 @@
         },
         "tax": {
           "status": "isento",
-          "status_label": "isento",
           "selection_reason": null,
           "instrument": "lca",
-          "instrument_label": "LCA",
           "rules_file": "src/portfolio/rules/tax/lca.yaml",
           "candidates": [
             {
@@ -21498,7 +21513,6 @@
                 0.0
               ],
               "rate_today_pct": 0.0,
-              "rate_today_text": "0%",
               "article": "Lei 11.033/2004, art. 3º, IV (redação da Lei 11.311/2006)",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/lca.yaml",
@@ -21511,7 +21525,6 @@
             }
           ],
           "rate_today_pct": 0.0,
-          "rate_text": "isento",
           "exempt": true,
           "article": "Lei 11.033/2004, art. 3º, IV (redação da Lei 11.311/2006)",
           "rule_source": {
@@ -21615,7 +21628,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
           "notes": [],
           "loading": null,
@@ -21629,10 +21641,8 @@
         },
         "tax": {
           "status": "isento",
-          "status_label": "isento",
           "selection_reason": null,
           "instrument": "cra",
-          "instrument_label": "CRA",
           "rules_file": "src/portfolio/rules/tax/cra.yaml",
           "candidates": [
             {
@@ -21648,7 +21658,6 @@
                 0.0
               ],
               "rate_today_pct": 0.0,
-              "rate_today_text": "0%",
               "article": "Lei 11.033/2004, art. 3º, IV (redação da Lei 11.311/2006)",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/cra.yaml",
@@ -21661,7 +21670,6 @@
             }
           ],
           "rate_today_pct": 0.0,
-          "rate_text": "isento",
           "exempt": true,
           "article": "Lei 11.033/2004, art. 3º, IV (redação da Lei 11.311/2006)",
           "rule_source": {
@@ -21765,7 +21773,6 @@
           "per_year_min_brl": null,
           "per_year_max_brl": null,
           "third_party": false,
-          "third_party_label": null,
           "fee_status": "sem taxa de administração (ação, título ou crédito direto)",
           "notes": [],
           "loading": null,
@@ -21779,10 +21786,8 @@
         },
         "tax": {
           "status": "candidatos",
-          "status_label": "a conferir",
           "selection_reason": "o extrato não diz se a debênture é incentivada (Lei 12.431) ou comum; a de infraestrutura da Lei 14.801 é comum para a pessoa física",
           "instrument": null,
-          "instrument_label": null,
           "rules_file": null,
           "candidates": [
             {
@@ -21801,7 +21806,6 @@
                 15.0
               ],
               "rate_today_pct": null,
-              "rate_today_text": null,
               "article": "Lei 11.033/2004, art. 1º, I a IV",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/debenture.yaml",
@@ -21825,7 +21829,6 @@
                 0.0
               ],
               "rate_today_pct": 0.0,
-              "rate_today_text": "0%",
               "article": "Lei 12.431/2011, art. 2º, I (redação da Lei 13.043/2014)",
               "rule_source": {
                 "rules_file": "src/portfolio/rules/tax/debenture_incentivized.yaml",
@@ -21838,7 +21841,6 @@
             }
           ],
           "rate_today_pct": null,
-          "rate_text": null,
           "exempt": false,
           "article": null,
           "rule_source": null,
@@ -22022,11 +22024,9 @@
         "annualized": false
       }
     ],
-    "choice_note": "O ETF é o maior por patrimônio líquido (site de terceiros, na data indicada) entre os ETFs ativos que acompanham um índice ligado à classe ANBIMA do fundo na lista revisada pelo dono (src/portfolio/rules/equivalents/class_index.yaml). Mesmo objetivo; não é recomendação de troca.",
+    "choice_note": "O ETF é o maior por patrimônio líquido (site de terceiros, na data indicada) entre os ETFs ativos que acompanham um índice ligado à classe ANBIMA do fundo na lista de classes revisada pelo dono do SILO. Mesmo objetivo; não é recomendação de troca.",
     "class_note": "Distribuição do retorno líquido de cota dos fundos FI ativos da mesma classe ANBIMA e do mesmo indicador de fundo de cotas (mínimo de 30 fundos), nas mesmas janelas do bloco de retorno.",
     "band_note": "posição do retorno na distribuição da classe (p25, mediana, p75), não um ranking",
-    "pl_label": "patrimônio líquido do site etfsbrasil.com.br (fonte de terceiros), não um documento da CVM",
-    "fee_label": "taxa de administração do site etfsbrasil.com.br (fonte de terceiros), a mesma fonte das taxas de ETF na comparação de taxas; não é taxa divulgada à CVM",
     "lines": [
       {
         "line_no": 3,
@@ -22127,15 +22127,12 @@
           "segment": "fixed_income_br",
           "pl_brl": 4200000000.0,
           "pl_as_of": "2026-10-01",
-          "pl_label": "patrimônio líquido do site etfsbrasil.com.br (fonte de terceiros), não um documento da CVM",
           "fee_pct_year": 0.15,
           "fee_as_of": "2026-10-01",
-          "fee_label": "taxa de administração do site etfsbrasil.com.br (fonte de terceiros), a mesma fonte das taxas de ETF na comparação de taxas; não é taxa divulgada à CVM",
           "fee_reason_code": null,
           "in_fee_peers": true,
           "snapshot_source": "etfsbrasil",
           "basis": "last_price_etf_renda_fixa",
-          "basis_label": "último preço do arquivo consolidado da B3 (last_price), sem proventos",
           "without_distributions": true,
           "note": "Sem proventos: para um ETF que distribui rendimentos, o retorno fica subestimado; para um que reinveste, muda pouco.",
           "pl_rank": 1,
@@ -22177,9 +22174,7 @@
             "etf_minus_median_pp": 0.2157,
             "fund_minus_median_pp": -0.325551,
             "etf_band": "mediana_p75",
-            "etf_band_label": "entre a mediana e o p75 da classe",
             "fund_band": "p25_mediana",
-            "fund_band_label": "entre o p25 e a mediana da classe",
             "band_note": "posição do retorno na distribuição da classe (p25, mediana, p75), não um ranking",
             "etf_series_reason_code": null,
             "etf_base_date": "2025-09-30",
@@ -22232,9 +22227,7 @@
             "etf_minus_median_pp": 0.120973,
             "fund_minus_median_pp": -0.132505,
             "etf_band": "mediana_p75",
-            "etf_band_label": "entre a mediana e o p75 da classe",
             "fund_band": "p25_mediana",
-            "fund_band_label": "entre o p25 e a mediana da classe",
             "band_note": "posição do retorno na distribuição da classe (p25, mediana, p75), não um ranking",
             "etf_series_reason_code": null,
             "etf_base_date": "2026-03-31",

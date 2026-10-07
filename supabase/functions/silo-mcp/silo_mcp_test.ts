@@ -7,9 +7,10 @@
 // tool list, the annotations and the isError pass-through are checked as an
 // MCP client would see them.
 
-import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
 
-import { callTool, configFromEnv, SEMANTICS, TOOLS } from "./tools.ts";
+import { ENDPOINT_NAMES } from "./contract.generated.ts";
+import { callTool, configFromEnv, SEMANTICS, titledTools, TOOLS } from "./tools.ts";
 import { makeHandler } from "./server.ts";
 
 const MINIMUM = [
@@ -52,6 +53,15 @@ Deno.test("tool list contains the minimum set", () => {
   const names = new Set(TOOLS.map((t) => t.name));
   for (const name of MINIMUM) assert(names.has(name), `missing tool ${name}`);
   assertEquals(names.size, TOOLS.length, "duplicate tool names");
+});
+
+Deno.test("the tools are exactly the generated endpoint names; titles only label them", () => {
+  assertEquals(TOOLS.map((t) => t.name).sort(), [...ENDPOINT_NAMES].sort());
+  const titles = [{ name: "a", title: "A" }, { name: "b", title: "B" }];
+  assertEquals(titledTools(titles, ["b", "a"]).map((t) => t.name), ["a", "b"]);
+  assertThrows(() => titledTools(titles, ["a", "b", "c"]), Error, "endpoint with no title [c]");
+  assertThrows(() => titledTools(titles, ["a"]), Error, "title naming no endpoint [b]");
+  assertThrows(() => titledTools([...titles, titles[0]], ["a", "b"]), Error, "duplicate [a]");
 });
 
 Deno.test("every tool is read-only, closed-world, and carries the refusal semantics", () => {

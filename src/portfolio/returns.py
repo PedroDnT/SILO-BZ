@@ -64,7 +64,6 @@ from src.portfolio.movement import default_movement_month
 
 EVALUATED = "avaliado"
 NOT_EVALUATED = "nao_avaliado"
-STATUS_LABELS = {EVALUATED: "avaliado", NOT_EVALUATED: "não avaliado"}
 
 # (id, months, share of the annual fee charged in the window, volatility note)
 WINDOWS = (
@@ -79,12 +78,7 @@ FUND = "cota_fundo"
 TOTAL_RETURN = "close_total_return"
 CLOSE = "close_sem_proventos"
 FIXED_INCOME_ETF = "last_price_etf_renda_fixa"
-BASIS_LABELS = {
-    FUND: "cota mensal do fundo (fund_nav): líquida das taxas do fundo, bruta de IR",
-    TOTAL_RETURN: "fechamento com dividendos e JCP reinvestidos (close_total_return); JCP bruto de IR",
-    CLOSE: "fechamento sem proventos (close): variação de preço",
-    FIXED_INCOME_ETF: "último preço do arquivo consolidado da B3 (last_price), sem proventos",
-}
+# The reader text of a status or a basis is the report's (src/portfolio/report/labels.py, engine 2.0).
 TOOLS = {
     FUND: "fund_nav",
     TOTAL_RETURN: "quote_history",
@@ -248,7 +242,70 @@ def compute_returns(
         "n_evaluated": sum(ln["status"] == EVALUATED for ln in out),
         "n_not_evaluated": sum(ln["status"] == NOT_EVALUATED for ln in out),
         "coverage": coverage,
+        "contribution": _contribution(out, coverage),  # engine 1.15
     }
+
+
+# ---------------------------------------------------------------------------
+# Retroactive contribution (engine 1.15)
+# ---------------------------------------------------------------------------
+
+CONTRIBUTION_LABEL = "contribuição retroativa"
+NOTE_CONTRIBUTION = (
+    "Contribuição retroativa: o extrato dá as posições em uma data e nenhum fluxo. O valor no início da janela de cada "
+    "linha é o valor atual dividido por 1 mais o retorno líquido da janela; o peso é esse valor sobre a soma dos valores "
+    "iniciais das linhas avaliadas; a contribuição é o peso vezes o retorno. Supõe que não houve aporte nem resgate. A "
+    "soma é o retorno só da parte avaliada, nunca da carteira inteira."
+)
+
+
+def _contribution(lines: list[dict[str, Any]], coverage: dict[str, Any]) -> dict[str, Any]:
+    """Per window: each evaluated line's share of the return of the evaluated part, back-cast from today's values.
+
+    start value = value / (1 + r); weight = start value / sum of the start values; contribution = weight x r. The sum of
+    the contributions is the return of the evaluated lines taken together, exactly (sum of the end values over the sum
+    of the start values, minus 1). Lines are in statement order; nothing is ranked."""
+    out: dict[str, Any] = {}
+    for wid, _n, _f, _note in WINDOWS:
+        rows = []
+        for ln in lines:
+            w = ln["windows"][wid]
+            r, value = dec(w.get("net_return_pct")), dec(ln.get("valor_brl"))
+            if w["status"] != EVALUATED or r is None or value is None or r <= Decimal(-100):
+                continue
+            rows.append((ln, value, r, value / (1 + r / 100)))
+        start_total = sum((s for *_x, s in rows), Decimal("0"))
+        end_total = sum((v for _l, v, _r, _s in rows), Decimal("0"))
+        if not rows or start_total <= 0:
+            out[wid] = {"status": NOT_EVALUATED, "reason_code": "linhas_sem_retorno", "covered_return_pct": None,
+                        "n_lines": 0, "lines": [], **_cov(coverage, wid)}
+            continue
+        out[wid] = {
+            "status": EVALUATED,
+            "reason_code": None,
+            "covered_return_pct": float(((end_total / start_total - 1) * 100).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+            "start_value_brl": brl(start_total),
+            "end_value_brl": brl(end_total),
+            "n_lines": len(rows),
+            **_cov(coverage, wid),
+            "lines": [
+                {
+                    "line_no": ln["line_no"],
+                    "linha_extrato": ln["linha_extrato"],
+                    "valor_brl": ln["valor_brl"],
+                    "net_return_pct": float(r),
+                    "start_value_brl": brl(s),
+                    "start_weight_pct": pct(s, start_total),
+                    "contribution_pp": float((s / start_total * r).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+                }
+                for ln, _v, r, s in rows
+            ],
+        }
+    return {"label": CONTRIBUTION_LABEL, "note": NOTE_CONTRIBUTION, "windows": out}
+
+
+def _cov(coverage: dict[str, Any], wid: str) -> dict[str, Any]:
+    return {"coverage_portfolio_value_pct": coverage[wid]["coverage_portfolio_value_pct"]}
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +425,6 @@ def _route(li: LineId) -> tuple[str | None, str | None]:
 def _empty_window(code: str | None, reason: str | None) -> dict[str, Any]:
     return {
         "status": NOT_EVALUATED,
-        "status_label": STATUS_LABELS[NOT_EVALUATED],
         "reason_code": code,
         "reason": reason,
         "base_month": None,
@@ -398,7 +454,6 @@ def _empty_window(code: str | None, reason: str | None) -> dict[str, Any]:
         "fee_reason_code": None,
         "fee_pct_period": None,
         "gross_return_est_pct": None,
-        "gross_label": "estimativa",
         "fee_per_point": None,
         "fee_per_point_excluded_from_aggregates": None,
         "fee_per_point_note": None,
@@ -430,10 +485,8 @@ def _line(
         "name": li.name,
         "valor_brl": brl(p.valor),
         "basis": basis,
-        "basis_label": BASIS_LABELS.get(basis),
         "without_distributions": basis in (CLOSE, FIXED_INCOME_ETF),
         "status": NOT_EVALUATED,
-        "status_label": STATUS_LABELS[NOT_EVALUATED],
         "reason_code": None,
         "reason": None,
         "fee": None,
@@ -477,7 +530,7 @@ def _line(
     for wid, n, frac, vol_note in WINDOWS:
         rec["windows"][wid] = _window(months[-(n + 1):], n, frac, vol_note, points, basis, fee, cdi, call, bench)
     if any(w["status"] == EVALUATED for w in rec["windows"].values()):
-        rec.update(status=EVALUATED, status_label=STATUS_LABELS[EVALUATED])
+        rec["status"] = EVALUATED
     else:
         first = rec["windows"]["12m"]
         rec.update(reason_code=first["reason_code"], reason=first["reason"])
@@ -686,7 +739,6 @@ def _window(
     w = _empty_window(None, None)
     w.update(
         status=EVALUATED,
-        status_label=STATUS_LABELS[EVALUATED],
         base_month=iso(months[0]),
         end_month=iso(months[-1]),
         base_date=iso(points[months[0]]["date"]),

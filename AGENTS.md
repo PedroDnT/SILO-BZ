@@ -18,7 +18,9 @@ sees. Long per-dataset notes belong in `docs/agents/dataset-notes.md`.
 
 ### Issue tracker
 
-GitHub Issues via `gh`. See `docs/agents/issue-tracker.md`.
+GitHub Issues via `gh`. See `docs/agents/issue-tracker.md`. Before a batch of
+issues, confirm every label exists and create one issue first (that file says how).
+The `tech-debt` skill runs the audit → issues → phase PR loop.
 
 ### Triage labels
 
@@ -84,18 +86,19 @@ a ticket. Unless the owner explicitly authorizes it, an agent must not start
 implementing the discovered work, raise it to active priority, or widen the
 current task to include it.
 
-## The shape of the system: 3 infra, 3 products
+## The shape of the system: 4 infra, 4 products
 
 Reach for this before reporting a problem — it decides whose problem it is, and
 symptoms routinely surface one layer away from their cause.
 
-**Infrastructure** (three, and only three):
+**Infrastructure** (four, and only four):
 
 |                    | Runs                                                              | Fails as                                        |
 | ------------------ | ----------------------------------------------------------------- | ----------------------------------------------- |
 | **GitHub Actions** | ingestion + parse (`run_daily`, `run_backfill`, health, watchdog) | a red run, a slice in `cvm_ingest_log`          |
 | **Supabase**       | the Postgres store                                                | disk pressure, a failing query, a missing grant |
 | **Vercel**         | hosting for `dashboard/` only; `webapp/` is not deployed          | a build error, a stale or mis-pointed domain    |
+| **Cloudflare**     | the portfolio-diagnosis demo: a Worker, the engine Container, private R2 for traces, an LLM provider (`deploy/cloudflare/`) | a Worker error, a Container timeout, a missing secret, an LLM refusal |
 
 **Products** (what anyone actually consumes):
 
@@ -104,6 +107,7 @@ symptoms routinely surface one layer away from their cause.
 | **the API**         | schema `api` + `serve/` | `docs/reference/API.md`, `api.catalog()`, `api.coverage()` |
 | **the dashboard**   | the Evidence sites      | parquet built at deploy time                     |
 | **the stored data** | the warehouse itself    | the integrity rules below                        |
+| **the diagnosis**   | `src/portfolio/` (statement readers, engine, report, investigator) behind the Cloudflare Worker | `docs/reference/portfolio/`, ADR 0001 (stateless), ADR 0003 (traces in R2) |
 
 Two consequences worth stating, both learned the expensive way:
 
@@ -268,14 +272,16 @@ message built by `assert_row_cap`) — none trims silently. A new endpoint also 
 catalog entry, a regenerated `openapi.json` (`scripts/gen_openapi.py`) and a regenerated
 MCP contract (`scripts/gen_mcp_contract.py` + a `t()` line in
 `supabase/functions/silo-mcp/tools.ts`); `tests/test_mcp_contract.py` fails until all
-three agree.
+three agree. A new or changed signature also regenerates the SDK's
+`sdk/silo_client/contract.json` (`scripts/gen_sdk_contract.py`), which `SiloClient.rpc()`
+checks calls against; `tests/test_sdk_rpc.py` fails while it is stale.
 
 ## Commands
 
 ```bash
 # Setup
 python3 -m venv .venv && source .venv/bin/activate   # Python 3.12
-pip install -r requirements.txt
+pip install -r requirements-dev.txt  # requirements.txt (the ingest's) + what only the tests import
 bash scripts/install_hooks.sh        # installs .githooks (pre-commit: secrets, syntax)
 cp .env.example .env                 # set POSTGRES_URL (Supabase conn string, sslmode=require)
 
@@ -433,11 +439,11 @@ comments correctly), so author migrations to be psql-clean.
 ### Environment layout
 
 - Python **3.12** in a virtualenv at `.venv/` (gitignored, persisted in the VM snapshot).
-  The startup update script (`python3 -m venv .venv` + `pip install -r requirements.txt` +
-  `pip install duckdb`) keeps it fresh. Run Python via `.venv/bin/python` (or
+  The startup update script (`python3 -m venv .venv` + `pip install -r requirements-dev.txt`)
+  keeps it fresh. Run Python via `.venv/bin/python` (or
   `source .venv/bin/activate`); there is no global install of the project deps.
 - If `.venv/bin/pip` is missing, the snapshot venv is empty. Recreate it:
-  `sudo apt-get install -y python3.12-venv && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`.
+  `sudo apt-get install -y python3.12-venv && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`.
 - `duckdb` is required by the offline verification scripts but is used only for local dev;
   it is listed in `requirements.txt` under "Local dev / offline verification".
 - Git hooks live in `.githooks/` (enabled with `bash scripts/install_hooks.sh`, which sets
@@ -479,9 +485,27 @@ No `POSTGRES_URL` / Supabase credentials are needed for the core loop:
 npm run dev`) are read-only consumers that need a populated Supabase to render data.
 - `etf_market_snapshot` ingestion self-skips unless `APIFY_TOKEN` is set.
 
+## Working beside other agents
+
+Codex, Claude Code sessions, the B7 agents and the orchestrator write to this repo at
+the same time and do not see each other's sessions. GitHub is the one place they all
+see, so it is the lock (owner decision, 2026-10-07, #711):
+
+1. **Claim before you write.** Assign the issue, then comment one line that ends the
+   claim: `Claimed by: <agent> · branch <branch>` (`codex`, `claude`, `orchestrator`).
+   Every agent posts as the owner's account, so this line is the only way to tell who
+   claimed. Work with no issue opens a small one first.
+2. **Look for overlap first.** Compare the files you will touch with the changed files
+   of every open PR (`GET /repos/{o}/{r}/pulls/{n}/files`). On an overlap, wait or pick
+   other work; do not race it to a merge conflict.
+3. **Branch prefix names the agent:** `claude/`, `codex/`, `orchestrator/`, `agent/`
+   (B7 Routines), `research/`, `demo/`.
+4. GitHub is REST only from Claude Code sessions (`gh api repos/...`; GraphQL is 403).
+
 ## Codex task-boundary board
 
 - This repository uses the opt-in Codex task-boundary board in `.codex/coordination/project.yaml`.
 - Before substantial writes, load the installed `codex-coordinator` skill, list active claims from the primary worktree, and publish only this task's bounded claim.
+- The local board is Codex's own; also claim on GitHub as "Working beside other agents" says, so other agents see the claim.
 - Native Codex tasks remain the execution, messaging, and transcript authority; an explicitly requested goal Coordinator is on demand, with no heartbeat or mandatory pull-request workflow.
 - Reject cross-project notices and never store transcripts, reasoning, prompts, or tool output in Coordinator state.

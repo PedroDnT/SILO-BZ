@@ -26,6 +26,8 @@
 		"SILO_LLM_PROVIDER": "openai",
 		"SILO_LLM_MODEL": "gpt-5.1",
 		"SILO_LLM_EFFORT": "medium",
+		// Optional per-role overrides of the effort above (SILO_LLM_EFFORT_REDATOR, SILO_LLM_EFFORT_REVISOR). Unset
+		// until the A/B (portfolio_effort_ab.yml, arm medium/low) shows the Revisor at "low" keeps what it removes.
 		// Engine 1.12 (#605): the investigator of official documents. "on" runs it; anything else leaves the
 		// engine's investigation section off. ON by default (owner, 2026-10-06, Q49: "ligar default"; it was off
 		// until one supervised run under #605 Q37). Under the report's single US$1.00 cap it may book at most

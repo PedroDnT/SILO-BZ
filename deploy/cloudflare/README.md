@@ -9,8 +9,8 @@ Container, at `https://silo-demo-health.<account subdomain>.workers.dev`.
 | `GET /`          | the upload page (Portuguese): access code, statement files (one per account), downloads `diagnostico.pdf`                                                                                                                                                   |
 | `GET /health`    | `200 ok` from the Worker itself, public, no Container                                                                                                                                                                                    |
 | `POST /diagnose` | the statement (template `.xlsx` or BTG `.pdf`, extrato or performance report; raw body, or one multipart `file` part per account, consolidated; at most 10 MB in all). Token as `x-demo-token` or `Authorization: Bearer`; `401` without it, `503` if the secret is unset, `413` over 10 MB. Returns the engine's answer |
-| `GET /traces`    | the owner's trace page (Portuguese), a static shell with no data: asks for the access code (kept in memory only), lists the stored runs of the last 7 days, shows where an asset's exposure comes from (an arrow diagram, one box per statement line, plus the text; direct and through each fund, with the CDA month) and downloads a run's stored PDF. Works on a phone |
-| `GET /api/traces`, `/api/traces/exposure`, `/api/traces/pdf` | what that page calls; same token as `/diagnose`, `GET` only. Read the private bucket through the `TRACES` binding, only through keys of the two strict shapes `traces/YYYY/MM/DD/<32 hex>.json` and `artifacts/<64 hex>.json` or `.pdf`; `no-store`; nothing logged |
+| `GET /traces`    | the owner's trace page (Portuguese), a static shell with no data: asks for the access code (kept in memory only), lists the stored runs of the last 7 days, shows the run's report in HTML (a sandboxed frame, printable), the agents' timeline (each span's start, duration, model, tokens and cost, and what the Revisor removed), what the investigator did and found (its facts with quote, tier, source and document), where an asset's exposure comes from (an arrow diagram, one box per statement line, plus the text) and downloads a run's stored PDF when it has one. Works on a phone |
+| `GET /api/traces`, `/api/traces/exposure`, `/api/traces/report`, `/api/traces/agents`, `/api/traces/investigation`, `/api/traces/pdf` | what that page calls; same token as `/diagnose`, `GET` only. Read the private bucket through the `TRACES` binding, only through keys of the two strict shapes `traces/YYYY/MM/DD/<32 hex>.json` and `artifacts/<64 hex>.json`, `.html` or `.pdf`; `no-store`; nothing logged. `report` answers the stored HTML under a policy with no script and no request (`sandbox`) |
 | anything else    | `404`                                                                                                                                                                                                                                    |
 
 Each upload gets its own Durable Object, so its own Container instance and disk;
@@ -44,10 +44,11 @@ later. It holds portfolio data, so treat the bucket as sensitive:
 | ------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `traces/YYYY/MM/DD/<trace_id>.json`  | OTLP/JSON trace (`src/portfolio/trace.py`); the date is the write's UTC date               |
 | `artifacts/<sha256>.json`            | the engine JSON, holder, CPF and account already masked by the readers (`[TITULAR]` ...)   |
-| `artifacts/<sha256>.pdf`             | the PDF that was returned (200 runs only)                                                  |
+| `artifacts/<sha256>.html`            | the report's HTML, masked like the PDF (every run that reached the report; from 2026-10-06) |
+| `artifacts/<sha256>.pdf`             | the PDF that was returned (200 runs that asked for PDF only)                               |
 | `feedback/<trace_id>.json`           | reserved for human labels on a run, written by hand later; no code writes it yet           |
 
-The trace's root span names both artifacts by `app.engine_json.sha256` and
+The trace's root span names the artifacts by `app.engine_json.sha256`, `app.html.sha256` and
 `app.pdf.sha256`. Spans: `invoke_workflow diagnosis` (status, failing stage,
 files, formats, bytes, engine revision), `engine.run` (section statuses and
 reason codes, identification counts), `invoke_agent redator` / `invoke_agent
@@ -58,7 +59,7 @@ the text). An error is span status ERROR with `exception.type` only.
 
 Transport: the Container cannot reach R2 (egress allow-list), and a trace with
 the engine JSON is too large for a response header. So the engine keeps the
-run's bundle in memory and names it in `X-Silo-Trace-Id` (never passed to the
+run's bundle in memory (the trace, the engine JSON and the HTML) and names it in `X-Silo-Trace-Id` (never passed to the
 client); after answering, the Worker, inside `ctx.waitUntil`, calls `GET
 /trace/<id>` on the same instance with the bearer token (answered once, then
 forgotten), writes the objects, and only then stops the instance. The PDF is

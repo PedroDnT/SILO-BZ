@@ -21,34 +21,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from src.portfolio.report.llm import LLMError, Provider, validate_output
+from src.portfolio.sections import REPORT_SLOTS
 
-SECTIONS = (
-    "resumo",
-    "achados",
-    "riscos",
-    "identificacao",
-    "taxas",
-    "exposicao",
-    "reapresentacoes",
-    "sinais_de_risco",
-    "retornos",
-    "impostos",
-    "equivalentes",
-)
-
-SECTION_TITLES = {
-    "resumo": "Resumo",
-    "achados": "Achados que ninguém pegaria à mão",
-    "riscos": "Principais riscos",
-    "identificacao": "Identificação linha a linha",
-    "taxas": "Custo em taxas",
-    "exposicao": "Exposição",
-    "reapresentacoes": "Reapresentações",
-    "sinais_de_risco": "Sinais de risco",
-    "retornos": "Retorno por posição",
-    "impostos": "Taxa e imposto por posição",
-    "equivalentes": "Equivalente de mercado",
-}
+# the finding slots and their titles are declared with the diagnosis sections (src/portfolio/sections.py)
+SECTIONS = tuple(key for key, _ in REPORT_SLOTS)
+SECTION_TITLES = dict(REPORT_SLOTS)
 
 # Keys that would carry the client's identity. Fund and issuer names are public
 # and expected; these are not.
@@ -185,6 +162,8 @@ Regras:
 - O mesmo ativo em mais de uma linha do extrato (ou em mais de uma conta) já foi agregado pelo motor em uma posição: isso não é achado. Uma exposição compartilhada com same_position verdadeiro é o mesmo fundo ou ticker em duas linhas, não diversificação nem sobreposição: não escreva achado sobre ela.
 - Nenhum achado é uma resposta válida: se a carteira não tem nada a apontar numa seção, não escreva nada nela; se não tem nada em nenhuma, devolva findings vazio.
 - Tom sóbrio, frases curtas, sem adjetivos de alarme.
+- O título é texto simples: sem algarismo e, de preferência, sem marcador. Um algarismo no título apaga o achado inteiro. Se o título precisa de um valor, deixe-o para o texto.
+- Só escreva um marcador cujo campo existe no JSON e tem valor. Antes de citar um caminho, confira que ele não é nulo, vazio, "—" nem uma lista vazia: sem valor, não escreva a frase. Um marcador sem valor apaga a frase, e uma frase só com marcadores vazios apaga o achado.
 - id: f1, f2, f3... na ordem em que escrever."""
 
 

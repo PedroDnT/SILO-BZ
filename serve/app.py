@@ -13,6 +13,7 @@ close, never resampled into bars we did not store.
 from __future__ import annotations
 
 import atexit
+import logging
 import os
 import re
 from datetime import date, datetime, timedelta
@@ -25,6 +26,8 @@ from flask import Flask, jsonify, request
 
 from serve.catalog import METRICS, catalog_payload, tool_specs
 from serve.pool import ServePool
+
+logger = logging.getLogger(__name__)
 
 _CNPJ_DIGITS = re.compile(r"\D")
 _TICKER = re.compile(r"^[A-Z0-9]{4,12}$")
@@ -342,8 +345,10 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             with pool.connection() as conn, conn.cursor() as cur:
                 cur.execute("SELECT 1 FROM api.quotes LIMIT 0")
             return jsonify({"ok": True, "surface": "api"})
-        except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)[:200]}), 503
+        except Exception:
+            # The driver's message names hosts and roles: log it, never return it.
+            logger.exception("health check failed")
+            return jsonify({"ok": False, "error": "database unavailable"}), 503
 
     @app.get("/v1/coverage")
     def coverage():

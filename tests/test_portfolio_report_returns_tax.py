@@ -114,7 +114,7 @@ def test_a_missing_window_keeps_its_position_and_a_failed_window_is_a_gap(engine
 
 
 def test_returns_section_shows_each_window_beside_the_cdi_and_never_a_total(html):
-    sec = section(html, "Retorno por posição")
+    sec = section(html, "Retorno por posição em detalhe")
     txt = text_of(sec)
     for needle in ("26,00%", "12,27%", "14,42%", "6,91%", "11,58 p.p.", "-6,64 p.p.", "09/2025 a 09/2026", "03/2026 a 09/2026",
                    "30/09/2025 a 30/09/2026", "12 observações; estimativa ruidosa", "-7,83%", "03/2026 a 07/2026",
@@ -191,7 +191,7 @@ def test_tax_in_reais_only_when_the_engine_computed_it(synthetic_tax_view):
     assert fii["tax"]["estimate"]["tax_brl"] == 2000.0
     txt = text_of(render._tax_section(synthetic_tax_view))
     assert "R$ 2.000,00 estimativa" in txt and "20,00% sobre o ganho de 12 meses de R$ 10.000,00 (retorno de 10,00%)" in txt
-    cdb = text_of(render._tax_brl_html(synthetic_tax_view, "tax.lines[2]", synthetic_tax_view["tax"]["lines"][2]["tax"]))
+    cdb = text_of(render._tax_brl_html(synthetic_tax_view["tax"]["lines"][2]["tax"]))
     assert not re.search(r"R\$ \d", cdb) and REASON_TEXT["ganho_12m_indisponivel"] in cdb  # no 12-month return: no figure
 
 
@@ -330,3 +330,159 @@ def test_a_large_past_return_is_not_an_exposure_but_a_fee_above_five_still_needs
     v["tax"]["lines"][2]["fee"]["rate_pct_year"] = 7.654321
     res = revisor.check(v, [F("Taxa: {{tax.lines[2].fee.rate_pct_year}}.", "impostos")])
     assert res.kept == [] and "valor extremo (fee)" in res.removed[0].reason
+
+
+# Retroactive contribution (engine 1.15) -------------------------------------------------------------------------
+
+
+def test_the_view_copies_the_contribution_per_window_with_line_ids_and_adds_no_total(view, engine):
+    c = view["returns"]["contribution"]
+    src = engine["returns"]["contribution"]["windows"]
+    assert [w["id"] for w in c["windows"]] == ["12m", "6m"] and "retroativa" in c["label"]
+    w = c["windows"][0]
+    assert w["covered_return_pct"] == src["12m"]["covered_return_pct"] and w["n_lines"] == src["12m"]["n_lines"]
+    assert [x["line_id"] for x in w["lines"]] == [f"L{x['line_no']}" for x in src["12m"]["lines"]]
+    assert set(c) == {"label", "note", "windows"}  # no portfolio total, no ranking field
+
+
+def test_the_report_shows_the_contribution_labelled_with_its_coverage(engine, view):
+    html = render._contribution_html(view)
+    assert "retroativa" in html and "não é o retorno da carteira" in html
+    cov = values.format_value(view, "returns.contribution.windows[0].coverage_portfolio_value_pct")
+    assert cov in html
+    assert "p.p." in html  # contributions are in percentage points
+
+
+def test_a_view_without_contribution_renders_nothing(view):
+    v2 = copy.deepcopy(view)
+    v2["returns"]["contribution"] = None
+    assert render._contribution_html(v2) == ""
+
+
+# Page 1, "Resumo para a reunião" (report restructure, stage 1) -----------------------------------------------
+
+
+def _page1(view):
+    html = render.render_html(view, render.Narrative(status="unknown"))
+    return html, html.split('<section class="brief" id="resumo">')[1].split("</section>")[0]
+
+
+def test_page_one_lists_points_to_check_by_name_from_engine_facts(view):
+    _, page = _page1(view)
+    assert "Pontos a conferir com o cliente" in page
+    assert "Emissor acima do limite do FGC" in page and "BANCO EXEMPLO" in page  # an issuer, never an L-id
+    assert "Informe reapresentado" in page and "Cota fora da faixa da classe" in page
+    assert re.search(r"\bL\d+\b", page) is None
+    assert len(re.findall(r"<li>", page.split("Pontos a conferir")[1].split("</ul>")[0])) <= 4
+
+
+def test_page_one_states_the_cost_with_its_coverage_and_what_was_not_assessed(view):
+    _, page = _page1(view)
+    s = view["fees"]["summary"]
+    assert values.format_value(view, "fees.summary.adm_disclosed_fixed_per_year_brl") in page
+    for k in ("coverage_fixed_fund_value_pct", "coverage_range_fund_value_pct", "coverage_without_fee_fund_value_pct"):
+        assert values.format_value(view, f"fees.summary.{k}") in page
+    assert "Não é o custo total" in page and "Não avaliado" in page
+    assert s["adm_disclosed_fixed_per_year_brl"] is not None
+
+
+def test_the_contents_links_point_to_sections_that_exist_and_the_aviso_has_its_anchor(view):
+    html, page = _page1(view)
+    targets = re.findall(r'href="#([^"]+)"', page)
+    assert targets and all(f'id="{t}"' in html for t in targets)
+    assert 'id="s-o-que-nao-foi-possivel-avaliar"' in html and '<h2 id="aviso">Aviso</h2>' in html
+
+
+def test_the_appendix_no_longer_repeats_the_summary_findings(view):
+    html = render.render_html(view, render.Narrative(status="complete", kept=[
+        Finding(id="f1", section="resumo", title="T1", text="Texto do resumo.", citations=["p1"])]))
+    assert html.count("Texto do resumo.") == 1  # page 1 only, not again in the appendix
+
+
+# Reader text, report restructure stage 2 ---------------------------------------------------------------------------
+
+
+def _reader_text(html):
+    body = html.split("<main>")[1]
+    return re.sub(r"<[^>]+>", " ", body)
+
+
+@pytest.fixture(scope="module")
+def built_demo(view):
+    html, _ = build.build(view, "fake")
+    return html
+
+
+def test_the_reader_text_has_no_engine_codes_or_repo_paths(built_demo):
+    t = _reader_text(built_demo)
+    assert re.search(r"\bL\d+\b", t) is None  # a line is its name
+    assert re.search(r"\[p\d", t) is None  # citations stay in the markup, not in the text
+    assert "api." not in t and "nota #611" not in t and "src/portfolio" not in t
+
+
+def test_citations_stay_in_the_markup_as_data(built_demo):
+    assert re.search(r'class="achado" data-fontes="p\d', built_demo)
+    assert 'data-consultas="' in built_demo
+
+
+def test_a_line_is_named_by_its_instrument_and_not_doubled(view, built_demo):
+    t = _reader_text(built_demo)
+    assert "XP LIQUIDEZ FIC" in t
+    assert "XP LIQUIDEZ FIC XP LIQUIDEZ FIC" not in t
+    assert "<th>Nº no extrato</th>" in built_demo
+
+
+def test_charts_keep_their_own_labels(view):
+    html = "<p>L5</p><svg><text>L5</text></svg>"
+    out = render._readable_lines(html, {"lines": [{"line_id": "L5", "instrument": "FUNDO X"}]})
+    assert out == "<p>FUNDO X</p><svg><text>L5</text></svg>"
+
+
+def test_two_lines_with_the_same_name_keep_their_statement_order():
+    names = render._line_names({"lines": [{"line_id": "L1", "instrument": "CDB A"}, {"line_id": "L2", "instrument": "CDB A"},
+                                          {"line_id": "L3", "instrument": "LCI B"}]})
+    assert names["L1"] == "CDB A (linha 1 do extrato)" and names["L2"] == "CDB A (linha 2 do extrato)" and names["L3"] == "LCI B"
+
+
+# Section order and the annex, report restructure stage 3 ---------------------------------------------------------
+
+
+BODY_ORDER = ("Resumo para a reunião", "O que pede atenção", "Achados", "Quanto a carteira paga em taxas", "O que a carteira tem",
+              "Concentração e liquidez", "Retorno passado contra o CDI", "Taxa e imposto por posição",
+              "Informes reapresentados e movimento incomum", "O que não foi possível avaliar")
+ANNEX = ("Como cada posição foi identificada", "Crédito direto no registro da CVM", "Detalhe da exposição", "Taxa por fundo", "Todos os riscos e seus limites",
+         "Retorno por posição em detalhe", "ETF comparável (não é recomendação)", "Metodologia e limitações")
+
+
+def test_the_body_answers_in_the_order_a_cio_asks_and_the_evidence_is_in_the_annex(built_demo):
+    h2 = re.findall(r"<h2[^>]*>([^<]*)</h2>", built_demo)
+    body = [t for t in h2 if t in BODY_ORDER]
+    assert body == [t for t in BODY_ORDER if t in h2] and len(body) == len(BODY_ORDER)
+    annex_html = built_demo.split('<details id="apendice">')[1].split("</details>")[0]
+    assert [t for t in re.findall(r"<h2[^>]*>([^<]*)</h2>", annex_html)] == list(ANNEX)
+    assert all(f"<h2>{t}</h2>" not in built_demo.split('<details id="apendice">')[0] for t in ANNEX)
+
+
+def test_the_body_risk_table_has_four_columns_and_only_atencao_and_moderado_rows(view, built_demo):
+    sec = built_demo.split("<h2>O que pede atenção</h2>")[1].split("</section>")[0]
+    assert re.findall(r"<th[^>]*>([^<]*)</th>", sec) == ["Risco", "Valor", "Nível", "O que significa"]
+    rows = view["risks"]["rows"]
+    shown = {r["risk"] for r in rows if r["status"] == "avaliado" and r["severity"] in ("atencao", "moderado")}
+    hidden = {r["risk"] for r in rows} - shown
+    assert shown and all(render.e(x) in sec for x in shown)
+    assert not any(render.e(x) in sec for x in hidden)
+    assert "Limites" not in sec
+
+
+def test_the_body_return_table_has_one_row_per_evaluated_position_and_no_total(view, built_demo):
+    sec = built_demo.split("<h2>Retorno passado contra o CDI</h2>")[1].split("</section>")[0]
+    first = sec.split("<table")[1].split("</table>")[0]
+    assert re.findall(r"<th[^>]*>([^<]*)</th>", first) == ["Posição", "Retorno líquido em 12 meses", "CDI nas mesmas datas", "Líquido menos CDI"]
+    evaluated = [ln for ln in view["returns"]["lines"] if ln["windows"][0]["status"] == "avaliado"]
+    assert first.count("<tr>") - 1 == len(evaluated) and "retroativa" in sec and "6 meses" not in first
+
+
+def test_the_contents_list_ends_with_the_annex(built_demo):
+    toc = built_demo.split('<p class="toc">')[1].split("</p>")[0]
+    assert toc.rstrip().endswith("Anexo: evidência linha a linha e metodologia</a>")
+    assert 'href="#apendice"' in toc and 'id="apendice"' in built_demo

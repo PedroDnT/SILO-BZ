@@ -26,7 +26,7 @@ The Redator sees the masked JSON only: `assert_masked` refuses the call when any
 
 ## The placeholder rule
 
-A placeholder is `{{path}}`: dot-separated keys with `[i]` list indexes into the engine JSON, for example `{{fees.by_line[3].estimated_pct_year}}`. A sentence with a literal digit outside a placeholder is removed. A placeholder pointing at a missing key or a null is removed with its sentence. The renderer prints the value by the last key of its path (the table lives in `values.py`):
+A placeholder is `{{path}}`: dot-separated keys with `[i]` list indexes into the engine JSON, for example `{{fees.by_line[3].estimated_pct_year}}`. A sentence with a literal digit outside a placeholder is removed. A placeholder pointing at a missing key or a null is removed with its sentence. The renderer prints the value by the last key of its path (the table lives in `values.py` as `UNIT_RULES`, the one place a unit is decided; `format_as` prints a value in a unit):
 
 | Key | Unit in the engine JSON | Printed as |
 | --- | --- | --- |
@@ -49,7 +49,7 @@ Deterministic, sentence by sentence:
 1. every placeholder resolves to an existing path with a non-null scalar;
 2. a sentence with a literal digit outside a placeholder is removed;
 3. every citation is an `id` of the engine's `provenance`, and a source named in the text (CVM, BCB, B3, FNET, ANBIMA, IBGE) is one the provenance carries;
-4. an extreme value stays only when the engine carries a second path confirming it, else the sentence is removed with a note. Thresholds (`revisor.py`): a fee above 5% a.a., an exposure above 50% of the portfolio, a delinquency change above R$ 100 milhões;
+4. an extreme value stays only when the engine carries a second path confirming it, else the sentence is removed with a note. Thresholds (`revisor.py`): a fee above 5% a.a., an exposure above 50% of the portfolio, a delinquency change above R$ 100 milhões. Each applies only to a figure whose unit, by `values.unit_of` (the table above, the one the renderer prints with), is the threshold's: percent for a fee or an exposure, reais for a delinquency change (`revisor.EXTREME_UNITS`; `tests/test_portfolio_report_revisor_units.py` pins the two agreeing);
 5. unusual movement (`movement`, engine schema 1.3): the text may cite the "forte" level (the funds not evaluated are a gap, listed by the fixed section since 1.7); a sentence that cites the table or puts "atenção" in a sentence about movement is removed, because "atenção" is a table-only level. Movement paths are exempt from the exposure rule.
 
 6. main risks (`risks`, engine schema 1.8): a sentence that cites a row with `text_allowed` false (its severity set only by the movement section's attention level) is removed, and so is one that cites the `movimento_anormal` row's `severity_label`, since "atenção" there is the table-only movement level. The fee coverage (`coverage_*_fund_value_pct`, `fund_value_*_pct`) is a share of the value held in funds, not a fee rate or an exposure, so rule 4 does not apply to it.
@@ -92,7 +92,7 @@ The Redator's and the Revisor's replies are Pydantic v2 models (`FindingsOutput`
 
 | Provider | Model | Key | Notes |
 | --- | --- | --- | --- |
-| `openai` (current, owner's choice 2026-10-04) | `SILO_LLM_MODEL`, default `gpt-5.1` (gpt-6-luna until 2026-10-04: the key gets 403 `model_not_found` on every gpt-6 model; gpt-5.1 is deprecated, shutdown 2027-04-01) | `OPENAI_API_KEY` | Responses API with structured output; reasoning effort `SILO_LLM_EFFORT`, default `medium` (`off` sends none); `store=False`; no hosted tools (web or file search are reserved for the later Investigator) |
+| `openai` (current, owner's choice 2026-10-04) | `SILO_LLM_MODEL`, default `gpt-5.1` (gpt-6-luna until 2026-10-04: the key gets 403 `model_not_found` on every gpt-6 model; gpt-5.1 is deprecated, shutdown 2027-04-01) | `OPENAI_API_KEY` | Responses API with structured output; reasoning effort `SILO_LLM_EFFORT`, default `medium` (`off` sends none), overridable per role by `SILO_LLM_EFFORT_REDATOR` and `SILO_LLM_EFFORT_REVISOR`; `store=False`; no hosted tools (web or file search are reserved for the later Investigator) |
 | `anthropic` | `SILO_LLM_MODEL`, default `claude-opus-5-5` | `ANTHROPIC_API_KEY` | Messages API with structured output; `SILO_LLM_EFFORT`, `SILO_LLM_FALLBACKS` |
 | `fake` | none | none | Deterministic, for tests and offline runs |
 

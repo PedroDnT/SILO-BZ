@@ -85,21 +85,15 @@ jobs:
         uses: actions/cache@v5
         with:
           path: .pytest_cache
-          key: pytest-${{ runner.os }}-${{ hashFiles('requirements.txt', 'tests/**', 'serve/**', 'src/**') }}
+          key: pytest-${{ runner.os }}-${{ hashFiles('requirements.txt', 'requirements-dev.txt', 'tests/**', 'serve/**', 'src/**') }}
           restore-keys: |
             pytest-${{ runner.os }}-
 
+      # requirements-dev.txt = requirements.txt + what only the tests import
+      # (pydantic, openai, openai-agents). One file, the same one AGENTS.md
+      # tells a contributor to install, so a fresh venv collects every test.
       - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Install research evaluation test dependency
-        run: pip install "openai-agents==0.22.3"
-
-      # The report layer (src/portfolio/report/) imports pydantic and, for SILO_LLM_PROVIDER=openai,
-      # the openai SDK. Their pins live in requirements-report.txt (requirements.txt is the daily
-      # ingest's and does not carry them); only those two lines are installed, not WeasyPrint.
-      - name: Install report test dependencies (openai, pydantic)
-        run: pip install $(grep -E '^(openai|pydantic)==' requirements-report.txt)
+        run: pip install -r requirements-dev.txt
 
       - name: Run tests
         run: python -m pytest tests/ -q --tb=short

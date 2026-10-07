@@ -19,8 +19,8 @@ objects the SQL grants.
 the two agree by construction the moment it is re-run. These tests are what
 fails in CI when somebody edits the SQL and does not.
 
-The parse is regex-based and comment-stripped, matching the house style already
-used by `tests/test_api_contract_sql.py`.
+The parse is `serve/endpoint_manifest.py` (regex-based and comment-stripped),
+the one the other contract tests share.
 """
 
 from __future__ import annotations
@@ -31,74 +31,20 @@ from pathlib import Path
 
 import pytest
 
+from serve.catalog import LIMITS
+from serve.endpoint_manifest import granted_functions, granted_views, manifest
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC_PATH = ROOT / "openapi.json"
 ANALYTICAL = ROOT / "src" / "store" / "analytical"
 
-# Every analytical file that grants something in schema `api`. 19 is the
-# contract proper; 20 and 21 are the B3 BDI views added later — and 20/21 are
-# exactly the files whose grants outran the docs, so a test that only read 19
-# would have missed the incident it exists to prevent. Glob rather than list,
-# so a 22_*.sql is covered the day it lands.
-SQL_FILES = sorted(ANALYTICAL.glob("[0-9][0-9]_*.sql"))
-
-# The two tiers that make an object PUBLIC. `silo_api` is the serve/ role and
-# `service_role` bypasses the boundary; neither publishes anything, so a grant
-# to those alone is not a documented endpoint.
-PUBLIC_ROLES = ("anon", "authenticated")
-
-
-def _strip_comments(sql: str) -> str:
-    """Drop `--` line comments and /* */ blocks so prose never matches."""
-    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
-    return re.sub(r"--[^\n]*", " ", sql)
-
-
-def _grantee_list_is_public(grantees: str) -> bool:
-    names = {g.strip().strip('"').lower() for g in grantees.split(",")}
-    return bool(names & set(PUBLIC_ROLES))
-
-
-_GRANT_SELECT = re.compile(
-    r"\bGRANT\s+SELECT\s+ON\s+(?P<objects>.+?)\s+TO\s+(?P<grantees>[^;]+);",
-    re.IGNORECASE | re.DOTALL,
-)
-
-_GRANT_EXECUTE = re.compile(
-    r"\bGRANT\s+EXECUTE\s+ON\s+FUNCTION\s+(?P<objects>.+?)\s+TO\s+(?P<grantees>[^;]+);",
-    re.IGNORECASE | re.DOTALL,
-)
-
-_API_RELATION = re.compile(r"\bapi\.(?P<name>[a-z_][a-z0-9_]*)\b", re.IGNORECASE)
-_API_FUNCTION = re.compile(r"\bapi\.(?P<name>[a-z_][a-z0-9_]*)\s*\(", re.IGNORECASE)
-
-
-def granted_views() -> set[str]:
-    found: set[str] = set()
-    for path in SQL_FILES:
-        sql = _strip_comments(path.read_text(encoding="utf-8"))
-        for m in _GRANT_SELECT.finditer(sql):
-            if not _grantee_list_is_public(m.group("grantees")):
-                continue
-            objects = m.group("objects")
-            # `GRANT SELECT ON FUNCTION` is not a thing; a SELECT grant naming
-            # a parenthesised object would be a table function, which schema
-            # api does not use. Take the bare relation names.
-            for rel in _API_RELATION.finditer(objects):
-                found.add(rel.group("name").lower())
-    return found
-
-
-def granted_functions() -> set[str]:
-    found: set[str] = set()
-    for path in SQL_FILES:
-        sql = _strip_comments(path.read_text(encoding="utf-8"))
-        for m in _GRANT_EXECUTE.finditer(sql):
-            if not _grantee_list_is_public(m.group("grantees")):
-                continue
-            for fn in _API_FUNCTION.finditer(m.group("objects")):
-                found.add(fn.group("name").lower())
-    return found
+# Every analytical file that grants something in schema `api` is read by
+# serve/endpoint_manifest.py: 19 is the contract proper; 20 and 21 are the B3
+# BDI views added later — and 20/21 are exactly the files whose grants outran
+# the docs, so a test that only read 19 would have missed the incident it
+# exists to prevent. The manifest globs rather than lists, so a 22_*.sql is
+# covered the day it lands, and counts a grant to `anon` or `authenticated`
+# only (`silo_api` and `service_role` publish nothing).
 
 
 @pytest.fixture(scope="module")
@@ -170,19 +116,7 @@ def test_no_spec_function_has_vanished_from_sql(spec_functions):
 
 def _sql_function_signatures() -> dict[str, list[str]]:
     """Argument NAMES per api function, read off CREATE FUNCTION in the SQL."""
-    sigs: dict[str, list[str]] = {}
-    pattern = re.compile(
-        r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+api\.(?P<name>[a-z_][a-z0-9_]*)\s*"
-        r"\((?P<args>.*?)\)\s*\n\s*RETURNS",
-        re.IGNORECASE | re.DOTALL,
-    )
-    for path in SQL_FILES:
-        sql = _strip_comments(path.read_text(encoding="utf-8"))
-        for m in pattern.finditer(sql):
-            args = m.group("args")
-            names = re.findall(r"(?:^|,)\s*(p_[a-z0-9_]+)\s", args, re.IGNORECASE)
-            sigs[m.group("name").lower()] = [n.lower() for n in names]
-    return sigs
+    return {name: list(e.params) for name, e in manifest().items() if e.kind == "rpc"}
 
 
 def test_spec_request_bodies_match_the_sql_signatures(spec, spec_functions):
@@ -210,75 +144,10 @@ def test_spec_request_bodies_match_the_sql_signatures(spec, spec_functions):
 # actually get hurt.
 # ---------------------------------------------------------------------------
 
-# Read off serve/catalog.py LIMITS["page"], the authority for these numbers.
-REFUSING_FUNCTIONS = {
-    "panel",
-    "quote_history",
-    "fund_nav",
-    "option_history",
-    "termo_history",
-    "financials",
-    "financial_statement_history",
-    "company_financials",
-    "income_statements",
-    "balance_sheets",
-    "cash_flow_statements",
-    "anbima_classes",
-    "fii_property_history",
-    "focus_expectations",
-    # v31: the forensic screens (23_api_screens.sql) — raise-only.
-    "screen_zombie_growth",
-    "screen_captive_vehicles",
-    "screen_evergreen_aging",
-    "screen_overdue_securit",
-    "screen_dormant_funds",
-    "screen_dormant_trend",
-    "screen_delinquency_drivers",
-    # v33: the FNET register (24_api_fnet.sql) — raise-only.
-    "fund_documents",
-    "fund_restatements",
-    # v40: what a restatement changed (24_api_fnet.sql).
-    "fund_restatement_diff",
-    # v34: the FIDC concentration trio stopped trimming at a tier ceiling.
-    "fidc_cedentes",
-    "fidc_sacados",
-    "fidc_portfolio",
-    # v37: the filing-behaviour screens (25_api_filing_screens.sql).
-    "screen_restatements",
-    "screen_late_filers",
-    "screen_silent_filers",
-    # v38: company events, macro series, PTAX (26_api_events_macro.sql).
-    "company_events",
-    "macro_series",
-    "ptax",
-    # v41: the holdings pair stopped trimming at a tier ceiling.
-    "fund_holdings",
-    "fund_debentures",
-    # v42: DI1 futures and B3 reference curves (27_api_rates.sql).
-    "future_curve",
-    "future_series",
-    "curve",
-    "curve_history",
-    # v43: the research universe (28_api_research.sql).
-    "research_universe",
-    # v51: the portfolio-diagnosis reads (31_api_portfolio.sql).
-    "portfolio_resolve",
-    "portfolio_fees",
-    "portfolio_lookthrough",
-    # v54: the movement of a fund against its class (31_api_portfolio.sql).
-    "portfolio_movement",
-    # v62: statement codes and fund terms (31_api_portfolio.sql).
-    "portfolio_instruments",
-    "portfolio_fund_terms",
-    "portfolio_fee_peers",
-    # v65: B3's FORWARD segment (32_api_trade_consolidated.sql). Pages.
-    "trade_consolidated_history",
-    # v66: the class return distribution (31_api_portfolio.sql).
-    "class_return_distribution",
-    # v67: the market equivalent of a class (31_api_portfolio.sql).
-    "portfolio_equivalents",
-}
-PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav", "trade_consolidated_history"}
+# Read off serve/catalog.py LIMITS["page"], the authority for these numbers
+# (tests/test_endpoint_manifest.py pins it against the SQL).
+REFUSING_FUNCTIONS = set(LIMITS["page"]["all"])
+PAGED_FUNCTIONS = set(LIMITS["page"]["functions"]["paged"])
 
 
 def test_fidc_concentration_is_no_longer_described_as_silently_clamped(spec):

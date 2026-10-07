@@ -16,8 +16,10 @@ The hooks in `.claude/settings.json`:
 
 - **PostToolUse on Write and Edit** (`.claude/hooks/post-edit.sh`) runs
   `py_compile` on every edited `.py` file, and the offline pytest suite when the
-  file is under `src/`, `serve/`, `tests/`, or `scripts/`. Failures surface; they
-  are not swallowed.
+  file is under `src/`, `serve/`, `tests/`, or `scripts/` (timeout 300 s; the suite
+  takes about 85 s). Claude Code sends absolute paths; the hook makes them relative
+  to the checkout first, since 2026-10-06 (#708; before that the suite never ran).
+  Failures surface; they are not swallowed.
 - **PreToolUse on `git push`** (`.claude/hooks/pre-push-docs.sh`) enforces the
   "Every branch carries its own docs" rule of `AGENTS.md`. It holds a push until
   the branch adds its changelog row as a fragment, `docs/planning/changelog.d/<date>_<branch>.md`
@@ -34,4 +36,6 @@ The hooks in `.claude/settings.json`:
   (`-g` is allowed).
 
 Project skills are in `.claude/skills/` and the scheduled agents' prompts in
-`.claude/agents/`.
+`.claude/agents/`. Root `skills-lock.json` pins the vendored skills that the
+`skills` CLI installs into the gitignored `.agents/`; they are local, not
+project skills, and no symlink to them is tracked (#681).

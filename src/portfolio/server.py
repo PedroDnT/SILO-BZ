@@ -6,10 +6,11 @@
 ``GET /health`` answers 200. ``POST /diagnose`` takes one statement (the
 spreadsheet template ``.xlsx``, or a BTG PDF: the performance report or the
 "Extrato da Conta Investimento", told apart by content) as a multipart field
-``file`` or as the raw request body, runs the engine and the report exactly as
-the two CLIs do (``diagnose`` then ``report.build``) and returns the PDF.
-Several ``file`` parts (one statement per account, 10 MB in all) are read one by
-one and consolidated (``consolidate.py``) before the engine runs.
+``file`` or as the raw request body, runs the diagnosis (``diagnosis.py``: the
+engine and the report, as the two CLIs do) and returns the PDF. This module only
+maps HTTP to and from it. Several ``file`` parts (one statement per account,
+10 MB in all) are read one by one and consolidated (``consolidate.py``) before
+the engine runs.
 
 Access: ``Authorization: Bearer <DEMO_ACCESS_TOKEN>``. Without the variable set
 every ``/diagnose`` is refused with 503; a missing or wrong token gets 401.
@@ -59,11 +60,10 @@ from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from src.portfolio.client import McpClient, PostgrestClient, SiloClient
 from src.portfolio.common import SiloUnavailable
-from src.portfolio import trace
-from src.portfolio.engine import SCHEMA_VERSION, default_params, dumps, run_engine
-from src.portfolio.report import adapt, build, llm, redator
+from src.portfolio import diagnosis, trace
+from src.portfolio.engine import SCHEMA_VERSION
+from src.portfolio.report import llm
 from src.portfolio.report.render import html_to_pdf
-from src.portfolio.statement import Statement, read_statement
 
 log = logging.getLogger("silo.portfolio.server")
 
@@ -102,21 +102,11 @@ def _git_sha() -> str | None:
     return raw if _GIT_SHA_RE.fullmatch(raw) else None
 
 
-def trace_summary(engine: dict) -> dict:
-    """The few engine fields the trace's ``engine.run`` span reads (statuses, reason codes, counts)."""
-    stmt = engine.get("statement") or {}
-    return {
-        "section_status": engine.get("section_status") or {},
-        "identification": {"counts": (engine.get("identification") or {}).get("counts") or {}},
-        "statement": {"n_lines": stmt.get("n_lines"), "source_format": stmt.get("source_format")},
-        "engine": {k: (engine.get("engine") or {}).get(k) for k in ("version", "client")},
-    }
-
-
 def trace_bundle(otlp: dict, rec: "trace.RunRecord") -> bytes:
-    """What ``GET /trace/<id>`` answers: the OTLP/JSON trace and the masked engine JSON (base64, keyed by
-    ``artifacts/<sha256>.json``). The PDF is not in it: the Worker already holds the answer it forwarded."""
-    arts = trace.artifact_objects(rec.engine_json, None)
+    """What ``GET /trace/<id>`` answers: the OTLP/JSON trace, the masked engine JSON and the report's HTML (base64,
+    keyed by ``artifacts/<sha256>.json`` and ``.html``). The PDF is not in it: the Worker already holds the answer
+    it forwarded."""
+    arts = trace.artifact_objects(rec.engine_json, None, rec.html)
     return json.dumps({
         "trace_id": trace.trace_id_of(otlp),
         "trace": otlp,
@@ -207,20 +197,6 @@ def _sniff(data: bytes) -> str | None:
     return None
 
 
-def _read(data: bytes, fmt: str, workdir: Path) -> Statement:
-    if fmt == "pdf":
-        from src.portfolio.statement_pdf_extrato import read_any_pdf_bytes
-
-        stmt, _diag, _layout = read_any_pdf_bytes(data)
-        return stmt
-    path = workdir / "extrato.xlsx"
-    path.write_bytes(data)
-    try:
-        return read_statement(path)
-    finally:
-        path.unlink(missing_ok=True)
-
-
 def _authorized() -> None:
     expected = os.environ.get(TOKEN_ENV) or ""
     if not expected:
@@ -273,7 +249,8 @@ def default_investigator(meter: "llm.CostMeter | None" = None):
 
 
 def create_app(client_factory: Callable[[], SiloClient] = default_client,
-               investigator_factory: Callable[..., Any] = default_investigator) -> Flask:
+               investigator_factory: Callable[..., Any] = default_investigator,
+               pdf_renderer: Callable[[str, Path], Path] = html_to_pdf) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     app.logger.disabled = True  # Flask's own handler would log tracebacks; this module logs instead
@@ -327,16 +304,16 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client,
     @app.post("/diagnose")
     def diagnose():
         t0 = time.monotonic()
+        # rec.stage is the step running: auth, upload, read, then diagnosis.diagnose's engine, report and pdf.
         rec = trace.RunRecord(start_ns=time.time_ns(), end_ns=0, status=500, stage="auth",
                               engine_rev=rev, schema_version=SCHEMA_VERSION, git_sha=_git_sha())
         size = 0
         fmt = "-"
-        stage = "auth"
 
         def done(resp: Response, status: int, exc_type: str | None = None):
-            rec.status, rec.stage, rec.exc_type = status, stage, exc_type
+            rec.status, rec.exc_type = status, exc_type
             rec.in_bytes, rec.formats = size, fmt
-            if stage == "auth":
+            if rec.stage == "auth":
                 # Refused before the upload was read: no trace, so an unauthenticated
                 # client cannot fill the store (the Worker never forwards these anyway).
                 return resp, status
@@ -344,7 +321,7 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client,
 
         try:
             _authorized()
-            stage = "upload"
+            rec.stage = "upload"
             # curl --data-binary defaults to form-urlencoded: do not parse/consume raw uploads.
             form = request.form if request.mimetype == "multipart/form-data" else {}
             output_format = form.get("output_format", "pdf")
@@ -353,7 +330,6 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client,
             constraints = None
             if form.get("client_constraints"):
                 try:
-                    from src.portfolio.client_fit import validate_input
                     constraints = json.loads(form["client_constraints"])
                     # Date validation needs the statement date and occurs after the reader.
                     if not isinstance(constraints, dict):
@@ -369,70 +345,38 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client,
                 raise _Refusal(415)
             with tempfile.TemporaryDirectory(prefix="diag-") as tmp:
                 work = Path(tmp)
-                stage = "read"
+                rec.stage = "read"
                 try:
-                    stmts = [_read(d, f, work) for d, f in zip(parts, fmts)]
-                    if len(stmts) == 1:
-                        stmt = stmts[0]
-                    else:
-                        from src.portfolio.consolidate import consolidate
-
-                        stmt = consolidate(stmts).statement
-                except Exception as exc:  # noqa: BLE001 - every reader failure is one answer; the type alone is logged
-                    log.warning("read failed: %s", type(exc).__name__)
-                    raise _Refusal(422, type(exc).__name__) from None
+                    stmt = diagnosis.read_uploads(list(zip(parts, fmts)), work)
+                except diagnosis.UnreadableStatement as exc:
+                    log.warning("read failed: %s", exc.exc_type)
+                    raise _Refusal(422, exc.exc_type) from None
                 del parts
-                stage = "engine"
-                t1 = time.monotonic()
-                rec.engine_start_ns = time.time_ns()
-                meter = llm.CostMeter()  # one per report: the investigator books first, the Redator and Revisor after
-                investigator = investigator_factory(meter)
-                extra = {"investigator": investigator} if investigator is not None else {}
-                from src.portfolio.client_fit import validate_input
                 try:
-                    constraints = validate_input(constraints, stmt.position_date)
-                except (ValueError, TypeError):
+                    result = diagnosis.diagnose(
+                        stmt, client_factory, constraints=constraints, investigator_factory=investigator_factory,
+                        pdf_renderer=pdf_renderer if output_format == "pdf" else None, workdir=work, record=rec,
+                    )
+                except diagnosis.InvalidConstraints:
                     raise _Refusal(400) from None
-                if constraints is not None:
-                    extra["client_constraints"] = constraints
-                doc = run_engine(stmt, client_factory(), default_params(stmt.position_date), **extra)
-                pending = getattr(getattr(getattr(investigator, "deps", None), "cache", None), "pending", None)
-                rec.documents = pending() if callable(pending) else {}  # public documents read once (#605, Q35)
-                rec.investigator_calls = [dict(c) for c in meter.calls]  # only the investigator has booked so far
-                engine_text = dumps(doc)  # the masked engine JSON: the trace's artifact, hashed once
-                rec.engine_json = engine_text.encode("utf-8")
-                engine = json.loads(engine_text)  # the CLI's round trip, so the report sees the same JSON
-                rec.engine_doc = trace_summary(engine)
-                rec.engine_end_ns = time.time_ns()
-                if adapt.is_engine_output(engine):
-                    engine = adapt.to_view(engine)
-                t2 = time.monotonic()
-                stage = "report"
-                rec.report_start_ns = time.time_ns()
-                try:
-                    html_text, narrative = build.build(engine, meter=meter)
-                except (llm.LLMError, redator.UnmaskedInputError) as exc:
-                    log.warning("report failed: %s", type(exc).__name__)
-                    raise _Refusal(502, type(exc).__name__) from None
-                rec.narrative = narrative
-                rec.report_end_ns = time.time_ns()
-                if output_format == "html":
-                    return done(Response(html_text, mimetype="text/html", headers={
-                        "Cache-Control": "no-store",
-                        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'",
-                        "X-Silo-Narrative": str(narrative.status),
-                        "X-Silo-Cost-Usd": f"{narrative.cost_usd:.4f}",
-                        **narrative_headers(narrative),
-                    }), 200)
-                stage = "pdf"
-                pdf_path = html_to_pdf(html_text, work / "diagnostico.pdf")
-                pdf = pdf_path.read_bytes()
-                rec.pdf = pdf
-                t3 = time.monotonic()
+                except diagnosis.ReportFailed as exc:
+                    log.warning("report failed: %s", exc.exc_type)
+                    raise _Refusal(502, exc.exc_type) from None
+            narrative = result.narrative
+            if output_format == "html":
+                return done(Response(result.html, mimetype="text/html", headers={
+                    "Cache-Control": "no-store",
+                    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'",
+                    "X-Silo-Narrative": str(narrative.status),
+                    "X-Silo-Cost-Usd": f"{narrative.cost_usd:.4f}",
+                    **narrative_headers(narrative),
+                }), 200)
+            pdf = result.pdf
+            total_s = time.monotonic() - t0
             log.info(
                 "diagnose 200 format=%s files=%d in_bytes=%d out_bytes=%d engine_s=%.1f report_s=%.1f total_s=%.1f "
                 "narrative=%s provider=%s cost_usd=%.4f",
-                fmt, len(fmts), size, len(pdf), t2 - t1, t3 - t2, t3 - t0,
+                fmt, len(fmts), size, len(pdf), result.engine_s, result.report_s, total_s,
                 narrative.status, narrative.provider, narrative.cost_usd,
             )
             return done(Response(
@@ -445,24 +389,24 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client,
                     "X-Silo-Narrative": str(narrative.status),
                     "X-Silo-Provider": str(narrative.provider),
                     "X-Silo-Cost-Usd": f"{narrative.cost_usd:.4f}",
-                    "X-Silo-Seconds": f"{t3 - t0:.1f}",
+                    "X-Silo-Seconds": f"{total_s:.1f}",
                     **narrative_headers(narrative),
                 },
             ), 200)
         except _Refusal as r:
-            log.info("diagnose %d stage=%s format=%s in_bytes=%d total_s=%.1f", r.status, stage, fmt, size, time.monotonic() - t0)
-            return done(_error(r.status, stage)[0], r.status, r.exc_type)
+            log.info("diagnose %d stage=%s format=%s in_bytes=%d total_s=%.1f", r.status, rec.stage, fmt, size, time.monotonic() - t0)
+            return done(_error(r.status, rec.stage)[0], r.status, r.exc_type)
         except SiloUnavailable:
             # Identification could not finish because SILO did not answer: no PDF, the caller retries later.
             log.warning("diagnose 503 stage=%s format=%s in_bytes=%d error=%s total_s=%.1f",
-                        stage, fmt, size, SiloUnavailable.code, time.monotonic() - t0)
-            return done(_unavailable(stage)[0], 503, SiloUnavailable.__name__)
+                        rec.stage, fmt, size, SiloUnavailable.code, time.monotonic() - t0)
+            return done(_unavailable(rec.stage)[0], 503, SiloUnavailable.__name__)
         except RequestEntityTooLarge:
-            log.info("diagnose 413 stage=%s total_s=%.1f", stage, time.monotonic() - t0)
-            return done(_error(413, stage)[0], 413)
+            log.info("diagnose 413 stage=%s total_s=%.1f", rec.stage, time.monotonic() - t0)
+            return done(_error(413, rec.stage)[0], 413)
         except Exception as exc:  # noqa: BLE001 - no traceback in logs or answers: messages can carry amounts
-            log.error("diagnose 500 stage=%s format=%s in_bytes=%d error=%s", stage, fmt, size, type(exc).__name__)
-            return done(_error(500, stage, exc)[0], 500, type(exc).__name__)
+            log.error("diagnose 500 stage=%s format=%s in_bytes=%d error=%s", rec.stage, fmt, size, type(exc).__name__)
+            return done(_error(500, rec.stage, exc)[0], 500, type(exc).__name__)
 
     @app.errorhandler(HTTPException)
     def http_error(exc: HTTPException):
