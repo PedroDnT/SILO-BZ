@@ -510,37 +510,33 @@ Implemented on `demo/brief-client-fit`: brief, expandable appendix, HTML upload 
 
 ## 18. Debenture secondary-market capture (#662)
 
-**Initial implementation, not deployed (2026-10-07, UTC-3).** Following the
-owner's request to begin building after the audit, B3 `ConsolidatedRecords`
-capture now has a glossary-grounded parser, raw retrieval evidence and knowledge
-time, a long DEB fact, incomplete-range refusal, audited writes, bounded backfill
-and an opt-in daily integration (migration 74). Real exports for 2026-10-06 and
-2025-12-11 passed with zero dropped rows: respectively 1,467/1,349 DEB groups and
-775/821 distinct codes. Full files remain local/ignored, with no production rows;
-the fixture is synthetic. [Evidence, hashes and commands](../reference/research/debenture-secondary-market-capture.md).
+**Bounded production capture validated; experiment partially ready (2026-10-07,
+UTC-3).** PR #734 merged as `2c1ef8c38989820f5678bd4df193e420d24156ac`.
+Following specific owner approvals, migration 74 and captures for 06/10 and
+30/09–06/10 landed in production. Read-only recheck: both snapshots complete,
+zero drops; the five-session capture contains 59,670 facts and 1,181 DEB codes.
+COTAHIST 06/10 was recovered once: 17,453 rows, including 1,533 cash rows.
+Do not repeat that recovery or run an annual backfill. Permanent credit capture
+remains off under the approved rollout scope.
 
-Acceptance remains open: verify continuous historical coverage and legacy depth,
-budget storage (the recent one-day raw file is 20.7 MB), then obtain owner approval for production migration
-and enablement. Daily opt-in remains off; neither #662 nor research #628 is closed.
+The [executable audit and experiment gates](../reference/research/debenture-equity-experiment.md)
+now reproduce existing-data coverage and name candidates, including commercial
+names: 804 unique CNPJ candidates, two ambiguous, 375 unmatched. Of the unique
+candidates, 365 bond codes reach equities with positive cash closes in this
+window, representing 82 candidate CNPJs. These are not verified issuance links.
+The [read-only runner](../../research_examples/debenture_equity/README.md) never
+loads data or certifies strict historical PIT from retrieval dates.
 
-Later dependencies remain REUNE traded rates/access, dated issuer/ultimate-obligor
-links (#660), compatible rate/benchmark conventions (#661), empirical issuer
-coverage and the past-only equity residual experiment. Holdings marks and this
-initial capture do not establish readiness for that experiment.
+Open acceptance, in order: documentary dated identity evidence (#660); deeper
+coverage/PIT and storage allowance; separately approved bounded history; adjusted
+returns/benchmark acceptance; past-only residual-return experiment. REUNE traded
+rates/access and benchmark conventions (#661) remain separate dependencies under
+ADR 0004. Neither #662 nor #628 is closed by a five-session capture.
 
-
-Follow-up 2026-10-07 (UTC-3): a seven-calendar-day export delivered five dates,
-6,630 DEB groups and 59,670 facts, with zero drops; local storage and repeat-export
-latency are [measured](../reference/research/debenture-secondary-market-validation.md).
-Bounded smaller-slice recovery is implemented for export failures only. Production
-enablement, storage budget and full historical continuity remain open.
-
-Daily-run blocker diagnosed on 2026-10-07 (UTC-3): run 37579395989 failed while
-replaying `DROP INDEX uq_fi_cda_acoes`, so COTAHIST never ran. Catalog guards
-now preserve valid matching indexes and skip absent constraint drops; real
-changes still run. Local reader-lock, key-widening and NULL-uniqueness tests
-passed. [Recovery plan](../reference/research/ingest-recovery-2026-10-07.md).
-Production application and the data recovery are pending owner approval.
+Historical [local capture/storage measurements](../reference/research/debenture-secondary-market-validation.md)
+and [schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md)
+remain timestamped evidence of their earlier state. The production approvals and
+recoveries above supersede their then-pending rollout status.
 
 
 ## 19. COTAHIST preserved fields and code reference (#720)

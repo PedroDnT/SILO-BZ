@@ -41,12 +41,10 @@ Brief and client constraints (#607, #614): [contract](../reference/portfolio/bri
 
 Current closure sequence: [open issue resolution](OPEN_ISSUE_RESOLUTION.md), #658 smoke fix → #607 → #517 real-file evidence → #510 readiness; #628 research separately.
 
-Debenture capture #662 has an initial, opt-in implementation, separate from #628's
-research acceptance. [OPEN_ITEMS item 18](OPEN_ITEMS.md#18-debenture-secondary-market-capture-662)
-tracks the two successful real-CSV checks, remaining coverage/rollout and bond→equity dependencies.
-
-Debenture [window/storage validation](../reference/research/debenture-secondary-market-validation.md)
-records the bounded sample and the smaller-slice recovery follow-up.
-
-[Daily schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md):
-local fix verified; production apply and COTAHIST recovery pending approval.
+Debenture capture #662 has an opt-in implementation and two approved, complete
+production snapshots. Permanent capture remains off. COTAHIST 06/10 was recovered.
+[OPEN_ITEMS item 18](OPEN_ITEMS.md#18-debenture-secondary-market-capture-662) tracks
+current status; earlier [window/storage validation](../reference/research/debenture-secondary-market-validation.md)
+and [schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md) remain
+historical measurements. The [executable readiness audit and experiment gates](../reference/research/debenture-equity-experiment.md)
+separate name candidates from confirmed links and retrieval time from historical PIT.
