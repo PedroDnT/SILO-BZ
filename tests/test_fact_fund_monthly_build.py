@@ -46,7 +46,7 @@ def test_apply_analytical_sends_the_same_tcp_keepalives_as_ingest():
     assert "keepalives_idle=30" in APPLY_SH
     assert "keepalives_interval=10" in APPLY_SH
     assert "keepalives_count=3" in APPLY_SH
-    assert pg._KEEPALIVES == dict(
+    assert pg.KEEPALIVES == dict(
         keepalives=1,
         keepalives_idle=30,
         keepalives_interval=10,
