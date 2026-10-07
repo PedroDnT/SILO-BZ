@@ -265,3 +265,7 @@ File-level metadata, rejected-row reconciliation and historical source vintages
 remain outside this implementation. Unknown current-code descriptions, unsupported
 market/class combinations and additional annual ZIP reconciliations also remain
 explicit limitations; no extra COTAHIST collection is introduced.
+
+## Code interpretation correction (2026-10-07, catalog v70)
+
+The census above records the scope of the original dated-PDF audit. Subsequent source-file and B3 block-documentation research identifies 13 as FIAGRO, 34 as non-sponsored BDRs, 35 as sponsored BDRs and associated instruments, 36 as ETF BDRs, 92/M as Midpoint and 93/Q as BBT. Market 021 is block trading, not odd lots; typed views now return lot=block. These are supplemental interpretations with source URLs in the catalog, not replacements for the 2020 labels or historical validity intervals. INDOPC 0 remains a cross-layout BRL interpretation.

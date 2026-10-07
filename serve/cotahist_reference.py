@@ -63,6 +63,35 @@ TPMERC = {
 INDOPC = {"1": "USD correction", "2": "TJLP correction", "8": "IGP-M correction", "9": "URV correction"}
 
 
+
+# Supplemental interpretations are deliberately separate from the 2020 labels.
+# These observations do not establish historical validity intervals.
+BLOCKS_URL = "https://clientes.b3.com.br/c/document_library/get_file?groupId=20119&uuid=88b5af46-5e95-a026-9d92-bb5e598086c0"
+TITLES_URL = "https://bvmf.bmfbovespa.com.br/cias-listadas/Titulos-Negociaveis/download/Titulos_Negociaveis.PDF"
+DAY_URL = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D05102026.ZIP"
+MIDPOINT_DAY_URL = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D20072026.ZIP"
+
+
+def supplemental_interpretations() -> dict:
+    """Return evidence-based interpretations, not official COTAHIST labels."""
+    def entry(description, basis, sources):
+        return {"description": description, "basis": basis, "source_urls": sources,
+                "review_date": "2026-10-07", "valid_from": None, "valid_to": None}
+    observed = "Observed instruments and ESPECI in the source file; not an official code-table label."
+    return {
+        "codbdi": {
+            "13": entry("FIAGRO", observed, [DAY_URL]),
+            "34": entry("Non-sponsored BDRs (DRN)", observed, [DAY_URL]),
+            "35": entry("Sponsored BDRs and associated instruments (DR1/DR2/DR3; also PPLA11 UNT)", observed, [DAY_URL]),
+            "36": entry("ETF BDRs (DRE)", observed, [DAY_URL]),
+            "92": entry("Midpoint Order Book", "Observed 92/021 BTCI11M; B3 documents M as Midpoint.", [MIDPOINT_DAY_URL, BLOCKS_URL]),
+            "93": entry("Book of Block Trade (BBT)", "Observed 93/021 Q-suffixed instruments; B3 documents Q as BBT.", [DAY_URL, BLOCKS_URL]),
+        },
+        "tpmerc": {"021": entry("Block trading", "Observed on Midpoint and BBT instruments; exact official market label unavailable.", [DAY_URL, MIDPOINT_DAY_URL, BLOCKS_URL])},
+        "indopc": {"0": entry("BRL / no correction index indicated", "Cross-layout interpretation: related securities register maps ICOATV=0 to R$; not an explicit INDOPC definition.", [TITLES_URL])},
+    }
+
+
 def code_metadata(family: str, code: str) -> dict:
     """Describe only codes documented in the dated reference; never guess."""
     mapping = {"codbdi": CODBDI, "tpmerc": TPMERC, "indopc": INDOPC}[family]
@@ -79,6 +108,7 @@ def cotahist_reference() -> dict:
         "description_language": "en",
         "description_basis": "Paraphrases of the dated layout; not certified current descriptions or historical validity intervals.",
         "unknown_codes": "Preserve source codes. Missing descriptions stay null; do not reject a row or infer a label.",
+        "supplemental_interpretations": supplemental_interpretations(),
         "coverage": "Dictionary presence does not mean observations exist. Consult coverage() and the dated storage/serving audit.",
         "codbdi": {code: code_metadata("codbdi", code) for code in sorted(set(CODBDI) | set(OBSERVED_OUTSIDE_REFERENCE))},
         "tpmerc": {code: code_metadata("tpmerc", code) for code in sorted(set(TPMERC) | {"021"})},

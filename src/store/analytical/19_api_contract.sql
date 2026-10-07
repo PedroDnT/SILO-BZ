@@ -552,7 +552,7 @@ SELECT
     v.codneg            AS ticker,
     v.trade_date,
     v.codbdi            AS board,
-    CASE v.tpmerc WHEN '010' THEN 'standard' ELSE 'odd' END AS lot,
+    CASE v.tpmerc WHEN '010' THEN 'standard' WHEN '020' THEN 'odd' WHEN '021' THEN 'block' END AS lot,
     v.prazot            AS term_days,
     v.nome_resumido     AS short_name,
     v.especi            AS spec,
@@ -597,7 +597,7 @@ WHERE v.instrument_type = 'equity'
   AND v.tpmerc IN ('010', '020', '021');
 
 COMMENT ON VIEW api.equities IS
-    'Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. share_class (ON|PN|PNA|PNB|PNC|PND) and governance_segment (NM|N1|N2|MA|M2|MB) are parsed from published ESPECI, never from the ticker suffix. Classified from published TPMERC/ESPECI; never inferred.';
+    'Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. share_class (ON|PN|PNA|PNB|PNC|PND) and governance_segment (NM|N1|N2|MA|M2|MB) are parsed from published ESPECI, never from the ticker suffix. Classified from published TPMERC/ESPECI; never inferred.';
 
 ALTER VIEW api.equities SET (security_invoker = false);
 GRANT SELECT ON api.equities TO anon, authenticated;
@@ -607,7 +607,7 @@ SELECT
     v.codneg            AS ticker,
     v.trade_date,
     v.codbdi            AS board,
-    CASE v.tpmerc WHEN '010' THEN 'standard' ELSE 'odd' END AS lot,
+    CASE v.tpmerc WHEN '010' THEN 'standard' WHEN '020' THEN 'odd' WHEN '021' THEN 'block' END AS lot,
     v.prazot            AS term_days,
     v.nome_resumido     AS short_name,
     v.especi            AS spec,
@@ -647,7 +647,7 @@ WHERE v.instrument_type = 'bdr'
   AND v.tpmerc IN ('010', '020', '021');
 
 COMMENT ON VIEW api.bdrs IS
-    'Unadjusted B3 cash quotes for bdr: Brazilian Depositary Receipts (ESPECI DR*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
+    'Unadjusted B3 cash quotes for bdr: Brazilian Depositary Receipts (ESPECI DR*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
 
 ALTER VIEW api.bdrs SET (security_invoker = false);
 GRANT SELECT ON api.bdrs TO anon, authenticated;
@@ -657,7 +657,7 @@ SELECT
     v.codneg            AS ticker,
     v.trade_date,
     v.codbdi            AS board,
-    CASE v.tpmerc WHEN '010' THEN 'standard' ELSE 'odd' END AS lot,
+    CASE v.tpmerc WHEN '010' THEN 'standard' WHEN '020' THEN 'odd' WHEN '021' THEN 'block' END AS lot,
     v.prazot            AS term_days,
     v.nome_resumido     AS short_name,
     v.especi            AS spec,
@@ -697,7 +697,7 @@ WHERE v.instrument_type = 'unit'
   AND v.tpmerc IN ('010', '020', '021');
 
 COMMENT ON VIEW api.units IS
-    'Unadjusted B3 cash quotes for unit: units — bundled share packages (ESPECI UNT*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
+    'Unadjusted B3 cash quotes for unit: units — bundled share packages (ESPECI UNT*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
 
 ALTER VIEW api.units SET (security_invoker = false);
 GRANT SELECT ON api.units TO anon, authenticated;
@@ -707,7 +707,7 @@ SELECT
     v.codneg            AS ticker,
     v.trade_date,
     v.codbdi            AS board,
-    CASE v.tpmerc WHEN '010' THEN 'standard' ELSE 'odd' END AS lot,
+    CASE v.tpmerc WHEN '010' THEN 'standard' WHEN '020' THEN 'odd' WHEN '021' THEN 'block' END AS lot,
     v.prazot            AS term_days,
     v.nome_resumido     AS short_name,
     v.especi            AS spec,
@@ -752,7 +752,7 @@ WHERE v.instrument_type = 'fund_quota'
   AND v.tpmerc IN ('010', '020', '021');
 
 COMMENT ON VIEW api.fund_quotas IS
-    'Unadjusted B3 cash quotes for fund_quota: listed fund quotas (CI*/FIDC* paper). fund_type splits the family from B3''s published CODBDI board code: etf | fii | fidc | fiagro, NULL when the board carries no signal (odd lot) — filter fund_type=eq.etf for ETFs only. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/CODBDI/ESPECI; never inferred.';
+    'Unadjusted B3 cash quotes for fund_quota: listed fund quotas (CI*/FIDC* paper). fund_type splits the family from B3''s published CODBDI board code: etf | fii | fidc | fiagro, NULL when the board carries no signal (odd lot) — filter fund_type=eq.etf for ETFs only. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/CODBDI/ESPECI; never inferred.';
 
 ALTER VIEW api.fund_quotas SET (security_invoker = false);
 GRANT SELECT ON api.fund_quotas TO anon, authenticated;
@@ -762,7 +762,7 @@ SELECT
     v.codneg            AS ticker,
     v.trade_date,
     v.codbdi            AS board,
-    CASE v.tpmerc WHEN '010' THEN 'standard' ELSE 'odd' END AS lot,
+    CASE v.tpmerc WHEN '010' THEN 'standard' WHEN '020' THEN 'odd' WHEN '021' THEN 'block' END AS lot,
     v.prazot            AS term_days,
     v.nome_resumido     AS short_name,
     v.especi            AS spec,
@@ -802,7 +802,7 @@ WHERE v.instrument_type = 'cash_security'
   AND v.tpmerc IN ('010', '020', '021');
 
 COMMENT ON VIEW api.cash_securities IS
-    'Unadjusted B3 cash quotes for cash_security: everything else on the cash board — subscription rights, receipts, and other non-share paper. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
+    'Unadjusted B3 cash quotes for cash_security: everything else on the cash board — subscription rights, receipts, and other non-share paper. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
 
 ALTER VIEW api.cash_securities SET (security_invoker = false);
 GRANT SELECT ON api.cash_securities TO anon, authenticated;
@@ -6226,7 +6226,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 69,
+  "version": 70,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close_adj` (split-, grouping- and bonus-adjusted) for share and unit tickers, `close` for other tickers and `nav` for CNPJs, and quote_history with no p_fields returns ticker, trade_date and close_adj; that is the call to make unless you actually need another measure — name metrics or fields explicitly only when you will use them (p_fields=['close'] for the raw close). A close_adj window SILO cannot adjust is refused with the cause, never served raw. The wide endpoints are the exception and behave the other way round: quote_latest and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -6607,6 +6607,98 @@ SELECT $json${
     "description_language": "en",
     "description_basis": "Paraphrases of the dated layout; not certified current descriptions or historical validity intervals.",
     "unknown_codes": "Preserve source codes. Missing descriptions stay null; do not reject a row or infer a label.",
+    "supplemental_interpretations": {
+      "codbdi": {
+        "13": {
+          "description": "FIAGRO",
+          "basis": "Observed instruments and ESPECI in the source file; not an official code-table label.",
+          "source_urls": [
+            "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D05102026.ZIP"
+          ],
+          "review_date": "2026-10-07",
+          "valid_from": null,
+          "valid_to": null
+        },
+        "34": {
+          "description": "Non-sponsored BDRs (DRN)",
+          "basis": "Observed instruments and ESPECI in the source file; not an official code-table label.",
+          "source_urls": [
+            "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D05102026.ZIP"
+          ],
+          "review_date": "2026-10-07",
+          "valid_from": null,
+          "valid_to": null
+        },
+        "35": {
+          "description": "Sponsored BDRs and associated instruments (DR1/DR2/DR3; also PPLA11 UNT)",
+          "basis": "Observed instruments and ESPECI in the source file; not an official code-table label.",
+          "source_urls": [
+            "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D05102026.ZIP"
+          ],
+          "review_date": "2026-10-07",
+          "valid_from": null,
+          "valid_to": null
+        },
+        "36": {
+          "description": "ETF BDRs (DRE)",
+          "basis": "Observed instruments and ESPECI in the source file; not an official code-table label.",
+          "source_urls": [
+            "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D05102026.ZIP"
+          ],
+          "review_date": "2026-10-07",
+          "valid_from": null,
+          "valid_to": null
+        },
+        "92": {
+          "description": "Midpoint Order Book",
+          "basis": "Observed 92/021 BTCI11M; B3 documents M as Midpoint.",
+          "source_urls": [
+            "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D20072026.ZIP",
+            "https://clientes.b3.com.br/c/document_library/get_file?groupId=20119&uuid=88b5af46-5e95-a026-9d92-bb5e598086c0"
+          ],
+          "review_date": "2026-10-07",
+          "valid_from": null,
+          "valid_to": null
+        },
+        "93": {
+          "description": "Book of Block Trade (BBT)",
+          "basis": "Observed 93/021 Q-suffixed instruments; B3 documents Q as BBT.",
+          "source_urls": [
+            "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D05102026.ZIP",
+            "https://clientes.b3.com.br/c/document_library/get_file?groupId=20119&uuid=88b5af46-5e95-a026-9d92-bb5e598086c0"
+          ],
+          "review_date": "2026-10-07",
+          "valid_from": null,
+          "valid_to": null
+        }
+      },
+      "tpmerc": {
+        "021": {
+          "description": "Block trading",
+          "basis": "Observed on Midpoint and BBT instruments; exact official market label unavailable.",
+          "source_urls": [
+            "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D05102026.ZIP",
+            "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D20072026.ZIP",
+            "https://clientes.b3.com.br/c/document_library/get_file?groupId=20119&uuid=88b5af46-5e95-a026-9d92-bb5e598086c0"
+          ],
+          "review_date": "2026-10-07",
+          "valid_from": null,
+          "valid_to": null
+        }
+      },
+      "indopc": {
+        "0": {
+          "description": "BRL / no correction index indicated",
+          "basis": "Cross-layout interpretation: related securities register maps ICOATV=0 to R$; not an explicit INDOPC definition.",
+          "source_urls": [
+            "https://bvmf.bmfbovespa.com.br/cias-listadas/Titulos-Negociaveis/download/Titulos_Negociaveis.PDF"
+          ],
+          "review_date": "2026-10-07",
+          "valid_from": null,
+          "valid_to": null
+        }
+      }
+    },
     "coverage": "Dictionary presence does not mean observations exist. Consult coverage() and the dated storage/serving audit.",
     "codbdi": {
       "02": {
@@ -7112,7 +7204,7 @@ SELECT $json${
     "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN mapping (an option row's ISIN is its underlying's ISIN), never from the codneg root; it is null when the underlying had no cash print that session. Termo rows still carry no underlying column.",
     "tpmerc 012/013 are option exercise EVENTS served by option_exercises, and 017 auction prints by auctions — neither is a quote series; do not compute returns over them.",
     "fund_quotas rows carry fund_type (etf | fii | fidc | fiagro) from B3's published CODBDI board code, null when the board has no family signal (odd lot). equities rows carry share_class (ON/PN/PNA/PNB/PNC/PND) and governance_segment (NM/N1/N2/MA/M2/MB) parsed from published ESPECI, never from the ticker suffix.",
-    "Each cash instrument type has its own endpoint (equities, bdrs, units, fund_quotas, cash_securities) — the same rows as quotes, split by the type derived from published TPMERC/ESPECI. Their grain adds `lot` (standard = tpmerc 010, odd = 020/021); filter lot=eq.standard for round lots. quotes itself stays standard-lot only.",
+    "Each cash instrument type has its own endpoint (equities, bdrs, units, fund_quotas, cash_securities) — the same rows as quotes, split by the type derived from published TPMERC/ESPECI. Their grain adds `lot` (standard = tpmerc 010, odd = 020, block = 021); filter lot=eq.standard for round lots. quotes itself stays standard-lot only.",
     "Price series stay unified: a codneg has exactly one instrument type, so quote_history works for any cash ticker without knowing its type first."
   ],
   "limits": {

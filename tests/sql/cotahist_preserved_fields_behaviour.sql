@@ -30,6 +30,12 @@ FROM (VALUES
 DO $$
 DECLARE r RECORD; j JSONB; n INT; item TEXT;
 BEGIN
+ SELECT * INTO r FROM api.equities WHERE ticker='ZZZA3X' AND trade_date='2026-01-05';
+ ASSERT r.lot='block' AND r.market='021',r;
+ SELECT * INTO r FROM api.equities WHERE ticker='ZZZA3F' AND trade_date='2026-01-05';
+ ASSERT r.lot='odd',r;
+ SELECT * INTO r FROM api.equities WHERE ticker='ZZZA3' AND trade_date='2026-01-05';
+ ASSERT r.lot='standard',r;
  SELECT * INTO r FROM api.termo_history('ZZZATER','2026-01-05','2026-01-05')
  WHERE board='62' AND term_days='030';
  ASSERT r.contract_price=42.25 AND r.contract_expiry=DATE '2026-03-20',r;

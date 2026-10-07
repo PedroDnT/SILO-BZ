@@ -56,3 +56,20 @@ def test_every_existing_supported_route_can_return_each_variable_source_field():
         if path in ('/rpc/option_chain', '/rpc/option_history', '/rpc/option_exercises', '/rpc/termo_history'):
             aliases['ticker'] = 'codneg'
         assert {aliases.get(field, field) for field in source_fields} <= actual.keys(), path
+
+
+def test_supplemental_interpretations_preserve_reference_and_evidence():
+    ref = cotahist_reference()
+    extra = ref['supplemental_interpretations']
+    assert extra['codbdi']['92']['description'] == 'Midpoint Order Book'
+    assert extra['codbdi']['93']['description'] == 'Book of Block Trade (BBT)'
+    assert extra['tpmerc']['021']['description'] == 'Block trading'
+    assert 'PPLA11' in extra['codbdi']['35']['description']
+    assert 'Cross-layout' in extra['indopc']['0']['basis']
+    for family, entries in extra.items():
+        for code, entry in entries.items():
+            assert ref[family][code]['description'] is None
+            assert entry['source_urls'] and entry['basis']
+            assert entry['valid_from'] is None and entry['valid_to'] is None
+    extra['codbdi']['92']['source_urls'].clear()
+    assert cotahist_reference()['supplemental_interpretations']['codbdi']['92']['source_urls']

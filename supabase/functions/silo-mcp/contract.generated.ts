@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "69";
+export const CONTRACT_VERSION = "70";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -281,7 +281,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "bdrs": {
     "kind": "view",
     "path": "/bdrs",
-    "description": "Unadjusted B3 cash quotes for bdr: Brazilian Depositary Receipts (ESPECI DR*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
+    "description": "Unadjusted B3 cash quotes for bdr: Brazilian Depositary Receipts (ESPECI DR*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
     "columns": [
       "ticker",
       "trade_date",
@@ -477,7 +477,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "cash_securities": {
     "kind": "view",
     "path": "/cash_securities",
-    "description": "Unadjusted B3 cash quotes for cash_security: everything else on the cash board — subscription rights, receipts, and other non-share paper. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
+    "description": "Unadjusted B3 cash quotes for cash_security: everything else on the cash board — subscription rights, receipts, and other non-share paper. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
     "columns": [
       "ticker",
       "trade_date",
@@ -673,7 +673,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "equities": {
     "kind": "view",
     "path": "/equities",
-    "description": "Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. share_class (ON|PN|PNA|PNB|PNC|PND) and governance_segment (NM|N1|N2|MA|M2|MB) are parsed from published ESPECI, never from the ticker suffix. Classified from published TPMERC/ESPECI; never inferred.",
+    "description": "Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. share_class (ON|PN|PNA|PNB|PNC|PND) and governance_segment (NM|N1|N2|MA|M2|MB) are parsed from published ESPECI, never from the ticker suffix. Classified from published TPMERC/ESPECI; never inferred.",
     "columns": [
       "ticker",
       "trade_date",
@@ -879,7 +879,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "fund_quotas": {
     "kind": "view",
     "path": "/fund_quotas",
-    "description": "Unadjusted B3 cash quotes for fund_quota: listed fund quotas (CI*/FIDC* paper). fund_type splits the family from B3's published CODBDI board code: etf | fii | fidc | fiagro, NULL when the board carries no signal (odd lot) — filter fund_type=eq.etf for ETFs only. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/CODBDI/ESPECI; never inferred.",
+    "description": "Unadjusted B3 cash quotes for fund_quota: listed fund quotas (CI*/FIDC* paper). fund_type splits the family from B3's published CODBDI board code: etf | fii | fidc | fiagro, NULL when the board carries no signal (odd lot) — filter fund_type=eq.etf for ETFs only. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/CODBDI/ESPECI; never inferred.",
     "columns": [
       "ticker",
       "trade_date",
@@ -4703,7 +4703,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "units": {
     "kind": "view",
     "path": "/units",
-    "description": "Unadjusted B3 cash quotes for unit: units — bundled share packages (ESPECI UNT*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
+    "description": "Unadjusted B3 cash quotes for unit: units — bundled share packages (ESPECI UNT*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
     "columns": [
       "ticker",
       "trade_date",

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "69",
+    "version": "70",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
     "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Fifty-five set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other fifty ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Three other functions (`search_funds`,\n  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
@@ -623,7 +623,7 @@
       "get": {
         "operationId": "get_bdrs",
         "summary": "bdrs",
-        "description": "Unadjusted B3 cash quotes for bdr: Brazilian Depositary Receipts (ESPECI DR*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
+        "description": "Unadjusted B3 cash quotes for bdr: Brazilian Depositary Receipts (ESPECI DR*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
         "tags": [
           "Quotes"
         ],
@@ -1197,7 +1197,7 @@
       "get": {
         "operationId": "get_cash_securities",
         "summary": "cash_securities",
-        "description": "Unadjusted B3 cash quotes for cash_security: everything else on the cash board — subscription rights, receipts, and other non-share paper. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
+        "description": "Unadjusted B3 cash quotes for cash_security: everything else on the cash board — subscription rights, receipts, and other non-share paper. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
         "tags": [
           "Quotes"
         ],
@@ -1771,7 +1771,7 @@
       "get": {
         "operationId": "get_equities",
         "summary": "equities",
-        "description": "Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. share_class (ON|PN|PNA|PNB|PNC|PND) and governance_segment (NM|N1|N2|MA|M2|MB) are parsed from published ESPECI, never from the ticker suffix. Classified from published TPMERC/ESPECI; never inferred.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
+        "description": "Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. share_class (ON|PN|PNA|PNB|PNC|PND) and governance_segment (NM|N1|N2|MA|M2|MB) are parsed from published ESPECI, never from the ticker suffix. Classified from published TPMERC/ESPECI; never inferred.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
         "tags": [
           "Quotes"
         ],
@@ -2375,7 +2375,7 @@
       "get": {
         "operationId": "get_fund_quotas",
         "summary": "fund_quotas",
-        "description": "Unadjusted B3 cash quotes for fund_quota: listed fund quotas (CI*/FIDC* paper). fund_type splits the family from B3's published CODBDI board code: etf | fii | fidc | fiagro, NULL when the board carries no signal (odd lot) — filter fund_type=eq.etf for ETFs only. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/CODBDI/ESPECI; never inferred.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
+        "description": "Unadjusted B3 cash quotes for fund_quota: listed fund quotas (CI*/FIDC* paper). fund_type splits the family from B3's published CODBDI board code: etf | fii | fidc | fiagro, NULL when the board carries no signal (odd lot) — filter fund_type=eq.etf for ETFs only. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/CODBDI/ESPECI; never inferred.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
         "tags": [
           "Quotes"
         ],
@@ -17991,7 +17991,7 @@
       "get": {
         "operationId": "get_units",
         "summary": "units",
-        "description": "Unadjusted B3 cash quotes for unit: units — bundled share packages (ESPECI UNT*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
+        "description": "Unadjusted B3 cash quotes for unit: units — bundled share packages (ESPECI UNT*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
         "tags": [
           "Quotes"
         ],

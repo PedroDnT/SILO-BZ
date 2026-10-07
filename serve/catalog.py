@@ -574,7 +574,7 @@ __all__ = [
 # and benchmark_lamina_n. Capped count fifty-four -> fifty-five.
 # v69: preserved COTAHIST fields on existing routes and dated code metadata;
 # unknown reference descriptions stay null, without changing classification.
-CATALOG_VERSION = 69
+CATALOG_VERSION = 70
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -1138,7 +1138,7 @@ CONSTRAINTS = [
     "Each cash instrument type has its own endpoint (equities, bdrs, units, "
     "fund_quotas, cash_securities) — the same rows as quotes, split by the type "
     "derived from published TPMERC/ESPECI. Their grain adds `lot` "
-    "(standard = tpmerc 010, odd = 020/021); filter lot=eq.standard for round "
+    "(standard = tpmerc 010, odd = 020, block = 021); filter lot=eq.standard for round "
     "lots. quotes itself stays standard-lot only.",
     "Price series stay unified: a codneg has exactly one instrument type, so "
     "quote_history works for any cash ticker without knowing its type first.",

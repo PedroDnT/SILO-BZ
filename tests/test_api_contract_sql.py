@@ -287,7 +287,7 @@ def test_typed_cash_view_exposes_lot(view):
     chunk = body[body.index(f"CREATE OR REPLACE VIEW {view} AS"):]
     chunk = chunk[: chunk.index(";")]
     assert re.search(
-        r"CASE\s+v\.tpmerc\s+WHEN\s+'010'\s+THEN\s+'standard'\s+ELSE\s+'odd'\s+END\s+AS\s+lot",
+        r"CASE\s+v\.tpmerc\s+WHEN\s+'010'\s+THEN\s+'standard'\s+WHEN\s+'020'\s+THEN\s+'odd'\s+WHEN\s+'021'\s+THEN\s+'block'\s+END\s+AS\s+lot",
         chunk,
     ), f"{view} does not derive a lot column from tpmerc"
 

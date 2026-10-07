@@ -112,7 +112,9 @@ last-close fallback, on either surface.
 
 ## Point vs series
 
-### Preserved COTAHIST fields (catalog v69)
+### Preserved COTAHIST fields (catalog v70)
+
+Catalog v70 preserves the dated COTAHIST labels and adds sourced supplemental interpretations with unknown validity intervals. Typed cash views distinguish `lot=standard` (010), `lot=odd` (020), and `lot=block` (021); 021 was previously misclassified as odd. No rows are removed.
 
 The existing cash, option, exercise, auction and termo routes also return the
 original `market` (TPMERC), `board` (CODBDI), term and source identity fields.

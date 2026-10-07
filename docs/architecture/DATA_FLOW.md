@@ -71,4 +71,4 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 | dashboard                  | `public`, at build | last successful build |
 | research job               | landing tables     | when dispatched       |
 
-COTAHIST fields/codes: [API](../reference/API.md); [inventory](../reference/DATA_INVENTORY.md).
+COTAHIST 021=block, 020=odd; [API](../reference/API.md); [inventory](../reference/DATA_INVENTORY.md).

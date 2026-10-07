@@ -530,7 +530,8 @@ initial capture do not establish readiness for that experiment.
 
 ## 19. COTAHIST preserved fields and code reference (#720)
 
-Implemented on `codex/cotahist-complete-serving`, catalog v69: the existing SQL
+Implemented on `codex/cotahist-complete-serving`, catalog v70: market 021 is block trading;
+sourced supplemental interpretations accompany dated labels. The existing SQL
 routes expose preserved market/board/term identity and contract fields; HTTP
 history accepts additional raw fields explicitly. The catalog publishes dated
 CODBDI/TPMERC/INDOPC references without inventing unknown descriptions.
