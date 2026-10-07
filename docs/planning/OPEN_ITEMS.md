@@ -11,12 +11,12 @@ pointer. Anything provisional or missing goes in this file.
 
 ## Known good as of 2026-10-06
 
-| Surface              | State                                                                                                                                           |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data API (PostgREST) | catalog **v68** live (`api.catalog()` read 2026-10-06)                                                                                          |
-| Docs site            | Scalar, from `scalar/` and `scalar.config.json`, synced from GitHub on merge (item 7); Mintlify is no longer the host                           |
-| Dashboard            | `silo-bz-deloslabs.vercel.app` and `silo-bz.vercel.app`, both 200 on 2026-10-06                                                                 |
-| MCP                  | `silo-mcp` Edge Function answers at its public URL (405 to a bare GET, as a POST-only endpoint should)                                          |
+| Surface              | State                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Data API (PostgREST) | catalog **v68** live (`api.catalog()` read 2026-10-06)                                                                   |
+| Docs site            | Scalar, from `scalar/` and `scalar.config.json`, synced from GitHub on merge (item 7); Mintlify is no longer the host     |
+| Dashboard            | `silo-bz-deloslabs.vercel.app` and `silo-bz.vercel.app`, both 200 on 2026-10-06                                          |
+| MCP                  | `silo-mcp` Edge Function answers at its public URL (405 to a bare GET, as a POST-only endpoint should)                   |
 | Test suite           | 3850 passed, 20 skipped on `main` with `requirements-dev.txt` installed (the suite needs it; `requirements.txt` alone collects 23 errors, #680) |
 
 The done items (1, 2, 4, 5, 6, 7, 8, 9, 12, 16) are in
