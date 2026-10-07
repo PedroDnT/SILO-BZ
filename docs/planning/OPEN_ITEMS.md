@@ -462,7 +462,12 @@ before changing rule 4.
 4. **Candidate 01, one home for each API endpoint's facts.** The inventory found
    no drift across 67 endpoints, so the large refactor is not recommended. An
    optional small version: generate the `catalog.postgrest` dict and pin the SDK
-   version. Owner has not decided.
+   version. Owner has not decided. Partly done 2026-10-07 (architecture
+   review, `claude/arch-endpoint-manifest`): `serve/endpoint_manifest.py` reads
+   each endpoint's kind, parameters, grant and paging off the SQL; the row-cap
+   lists and counts in `serve/catalog.py` come from one declaration that
+   `tests/test_endpoint_manifest.py` pins against it. The `postgrest` dict is
+   still typed by hand (now checked against the manifest).
 5. **Candidates 03 to 06, untouched:** the CVM dataset matrix in one place; one
    source runner for the `run_*` entry points; row ingest as one module (parse,
    drop, count); a read-side seam so SQL rules are not restated in Python.
@@ -500,3 +505,23 @@ before changing rule 4.
 ## 18. Brief and client constraints (#607, #614)
 
 Implemented on `demo/brief-client-fit`: brief, expandable appendix, HTML upload delivery with browser PDF on request, optional declared client constraints and factual maturity/cash checks. Profile suitability remains not assessed. Deploy and live owner-portfolio validation pending. Contract: `docs/reference/portfolio/brief-client-fit.md`.
+
+## 18. Debenture secondary-market capture (#662)
+
+**Initial implementation, not deployed (2026-10-07, UTC-3).** Following the
+owner's request to begin building after the audit, B3 `ConsolidatedRecords`
+capture now has a glossary-grounded parser, raw retrieval evidence and knowledge
+time, a long DEB fact, incomplete-range refusal, audited writes, bounded backfill
+and an opt-in daily integration (migration 74). Real exports for 2026-10-06 and
+2025-12-11 passed with zero dropped rows: respectively 1,467/1,349 DEB groups and
+775/821 distinct codes. Full files remain local/ignored, with no production rows;
+the fixture is synthetic. [Evidence, hashes and commands](../reference/research/debenture-secondary-market-capture.md).
+
+Acceptance remains open: verify continuous historical coverage and legacy depth,
+budget storage (the recent one-day raw file is 20.7 MB), then obtain owner approval for production migration
+and enablement. Daily opt-in remains off; neither #662 nor research #628 is closed.
+
+Later dependencies remain REUNE traded rates/access, dated issuer/ultimate-obligor
+links (#660), compatible rate/benchmark conventions (#661), empirical issuer
+coverage and the past-only equity residual experiment. Holdings marks and this
+initial capture do not establish readiness for that experiment.

@@ -34,6 +34,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.pipeline.b3_pipeline import B3Ingestor
+from src.pipeline.b3_credit_pipeline import B3CreditIngestor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,6 +60,16 @@ async def main() -> None:
     except Exception as exc:
         logger.error("B3 consolidated trades refresh failed: %s", exc, exc_info=True)
         failures.append(("b3_trade_consolidated", exc))
+
+    # OTC debentures (#662), a different export from the FORWARD ETFs above.
+    # Explicit opt-in pending coverage/storage checks and approved rollout.
+    # Lives here so watchdog recovery follows the same path; failures remain red.
+    if os.getenv("B3_CREDIT_ENABLED") == "1":
+        try:
+            totals.update(await B3CreditIngestor().daily_update())
+        except Exception as exc:
+            logger.error("B3 OTC credit refresh failed: %s", exc, exc_info=True)
+            failures.append(("b3_credit", exc))
 
     # Published splits, groupings, bonuses, dividends and subscriptions per
     # ISIN. One request per issuer due tonight (B3Ingestor._sweep_plan): the

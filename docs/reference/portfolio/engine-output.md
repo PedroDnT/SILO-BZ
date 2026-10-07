@@ -223,7 +223,8 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
   `weight_in_root`, `position_date`, `valuation`, `direct_tesouro`, `economic_group`,
   `abnormal_movement`, `movement_class`, `risks` (1.8), `returns` (1.10), `tax` (1.11), `investigation` (1.12),
   `pct_of_cdi` and `market_equivalent` (1.13)). The report states the ones that touch what it says.
-- `section_status`: `{section: {status, reason, reason_codes}}`, for a cover-page summary.
+- `section_status`: `{section: {status, reason, reason_codes}}`, for a cover-page summary. The sections, their order
+  and their names in the report's view are declared once in `src/portfolio/sections.py`.
 - `provenance[]`: every tool call in order: `call_id`, `id` (`p<call_id>`), `tool`, `args`,
   `requested_at_utc`, `row_count` (null on error), `error` (verbatim, null on success). No trimming;
   the only retry is identification's (1.7), and the retried call is its own row. The report's view keeps
@@ -850,7 +851,8 @@ show the section yet.
 engine document (schema 1.x) to the view the Redator, the Revisor and the renderer read, and it computes no
 figure (every percent it uses is an engine field). The provisional fixture
 `tests/fixtures/portfolio/report_provisional_engine_output.json` is the view's original hand-written shape and
-still renders. The view holds no holder, account or statement-file identifier. Units agree (`_brl` reais,
+still renders. The view's `sections` and `gaps` ("O que não foi possível avaliar") are built by
+`src/portfolio/sections.py`. The view holds no holder, account or statement-file identifier. Units agree (`_brl` reais,
 `_pct` percent, plain numbers such as `adm_filed_raw` and `age_months` print without a unit).
 
 | Report view                                                                                                                                                                                                                                                                                                                      | Engine (this schema)                                                                                                                                                                                                                                                                                                                                   |

@@ -174,6 +174,22 @@ warns (`SiloCatalogDrift`) on a mismatch — a newer server has endpoints or
 limits the wrappers do not know; an older one lacks some they call. It never
 refuses: everything read off the catalog itself keeps working.
 
+**Any function, by name.** `rpc(name, **params)` calls any published function,
+including the ones with no named method, with the SQL's own argument names:
+
+```python
+silo.rpc("portfolio_fees", p_cnpjs=["05754060000113"])
+silo.rpc("termo_history", p_codneg="PETRT100", p_from="2026-01-02")
+```
+
+The name and every argument are checked offline, before anything is sent,
+against `contract.json`, which ships in the package and is generated from the
+repository's `openapi.json` (`scripts/gen_sdk_contract.py`). An unknown
+function, an unknown argument or a missing required one raises `ValueError`
+naming what the function declares; the server would answer the same typo with
+a 404. A `date` is sent as ISO and a `None` is left out. Row caps and tier
+ceilings are in `limits()`.
+
 ## The contract, in client form
 
 - **Catalog-driven.** Metric names are validated against the live catalog; a

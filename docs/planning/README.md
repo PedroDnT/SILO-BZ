@@ -40,3 +40,7 @@ are in git history.
 Brief and client constraints (#607, #614): [contract](../reference/portfolio/brief-client-fit.md); implementation `demo/brief-client-fit`, live validation pending.
 
 Current closure sequence: [open issue resolution](OPEN_ISSUE_RESOLUTION.md), #658 smoke fix → #607 → #517 real-file evidence → #510 readiness; #628 research separately.
+
+Debenture capture #662 has an initial, opt-in implementation, separate from #628's
+research acceptance. [OPEN_ITEMS item 18](OPEN_ITEMS.md#18-debenture-secondary-market-capture-662)
+tracks the two successful real-CSV checks, remaining coverage/rollout and bond→equity dependencies.

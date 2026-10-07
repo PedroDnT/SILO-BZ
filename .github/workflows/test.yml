@@ -689,6 +689,11 @@ jobs:
       - name: trade_consolidated_history behaves (executed, not just compiled)
         run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/trade_consolidated_history_behaviour.sql
 
+      # Credit retrieval vintages: as-of reads keep revisions and removals,
+      # incomplete captures refuse, and raw observations stay private.
+      - name: credit capture vintages behave (executed, not just compiled)
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/b3_credit_behaviour.sql
+
       # Own Python, not the runner's system one: Ubuntu's /usr/bin/python3 is
       # PEP 668 externally-managed, so a bare `pip install` there is one image
       # bump away from failing.

@@ -1,0 +1,628 @@
+{
+ "rpc": {
+  "anbima_classes": {
+   "params": [
+    "p_category",
+    "p_from",
+    "p_level",
+    "p_metric",
+    "p_to"
+   ],
+   "required": []
+  },
+  "balance_sheets": {
+   "params": [
+    "p_as_of",
+    "p_doc_type",
+    "p_from",
+    "p_id",
+    "p_scope",
+    "p_to"
+   ],
+   "required": [
+    "p_id"
+   ]
+  },
+  "cash_flow_statements": {
+   "params": [
+    "p_as_of",
+    "p_doc_type",
+    "p_from",
+    "p_id",
+    "p_scope",
+    "p_to"
+   ],
+   "required": [
+    "p_id"
+   ]
+  },
+  "catalog": {
+   "params": [],
+   "required": []
+  },
+  "class_return_distribution": {
+   "params": [
+    "p_classe_anbima",
+    "p_fundo_cotas",
+    "p_month"
+   ],
+   "required": [
+    "p_classe_anbima",
+    "p_fundo_cotas"
+   ]
+  },
+  "company_events": {
+   "params": [
+    "p_category",
+    "p_from",
+    "p_id",
+    "p_to"
+   ],
+   "required": [
+    "p_id"
+   ]
+  },
+  "company_financials": {
+   "params": [
+    "p_as_of",
+    "p_from",
+    "p_id",
+    "p_scope",
+    "p_to"
+   ],
+   "required": [
+    "p_id"
+   ]
+  },
+  "coverage": {
+   "params": [],
+   "required": []
+  },
+  "curve": {
+   "params": [
+    "p_curve",
+    "p_trade_date"
+   ],
+   "required": []
+  },
+  "curve_history": {
+   "params": [
+    "p_curve",
+    "p_from",
+    "p_tenor_days",
+    "p_to"
+   ],
+   "required": [
+    "p_curve",
+    "p_tenor_days"
+   ]
+  },
+  "fidc_aging": {
+   "params": [
+    "p_cnpj",
+    "p_from",
+    "p_to"
+   ],
+   "required": [
+    "p_cnpj"
+   ]
+  },
+  "fidc_cedentes": {
+   "params": [
+    "p_cedente",
+    "p_cnpj",
+    "p_from",
+    "p_limit",
+    "p_to"
+   ],
+   "required": []
+  },
+  "fidc_portfolio": {
+   "params": [
+    "p_cnpj",
+    "p_from",
+    "p_kind",
+    "p_limit",
+    "p_to"
+   ],
+   "required": [
+    "p_cnpj"
+   ]
+  },
+  "fidc_sacados": {
+   "params": [
+    "p_cnpj",
+    "p_from",
+    "p_limit",
+    "p_to"
+   ],
+   "required": [
+    "p_cnpj"
+   ]
+  },
+  "fidc_tranches": {
+   "params": [
+    "p_cnpj",
+    "p_from",
+    "p_series",
+    "p_to"
+   ],
+   "required": [
+    "p_cnpj"
+   ]
+  },
+  "fii_property_history": {
+   "params": [
+    "p_cnpj",
+    "p_from",
+    "p_to"
+   ],
+   "required": [
+    "p_cnpj"
+   ]
+  },
+  "financial_statement_history": {
+   "params": [
+    "p_doc_type",
+    "p_from",
+    "p_id",
+    "p_scope",
+    "p_statement",
+    "p_to"
+   ],
+   "required": [
+    "p_id",
+    "p_statement"
+   ]
+  },
+  "financials": {
+   "params": [
+    "p_as_of",
+    "p_doc_type",
+    "p_from",
+    "p_id",
+    "p_scope",
+    "p_statement",
+    "p_to"
+   ],
+   "required": [
+    "p_id"
+   ]
+  },
+  "focus_expectations": {
+   "params": [
+    "p_endpoint",
+    "p_from",
+    "p_horizon",
+    "p_indicator",
+    "p_to"
+   ],
+   "required": [
+    "p_endpoint",
+    "p_horizon"
+   ]
+  },
+  "fund_debentures": {
+   "params": [
+    "p_cnpj",
+    "p_from",
+    "p_issuer",
+    "p_limit",
+    "p_to"
+   ],
+   "required": []
+  },
+  "fund_documents": {
+   "params": [
+    "p_cnpj",
+    "p_from",
+    "p_tipo",
+    "p_to"
+   ],
+   "required": [
+    "p_cnpj"
+   ]
+  },
+  "fund_holdings": {
+   "params": [
+    "p_cnpj",
+    "p_from",
+    "p_kind",
+    "p_limit",
+    "p_ticker",
+    "p_to"
+   ],
+   "required": []
+  },
+  "fund_nav": {
+   "params": [
+    "p_after",
+    "p_cnpj",
+    "p_entity_type",
+    "p_from",
+    "p_to"
+   ],
+   "required": [
+    "p_cnpj"
+   ]
+  },
+  "fund_profile": {
+   "params": [
+    "p_cnpj"
+   ],
+   "required": [
+    "p_cnpj"
+   ]
+  },
+  "fund_restatement_diff": {
+   "params": [
+    "p_cnpj",
+    "p_fnet_id",
+    "p_from",
+    "p_tipo",
+    "p_to"
+   ],
+   "required": []
+  },
+  "fund_restatements": {
+   "params": [
+    "p_cnpj",
+    "p_from",
+    "p_tipo_fundo",
+    "p_to"
+   ],
+   "required": []
+  },
+  "future_curve": {
+   "params": [
+    "p_root",
+    "p_trade_date"
+   ],
+   "required": []
+  },
+  "future_series": {
+   "params": [
+    "p_from",
+    "p_ticker",
+    "p_to"
+   ],
+   "required": [
+    "p_ticker"
+   ]
+  },
+  "income_statements": {
+   "params": [
+    "p_as_of",
+    "p_doc_type",
+    "p_from",
+    "p_id",
+    "p_scope",
+    "p_to"
+   ],
+   "required": [
+    "p_id"
+   ]
+  },
+  "index_history": {
+   "params": [
+    "p_after",
+    "p_from",
+    "p_index",
+    "p_to"
+   ],
+   "required": [
+    "p_index"
+   ]
+  },
+  "inflation": {
+   "params": [
+    "p_family",
+    "p_from",
+    "p_series",
+    "p_to"
+   ],
+   "required": []
+  },
+  "inflation_items": {
+   "params": [
+    "p_from",
+    "p_item",
+    "p_level",
+    "p_to"
+   ],
+   "required": []
+  },
+  "lookup": {
+   "params": [
+    "p_query"
+   ],
+   "required": [
+    "p_query"
+   ]
+  },
+  "macro_series": {
+   "params": [
+    "p_from",
+    "p_series",
+    "p_to"
+   ],
+   "required": [
+    "p_series"
+   ]
+  },
+  "metric_coverage": {
+   "params": [],
+   "required": []
+  },
+  "option_chain": {
+   "params": [
+    "p_expiry_from",
+    "p_limit",
+    "p_prefix",
+    "p_trade_date"
+   ],
+   "required": [
+    "p_prefix"
+   ]
+  },
+  "option_exercises": {
+   "params": [
+    "p_from",
+    "p_limit",
+    "p_prefix",
+    "p_to"
+   ],
+   "required": [
+    "p_prefix"
+   ]
+  },
+  "option_history": {
+   "params": [
+    "p_codneg",
+    "p_from",
+    "p_to"
+   ],
+   "required": [
+    "p_codneg"
+   ]
+  },
+  "panel": {
+   "params": [
+    "p_after",
+    "p_entity_type",
+    "p_freq",
+    "p_from",
+    "p_ids",
+    "p_metrics",
+    "p_min_months",
+    "p_min_nav",
+    "p_to"
+   ],
+   "required": [
+    "p_ids"
+   ]
+  },
+  "portfolio_equivalents": {
+   "params": [
+    "p_as_of",
+    "p_classes"
+   ],
+   "required": [
+    "p_classes"
+   ]
+  },
+  "portfolio_fee_peers": {
+   "params": [
+    "p_as_of",
+    "p_cnpjs"
+   ],
+   "required": [
+    "p_cnpjs"
+   ]
+  },
+  "portfolio_fees": {
+   "params": [
+    "p_cnpjs",
+    "p_month"
+   ],
+   "required": [
+    "p_cnpjs"
+   ]
+  },
+  "portfolio_fund_terms": {
+   "params": [
+    "p_cnpjs"
+   ],
+   "required": [
+    "p_cnpjs"
+   ]
+  },
+  "portfolio_instruments": {
+   "params": [
+    "p_codes"
+   ],
+   "required": [
+    "p_codes"
+   ]
+  },
+  "portfolio_lookthrough": {
+   "params": [
+    "p_cnpjs",
+    "p_max_depth",
+    "p_month"
+   ],
+   "required": [
+    "p_cnpjs"
+   ]
+  },
+  "portfolio_movement": {
+   "params": [
+    "p_cnpjs",
+    "p_month"
+   ],
+   "required": [
+    "p_cnpjs"
+   ]
+  },
+  "portfolio_resolve": {
+   "params": [
+    "p_cnpjs",
+    "p_names",
+    "p_quota_dates",
+    "p_quotas"
+   ],
+   "required": [
+    "p_names"
+   ]
+  },
+  "ptax": {
+   "params": [
+    "p_currency",
+    "p_from",
+    "p_to"
+   ],
+   "required": [
+    "p_currency"
+   ]
+  },
+  "quote_history": {
+   "params": [
+    "p_after",
+    "p_board",
+    "p_fields",
+    "p_from",
+    "p_ticker",
+    "p_to"
+   ],
+   "required": [
+    "p_ticker"
+   ]
+  },
+  "quote_latest": {
+   "params": [
+    "p_board",
+    "p_ticker"
+   ],
+   "required": [
+    "p_ticker"
+   ]
+  },
+  "research_universe": {
+   "params": [],
+   "required": []
+  },
+  "screen_captive_vehicles": {
+   "params": [
+    "p_lookback_months",
+    "p_max_investors",
+    "p_min_aum"
+   ],
+   "required": []
+  },
+  "screen_delinquency_drivers": {
+   "params": [
+    "p_driver",
+    "p_end",
+    "p_min_delta_brl",
+    "p_min_delta_pp",
+    "p_min_months",
+    "p_months"
+   ],
+   "required": []
+  },
+  "screen_dormant_funds": {
+   "params": [
+    "p_dormancy",
+    "p_lookback_months",
+    "p_min_nav"
+   ],
+   "required": []
+  },
+  "screen_dormant_trend": {
+   "params": [
+    "p_history_months",
+    "p_lookback_months"
+   ],
+   "required": []
+  },
+  "screen_evergreen_aging": {
+   "params": [
+    "p_lookback_months",
+    "p_max_variation_pp",
+    "p_min_longtail_pct"
+   ],
+   "required": []
+  },
+  "screen_late_filers": {
+   "params": [
+    "p_end",
+    "p_family",
+    "p_min_days_late",
+    "p_min_late",
+    "p_months"
+   ],
+   "required": []
+  },
+  "screen_overdue_securit": {
+   "params": [
+    "p_min_volume"
+   ],
+   "required": []
+  },
+  "screen_restatements": {
+   "params": [
+    "p_end",
+    "p_min_rate_pct",
+    "p_min_restatements",
+    "p_modalidade",
+    "p_months"
+   ],
+   "required": []
+  },
+  "screen_silent_filers": {
+   "params": [
+    "p_family",
+    "p_max_silent_months",
+    "p_min_silent_months"
+   ],
+   "required": []
+  },
+  "screen_zombie_growth": {
+   "params": [
+    "p_min_aum",
+    "p_min_delinq_pct",
+    "p_period"
+   ],
+   "required": []
+  },
+  "search_funds": {
+   "params": [
+    "p_entity_type",
+    "p_limit",
+    "p_query"
+   ],
+   "required": []
+  },
+  "termo_history": {
+   "params": [
+    "p_codneg",
+    "p_from",
+    "p_to"
+   ],
+   "required": [
+    "p_codneg"
+   ]
+  },
+  "trade_consolidated_history": {
+   "params": [
+    "p_after",
+    "p_from",
+    "p_ticker",
+    "p_to"
+   ],
+   "required": [
+    "p_ticker"
+   ]
+  }
+ }
+}

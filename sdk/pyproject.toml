@@ -28,4 +28,6 @@ pandas = ["pandas>=2.0"]
 include = ["silo_client*"]
 
 [tool.setuptools.package-data]
-silo_client = ["py.typed"]
+#: contract.json is what SiloClient.rpc() validates against; without it in
+#: the wheel every function call would fail before it is sent.
+silo_client = ["py.typed", "contract.json"]
