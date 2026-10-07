@@ -30,6 +30,11 @@ Three shapes, because the server offers three:
 
 ## Closed
 
+- **Any function by name** (2026-10-07). `rpc(name, **params)` reaches every
+  `api.*` function, the ones with no named method included, and checks the
+  name and arguments offline against `contract.json`, generated from
+  `openapi.json` by `scripts/gen_sdk_contract.py` and shipped in the package.
+  The single-call methods are built on it. Pinned by `tests/test_sdk_rpc.py`.
 - **`pandas` is a hard dependency** (2026-09-17). `panel()` defaults to
   `wide=True` and the README, `api-docs/sdk.mdx` and fifteen notebook cells all
   lead with a DataFrame, so a bare `pip install silo-client` followed by the
