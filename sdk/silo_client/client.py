@@ -1,8 +1,10 @@
 """The client. One class, PostgREST underneath, no magic.
 
 Every method maps 1:1 onto a published endpoint (schema `api` on the Supabase
-Data API). Views are GET resources; functions are POST /rpc/<name>. The
-catalog is fetched once per client and drives metric validation.
+Data API). Views are GET resources; functions are POST /rpc/<name>, and
+`rpc(name, **params)` reaches any of them, checked offline against the bundled
+contract.json (generated from openapi.json). The catalog is fetched once per
+client and drives metric validation.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import json
 import os
 import warnings
 from datetime import date
+from importlib import resources
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
 import httpx
@@ -195,6 +198,21 @@ class SiloTimeout(SiloError):
         )
 
 
+_CONTRACT: Optional[Dict[str, Dict[str, List[str]]]] = None
+
+
+def _contract() -> Dict[str, Dict[str, List[str]]]:
+    """{function: {"params": [...], "required": [...]}} from the bundled
+    contract.json (scripts/gen_sdk_contract.py, from openapi.json). Read once,
+    offline: validating a call never needs the network."""
+    global _CONTRACT
+    if _CONTRACT is None:
+        source = resources.files(__package__).joinpath("contract.json")
+        text = source.read_text(encoding="utf-8")
+        _CONTRACT = json.loads(text)["rpc"]
+    return _CONTRACT
+
+
 def _iso(d: Datish) -> Optional[str]:
     if d is None:
         return None
@@ -348,6 +366,49 @@ class SiloClient:
         rows, _ = self._check(r, url, page=page)
         return rows
 
+    def rpc(self, name: str, /, **params: Any) -> Any:
+        """Call any published function by name, checked against the contract.
+
+            silo.rpc("termo_history", p_codneg="PETRT100", p_from="2026-01-02")
+            silo.rpc("portfolio_fees", p_cnpjs=["05754060000113"])
+
+        Every endpoint is reachable this way, including the ones with no named
+        method; the named methods below are this call with friendlier
+        arguments. `name` and every parameter name are checked, before any
+        request is sent, against `contract.json`, which ships in this package
+        and is generated from the repository's `openapi.json` (the SQL's own
+        signatures): an unknown function, an unknown parameter or a required
+        one left out raises ValueError naming what the function declares.
+        PostgREST resolves a call by argument NAMES, so the same typo sent to
+        the server would come back as a 404 against a function that exists.
+
+        Parameters are the SQL names (`p_ticker`, `p_from`, ...). A `date`
+        becomes its ISO string; a None is left out, so the server's default
+        applies. The answer is returned as the server sends it, under the same
+        rules as every method here (SiloOverCap, SiloTruncated, SiloTimeout).
+        What each function returns, and every row cap and tier ceiling, is in
+        `catalog()` / `limits()` and `openapi.json`.
+        """
+        spec = _contract().get(name)
+        if spec is None:
+            raise ValueError(
+                f"{name!r} is not a function this client's contract lists. The "
+                "server's are catalog()['postgrest']; one newer than this "
+                "silo-client needs an upgrade"
+            )
+        unknown = sorted(set(params) - set(spec["params"]))
+        if unknown:
+            raise ValueError(
+                f"api.{name} declares no parameter {', '.join(unknown)}; it takes "
+                f"{', '.join(spec['params']) or 'none'}"
+            )
+        missing = [p for p in spec["required"] if p not in params]
+        if missing:
+            raise ValueError(f"api.{name} requires {', '.join(missing)}")
+        return self._rpc(name, {
+            k: v.isoformat() if isinstance(v, date) else v for k, v in params.items()
+        })
+
     # -- discovery ----------------------------------------------------------
 
     def catalog(self, refresh: bool = False) -> Dict[str, Any]:
@@ -360,7 +421,7 @@ class SiloClient:
         the catalog they were written from.
         """
         if self._catalog is None or refresh:
-            self._catalog = self._rpc("catalog", {})
+            self._catalog = self.rpc("catalog")
             served = self._catalog.get("version")
             if served != KNOWN_CATALOG_VERSION:
                 relation = "newer" if isinstance(served, int) and served > KNOWN_CATALOG_VERSION else "older"
@@ -412,7 +473,7 @@ class SiloClient:
         (the `funds_fidc` row: delinquency is on every row from 2020-11), null on rows with
         none.
         """
-        return self._rpc("coverage", {})
+        return self.rpc("coverage")
 
     def metric_coverage(self) -> List[Dict[str, Any]]:
         """Which (family, metric) pairs are ACTUALLY filed, and over what span.
@@ -423,12 +484,12 @@ class SiloClient:
         one whose data is late. Use it instead of inferring from nulls in a
         series, which is how a format change gets read as a credit event.
         """
-        return self._rpc("metric_coverage", {})
+        return self.rpc("metric_coverage")
 
     def lookup(self, query: str) -> List[Dict[str, Any]]:
         """Resolve ticker/ISIN/CNPJ/name. Company rows carry a `tickers` array
         from CVM's published FCA map — never a name match."""
-        return self._rpc("lookup", {"p_query": query})
+        return self.rpc("lookup", p_query=query)
 
     # -- series -------------------------------------------------------------
 
@@ -445,10 +506,10 @@ class SiloClient:
         outside the coverage and a close_adj window it cannot adjust, with the
         cause in the message.
         """
-        return self._rpc("quote_history", {
-            "p_ticker": ticker, "p_from": _iso(start), "p_to": _iso(end),
-            "p_board": board, "p_fields": _as_list(fields) or None,
-        })
+        return self.rpc(
+            "quote_history", p_ticker=ticker, p_from=_iso(start), p_to=_iso(end),
+            p_board=board, p_fields=_as_list(fields) or None,
+        )
 
     def fund_nav(
         self, cnpj: str, start: Datish = None, end: Datish = None,
@@ -456,10 +517,10 @@ class SiloClient:
     ) -> List[Dict[str, Any]]:
         """Monthly fundamentals. `end=None` = the honest window (only complete
         periods); pass an explicit end to see partial months verbatim."""
-        return self._rpc("fund_nav", {
-            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
-            "p_entity_type": entity_type,
-        })
+        return self.rpc(
+            "fund_nav", p_cnpj=cnpj, p_from=_iso(start), p_to=_iso(end),
+            p_entity_type=entity_type,
+        )
 
     def _quote_pages(
         self, ticker: str, start: Datish, end: Datish, board: Optional[str],
@@ -626,7 +687,7 @@ class SiloClient:
         that traded this morning. `as_of=None` returns the whole universe,
         including names that no longer trade.
         """
-        rows = self._rpc("research_universe", {})
+        rows = self.rpc("research_universe")
         if as_of is None:
             return rows
         when = _iso(as_of)
@@ -653,9 +714,9 @@ class SiloClient:
         `index_history_all` for a long window. `start=None` is the last 365
         days, not the whole history.
         """
-        return self._rpc("index_history", {
-            "p_index": index, "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "index_history", p_index=index, p_from=_iso(start), p_to=_iso(end),
+        )
 
     def iter_index_history(
         self, index: str, start: Datish = None, end: Datish = None,
@@ -704,9 +765,10 @@ class SiloClient:
         `trade_consolidated_history_all` for a long window. `start=None` is the
         last 365 days.
         """
-        return self._rpc("trade_consolidated_history", {
-            "p_ticker": ticker, "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "trade_consolidated_history", p_ticker=ticker, p_from=_iso(start),
+            p_to=_iso(end),
+        )
 
     def iter_trade_consolidated_history(
         self, ticker: str, start: Datish = None, end: Datish = None,
@@ -775,25 +837,26 @@ class SiloClient:
                      limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """One underlying's option chain.
 
-        `limit=None` uses the server's own default (100). The server clamps by
-        tier — 200 anonymous, 2000 signed in — so a larger value is reduced
-        rather than refused.
+        `limit=None` uses the server's own default (100). The server clamps
+        `limit` to the caller's tier ceiling (`limits()["tiers"]`), so a larger
+        value is reduced rather than refused; no response exceeds the
+        1,000-row page either way.
         """
-        return self._rpc("option_chain", {
-            "p_prefix": prefix, "p_trade_date": _iso(trade_date),
-            "p_expiry_from": _iso(expiry_from), "p_limit": limit,
-        })
+        return self.rpc(
+            "option_chain", p_prefix=prefix, p_trade_date=_iso(trade_date),
+            p_expiry_from=_iso(expiry_from), p_limit=limit,
+        )
 
     def quote_latest(self, ticker: str, board: Optional[str] = None) -> List[Dict[str, Any]]:
         """The most recent session for one instrument."""
-        return self._rpc("quote_latest", {"p_ticker": ticker, "p_board": board})
+        return self.rpc("quote_latest", p_ticker=ticker, p_board=board)
 
     def option_history(self, codneg: str, start: Datish = None,
                        end: Datish = None) -> List[Dict[str, Any]]:
         """One option contract's own price history, by its B3 code."""
-        return self._rpc("option_history", {
-            "p_codneg": codneg, "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "option_history", p_codneg=codneg, p_from=_iso(start), p_to=_iso(end),
+        )
 
     def option_exercises(self, prefix: str, start: Datish = None,
                          end: Datish = None,
@@ -807,24 +870,25 @@ class SiloClient:
         error.
 
         These are events, not quotes: one print per series, with no return
-        semantics. Rows are clamped to 500 anonymous / 5000 signed in.
+        semantics. The server clamps `limit` to the caller's tier ceiling
+        (`limits()["tiers"]`); no response exceeds the 1,000-row page.
         """
         if len((prefix or "").strip()) < 3:
             raise ValueError(
                 "option_exercises needs a codneg prefix of at least 3 "
                 f"characters (e.g. 'PETR'); got {prefix!r}"
             )
-        return self._rpc("option_exercises", {
-            "p_prefix": prefix.strip().upper(), "p_from": _iso(start),
-            "p_to": _iso(end), "p_limit": limit,
-        })
+        return self.rpc(
+            "option_exercises", p_prefix=prefix.strip().upper(), p_from=_iso(start),
+            p_to=_iso(end), p_limit=limit,
+        )
 
     def termo_history(self, codneg: str, start: Datish = None,
                       end: Datish = None) -> List[Dict[str, Any]]:
         """Forward (termo) contract history, keyed on codneg and term days."""
-        return self._rpc("termo_history", {
-            "p_codneg": codneg, "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "termo_history", p_codneg=codneg, p_from=_iso(start), p_to=_iso(end),
+        )
 
     def fund_profile(self, cnpj: str) -> List[Dict[str, Any]]:
         """Registry and activity facts for one fund.
@@ -838,7 +902,7 @@ class SiloClient:
         never part of api.fund_profile's shape, so code written against the
         promise got a KeyError rather than a name.
         """
-        return self._rpc("fund_profile", {"p_cnpj": cnpj})
+        return self.rpc("fund_profile", p_cnpj=cnpj)
 
     def search_funds(self, query: str, limit: Optional[int] = None,
                      entity_type: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -858,9 +922,9 @@ class SiloClient:
         larger value is silently reduced rather than refused. Check `.tier` if
         you need to know which ceiling you are under.
         """
-        return self._rpc("search_funds", {
-            "p_query": query, "p_entity_type": entity_type, "p_limit": limit,
-        })
+        return self.rpc(
+            "search_funds", p_query=query, p_entity_type=entity_type, p_limit=limit,
+        )
 
     def fund_holdings(self, cnpj: Optional[str] = None, ticker: Optional[str] = None,
                       start: Datish = None, end: Datish = None,
@@ -890,11 +954,10 @@ class SiloClient:
                 "fund_holdings needs exactly one of cnpj (what this fund holds) "
                 "or ticker (which funds hold this ticker)"
             )
-        return self._rpc("fund_holdings", {
-            "p_cnpj": cnpj, "p_ticker": ticker,
-            "p_from": _iso(start), "p_to": _iso(end),
-            "p_kind": kind, "p_limit": limit,
-        })
+        return self.rpc(
+            "fund_holdings", p_cnpj=cnpj, p_ticker=ticker, p_from=_iso(start),
+            p_to=_iso(end), p_kind=kind, p_limit=limit,
+        )
 
     def fund_debentures(self, cnpj: Optional[str] = None,
                         issuer: Optional[str] = None,
@@ -925,10 +988,10 @@ class SiloClient:
                 "fund_debentures needs exactly one of cnpj (what this fund holds) "
                 "or issuer (which funds hold this issuer's debentures)"
             )
-        return self._rpc("fund_debentures", {
-            "p_cnpj": cnpj, "p_issuer": issuer,
-            "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
-        })
+        return self.rpc(
+            "fund_debentures", p_cnpj=cnpj, p_issuer=issuer, p_from=_iso(start),
+            p_to=_iso(end), p_limit=limit,
+        )
 
     # -- FIDC concentration (informe tabs I, VIII, II, X) ---------------------
 
@@ -963,10 +1026,10 @@ class SiloClient:
                 "fidc_cedentes needs exactly one of cnpj (who this fund buys from) "
                 "or cedente (which funds buy from this originator)"
             )
-        return self._rpc("fidc_cedentes", {
-            "p_cnpj": cnpj, "p_cedente": cedente,
-            "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
-        })
+        return self.rpc(
+            "fidc_cedentes", p_cnpj=cnpj, p_cedente=cedente, p_from=_iso(start),
+            p_to=_iso(end), p_limit=limit,
+        )
 
     def fidc_sacados(self, cnpj: str, start: Datish = None, end: Datish = None,
                      limit: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -981,9 +1044,10 @@ class SiloClient:
         More than 1000 rows raises `SiloOverCap` (22023), never trims: narrow
         `start`/`end` or pass `limit` (1..1000) for the newest N rows.
         """
-        return self._rpc("fidc_sacados", {
-            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
-        })
+        return self.rpc(
+            "fidc_sacados", p_cnpj=cnpj, p_from=_iso(start), p_to=_iso(end),
+            p_limit=limit,
+        )
 
     def fidc_portfolio(self, cnpj: str, kind: Optional[str] = None,
                        start: Datish = None, end: Datish = None,
@@ -1001,10 +1065,10 @@ class SiloClient:
         `start`/`end`, pin one `kind`, or pass `limit` (1..1000) for the
         newest N rows.
         """
-        return self._rpc("fidc_portfolio", {
-            "p_cnpj": cnpj, "p_kind": kind,
-            "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
-        })
+        return self.rpc(
+            "fidc_portfolio", p_cnpj=cnpj, p_kind=kind, p_from=_iso(start),
+            p_to=_iso(end), p_limit=limit,
+        )
 
     def fidc_tranches(self, cnpj: str, start: Datish = None, end: Datish = None,
                       series: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -1018,13 +1082,14 @@ class SiloClient:
         (what the series promised vs delivered, percent) — all as filed,
         CVM's outliers included. `flows` is the tranche's tab X_4 operations
         as a list of {tp_oper, value, quotas}, labels verbatim and never
-        bucketed; None when none were filed. History begins in 2025: CVM
-        publishes no archive of these tabs. No cursor: narrow the window.
+        bucketed; None when none were filed. History begins in 2013-01 (CVM's
+        yearly archive through 2024-12, the monthly informe after). No cursor:
+        narrow the window.
         """
-        return self._rpc("fidc_tranches", {
-            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
-            "p_series": series,
-        })
+        return self.rpc(
+            "fidc_tranches", p_cnpj=cnpj, p_from=_iso(start), p_to=_iso(end),
+            p_series=series,
+        )
 
     def fidc_aging(self, cnpj: str, start: Datish = None,
                    end: Datish = None) -> List[Dict[str, Any]]:
@@ -1036,11 +1101,9 @@ class SiloClient:
         maturity) and kind='overdue' (by days past due), ten day-bands each
         (`bucket`, `days_from`, `days_to`), plus kind='overdue_total' —
         CVM's FILED total, not a sum of the bands. BRL as filed; a blank is
-        None, never 0. History begins in 2025. No cursor: narrow the window.
+        None, never 0. History begins in 2013-01. No cursor: narrow the window.
         """
-        return self._rpc("fidc_aging", {
-            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc("fidc_aging", p_cnpj=cnpj, p_from=_iso(start), p_to=_iso(end))
 
     # -- the FNET document register (B3 Fundos.NET) --------------------------
 
@@ -1060,10 +1123,10 @@ class SiloClient:
         sweep, so the newest deliveries may not be listed yet. Window is the
         delivery date, default the last 12 months. No cursor: narrow it.
         """
-        return self._rpc("fund_documents", {
-            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
-            "p_tipo": tipo,
-        })
+        return self.rpc(
+            "fund_documents", p_cnpj=cnpj, p_from=_iso(start), p_to=_iso(end),
+            p_tipo=tipo,
+        )
 
     def fund_restatements(self, cnpj: Optional[str] = None, start: Datish = None,
                           end: Datish = None,
@@ -1082,10 +1145,10 @@ class SiloClient:
         whether SILO diffed this exact pair (None = not diffed; see
         `fund_restatement_diff`). No cursor: narrow the window.
         """
-        return self._rpc("fund_restatements", {
-            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
-            "p_tipo_fundo": tipo_fundo,
-        })
+        return self.rpc(
+            "fund_restatements", p_cnpj=cnpj, p_from=_iso(start), p_to=_iso(end),
+            p_tipo_fundo=tipo_fundo,
+        )
 
     def fund_restatement_diff(self, cnpj: Optional[str] = None, start: Datish = None,
                               end: Datish = None, tipo: Optional[str] = None,
@@ -1105,10 +1168,10 @@ class SiloClient:
         "not diffed": `fund_restatements`' `diff_status` says which. No cursor:
         narrow the window or pin `fnet_id`.
         """
-        return self._rpc("fund_restatement_diff", {
-            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
-            "p_tipo": tipo, "p_fnet_id": fnet_id,
-        })
+        return self.rpc(
+            "fund_restatement_diff", p_cnpj=cnpj, p_from=_iso(start), p_to=_iso(end),
+            p_tipo=tipo, p_fnet_id=fnet_id,
+        )
 
     # -- filing-behaviour screens (v37) --------------------------------------
     # SIGNALS, NOT VERDICTS: every row carries `screen` and `params`; read
@@ -1128,11 +1191,11 @@ class SiloClient:
         split the count as FNET publishes modalidade. Fund identity is the
         cnpjFundo link only, never the name. No cursor: raise the thresholds.
         """
-        return self._rpc("screen_restatements", {
-            "p_months": months, "p_end": _iso(end),
-            "p_min_restatements": min_restatements, "p_min_rate_pct": min_rate_pct,
-            "p_modalidade": modalidade,
-        })
+        return self.rpc(
+            "screen_restatements", p_months=months, p_end=_iso(end),
+            p_min_restatements=min_restatements, p_min_rate_pct=min_rate_pct,
+            p_modalidade=modalidade,
+        )
 
     def screen_late_filers(self, months: Optional[int] = None, end: Datish = None,
                            min_days_late: Optional[int] = None,
@@ -1149,11 +1212,10 @@ class SiloClient:
         informe in the register is not counted. A timestamp compared with a
         rule — not a finding. No cursor: raise the thresholds or pin family.
         """
-        return self._rpc("screen_late_filers", {
-            "p_months": months, "p_end": _iso(end),
-            "p_min_days_late": min_days_late, "p_min_late": min_late,
-            "p_family": family,
-        })
+        return self.rpc(
+            "screen_late_filers", p_months=months, p_end=_iso(end),
+            p_min_days_late=min_days_late, p_min_late=min_late, p_family=family,
+        )
 
     def screen_silent_filers(self, min_silent_months: Optional[int] = None,
                              max_silent_months: Optional[int] = None,
@@ -1166,11 +1228,10 @@ class SiloClient:
         `fnet_last_delivered_at` shows a fund still delivering to FNET. No
         cursor: pin family or narrow the month band.
         """
-        return self._rpc("screen_silent_filers", {
-            "p_min_silent_months": min_silent_months,
-            "p_max_silent_months": max_silent_months,
-            "p_family": family,
-        })
+        return self.rpc(
+            "screen_silent_filers", p_min_silent_months=min_silent_months,
+            p_max_silent_months=max_silent_months, p_family=family,
+        )
 
     # -- listed companies (CIA Aberta) ---------------------------------------
 
@@ -1215,12 +1276,10 @@ class SiloClient:
         peer comparison, and read the as-filed `account_name` rather than
         assuming a code means the same thing in another chart.
         """
-        return self._rpc("financials", {
-            "p_id": id, "p_statement": statement,
-            "p_from": _iso(start), "p_to": _iso(end),
-            "p_scope": scope, "p_doc_type": doc_type,
-            "p_as_of": _iso(as_of),
-        })
+        return self.rpc(
+            "financials", p_id=id, p_statement=statement, p_from=_iso(start),
+            p_to=_iso(end), p_scope=scope, p_doc_type=doc_type, p_as_of=_iso(as_of),
+        )
 
     def company_financials(self, id: str, start: Datish = None,
                            end: Datish = None,
@@ -1254,10 +1313,10 @@ class SiloClient:
         Every value is in absolute reais; the filed currency scale is applied
         at ingest, so do not scale by thousands again.
         """
-        return self._rpc("company_financials", {
-            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
-            "p_scope": scope, "p_as_of": _iso(as_of),
-        })
+        return self.rpc(
+            "company_financials", p_id=id, p_from=_iso(start), p_to=_iso(end),
+            p_scope=scope, p_as_of=_iso(as_of),
+        )
 
     def financial_statement_history(self, id: str, statement: str,
                                     start: Datish = None, end: Datish = None,
@@ -1272,11 +1331,10 @@ class SiloClient:
         """
         if not statement or not statement.strip():
             raise ValueError("statement is required")
-        return self._rpc("financial_statement_history", {
-            "p_id": id, "p_statement": statement,
-            "p_from": _iso(start), "p_to": _iso(end),
-            "p_scope": scope, "p_doc_type": doc_type,
-        })
+        return self.rpc(
+            "financial_statement_history", p_id=id, p_statement=statement,
+            p_from=_iso(start), p_to=_iso(end), p_scope=scope, p_doc_type=doc_type,
+        )
 
     def fii_property_history(self, cnpj: str, start: Datish = None,
                              end: Datish = None) -> List[Dict[str, Any]]:
@@ -1291,9 +1349,9 @@ class SiloClient:
         digits = "".join(ch for ch in cnpj if ch.isdigit())
         if len(digits) != 14:
             raise ValueError("cnpj must contain 14 digits")
-        return self._rpc("fii_property_history", {
-            "p_cnpj": digits, "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "fii_property_history", p_cnpj=digits, p_from=_iso(start), p_to=_iso(end),
+        )
 
     def focus_expectations(self, endpoint: str, horizon: str,
                            indicator: Optional[str] = None,
@@ -1312,11 +1370,10 @@ class SiloClient:
             raise ValueError("endpoint is required")
         if not horizon or not horizon.strip():
             raise ValueError("horizon is required")
-        return self._rpc("focus_expectations", {
-            "p_endpoint": endpoint, "p_horizon": horizon,
-            "p_indicator": indicator,
-            "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "focus_expectations", p_endpoint=endpoint, p_horizon=horizon,
+            p_indicator=indicator, p_from=_iso(start), p_to=_iso(end),
+        )
 
     def income_statements(self, id: str, start: Datish = None,
                           end: Datish = None, scope: str = "con",
@@ -1346,11 +1403,10 @@ class SiloClient:
         `net_income_controlling` — not `net_income` — is the figure per-share
         numbers are built on. Every value is in absolute reais.
         """
-        return self._rpc("income_statements", {
-            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
-            "p_scope": scope, "p_doc_type": doc_type,
-            "p_as_of": _iso(as_of),
-        })
+        return self.rpc(
+            "income_statements", p_id=id, p_from=_iso(start), p_to=_iso(end),
+            p_scope=scope, p_doc_type=doc_type, p_as_of=_iso(as_of),
+        )
 
     def balance_sheets(self, id: str, start: Datish = None,
                        end: Datish = None, scope: str = "con",
@@ -1371,11 +1427,10 @@ class SiloClient:
         fields read **null, never zero** for them. `chart` says which layout
         a filing used. Every value is in absolute reais.
         """
-        return self._rpc("balance_sheets", {
-            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
-            "p_scope": scope, "p_doc_type": doc_type,
-            "p_as_of": _iso(as_of),
-        })
+        return self.rpc(
+            "balance_sheets", p_id=id, p_from=_iso(start), p_to=_iso(end),
+            p_scope=scope, p_doc_type=doc_type, p_as_of=_iso(as_of),
+        )
 
     def cash_flow_statements(self, id: str, start: Datish = None,
                              end: Datish = None, scope: str = "con",
@@ -1393,11 +1448,10 @@ class SiloClient:
         `operating_cash_generated` and `working_capital_changes` exist only on
         the indirect method and read null otherwise. Absolute reais.
         """
-        return self._rpc("cash_flow_statements", {
-            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
-            "p_scope": scope, "p_doc_type": doc_type,
-            "p_as_of": _iso(as_of),
-        })
+        return self.rpc(
+            "cash_flow_statements", p_id=id, p_from=_iso(start), p_to=_iso(end),
+            p_scope=scope, p_doc_type=doc_type, p_as_of=_iso(as_of),
+        )
 
     def company_events(self, id: str, start: Datish = None, end: Datish = None,
                        category: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -1413,10 +1467,10 @@ class SiloClient:
         held. An unknown category is a `SiloError` (22023) listing the
         categories held. No cursor: narrow the window.
         """
-        return self._rpc("company_events", {
-            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
-            "p_category": category,
-        })
+        return self.rpc(
+            "company_events", p_id=id, p_from=_iso(start), p_to=_iso(end),
+            p_category=category,
+        )
 
     # -- industry aggregates (ANBIMA) ----------------------------------------
 
@@ -1439,10 +1493,10 @@ class SiloClient:
         category, metric or level is a `SiloError` (22023) listing what
         exists — never an empty list that looks like "nothing published".
         """
-        return self._rpc("anbima_classes", {
-            "p_category": category, "p_metric": metric, "p_level": level,
-            "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "anbima_classes", p_category=category, p_metric=metric, p_level=level,
+            p_from=_iso(start), p_to=_iso(end),
+        )
 
     # -- inflation (BACEN SGS + IBGE SIDRA) ----------------------------------
 
@@ -1465,10 +1519,10 @@ class SiloClient:
         for the weights. An unknown series or family is a `SiloError`
         (22023) listing what exists. No cursor: narrow the window.
         """
-        return self._rpc("inflation", {
-            "p_series": series, "p_family": family,
-            "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "inflation", p_series=series, p_family=family, p_from=_iso(start),
+            p_to=_iso(end),
+        )
 
     def inflation_items(self, level: Optional[int] = 1,
                         item: Optional[str] = None,
@@ -1487,10 +1541,10 @@ class SiloClient:
         `item_code` changed with the 2020-01 structure, `item_number` is the
         continuity. Unknown level/item is a `SiloError` (22023). No cursor.
         """
-        return self._rpc("inflation_items", {
-            "p_level": level, "p_item": item,
-            "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "inflation_items", p_level=level, p_item=item, p_from=_iso(start),
+            p_to=_iso(end),
+        )
 
     # -- BACEN macro and PTAX (v38) -------------------------------------------
 
@@ -1510,9 +1564,9 @@ class SiloClient:
         is a `SiloError` (22023) listing what exists. Default window 12 months
         (daily series) or 120 (monthly). No cursor: narrow the window.
         """
-        return self._rpc("macro_series", {
-            "p_series": series, "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "macro_series", p_series=series, p_from=_iso(start), p_to=_iso(end),
+        )
 
     def ptax(self, currency: str, start: Datish = None,
              end: Datish = None) -> List[Dict[str, Any]]:
@@ -1526,9 +1580,7 @@ class SiloClient:
         holiday has no row. An unknown currency is a `SiloError` (22023)
         listing the currencies held. Default window 12 months.
         """
-        return self._rpc("ptax", {
-            "p_currency": currency, "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc("ptax", p_currency=currency, p_from=_iso(start), p_to=_iso(end))
 
     def future_curve(self, root: str = "DI1",
                      trade_date: Datish = None) -> List[Dict[str, Any]]:
@@ -1542,9 +1594,7 @@ class SiloClient:
         contract_month is read from the ticker with B3's month letters. From
         2018-01-02 (B3 Price Report); a date with no session returns [].
         """
-        return self._rpc("future_curve", {
-            "p_root": root, "p_trade_date": _iso(trade_date),
-        })
+        return self.rpc("future_curve", p_root=root, p_trade_date=_iso(trade_date))
 
     def future_series(self, ticker: str, start: Datish = None,
                       end: Datish = None) -> List[Dict[str, Any]]:
@@ -1557,9 +1607,9 @@ class SiloClient:
         `curve_history`). A malformed code is a `SiloError` (22023). Default
         window 12 months.
         """
-        return self._rpc("future_series", {
-            "p_ticker": ticker, "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "future_series", p_ticker=ticker, p_from=_iso(start), p_to=_iso(end),
+        )
 
     def curve(self, curve: str = "PRE",
               trade_date: Datish = None) -> List[Dict[str, Any]]:
@@ -1573,9 +1623,7 @@ class SiloClient:
         `rate_basis`. Past the last anchoring contract B3 extrapolates, so the
         long vertices are not prices. From 2008-01-02.
         """
-        return self._rpc("curve", {
-            "p_curve": curve, "p_trade_date": _iso(trade_date),
-        })
+        return self.rpc("curve", p_curve=curve, p_trade_date=_iso(trade_date))
 
     def curve_history(self, curve: str, tenor_days: int, start: Datish = None,
                       end: Datish = None) -> List[Dict[str, Any]]:
@@ -1589,10 +1637,10 @@ class SiloClient:
         interpolate from `curve` in the notebook instead. Default window 12
         months.
         """
-        return self._rpc("curve_history", {
-            "p_curve": curve, "p_tenor_days": tenor_days,
-            "p_from": _iso(start), "p_to": _iso(end),
-        })
+        return self.rpc(
+            "curve_history", p_curve=curve, p_tenor_days=tenor_days, p_from=_iso(start),
+            p_to=_iso(end),
+        )
 
     # -- typed views (GET resources, not functions) --------------------------
 
