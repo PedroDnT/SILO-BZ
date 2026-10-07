@@ -375,7 +375,7 @@ def test_sdk_wraps_each_screen():
         node.args[0].value
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "_rpc" and node.args
+        and node.func.attr in ("_rpc", "rpc") and node.args
         and isinstance(node.args[0], ast.Constant)
     }
     assert set(SCREENS) <= wrapped

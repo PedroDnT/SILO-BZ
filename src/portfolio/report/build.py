@@ -19,7 +19,7 @@ import json
 import sys
 from pathlib import Path
 
-from src.portfolio.report import adapt, llm, redator, revisor
+from src.portfolio.report import llm, redator, revisor
 from src.portfolio.report.render import Narrative, html_to_pdf, render_html
 
 
@@ -87,14 +87,15 @@ def main(argv: list[str] | None = None) -> int:
     if not args.out and not args.html:
         ap.error("give --out and/or --html")
 
+    from src.portfolio.diagnosis import render_report  # the diagnosis' second half; imported here: it imports this module
+
     engine = json.loads(Path(args.engine).read_text(encoding="utf-8"))
-    if adapt.is_engine_output(engine):
-        engine = adapt.to_view(engine)  # the engine's schema 1.x, mapped to the report's view
     try:
-        html_text, narrative = build(engine, args.provider, args.signature, not args.no_llm_review)
+        report = render_report(engine, args.provider, args.signature, not args.no_llm_review)
     except (llm.LLMError, redator.UnmaskedInputError) as exc:
         print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
+    html_text, narrative = report.html, report.narrative
     if args.html:
         Path(args.html).write_text(html_text, encoding="utf-8")
     if args.out:

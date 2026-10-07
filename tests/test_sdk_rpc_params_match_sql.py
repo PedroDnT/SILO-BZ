@@ -39,13 +39,20 @@ def _sql_params() -> dict[str, set[str]]:
 
 
 def _sdk_calls() -> list[tuple[str, set[str], int]]:
-    """[(rpc name, {keys sent}, lineno)] for every literal self._rpc(...) call."""
+    """[(rpc name, {keys sent}, lineno)] for every literal self._rpc(...) call
+    and every self.rpc("<name>", p_...=...) call."""
     tree = ast.parse(CLIENT.read_text())
     calls: list[tuple[str, set[str], int]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         fn = node.func
+        if (isinstance(fn, ast.Attribute) and fn.attr == "rpc" and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)):
+            keys = {kw.arg for kw in node.keywords if kw.arg is not None}
+            calls.append((node.args[0].value, keys, node.lineno))
+            continue
         if not (isinstance(fn, ast.Attribute) and fn.attr == "_rpc"):
             continue
         if len(node.args) < 2:

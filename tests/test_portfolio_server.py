@@ -2,15 +2,16 @@
 
 SILO is read through the FakeClient over the canned rows, as in
 test_portfolio_engine.py, and the report runs with SILO_LLM_PROVIDER=fake: no
-network, no key. The real PDF renderer runs only where WeasyPrint is installed
-(the engine image's CI job runs this file inside the image); elsewhere it is
-stubbed, so the server path is still exercised by the offline suite.
+network, no key. The PDF renderer is a stub passed to ``create_app``; the real
+one runs only where WeasyPrint is installed (the engine image's CI job runs this
+file inside the image). These tests cover the HTTP mapping; the diagnosis itself
+(engine, report, trace record) is tested through ``diagnosis.diagnose`` in
+test_portfolio_diagnosis.py.
 """
 
 from __future__ import annotations
 
 import io
-from types import SimpleNamespace
 import logging
 from pathlib import Path
 
@@ -40,20 +41,17 @@ def _client():
 def app(monkeypatch):
     monkeypatch.setenv(server.TOKEN_ENV, TOKEN)
     monkeypatch.setenv("SILO_LLM_PROVIDER", "fake")
-    return server.create_app(client_factory=_client).test_client()
+    return server.create_app(client_factory=_client, pdf_renderer=stub_pdf).test_client()
 
 
 def _auth(token: str = TOKEN) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _stub_pdf(monkeypatch):
-    def fake_pdf(html_text, out_path):
-        assert "<html" in html_text.lower()
-        Path(out_path).write_bytes(b"%PDF-1.7\n% stub\n")
-        return Path(out_path)
-
-    monkeypatch.setattr(server, "html_to_pdf", fake_pdf)
+def stub_pdf(html_text, out_path):
+    assert "<html" in html_text.lower()
+    Path(out_path).write_bytes(b"%PDF-1.7\n% stub\n")
+    return Path(out_path)
 
 
 def _assert_no_private(caplog, capfd):
@@ -200,15 +198,13 @@ def test_provider_error_code_is_named_but_never_free_text(monkeypatch):
 def test_missing_llm_key_is_a_fixed_502(monkeypatch, app):
     monkeypatch.setenv("SILO_LLM_PROVIDER", "anthropic")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    _stub_pdf(monkeypatch)
     r = app.post("/diagnose", data=TEMPLATE.read_bytes(), headers=_auth())
     assert r.status_code == 502 and r.json == {"erro": server.MSG[502]}
     assert r.headers["X-Silo-Stage"] == "report"
 
 
 @pytest.mark.parametrize("multipart", [False, True])
-def test_diagnose_returns_a_pdf_with_the_renderer_stubbed(app, monkeypatch, caplog, capfd, multipart):
-    _stub_pdf(monkeypatch)
+def test_diagnose_returns_a_pdf_with_the_renderer_stubbed(app, caplog, capfd, multipart):
     caplog.set_level(logging.DEBUG)
     if multipart:
         r = app.post(
@@ -229,8 +225,11 @@ def test_diagnose_returns_a_pdf_with_the_renderer_stubbed(app, monkeypatch, capl
     _assert_no_private(caplog, capfd)
 
 
-def test_diagnose_renders_a_real_pdf(app, caplog, capfd):
+def test_diagnose_renders_a_real_pdf(monkeypatch, caplog, capfd):
     pytest.importorskip("weasyprint")
+    monkeypatch.setenv(server.TOKEN_ENV, TOKEN)
+    monkeypatch.setenv("SILO_LLM_PROVIDER", "fake")
+    app = server.create_app(client_factory=_client).test_client()  # the default renderer: html_to_pdf
     caplog.set_level(logging.DEBUG)
     r = app.post(
         "/diagnose",
@@ -246,7 +245,6 @@ def test_diagnose_renders_a_real_pdf(app, caplog, capfd):
 
 def test_temporary_files_are_removed(app, monkeypatch, tmp_path):
     monkeypatch.setattr(server.tempfile, "tempdir", str(tmp_path))
-    _stub_pdf(monkeypatch)
     assert app.post("/diagnose", data=TEMPLATE.read_bytes(), headers=_auth()).status_code == 200
     assert app.post("/diagnose", data=b"PK\x03\x04 broken", headers=_auth()).status_code == 422
     assert list(tmp_path.iterdir()) == []
@@ -273,32 +271,12 @@ def test_narrative_headers_name_the_reason_and_the_calls_never_free_text():
     assert server.narrative_headers(Narrative(status="complete")) == {}
 
 
-def test_revisor_removing_everything_is_a_fixed_reason_code(monkeypatch):
-    from src.portfolio.report import build, revisor
-    from src.portfolio.report.redator import RedatorResult
-
-    one = build.redator.Finding("f1", "resumo", "t", "x", ["p1"])
-    monkeypatch.setattr(build.redator, "write", lambda engine, provider: RedatorResult("complete", [one]))
-    monkeypatch.setattr(revisor, "check", lambda engine, findings: revisor.RevisorResult(kept=[], removed=[], notes=[]))
-    n = build.make_narrative({}, SimpleNamespace(name="fake", model="fake", meter=build.llm.CostMeter()), llm_review=False)
-    assert n.status == "unknown" and n.reason_code == "revisor_removed_all"
-
-
-def test_zero_findings_drafted_is_a_complete_narrative(monkeypatch):
-    # engine 1.7: a portfolio with nothing to point out is a valid answer, not a failed narrative
-    from src.portfolio.report import build, revisor
-    from src.portfolio.report.redator import RedatorResult
-
-    monkeypatch.setattr(build.redator, "write", lambda engine, provider: RedatorResult("complete", []))
-    monkeypatch.setattr(revisor, "check", lambda engine, findings: revisor.RevisorResult(kept=[], removed=[], notes=[]))
-    n = build.make_narrative({}, SimpleNamespace(name="fake", model="fake", meter=build.llm.CostMeter()), llm_review=False)
-    assert n.status == "complete" and n.reason_code is None and n.kept == []
-
-
-def test_html_delivery_skips_pdf_and_has_client_constraints(app, monkeypatch):
+def test_html_delivery_skips_pdf_and_has_client_constraints(monkeypatch):
     def forbidden_pdf(*args):
         raise AssertionError('HTML must not render a PDF')
-    monkeypatch.setattr(server, 'html_to_pdf', forbidden_pdf)
+    monkeypatch.setenv(server.TOKEN_ENV, TOKEN)
+    monkeypatch.setenv("SILO_LLM_PROVIDER", "fake")
+    app = server.create_app(client_factory=_client, pdf_renderer=forbidden_pdf).test_client()
     r = app.post('/diagnose', headers=_auth(), data={
         'file': (io.BytesIO(TEMPLATE.read_bytes()), 'statement.xlsx'),
         'output_format': 'html',
@@ -312,23 +290,24 @@ def test_html_delivery_skips_pdf_and_has_client_constraints(app, monkeypatch):
     assert "default-src 'none'" in r.headers['Content-Security-Policy']
 
 
-def test_client_constraints_refused_before_engine(app, monkeypatch):
-    def forbidden_engine(*args, **kwargs):
-        raise AssertionError('invalid input must not call engine')
-    monkeypatch.setattr(server, 'run_engine', forbidden_engine)
+def test_client_constraints_refused_before_engine(monkeypatch):
+    def forbidden_client():
+        raise AssertionError('invalid input must not reach SILO')
+    monkeypatch.setenv(server.TOKEN_ENV, TOKEN)
+    app = server.create_app(client_factory=forbidden_client).test_client()
     r = app.post('/diagnose', headers=_auth(), data={
         'file': (io.BytesIO(TEMPLATE.read_bytes()), 'statement.xlsx'),
         'client_constraints': '{"horizon_date":"2000-01-01"}',
     })
     assert r.status_code == 400
+    assert r.headers['X-Silo-Stage'] == 'engine'
 
 
-def test_curl_default_form_content_type_does_not_consume_raw_upload(app, monkeypatch):
+def test_curl_default_form_content_type_does_not_consume_raw_upload(app):
     # Exact smoke wire format: curl --data-binary sends application/x-www-form-urlencoded.
     headers = {**_auth(), 'Content-Type': 'application/x-www-form-urlencoded'}
     r = app.post('/diagnose', data=b'not a statement', headers=headers)
     assert r.status_code == 415
     assert app.post('/diagnose', data=b'', headers=headers).status_code == 400
-    _stub_pdf(monkeypatch)
     r = app.post('/diagnose', data=TEMPLATE.read_bytes(), headers=headers)
     assert r.status_code == 200 and r.mimetype == 'application/pdf'
