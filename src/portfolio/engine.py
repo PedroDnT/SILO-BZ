@@ -30,7 +30,7 @@ from src.portfolio.liquidity import compute_liquidity
 from src.portfolio.lookthrough import add_portfolio_shares, compute_lookthrough
 from src.portfolio.market_equivalent import compute_equivalents
 from src.portfolio.movement import compute_movement, default_movement_month
-from src.portfolio import sections
+from src.portfolio import client_fit, sections
 from src.portfolio.restatements import compute_restatements
 from src.portfolio.returns import compute_returns
 from src.portfolio.risks import compute_risks
@@ -302,10 +302,14 @@ def run_engine(
     params: EngineParams | None = None,
     clock=utc_now,
     investigator: Any = None,
-    client_constraints: dict | None = None,
+    client_constraints: client_fit.Declared | None = None,
 ) -> dict[str, Any]:
-    from src.portfolio import client_fit
-    declared = client_fit.validate_input(client_constraints, stmt.position_date)
+    # Validated once, by the entry point (client_fit.declare); raw input here is a caller's bug.
+    if client_constraints is not None and not isinstance(client_constraints, client_fit.Declared):
+        raise TypeError("run_engine takes client_fit.declare()'s result, not raw constraints")
+    if client_constraints is not None and client_constraints.position_date != stmt.position_date:
+        raise ValueError("client constraints were validated for another statement date")
+    declared = client_constraints.values if client_constraints is not None else None
     params = params or default_params(stmt.position_date)
     n_read = len(stmt.positions)
     stmt, n_merged = merge_same_identity(stmt)  # engine 1.7: one asset listed on several lines is one position

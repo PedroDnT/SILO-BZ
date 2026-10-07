@@ -33,9 +33,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from src.portfolio import trace
+from src.portfolio import client_fit, trace
 from src.portfolio.client import SiloClient
-from src.portfolio.client_fit import validate_input
 from src.portfolio.engine import default_params, dumps, run_engine
 from src.portfolio.report import adapt, build, llm, redator
 from src.portfolio.report.render import Narrative
@@ -149,11 +148,12 @@ def diagnose(
     extra: dict[str, Any] = {"investigator": investigator} if investigator is not None else {}
     try:
         # Checked here, before SILO is read, so a bad constraint is a refusal and not an engine failure.
-        constraints = validate_input(constraints, stmt.position_date)
+        # The only validation of this run: the engine takes the typed result and does not check again.
+        declared = client_fit.declare(constraints, stmt.position_date)
     except (ValueError, TypeError):
         raise InvalidConstraints() from None
-    if constraints is not None:
-        extra["client_constraints"] = constraints
+    if declared is not None:
+        extra["client_constraints"] = declared
     doc = run_engine(stmt, client_factory(), default_params(stmt.position_date), **extra)
     pending = getattr(getattr(getattr(investigator, "deps", None), "cache", None), "pending", None)
     rec.documents = pending() if callable(pending) else {}  # public documents read once (#605, Q35)

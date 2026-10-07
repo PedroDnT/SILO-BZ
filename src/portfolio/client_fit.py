@@ -1,4 +1,5 @@
 """Declared client constraints; factual checks, never a suitability approval."""
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -32,6 +33,20 @@ def validate_input(raw, position_date):
             raise ValueError('liquidity date required')
         result['liquidity_brl'] = float(n)
     return result or None
+
+
+@dataclass(frozen=True)
+class Declared:
+    """Constraints already validated against one statement date: what ``run_engine`` takes."""
+
+    position_date: date
+    values: dict
+
+
+def declare(raw, position_date):
+    """``validate_input`` once, typed for the engine; None when nothing was declared. Raises as it does."""
+    values = validate_input(raw, position_date)
+    return Declared(position_date, values) if values is not None else None
 
 
 def compute(doc, declared):
