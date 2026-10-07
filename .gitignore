@@ -89,3 +89,6 @@ evi/
 **/.claude/agent-memory-local
 **/.claude/first-run
 **/.claude/assistant-daemon-state.json
+
+# A .venv symlink (not only a directory) must never be tracked (#719 committed one).
+.venv

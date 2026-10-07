@@ -387,10 +387,12 @@ def parse_pdf_pages(pages: list[str], extractor: str = "text") -> tuple[Statemen
     # the cover is discarded; everything after is scrubbed
     scrubbed = [[str(masker.scrub(ln)) for ln in pg.splitlines()] for pg in pages[1:]]
     del pages
+    # The period is read before the page furniture is stripped: a report that repeats
+    # "Período de ... a ..." at the top of every page would otherwise lose it as a header.
+    period_end = _period_end([(pi + 2, li + 1, ln) for pi, pg in enumerate(scrubbed) for li, ln in enumerate(pg)])
     scrubbed = _strip_furniture(scrubbed)
     lines: list[tuple[int, int, str]] = [(pi + 2, li + 1, ln) for pi, pg in enumerate(scrubbed) for li, ln in enumerate(pg)]
 
-    period_end = _period_end(lines)
     bruto, liquido_unused, saldo_final, caixa_valor = _summary_anchors(lines)
 
     sec = _consolidated_section(lines, diag)
