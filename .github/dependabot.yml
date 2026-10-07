@@ -1,0 +1,9 @@
+# Dependabot moves the SHA-pinned actions in .github/workflows/ (#686).
+# Each `uses:` line is pinned to a full commit SHA with its tag in a comment;
+# Dependabot updates both in one PR.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
