@@ -21,34 +21,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from src.portfolio.report.llm import LLMError, Provider, validate_output
+from src.portfolio.sections import REPORT_SLOTS
 
-SECTIONS = (
-    "resumo",
-    "achados",
-    "riscos",
-    "identificacao",
-    "taxas",
-    "exposicao",
-    "reapresentacoes",
-    "sinais_de_risco",
-    "retornos",
-    "impostos",
-    "equivalentes",
-)
-
-SECTION_TITLES = {
-    "resumo": "Resumo",
-    "achados": "Achados que ninguém pegaria à mão",
-    "riscos": "Principais riscos",
-    "identificacao": "Identificação linha a linha",
-    "taxas": "Custo em taxas",
-    "exposicao": "Exposição",
-    "reapresentacoes": "Reapresentações",
-    "sinais_de_risco": "Sinais de risco",
-    "retornos": "Retorno por posição",
-    "impostos": "Taxa e imposto por posição",
-    "equivalentes": "Equivalente de mercado",
-}
+# the finding slots and their titles are declared with the diagnosis sections (src/portfolio/sections.py)
+SECTIONS = tuple(key for key, _ in REPORT_SLOTS)
+SECTION_TITLES = dict(REPORT_SLOTS)
 
 # Keys that would carry the client's identity. Fund and issuer names are public
 # and expected; these are not.

@@ -21,7 +21,7 @@ from src.portfolio import server, trace  # noqa: E402
 from src.portfolio.common import SiloUnavailable  # noqa: E402
 from src.portfolio.report.render import Narrative  # noqa: E402
 from src.portfolio.report.revisor import Removal  # noqa: E402
-from tests.test_portfolio_server import PRIVATE, TEMPLATE, TOKEN, UPLOAD_NAME, _auth, _client, _stub_pdf  # noqa: E402
+from tests.test_portfolio_server import PRIVATE, TEMPLATE, TOKEN, UPLOAD_NAME, _auth, _client, stub_pdf  # noqa: E402
 
 HEX32 = re.compile(r"^[0-9a-f]{32}$")
 HEX16 = re.compile(r"^[0-9a-f]{16}$")
@@ -32,7 +32,7 @@ def app(monkeypatch):
     monkeypatch.setenv(server.TOKEN_ENV, TOKEN)
     monkeypatch.setenv("SILO_LLM_PROVIDER", "fake")
     monkeypatch.delenv("GITHUB_SHA", raising=False)
-    return server.create_app(client_factory=_client).test_client()
+    return server.create_app(client_factory=_client, pdf_renderer=stub_pdf).test_client()
 
 
 def _spans(otlp: dict) -> list[dict]:
@@ -164,8 +164,7 @@ def _fetch(app, tid, headers=None):
     return app.get(f"/trace/{tid}", headers=_auth() if headers is None else headers)
 
 
-def test_a_200_run_names_its_trace_and_serves_it_once_with_the_masked_engine_json(app, monkeypatch):
-    _stub_pdf(monkeypatch)
+def test_a_200_run_names_its_trace_and_serves_it_once_with_the_masked_engine_json(app):
     upload = TEMPLATE.read_bytes()
     r = app.post("/diagnose", data={"file": (io.BytesIO(upload), UPLOAD_NAME)},
                  content_type="multipart/form-data", headers=_auth())
