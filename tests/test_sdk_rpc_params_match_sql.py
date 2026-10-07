@@ -19,48 +19,23 @@ expose, and defaulting them is the point of a default.
 """
 
 import ast
-import re
 from pathlib import Path
 
 import pytest
 
+from serve.endpoint_manifest import manifest
+
 ROOT = Path(__file__).resolve().parents[1]
-SQL = ROOT / "src/store/analytical/19_api_contract.sql"
-# Schema `api` functions defined outside 19 (v33: the FNET register). Applied
-# after 19 by the same glob, so a later definition is the shipped one.
-SQL_EXTRA = (
-    ROOT / "src/store/analytical/24_api_fnet.sql",
-    # v37: the filing-behaviour screens.
-    ROOT / "src/store/analytical/25_api_filing_screens.sql",
-    # v38: company events, macro series, PTAX.
-    ROOT / "src/store/analytical/26_api_events_macro.sql",
-    # v42: DI1 futures and B3 reference curves.
-    ROOT / "src/store/analytical/27_api_rates.sql",
-    # v43: the research universe.
-    ROOT / "src/store/analytical/28_api_research.sql",
-    # v45: the benchmark index.
-    ROOT / "src/store/analytical/29_api_index.sql",
-    # v51: the portfolio-diagnosis reads.
-    ROOT / "src/store/analytical/31_api_portfolio.sql",
-    # v65: B3's FORWARD segment (fixed-income ETFs).
-    ROOT / "src/store/analytical/32_api_trade_consolidated.sql",
-)
 CLIENT = ROOT / "sdk/silo_client/client.py"
 
 
 def _sql_params() -> dict[str, set[str]]:
-    """{function name: {declared parameter names}} from the shipped contract."""
-    text = "\n".join(p.read_text() for p in (SQL, *SQL_EXTRA))
-    out: dict[str, set[str]] = {}
-    for m in re.finditer(
-        r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+api\.(\w+)\s*\((.*?)\)\s*\n\s*RETURNS",
-        text, re.S | re.I,
-    ):
-        name, body = m.group(1), m.group(2)
-        params = set(re.findall(r"\b(p_\w+)\s", body))
-        # A later CREATE OR REPLACE of the same name is the shipped signature.
-        out[name] = params
-    return out
+    """{function name: {declared parameter names}} from the shipped contract:
+    every analytical file, in apply order, so a later CREATE OR REPLACE of the
+    same name is the shipped signature (serve/endpoint_manifest.py)."""
+    return {
+        name: set(e.params) for name, e in manifest().items() if e.kind == "rpc"
+    }
 
 
 def _sdk_calls() -> list[tuple[str, set[str], int]]:
