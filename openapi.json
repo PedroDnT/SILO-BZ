@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "68",
+    "version": "69",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
     "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Fifty-five set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other fifty ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Three other functions (`search_funds`,\n  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
@@ -270,6 +270,123 @@
               "type": "string"
             },
             "description": "PostgREST filter on `fetched_at` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `fetched_at=eq.<value>`)."
+          },
+          {
+            "name": "market",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `market` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `market=eq.<value>`)."
+          },
+          {
+            "name": "term_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `term_days` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `term_days=eq.<value>`)."
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `currency` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `currency=eq.<value>`)."
+          },
+          {
+            "name": "average",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `average` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `average=eq.<value>`)."
+          },
+          {
+            "name": "bid",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `bid` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `bid=eq.<value>`)."
+          },
+          {
+            "name": "ask",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `ask` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `ask=eq.<value>`)."
+          },
+          {
+            "name": "contract_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_price` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_price=eq.<value>`)."
+          },
+          {
+            "name": "contract_expiry",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_expiry` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_expiry=eq.<value>`)."
+          },
+          {
+            "name": "quotation_factor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `quotation_factor` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `quotation_factor=eq.<value>`)."
+          },
+          {
+            "name": "contract_correction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_correction` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_correction=eq.<value>`)."
+          },
+          {
+            "name": "contract_points",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points=eq.<value>`)."
+          },
+          {
+            "name": "contract_points_raw",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points_raw` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points_raw=eq.<value>`)."
+          },
+          {
+            "name": "distribution_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `distribution_number` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `distribution_number=eq.<value>`)."
           }
         ],
         "responses": {
@@ -374,6 +491,86 @@
                           "null"
                         ],
                         "format": "date-time"
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "term_days": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "currency": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "average": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "bid": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ask": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_expiry": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "quotation_factor": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     }
                   }
@@ -683,6 +880,69 @@
               "type": "string"
             },
             "description": "PostgREST filter on `close_unit` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `close_unit=eq.<value>`)."
+          },
+          {
+            "name": "market",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `market` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `market=eq.<value>`)."
+          },
+          {
+            "name": "contract_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_price` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_price=eq.<value>`)."
+          },
+          {
+            "name": "contract_expiry",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_expiry` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_expiry=eq.<value>`)."
+          },
+          {
+            "name": "contract_correction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_correction` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_correction=eq.<value>`)."
+          },
+          {
+            "name": "contract_points",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points=eq.<value>`)."
+          },
+          {
+            "name": "contract_points_raw",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points_raw` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points_raw=eq.<value>`)."
+          },
+          {
+            "name": "distribution_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `distribution_number` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `distribution_number=eq.<value>`)."
           }
         ],
         "responses": {
@@ -840,6 +1100,49 @@
                       "close_unit": {
                         "type": [
                           "number",
+                          "null"
+                        ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_expiry": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
                           "null"
                         ]
                       }
@@ -1151,6 +1454,69 @@
               "type": "string"
             },
             "description": "PostgREST filter on `close_unit` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `close_unit=eq.<value>`)."
+          },
+          {
+            "name": "market",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `market` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `market=eq.<value>`)."
+          },
+          {
+            "name": "contract_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_price` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_price=eq.<value>`)."
+          },
+          {
+            "name": "contract_expiry",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_expiry` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_expiry=eq.<value>`)."
+          },
+          {
+            "name": "contract_correction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_correction` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_correction=eq.<value>`)."
+          },
+          {
+            "name": "contract_points",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points=eq.<value>`)."
+          },
+          {
+            "name": "contract_points_raw",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points_raw` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points_raw=eq.<value>`)."
+          },
+          {
+            "name": "distribution_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `distribution_number` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `distribution_number=eq.<value>`)."
           }
         ],
         "responses": {
@@ -1308,6 +1674,49 @@
                       "close_unit": {
                         "type": [
                           "number",
+                          "null"
+                        ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_expiry": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
                           "null"
                         ]
                       }
@@ -1637,6 +2046,69 @@
               "type": "string"
             },
             "description": "PostgREST filter on `close_unit` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `close_unit=eq.<value>`)."
+          },
+          {
+            "name": "market",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `market` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `market=eq.<value>`)."
+          },
+          {
+            "name": "contract_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_price` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_price=eq.<value>`)."
+          },
+          {
+            "name": "contract_expiry",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_expiry` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_expiry=eq.<value>`)."
+          },
+          {
+            "name": "contract_correction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_correction` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_correction=eq.<value>`)."
+          },
+          {
+            "name": "contract_points",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points=eq.<value>`)."
+          },
+          {
+            "name": "contract_points_raw",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points_raw` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points_raw=eq.<value>`)."
+          },
+          {
+            "name": "distribution_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `distribution_number` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `distribution_number=eq.<value>`)."
           }
         ],
         "responses": {
@@ -1806,6 +2278,49 @@
                       "close_unit": {
                         "type": [
                           "number",
+                          "null"
+                        ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_expiry": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
                           "null"
                         ]
                       }
@@ -2126,6 +2641,69 @@
               "type": "string"
             },
             "description": "PostgREST filter on `close_unit` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `close_unit=eq.<value>`)."
+          },
+          {
+            "name": "market",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `market` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `market=eq.<value>`)."
+          },
+          {
+            "name": "contract_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_price` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_price=eq.<value>`)."
+          },
+          {
+            "name": "contract_expiry",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_expiry` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_expiry=eq.<value>`)."
+          },
+          {
+            "name": "contract_correction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_correction` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_correction=eq.<value>`)."
+          },
+          {
+            "name": "contract_points",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points=eq.<value>`)."
+          },
+          {
+            "name": "contract_points_raw",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points_raw` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points_raw=eq.<value>`)."
+          },
+          {
+            "name": "distribution_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `distribution_number` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `distribution_number=eq.<value>`)."
           }
         ],
         "responses": {
@@ -2289,6 +2867,49 @@
                       "close_unit": {
                         "type": [
                           "number",
+                          "null"
+                        ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_expiry": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
                           "null"
                         ]
                       }
@@ -3582,6 +4203,69 @@
               "type": "string"
             },
             "description": "PostgREST filter on `close_unit` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `close_unit=eq.<value>`)."
+          },
+          {
+            "name": "market",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `market` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `market=eq.<value>`)."
+          },
+          {
+            "name": "contract_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_price` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_price=eq.<value>`)."
+          },
+          {
+            "name": "contract_expiry",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_expiry` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_expiry=eq.<value>`)."
+          },
+          {
+            "name": "contract_correction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_correction` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_correction=eq.<value>`)."
+          },
+          {
+            "name": "contract_points",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points=eq.<value>`)."
+          },
+          {
+            "name": "contract_points_raw",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points_raw` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points_raw=eq.<value>`)."
+          },
+          {
+            "name": "distribution_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `distribution_number` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `distribution_number=eq.<value>`)."
           }
         ],
         "responses": {
@@ -3739,6 +4423,49 @@
                       "close_unit": {
                         "type": [
                           "number",
+                          "null"
+                        ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_expiry": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
                           "null"
                         ]
                       }
@@ -10342,7 +11069,7 @@
       "post": {
         "operationId": "rpc_option_chain",
         "summary": "option_chain",
-        "description": "One session's option chain for a REQUIRED codneg prefix (>= 3 chars; else it raises). side = call/put from tpmerc 070/080. p_trade_date NULL = latest option-segment session. underlying_ticker resolves the option row's ISIN (published: CODISI carries the underlying's ISIN) to the same session's cash codneg; NULL when the underlying had no cash print that day. Rows clamped to 1..2000.\n\n**Tier ceiling.** Rows are CLAMPED, silently, to 200 for anonymous callers and 2000 for signed-in ones; a `p_limit` above the ceiling is lowered to it rather than refused. This is the opposite of the `22023` row cap the paging functions raise — here nothing tells you the result was cut, so treat a result of exactly 200 (or 2000) rows as probably truncated.",
+        "description": "One session's option chain for a REQUIRED codneg prefix (>= 3 chars; else it raises). side = call/put from tpmerc 070/080. p_trade_date NULL = latest option-segment session. underlying_ticker resolves the option row's ISIN (published: CODISI carries the underlying's ISIN) to the same session's cash codneg; NULL when the underlying had no cash print that day. Rows clamped to 1..2000. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.\n\n**Tier ceiling.** Rows are CLAMPED, silently, to 200 for anonymous callers and 2000 for signed-in ones; a `p_limit` above the ceiling is lowered to it rather than refused. This is the opposite of the `22023` row cap the paging functions raise — here nothing tells you the result was cut, so treat a result of exactly 200 (or 2000) rows as probably truncated.",
         "tags": [
           "Derivatives"
         ],
@@ -10513,6 +11240,74 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "board": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "term_days": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "short_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "currency": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "average": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "bid": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ask": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "quotation_factor": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fetched_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
                       }
                     }
                   }
@@ -10557,7 +11352,7 @@
       "post": {
         "operationId": "rpc_option_exercises",
         "summary": "option_exercises",
-        "description": "Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Rows clamped to 1..500 anonymous, 1..5000 signed in.\n\n**Tier ceiling.** Rows are CLAMPED, silently, to 500 for anonymous callers and 5000 for signed-in ones; a `p_limit` above the ceiling is lowered to it rather than refused. This is the opposite of the `22023` row cap the paging functions raise — here nothing tells you the result was cut, so treat a result of exactly 500 (or 5000) rows as probably truncated.",
+        "description": "Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Rows clamped to 1..500 anonymous, 1..5000 signed in. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.\n\n**Tier ceiling.** Rows are CLAMPED, silently, to 500 for anonymous callers and 5000 for signed-in ones; a `p_limit` above the ceiling is lowered to it rather than refused. This is the opposite of the `22023` row cap the paging functions raise — here nothing tells you the result was cut, so treat a result of exactly 500 (or 5000) rows as probably truncated.",
         "tags": [
           "Derivatives"
         ],
@@ -10697,6 +11492,110 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "board": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "term_days": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "short_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "currency": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "open": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "high": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "low": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "average": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "bid": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ask": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "quotation_factor": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fetched_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
                       }
                     }
                   }
@@ -10741,7 +11640,7 @@
       "post": {
         "operationId": "rpc_option_history",
         "summary": "option_history",
-        "description": "Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history's shape plus side/strike/expiry and underlying_ticker (resolved per session from the published ISIN mapping; NULL when the underlying had no cash print that day). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to. No cursor — an option series is short-lived, so a window over a page is a mistake, not a walk.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "description": "Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history's shape plus side/strike/expiry and underlying_ticker (resolved per session from the published ISIN mapping; NULL when the underlying had no cash print that day). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to. No cursor — an option series is short-lived, so a window over a page is a mistake, not a walk. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
         "tags": [
           "Derivatives"
         ],
@@ -10945,6 +11844,43 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "board": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "term_days": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "short_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fetched_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
                       }
                     }
                   }
@@ -13429,7 +14365,16 @@
                         "events_proven_at",
                         "data_revision",
                         "close_total_return",
-                        "close_total_return_null_reason"
+                        "close_total_return_null_reason",
+                        "market",
+                        "term_days",
+                        "contract_price",
+                        "contract_expiry",
+                        "contract_correction",
+                        "contract_points",
+                        "contract_points_raw",
+                        "distribution_number",
+                        "fetched_at"
                       ]
                     },
                     "description": "Fields to return; null or omitted = ticker, trade_date, close_adj. ticker and trade_date are in every row.",
@@ -13662,6 +14607,70 @@
                           "null"
                         ],
                         "description": "Why close_total_return is NULL on the session; null when it has a value."
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Original TPMERC code, preserved as text. Cash history is 010 only."
+                      },
+                      "term_days": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "PRAZOT as published; blank for spot. Part of the source natural key."
+                      },
+                      "contract_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "description": "PREEXE as published; exercise price or secondary-forward contract value, not a yield."
+                      },
+                      "contract_expiry": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date",
+                        "description": "DATVEN; source sentinel 99991231 is null."
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Original INDOPC code; consult the dated COTAHIST reference in catalog."
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "description": "PTOEXE decoded with six implied decimals; zero filler or unreadable points become null."
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Original PTOEXE text, retaining zero filler and leading zeros."
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "DISMES source sequence code, not a dividend amount."
+                      },
+                      "fetched_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Warehouse timestamp, not original publication time or an as-known source vintage."
                       }
                     },
                     "additionalProperties": false
@@ -13878,6 +14887,62 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "term_days": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_expiry": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fetched_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
                       }
                     }
                   }
@@ -15885,7 +16950,7 @@
       "post": {
         "operationId": "rpc_termo_history",
         "summary": "termo_history",
-        "description": "Daily unadjusted series for one termo codneg (tpmerc 030), including term_days (prazot). Grain is (codneg, trade_date, term_days). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "description": "Daily unadjusted series for one termo codneg (tpmerc 030), including term_days (prazot). Grain is (codneg, trade_date, market, board, term_days). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
         "tags": [
           "Derivatives"
         ],
@@ -16052,6 +17117,68 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "board": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "short_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_expiry": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fetched_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
                       }
                     }
                   }
@@ -17121,6 +18248,69 @@
               "type": "string"
             },
             "description": "PostgREST filter on `close_unit` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `close_unit=eq.<value>`)."
+          },
+          {
+            "name": "market",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `market` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `market=eq.<value>`)."
+          },
+          {
+            "name": "contract_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_price` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_price=eq.<value>`)."
+          },
+          {
+            "name": "contract_expiry",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_expiry` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_expiry=eq.<value>`)."
+          },
+          {
+            "name": "contract_correction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_correction` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_correction=eq.<value>`)."
+          },
+          {
+            "name": "contract_points",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points=eq.<value>`)."
+          },
+          {
+            "name": "contract_points_raw",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contract_points_raw` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contract_points_raw=eq.<value>`)."
+          },
+          {
+            "name": "distribution_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `distribution_number` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `distribution_number=eq.<value>`)."
           }
         ],
         "responses": {
@@ -17278,6 +18468,49 @@
                       "close_unit": {
                         "type": [
                           "number",
+                          "null"
+                        ]
+                      },
+                      "market": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_expiry": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "contract_correction": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_points": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "contract_points_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "distribution_number": {
+                        "type": [
+                          "string",
                           "null"
                         ]
                       }

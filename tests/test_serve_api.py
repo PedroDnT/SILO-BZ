@@ -798,3 +798,29 @@ def test_fund_nav_pages_only_when_a_family_is_pinned(client):
     client.pool.cur = cur
     client.get("/v1/funds/05754060000113/nav?type=fi")
     assert cur.cursors == [""], "family pinned: paging mode opens with ''"
+
+
+@pytest.mark.parametrize("path", ["/v1/quotes/ZZZA3?range=1y", "/v1/quotes/ZZZA3/history?range=1y"])
+def test_quote_series_preserved_fields_are_opt_in_and_keep_source_codes(client, path):
+    client.pool.cur = _QCur(
+        rows=[("ZZZA3", "2026-01-05", "010", "88", "0000001234567", "007", "b3_cotahist", "R$")],
+        description=[(name,) for name in ("ticker", "trade_date", "market", "board",
+                     "contract_points_raw", "distribution_number", "source", "currency")],
+    )
+    response = client.get(path + "&format=columnar&fields=market,board,contract_points_raw,distribution_number")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["market"] == ["010"]
+    assert body["contract_points_raw"] == ["0000001234567"]
+    assert body["distribution_number"] == ["007"]
+    assert client.pool.cur.params[-1] == ["market", "board", "contract_points_raw", "distribution_number", "source", "currency"]
+    assert "close_adj" not in client.pool.cur.params[-1]
+
+
+def test_quote_series_default_fields_stay_compact_and_reject_adjusted_fields(client):
+    client.pool.cur = _QCur(rows=[("ZZZA3", "2026-01-05", 12, "b3_cotahist", "R$")],
+                          description=[(name,) for name in ("ticker", "trade_date", "close", "source", "currency")])
+    assert client.get("/v1/quotes/ZZZA3?range=1y").status_code == 200
+    assert client.pool.cur.params[-1] == ["open", "high", "low", "close", "volume", "trades", "source", "currency", "board"]
+    response = client.get("/v1/quotes/ZZZA3?range=1y&fields=close_adj")
+    assert response.status_code == 400

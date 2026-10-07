@@ -493,7 +493,14 @@ SELECT
     -- `close` and `quotation_factor` stay untouched beside it. It does NOT
     -- account for splits, groupings or bonuses - that needs the corporate-event
     -- table, and until that exists `adjusted` stays FALSE.
-    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit,
+    v.tpmerc AS market,
+    v.preco_exercicio AS contract_price,
+    v.data_vencimento AS contract_expiry,
+    v.raw ->> 'indopc' AS contract_correction,
+    CASE WHEN v.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((v.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END AS contract_points,
+    v.raw ->> 'ptoexe' AS contract_points_raw,
+    v.raw ->> 'dismes' AS distribution_number
 FROM public.vw_b3_instrument_typed v
 WHERE v.tpmerc = '010';
 
@@ -577,7 +584,14 @@ SELECT
     -- `close` and `quotation_factor` stay untouched beside it. It does NOT
     -- account for splits, groupings or bonuses - that needs the corporate-event
     -- table, and until that exists `adjusted` stays FALSE.
-    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit,
+    v.tpmerc AS market,
+    v.preco_exercicio AS contract_price,
+    v.data_vencimento AS contract_expiry,
+    v.raw ->> 'indopc' AS contract_correction,
+    CASE WHEN v.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((v.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END AS contract_points,
+    v.raw ->> 'ptoexe' AS contract_points_raw,
+    v.raw ->> 'dismes' AS distribution_number
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'equity'
   AND v.tpmerc IN ('010', '020', '021');
@@ -620,7 +634,14 @@ SELECT
     -- `close` and `quotation_factor` stay untouched beside it. It does NOT
     -- account for splits, groupings or bonuses - that needs the corporate-event
     -- table, and until that exists `adjusted` stays FALSE.
-    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit,
+    v.tpmerc AS market,
+    v.preco_exercicio AS contract_price,
+    v.data_vencimento AS contract_expiry,
+    v.raw ->> 'indopc' AS contract_correction,
+    CASE WHEN v.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((v.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END AS contract_points,
+    v.raw ->> 'ptoexe' AS contract_points_raw,
+    v.raw ->> 'dismes' AS distribution_number
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'bdr'
   AND v.tpmerc IN ('010', '020', '021');
@@ -663,7 +684,14 @@ SELECT
     -- `close` and `quotation_factor` stay untouched beside it. It does NOT
     -- account for splits, groupings or bonuses - that needs the corporate-event
     -- table, and until that exists `adjusted` stays FALSE.
-    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit,
+    v.tpmerc AS market,
+    v.preco_exercicio AS contract_price,
+    v.data_vencimento AS contract_expiry,
+    v.raw ->> 'indopc' AS contract_correction,
+    CASE WHEN v.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((v.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END AS contract_points,
+    v.raw ->> 'ptoexe' AS contract_points_raw,
+    v.raw ->> 'dismes' AS distribution_number
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'unit'
   AND v.tpmerc IN ('010', '020', '021');
@@ -711,7 +739,14 @@ SELECT
     -- `close` and `quotation_factor` stay untouched beside it. It does NOT
     -- account for splits, groupings or bonuses - that needs the corporate-event
     -- table, and until that exists `adjusted` stays FALSE.
-    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit,
+    v.tpmerc AS market,
+    v.preco_exercicio AS contract_price,
+    v.data_vencimento AS contract_expiry,
+    v.raw ->> 'indopc' AS contract_correction,
+    CASE WHEN v.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((v.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END AS contract_points,
+    v.raw ->> 'ptoexe' AS contract_points_raw,
+    v.raw ->> 'dismes' AS distribution_number
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'fund_quota'
   AND v.tpmerc IN ('010', '020', '021');
@@ -754,7 +789,14 @@ SELECT
     -- `close` and `quotation_factor` stay untouched beside it. It does NOT
     -- account for splits, groupings or bonuses - that needs the corporate-event
     -- table, and until that exists `adjusted` stays FALSE.
-    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit,
+    v.tpmerc AS market,
+    v.preco_exercicio AS contract_price,
+    v.data_vencimento AS contract_expiry,
+    v.raw ->> 'indopc' AS contract_correction,
+    CASE WHEN v.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((v.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END AS contract_points,
+    v.raw ->> 'ptoexe' AS contract_points_raw,
+    v.raw ->> 'dismes' AS distribution_number
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'cash_security'
   AND v.tpmerc IN ('010', '020', '021');
@@ -821,7 +863,16 @@ AS $$
         ('events_proven_at', 'string',  FALSE, 'When the issuer''s corporate-event history was last proven complete (b3_corporate_event_sweep), ISO 8601 UTC. Null outside shares and units or when not proven.'),
         ('data_revision',    'string',  FALSE, 'Revision of the data behind this response: the latest successful load of the B3 cash tape, the corporate events or their proof, ISO 8601 UTC. It changes when adjusted levels can change; pages with different revisions must not be combined.'),
         ('close_total_return', 'number', FALSE, 'close_adj with cash distributions reinvested at the ex-date close (#418): divided by the product of (1 + cash / ex-session close) over later distributions (DIVIDENDO, JRS CAP PROPRIO gross of tax, RENDIMENTO, REST CAP DIN from B3''s full history, ISIN proven against the tape). 6 decimal places. NULL, with close_total_return_null_reason, where it cannot be valued.'),
-        ('close_total_return_null_reason', 'string', FALSE, 'Why close_total_return is NULL on the session; null when it has a value.')
+        ('close_total_return_null_reason', 'string', FALSE, 'Why close_total_return is NULL on the session; null when it has a value.'),
+        ('market', 'string', FALSE, 'Original TPMERC code, preserved as text. Cash history is 010 only.'),
+        ('term_days', 'string', FALSE, 'PRAZOT as published; blank for spot. Part of the source natural key.'),
+        ('contract_price', 'number', FALSE, 'PREEXE as published; exercise price or secondary-forward contract value, not a yield.'),
+        ('contract_expiry', 'date', FALSE, 'DATVEN; source sentinel 99991231 is null.'),
+        ('contract_correction', 'string', FALSE, 'Original INDOPC code; consult the dated COTAHIST reference in catalog.'),
+        ('contract_points', 'number', FALSE, 'PTOEXE decoded with six implied decimals; zero filler or unreadable points become null.'),
+        ('contract_points_raw', 'string', FALSE, 'Original PTOEXE text, retaining zero filler and leading zeros.'),
+        ('distribution_number', 'string', FALSE, 'DISMES source sequence code, not a dividend amount.'),
+        ('fetched_at', 'string', FALSE, 'Warehouse timestamp, not original publication time or an as-known source vintage.')
 $$;
 
 COMMENT ON FUNCTION api.quote_history_fields() IS
@@ -1591,6 +1642,15 @@ BEGIN
             'currency',         r.currency,
             'asset_class',      r.asset_class,
             'source',           r.source,
+            'market', r.market,
+            'term_days', r.term_days,
+            'contract_price', r.contract_price,
+            'contract_expiry', r.contract_expiry,
+            'contract_correction', r.contract_correction,
+            'contract_points', r.contract_points,
+            'contract_points_raw', r.contract_points_raw,
+            'distribution_number', r.distribution_number,
+            'fetched_at', r.fetched_at,
             'coverage_start',   v_cov_start,
             'coverage_end',     v_cov_end,
             -- Every printed row is a session, and so is the previous one, so
@@ -1650,7 +1710,16 @@ RETURNS TABLE (
     quotation_factor  INT,
     adjusted          BOOLEAN,
     source            TEXT,
-    asset_class       TEXT
+    asset_class       TEXT,
+    market                TEXT,
+    term_days             TEXT,
+    contract_price        NUMERIC,
+    contract_expiry       DATE,
+    contract_correction   TEXT,
+    contract_points       NUMERIC,
+    contract_points_raw   TEXT,
+    distribution_number   TEXT,
+    fetched_at            TIMESTAMPTZ
 )
 LANGUAGE sql
 STABLE
@@ -1678,7 +1747,16 @@ AS $$
         q.quotation_factor,
         q.adjusted,
         q.source,
-        q.asset_class
+        q.asset_class,
+        q.market,
+        q.term_days,
+        q.contract_price,
+        q.contract_expiry,
+        q.contract_correction,
+        q.contract_points,
+        q.contract_points_raw,
+        q.distribution_number,
+        q.fetched_at
     FROM api.quotes q
     WHERE q.ticker = upper(btrim(p_ticker))
       AND (p_board IS NULL OR q.board = p_board)
@@ -1747,7 +1825,18 @@ RETURNS TABLE (
     underlying_ticker   TEXT,
     strike_points       NUMERIC,
     strike_correction   TEXT,
-    distribution_number TEXT
+    distribution_number   TEXT,
+    market                TEXT,
+    board                 TEXT,
+    term_days             TEXT,
+    short_name            TEXT,
+    currency              TEXT,
+    average               NUMERIC,
+    bid                   NUMERIC,
+    ask                   NUMERIC,
+    quotation_factor      INT,
+    contract_points_raw   TEXT,
+    fetched_at            TIMESTAMPTZ
 )
 LANGUAGE plpgsql
 STABLE
@@ -1807,9 +1896,20 @@ BEGIN
         -- decimals per the published layout; 0 is B3's filler for
         -- "not points-referenced", decoded to NULL rather than a fake 0-point
         -- strike. INDOPC / DISMES pass through as published codes.
-        NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6,
+        CASE WHEN b.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END,
         b.raw ->> 'indopc',
-        b.raw ->> 'dismes'
+        b.raw ->> 'dismes',
+        b.tpmerc,
+        b.codbdi,
+        b.prazot,
+        b.nome_resumido,
+        b.moeda,
+        b.preco_medio,
+        b.oferta_compra,
+        b.oferta_venda,
+        b.fator_cotacao,
+        b.raw ->> 'ptoexe',
+        b.fetched_at
     FROM public.b3_cotahist b
     LEFT JOIN LATERAL (
         SELECT c.codneg
@@ -1843,7 +1943,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION api.option_chain(TEXT, DATE, DATE, INT) IS
-    'One session''s option chain for a REQUIRED codneg prefix (>= 3 chars; else it raises). side = call/put from tpmerc 070/080. p_trade_date NULL = latest option-segment session. underlying_ticker resolves the option row''s ISIN (published: CODISI carries the underlying''s ISIN) to the same session''s cash codneg; NULL when the underlying had no cash print that day. Rows clamped to 1..2000.';
+    'One session''s option chain for a REQUIRED codneg prefix (>= 3 chars; else it raises). side = call/put from tpmerc 070/080. p_trade_date NULL = latest option-segment session. underlying_ticker resolves the option row''s ISIN (published: CODISI carries the underlying''s ISIN) to the same session''s cash codneg; NULL when the underlying had no cash print that day. Rows clamped to 1..2000. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.';
 
 CREATE OR REPLACE FUNCTION api.option_history(
     p_codneg TEXT,
@@ -1875,7 +1975,13 @@ RETURNS TABLE (
     underlying_ticker   TEXT,
     strike_points       NUMERIC,
     strike_correction   TEXT,
-    distribution_number TEXT
+    distribution_number   TEXT,
+    market                TEXT,
+    board                 TEXT,
+    term_days             TEXT,
+    short_name            TEXT,
+    contract_points_raw   TEXT,
+    fetched_at            TIMESTAMPTZ
 )
 LANGUAGE sql
 STABLE
@@ -1888,7 +1994,7 @@ AS $$
     -- cursor, so a caller over the page narrows the window instead.
     -- The explicit column list lets the outer ORDER BY name columns as
     -- declared, which also dodges OUT-parameter ambiguity.
-    WITH page (codneg, trade_date, side, strike, expiry, spec, currency, open, high, low, average, close, bid, ask, trades, quantity, volume, isin, quotation_factor, adjusted, source, underlying_ticker, strike_points, strike_correction, distribution_number) AS (
+    WITH page (codneg, trade_date, side, strike, expiry, spec, currency, open, high, low, average, close, bid, ask, trades, quantity, volume, isin, quotation_factor, adjusted, source, underlying_ticker, strike_points, strike_correction, distribution_number, market, board, term_days, short_name, contract_points_raw, fetched_at) AS (
         SELECT
             b.codneg,
             b.trade_date,
@@ -1912,9 +2018,15 @@ AS $$
             FALSE,
             b.source,
             u.codneg,
-            NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6,
+            CASE WHEN b.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END,
             b.raw ->> 'indopc',
-            b.raw ->> 'dismes'
+            b.raw ->> 'dismes',
+            b.tpmerc,
+            b.codbdi,
+            b.prazot,
+            b.nome_resumido,
+            b.raw ->> 'ptoexe',
+            b.fetched_at
         FROM public.b3_cotahist b
         LEFT JOIN LATERAL (
             SELECT c.codneg
@@ -1938,7 +2050,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION api.option_history(TEXT, DATE, DATE) IS
-    'Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history''s shape plus side/strike/expiry and underlying_ticker (resolved per session from the published ISIN mapping; NULL when the underlying had no cash print that day). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to. No cursor — an option series is short-lived, so a window over a page is a mistake, not a walk.';
+    'Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history''s shape plus side/strike/expiry and underlying_ticker (resolved per session from the published ISIN mapping; NULL when the underlying had no cash print that day). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to. No cursor — an option series is short-lived, so a window over a page is a mistake, not a walk. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.';
 
 -- ---------------------------------------------------------------------------
 -- Option exercise events (tpmerc 012/013) and auction prints (tpmerc 017)
@@ -1952,6 +2064,7 @@ COMMENT ON FUNCTION api.option_history(TEXT, DATE, DATE) IS
 -- optional p_limit make every call ambiguous.
 DROP FUNCTION IF EXISTS api.option_exercises(TEXT, DATE, DATE);
 
+DROP FUNCTION IF EXISTS api.option_exercises(TEXT, DATE, DATE, INT);
 CREATE OR REPLACE FUNCTION api.option_exercises(
     p_prefix TEXT,
     p_from   DATE DEFAULT (CURRENT_DATE - 365),
@@ -1971,7 +2084,24 @@ RETURNS TABLE (
     isin                TEXT,
     underlying_ticker   TEXT,
     spec                TEXT,
-    source              TEXT
+    source              TEXT,
+    market                TEXT,
+    board                 TEXT,
+    term_days             TEXT,
+    short_name            TEXT,
+    currency              TEXT,
+    open                  NUMERIC,
+    high                  NUMERIC,
+    low                   NUMERIC,
+    average               NUMERIC,
+    bid                   NUMERIC,
+    ask                   NUMERIC,
+    quotation_factor      INT,
+    contract_correction   TEXT,
+    contract_points       NUMERIC,
+    contract_points_raw   TEXT,
+    distribution_number   TEXT,
+    fetched_at            TIMESTAMPTZ
 )
 LANGUAGE plpgsql
 STABLE
@@ -2003,7 +2133,24 @@ BEGIN
         b.isin,
         u.codneg,
         b.especi,
-        b.source
+        b.source,
+        b.tpmerc,
+        b.codbdi,
+        b.prazot,
+        b.nome_resumido,
+        b.moeda,
+        b.preco_abertura,
+        b.preco_maximo,
+        b.preco_minimo,
+        b.preco_medio,
+        b.oferta_compra,
+        b.oferta_venda,
+        b.fator_cotacao,
+        b.raw ->> 'indopc',
+            CASE WHEN b.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END,
+        b.raw ->> 'ptoexe',
+        b.raw ->> 'dismes',
+        b.fetched_at
     FROM public.b3_cotahist b
     LEFT JOIN LATERAL (
         SELECT c.codneg
@@ -2032,7 +2179,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION api.option_exercises(TEXT, DATE, DATE, INT) IS
-    'Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Rows clamped to 1..500 anonymous, 1..5000 signed in.';
+    'Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Rows clamped to 1..500 anonymous, 1..5000 signed in. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.';
 
 REVOKE ALL ON FUNCTION api.option_exercises(TEXT, DATE, DATE, INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.option_exercises(TEXT, DATE, DATE, INT) TO anon, authenticated, silo_api;
@@ -2055,7 +2202,20 @@ SELECT
     v.volume,
     v.isin,
     v.source,
-    v.fetched_at
+    v.fetched_at,
+    v.tpmerc AS market,
+    v.prazot AS term_days,
+    v.moeda AS currency,
+    v.preco_medio AS average,
+    v.oferta_compra AS bid,
+    v.oferta_venda AS ask,
+    v.preco_exercicio AS contract_price,
+    v.data_vencimento AS contract_expiry,
+    v.fator_cotacao AS quotation_factor,
+    v.raw ->> 'indopc' AS contract_correction,
+    CASE WHEN v.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((v.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END AS contract_points,
+    v.raw ->> 'ptoexe' AS contract_points_raw,
+    v.raw ->> 'dismes' AS distribution_number
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'auction';
 
@@ -2065,6 +2225,7 @@ COMMENT ON VIEW api.auctions IS
 ALTER VIEW api.auctions SET (security_invoker = false);
 GRANT SELECT ON api.auctions TO anon, authenticated;
 
+DROP FUNCTION IF EXISTS api.termo_history(TEXT, DATE, DATE);
 CREATE OR REPLACE FUNCTION api.termo_history(
     p_codneg TEXT,
     p_from   DATE DEFAULT (CURRENT_DATE - 365),
@@ -2089,7 +2250,17 @@ RETURNS TABLE (
     isin              TEXT,
     quotation_factor  INT,
     adjusted          BOOLEAN,
-    source            TEXT
+    source            TEXT,
+    market                TEXT,
+    board                 TEXT,
+    short_name            TEXT,
+    contract_price        NUMERIC,
+    contract_expiry       DATE,
+    contract_correction   TEXT,
+    contract_points       NUMERIC,
+    contract_points_raw   TEXT,
+    distribution_number   TEXT,
+    fetched_at            TIMESTAMPTZ
 )
 LANGUAGE sql
 STABLE
@@ -2102,7 +2273,7 @@ AS $$
     -- cursor, so a caller over the page narrows the window instead.
     -- The explicit column list lets the outer ORDER BY name columns as
     -- declared, which also dodges OUT-parameter ambiguity.
-    WITH page (codneg, trade_date, term_days, spec, currency, open, high, low, average, close, bid, ask, trades, quantity, volume, isin, quotation_factor, adjusted, source) AS (
+    WITH page (codneg, trade_date, term_days, spec, currency, open, high, low, average, close, bid, ask, trades, quantity, volume, isin, quotation_factor, adjusted, source, market, board, short_name, contract_price, contract_expiry, contract_correction, contract_points, contract_points_raw, distribution_number, fetched_at) AS (
         SELECT
             b.codneg,
             b.trade_date,
@@ -2122,7 +2293,17 @@ AS $$
             b.isin,
             b.fator_cotacao,
             FALSE,
-            b.source
+            b.source,
+            b.tpmerc,
+            b.codbdi,
+            b.nome_resumido,
+            b.preco_exercicio,
+            b.data_vencimento,
+            b.raw ->> 'indopc',
+            CASE WHEN b.raw ->> 'ptoexe' ~ '^[0-9]{13}$' THEN NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6 END,
+            b.raw ->> 'ptoexe',
+            b.raw ->> 'dismes',
+            b.fetched_at
         FROM public.b3_cotahist b
         WHERE b.tpmerc = '030'
           AND b.codneg = upper(btrim(p_codneg))
@@ -2131,17 +2312,17 @@ AS $$
         -- one session), so order by it too for a deterministic cut. length-then-
         -- text sorts digit strings numerically without a cast that could blow up
         -- on source garbage.
-        ORDER BY b.trade_date, length(b.prazot), b.prazot
+        ORDER BY b.trade_date, b.codbdi, length(b.prazot), b.prazot
         LIMIT 1001
     )
     SELECT g.* FROM page g
     WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'termo_history')
-    ORDER BY g.trade_date, length(g.term_days), g.term_days
+    ORDER BY g.trade_date, g.board, length(g.term_days), g.term_days
     LIMIT 1000;
 $$;
 
 COMMENT ON FUNCTION api.termo_history(TEXT, DATE, DATE) IS
-    'Daily unadjusted series for one termo codneg (tpmerc 030), including term_days (prazot). Grain is (codneg, trade_date, term_days). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to.';
+    'Daily unadjusted series for one termo codneg (tpmerc 030), including term_days (prazot). Grain is (codneg, trade_date, market, board, term_days). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.';
 
 REVOKE ALL ON FUNCTION api.option_chain(TEXT, DATE, DATE, INT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION api.option_history(TEXT, DATE, DATE) FROM PUBLIC;
@@ -6045,7 +6226,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 68,
+  "version": 69,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close_adj` (split-, grouping- and bonus-adjusted) for share and unit tickers, `close` for other tickers and `nav` for CNPJs, and quote_history with no p_fields returns ticker, trade_date and close_adj; that is the call to make unless you actually need another measure — name metrics or fields explicitly only when you will use them (p_fields=['close'] for the raw close). A close_adj window SILO cannot adjust is refused with the cause, never served raw. The wide endpoints are the exception and behave the other way round: quote_latest and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -6098,7 +6279,16 @@ SELECT $json${
         "events_proven_at": "string",
         "data_revision": "string",
         "close_total_return": "number",
-        "close_total_return_null_reason": "string"
+        "close_total_return_null_reason": "string",
+        "market": "string",
+        "term_days": "string",
+        "contract_price": "number",
+        "contract_expiry": "date",
+        "contract_correction": "string",
+        "contract_points": "number",
+        "contract_points_raw": "string",
+        "distribution_number": "string",
+        "fetched_at": "string"
       }
     },
     "wide_endpoints": {
@@ -6409,6 +6599,452 @@ SELECT $json${
       "meaning": "Sum of the exposures to the largest sacados the fund filed (tab VIII ranks 1..n, n at most 25). A fund that files fewer than 25 ranks sums fewer; nothing is imputed for the missing ranks. Divide by receivables in the notebook.",
       "derived": true
     }
+  },
+  "cotahist": {
+    "source_url": "https://www.b3.com.br/data/files/33/67/B9/50/D84057102C784E47AC094EA8/SeriesHistoricas_Layout.pdf",
+    "reference_date": "2020-10-05",
+    "reference_version": "2.0",
+    "description_language": "en",
+    "description_basis": "Paraphrases of the dated layout; not certified current descriptions or historical validity intervals.",
+    "unknown_codes": "Preserve source codes. Missing descriptions stay null; do not reject a row or infer a label.",
+    "coverage": "Dictionary presence does not mean observations exist. Consult coverage() and the dated storage/serving audit.",
+    "codbdi": {
+      "02": {
+        "code": "02",
+        "description": "Standard lot",
+        "status": "documented_in_reference"
+      },
+      "05": {
+        "code": "05",
+        "description": "Sanction status (2020 label; repo also uses it for fund subtype)",
+        "status": "documented_in_reference"
+      },
+      "06": {
+        "code": "06",
+        "description": "Legacy insolvency",
+        "status": "documented_in_reference"
+      },
+      "07": {
+        "code": "07",
+        "description": "Extrajudicial recovery",
+        "status": "documented_in_reference"
+      },
+      "08": {
+        "code": "08",
+        "description": "Judicial recovery",
+        "status": "documented_in_reference"
+      },
+      "09": {
+        "code": "09",
+        "description": "Special administration",
+        "status": "documented_in_reference"
+      },
+      "10": {
+        "code": "10",
+        "description": "Rights / receipts",
+        "status": "documented_in_reference"
+      },
+      "11": {
+        "code": "11",
+        "description": "Intervention",
+        "status": "documented_in_reference"
+      },
+      "12": {
+        "code": "12",
+        "description": "Real-estate funds",
+        "status": "documented_in_reference"
+      },
+      "13": {
+        "code": "13",
+        "description": null,
+        "status": "unknown_in_reference"
+      },
+      "14": {
+        "code": "14",
+        "description": "Investment certificates / public debt (legacy label)",
+        "status": "documented_in_reference"
+      },
+      "18": {
+        "code": "18",
+        "description": "Obligations",
+        "status": "documented_in_reference"
+      },
+      "22": {
+        "code": "22",
+        "description": "Private bonus instruments",
+        "status": "documented_in_reference"
+      },
+      "26": {
+        "code": "26",
+        "description": "Public debt instruments",
+        "status": "documented_in_reference"
+      },
+      "32": {
+        "code": "32",
+        "description": "Index call exercises",
+        "status": "documented_in_reference"
+      },
+      "33": {
+        "code": "33",
+        "description": "Index put exercises",
+        "status": "documented_in_reference"
+      },
+      "34": {
+        "code": "34",
+        "description": null,
+        "status": "unknown_in_reference"
+      },
+      "35": {
+        "code": "35",
+        "description": null,
+        "status": "unknown_in_reference"
+      },
+      "36": {
+        "code": "36",
+        "description": null,
+        "status": "unknown_in_reference"
+      },
+      "38": {
+        "code": "38",
+        "description": "Call exercises",
+        "status": "documented_in_reference"
+      },
+      "42": {
+        "code": "42",
+        "description": "Put exercises",
+        "status": "documented_in_reference"
+      },
+      "46": {
+        "code": "46",
+        "description": "Unquoted-security auctions",
+        "status": "documented_in_reference"
+      },
+      "48": {
+        "code": "48",
+        "description": "Privatization auctions",
+        "status": "documented_in_reference"
+      },
+      "49": {
+        "code": "49",
+        "description": "Espírito Santo recovery-fund auctions",
+        "status": "documented_in_reference"
+      },
+      "50": {
+        "code": "50",
+        "description": "Auctions",
+        "status": "documented_in_reference"
+      },
+      "51": {
+        "code": "51",
+        "description": "FINOR auctions",
+        "status": "documented_in_reference"
+      },
+      "52": {
+        "code": "52",
+        "description": "FINAM auctions",
+        "status": "documented_in_reference"
+      },
+      "53": {
+        "code": "53",
+        "description": "FISET auctions",
+        "status": "documented_in_reference"
+      },
+      "54": {
+        "code": "54",
+        "description": "Delinquent-share auctions",
+        "status": "documented_in_reference"
+      },
+      "56": {
+        "code": "56",
+        "description": "Court-authorized sales",
+        "status": "documented_in_reference"
+      },
+      "58": {
+        "code": "58",
+        "description": "Other",
+        "status": "documented_in_reference"
+      },
+      "60": {
+        "code": "60",
+        "description": "Share exchanges",
+        "status": "documented_in_reference"
+      },
+      "61": {
+        "code": "61",
+        "description": "META",
+        "status": "documented_in_reference"
+      },
+      "62": {
+        "code": "62",
+        "description": "Forwards",
+        "status": "documented_in_reference"
+      },
+      "66": {
+        "code": "66",
+        "description": "Debentures, maturity ≤3 years",
+        "status": "documented_in_reference"
+      },
+      "68": {
+        "code": "68",
+        "description": "Debentures, maturity >3 years",
+        "status": "documented_in_reference"
+      },
+      "70": {
+        "code": "70",
+        "description": "Retained-gain futures",
+        "status": "documented_in_reference"
+      },
+      "71": {
+        "code": "71",
+        "description": "Futures",
+        "status": "documented_in_reference"
+      },
+      "74": {
+        "code": "74",
+        "description": "Index calls",
+        "status": "documented_in_reference"
+      },
+      "75": {
+        "code": "75",
+        "description": "Index puts",
+        "status": "documented_in_reference"
+      },
+      "78": {
+        "code": "78",
+        "description": "Calls",
+        "status": "documented_in_reference"
+      },
+      "82": {
+        "code": "82",
+        "description": "Puts",
+        "status": "documented_in_reference"
+      },
+      "83": {
+        "code": "83",
+        "description": "BovespaFix",
+        "status": "documented_in_reference"
+      },
+      "84": {
+        "code": "84",
+        "description": "SomaFix",
+        "status": "documented_in_reference"
+      },
+      "90": {
+        "code": "90",
+        "description": "Registered spot-forward",
+        "status": "documented_in_reference"
+      },
+      "92": {
+        "code": "92",
+        "description": null,
+        "status": "unknown_in_reference"
+      },
+      "93": {
+        "code": "93",
+        "description": null,
+        "status": "unknown_in_reference"
+      },
+      "96": {
+        "code": "96",
+        "description": "Odd lots",
+        "status": "documented_in_reference"
+      },
+      "99": {
+        "code": "99",
+        "description": "General total",
+        "status": "documented_in_reference"
+      }
+    },
+    "tpmerc": {
+      "010": {
+        "code": "010",
+        "description": "Spot",
+        "status": "documented_in_reference"
+      },
+      "012": {
+        "code": "012",
+        "description": "Call exercise",
+        "status": "documented_in_reference"
+      },
+      "013": {
+        "code": "013",
+        "description": "Put exercise",
+        "status": "documented_in_reference"
+      },
+      "017": {
+        "code": "017",
+        "description": "Auction",
+        "status": "documented_in_reference"
+      },
+      "020": {
+        "code": "020",
+        "description": "Odd lot",
+        "status": "documented_in_reference"
+      },
+      "021": {
+        "code": "021",
+        "description": null,
+        "status": "unknown_in_reference"
+      },
+      "030": {
+        "code": "030",
+        "description": "Forward",
+        "status": "documented_in_reference"
+      },
+      "050": {
+        "code": "050",
+        "description": "Retained-gain futures",
+        "status": "documented_in_reference"
+      },
+      "060": {
+        "code": "060",
+        "description": "Continuous-settlement futures",
+        "status": "documented_in_reference"
+      },
+      "070": {
+        "code": "070",
+        "description": "Call options",
+        "status": "documented_in_reference"
+      },
+      "080": {
+        "code": "080",
+        "description": "Put options",
+        "status": "documented_in_reference"
+      }
+    },
+    "indopc": {
+      "0": {
+        "code": "0",
+        "description": null,
+        "status": "unknown_in_reference"
+      },
+      "1": {
+        "code": "1",
+        "description": "USD correction",
+        "status": "documented_in_reference"
+      },
+      "2": {
+        "code": "2",
+        "description": "TJLP correction",
+        "status": "documented_in_reference"
+      },
+      "8": {
+        "code": "8",
+        "description": "IGP-M correction",
+        "status": "documented_in_reference"
+      },
+      "9": {
+        "code": "9",
+        "description": "URV correction",
+        "status": "documented_in_reference"
+      }
+    },
+    "especi": "Original text is spec; asset_class/fund_type are separate derived classifications. The dated CODBDI label is not an asset-class rule.",
+    "record_type": "Only valid register-01 quotes are stored. TIPREG 99 trailer differs from CODBDI 99.",
+    "natural_key": [
+      "codneg",
+      "trade_date",
+      "tpmerc",
+      "codbdi",
+      "prazot"
+    ],
+    "source_fields": {
+      "trade_date": "Session date",
+      "board": "CODBDI",
+      "ticker": "CODNEG (codneg on derivative routes)",
+      "market": "TPMERC",
+      "short_name": "NOMRES",
+      "spec": "ESPECI",
+      "term_days": "PRAZOT",
+      "currency": "MODREF; legacy routes may replace null with R$",
+      "open": "PREABE",
+      "high": "PREMAX",
+      "low": "PREMIN",
+      "average": "PREMED",
+      "close": "PREULT (exercise_price on exercise events)",
+      "bid": "PREOFC",
+      "ask": "PREOFV",
+      "trades": "TOTNEG",
+      "quantity": "QUATOT",
+      "volume": "VOLTOT",
+      "contract_price": "PREEXE (strike on option routes); not yield or credit spread",
+      "contract_correction": "INDOPC (strike_correction on option routes)",
+      "contract_expiry": "DATVEN (expiry on option routes); 99991231 decoded to null",
+      "quotation_factor": "FATCOT",
+      "contract_points_raw": "PTOEXE original text",
+      "isin": "CODISI; options carry underlying identity, not necessarily the option series ISIN",
+      "distribution_number": "DISMES sequence, not a cash distribution amount"
+    },
+    "derived_fields": {
+      "contract_points": "PTOEXE / 1e6; zero filler or unreadable points become null; strike_points on option routes",
+      "close_unit": "close / NULLIF(quotation_factor, 0), not a corporate-event adjustment"
+    },
+    "routes": {
+      "cash": {
+        "market": [
+          "010"
+        ],
+        "view": "quotes",
+        "history": "quote_history",
+        "latest": "quote_latest"
+      },
+      "classified_cash": {
+        "market": [
+          "010",
+          "020",
+          "021"
+        ],
+        "views": [
+          "equities",
+          "bdrs",
+          "units",
+          "fund_quotas",
+          "cash_securities"
+        ],
+        "limitation": "Only these five classes have typed views; index/right/bonus 010 prints remain in quotes."
+      },
+      "options": {
+        "market": [
+          "070",
+          "080"
+        ],
+        "functions": [
+          "option_chain",
+          "option_history"
+        ]
+      },
+      "exercises": {
+        "market": [
+          "012",
+          "013"
+        ],
+        "function": "option_exercises",
+        "kind": "event"
+      },
+      "auctions": {
+        "market": [
+          "017"
+        ],
+        "view": "auctions",
+        "kind": "event"
+      },
+      "forward": {
+        "market": [
+          "030"
+        ],
+        "function": "termo_history"
+      }
+    },
+    "local_http_optional_fields": "Additional raw quote_history fields are selectable with fields; adjusted/total-return fields stay SQL-only.",
+    "local_http_default_history_fields": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "trades"
+    ],
+    "provenance_limit": "fetched_at is warehouse time; source is the dataset identifier, not file identity. No byte-exact payload, header/trailer reconciliation or source-vintage archive."
   },
   "notebook_reducers": {
     "describe": "Per-column n, null_rate, min, max, last. No model.",

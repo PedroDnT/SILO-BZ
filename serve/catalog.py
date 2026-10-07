@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence
 
+from serve.cotahist_reference import cotahist_reference
+
 __all__ = [
     "CATALOG_VERSION",
     "CONSTRAINTS",
@@ -570,7 +572,9 @@ __all__ = [
 # appended to api.portfolio_fees: benchmark_extrato (PARAM_TAXA_PERFM whatever the
 # fee source), benchmark_lamina (INDICE_REFER when every class filed the same one)
 # and benchmark_lamina_n. Capped count fifty-four -> fifty-five.
-CATALOG_VERSION = 68
+# v69: preserved COTAHIST fields on existing routes and dated code metadata;
+# unknown reference descriptions stay null, without changing classification.
+CATALOG_VERSION = 69
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -1469,6 +1473,15 @@ QUOTE_HISTORY_FIELDS: Dict[str, str] = {
     "data_revision": "string",
     "close_total_return": "number",
     "close_total_return_null_reason": "string",
+    "market": "string",
+    "term_days": "string",
+    "contract_price": "number",
+    "contract_expiry": "date",
+    "contract_correction": "string",
+    "contract_points": "number",
+    "contract_points_raw": "string",
+    "distribution_number": "string",
+    "fetched_at": "string",
 }
 
 DEFAULTS = {
@@ -1952,6 +1965,7 @@ def catalog_payload() -> Dict[str, Any]:
         "agent": AGENT_INSTRUCTIONS,
         "defaults": DEFAULTS,
         "metrics": METRICS,
+        "cotahist": cotahist_reference(),
         "notebook_reducers": NOTEBOOK_REDUCERS,
         "constraints": CONSTRAINTS,
         "limits": LIMITS,

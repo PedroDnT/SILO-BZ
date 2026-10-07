@@ -112,6 +112,35 @@ last-close fallback, on either surface.
 
 ## Point vs series
 
+### Preserved COTAHIST fields (catalog v69)
+
+The existing cash, option, exercise, auction and termo routes also return the
+original `market` (TPMERC), `board` (CODBDI), term and source identity fields.
+Forward contracts expose `contract_price` (PREEXE), `contract_expiry`,
+`contract_correction`, `contract_points` and `distribution_number`; option
+routes retain their existing `strike`, `expiry` and `strike_*` names.
+`contract_points_raw` preserves PTOEXE including leading zeros, while the
+decoded points use six implied decimals and return null for zero filler or
+unreadable text. `fetched_at` is warehouse time, not a source publication vintage.
+
+`catalog().cotahist` contains source-field aliases, route applicability and
+CODBDI/TPMERC/INDOPC dictionaries attributed to B3 layout revision 2.0,
+2020-10-05. Undocumented codes remain valid source values with null descriptions.
+These dated labels are neither historical validity intervals nor evidence that
+observations exist. Existing ESPECI/fund-type classification is unchanged.
+
+Cash `quote_history` keeps its default field selection; the additional raw
+fields are opt-in with `p_fields`. Local HTTP history keeps its six-field
+default (`open,high,low,close,volume,trades`); additional raw fields are opt-in
+with `fields`, e.g. `fields=close,market,board,distribution_number`.
+Adjusted/total-return fields remain on the SQL research contract.
+
+This change requires analytical apply and MCP redeployment before those remote
+contracts become available. It adds no ingestion or historical source vintages.
+Field-level audit: [COTAHIST storage/serving map](research/cotahist-storage-serving-map.md).
+
+### Window selection
+
 The same URL is a **point** until the caller asks for a window. Then it is a
 **series** — dated observations at the grain actually stored (day for B3, month for
 fund NAV). No invented weekly/monthly bars.

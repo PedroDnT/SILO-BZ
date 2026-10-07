@@ -1,0 +1,1 @@
+| 2026-10-07 | `codex/cotahist-complete-serving` | #720: expose preserved COTAHIST market/board/term, quote and contract fields on existing routes; catalog v69 adds dated CODBDI/TPMERC/INDOPC references with unknown descriptions left null. Additional HTTP history fields are opt-in; SQL/MCP/OpenAPI/SDK contracts regenerated. No ingestion or production apply. |

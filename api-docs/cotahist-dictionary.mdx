@@ -12,6 +12,20 @@ classifications are built from. Layout cross-checked against the
 
 ## Register-01 fields
 
+Catalog v69 publishes a machine-readable reference at `catalog().cotahist`:
+source-field aliases, route applicability and all CODBDI codes in the
+[B3 layout revision 2.0, 2020-10-05](https://www.b3.com.br/data/files/33/67/B9/50/D84057102C784E47AC094EA8/SeriesHistoricas_Layout.pdf),
+plus observed codes absent from that document. Descriptions for the latter stay
+null. The table below and the existing fund-subtype rules describe storage and
+classification; a dated dictionary label must not replace those rules.
+
+Existing routes expose original `market`, `board` and contract fields.
+Cash and termo use `contract_price`, `contract_expiry`, `contract_correction`
+and `contract_points`; option routes retain their existing strike/expiry names.
+`contract_points_raw` preserves PTOEXE text, including leading zeros.
+`distribution_number` is available beyond options too. Neither a code in the
+dictionary nor a field in a schema proves historical observations exist.
+
 | Pos | B3 name | Meaning | Silo column |
 |---|---|---|---|
 | 1–2 | TIPREG | Record type (00 header / 01 quote / 99 trailer) | filter only |

@@ -1,7 +1,8 @@
 # COTAHIST: storage, serving and CODBDI coverage
 
 Measured 2026-10-07 (Brasília, UTC-3). Scope: existing COTAHIST only.
-No ingestion, schema, grants, API contract or deployment changed in this audit.
+The baseline audit changed no ingestion, schema, grants, API contract or deployment.
+The branch implementation is described separately below.
 
 ## Evidence and boundaries
 
@@ -70,7 +71,7 @@ because its default adjusted close requires eligible shares/units.
 | CODISI | 231–242 | isin | isin in all these paths; original identity is preserved, not a guaranteed issuer link |
 | DISMES | 243–245 | raw.dismes, text | distribution_number in option_chain/history; not a dividend amount; absent from cash/termo/exercises |
 
-All 245 byte positions are accounted for: fixed TIPREG is implicit; 23 variable
+All 245 byte positions are accounted for: fixed TIPREG is implicit; 22 variable
 fields are typed columns and three are preserved in JSON. Text is trimmed,
 prices decoded and expiry sentinel normalized, so this is not a byte-exact archive.
 Non-key invalid numeric fields can become null. Prices/financial volume decode
@@ -190,7 +191,7 @@ Derived values already available or possible from stored observations:
   adjusted/total-return series can use later knowledge and revisions; the tape
   is historical by session, **not a historical as-known snapshot archive**.
 
-## Bounded follow-up candidates, not implemented
+## Baseline follow-up candidates
 
 1. A dated code dictionary preserving original code, reference version and
    unknown status; also cover TPMERC, INDOPC and ESPECI. Do not force today's
@@ -232,3 +233,35 @@ Related inventory: [DATA_INVENTORY.md](../DATA_INVENTORY.md).
 This measured map complements its family-level inventory; historical statements
 there about unavailable corporate-event adjustment are stale relative to the
 current `quote_history_fields` contract.
+
+## Branch implementation (#720, catalog v69)
+
+The preceding tables record the measured baseline, not the proposed final API.
+This branch now exposes all 25 variable source fields on the existing routes
+for supported markets (22 landing columns and three JSON keys). Original leading
+column positions, route filters, defaults, row caps and private landing access
+are preserved. PREEXE/DATVEN/INDOPC/PTOEXE use contract_* names on cash/termo;
+options retain strike/expiry aliases. PTOEXE raw text remains available when
+zero filler or unreadable points decode to null.
+
+Catalog metadata includes all 43 CODBDI codes in the dated reference, six
+observed undocumented codes, TPMERC and INDOPC. Undocumented descriptions are
+null. Human-readable partial classifications already existed in
+`api-docs/cotahist-dictionary.mdx`; the new metadata is machine-readable and
+attributes its descriptions to the dated B3 reference rather than replacing
+those observed classifications.
+
+Local HTTP history keeps the six default chart fields, and accepts additional
+raw fields explicitly via fields=. SQL price-adjustment defaults are unchanged.
+Original metadata is served through source fields; no instrument join is added.
+
+Verified in an ephemeral local Postgres: full schema/migrations/analytics compile,
+upgrade from the prior API shape, repeated application, value decoding, null/raw
+preservation, forward natural-key distinctions, source codes, field projection,
+1000-row refusal and anon isolation. The behavior fixture is wired into SQL CI.
+These are local checks, not a production apply or remote adapter validation.
+
+File-level metadata, rejected-row reconciliation and historical source vintages
+remain outside this implementation. Unknown current-code descriptions, unsupported
+market/class combinations and additional annual ZIP reconciliations also remain
+explicit limitations; no extra COTAHIST collection is introduced.

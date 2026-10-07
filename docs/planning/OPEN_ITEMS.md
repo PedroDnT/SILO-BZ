@@ -527,3 +527,13 @@ Later dependencies remain REUNE traded rates/access, dated issuer/ultimate-oblig
 links (#660), compatible rate/benchmark conventions (#661), empirical issuer
 coverage and the past-only equity residual experiment. Holdings marks and this
 initial capture do not establish readiness for that experiment.
+
+## 19. COTAHIST preserved fields and code reference (#720)
+
+Implemented on `codex/cotahist-complete-serving`, catalog v69: the existing SQL
+routes expose preserved market/board/term identity and contract fields; HTTP
+history accepts additional raw fields explicitly. The catalog publishes dated
+CODBDI/TPMERC/INDOPC references without inventing unknown descriptions.
+Production analytical apply, MCP redeployment and live acceptance remain pending.
+No new collection or source-vintage archive is part of this change.
+[Audit and field map](../reference/research/cotahist-storage-serving-map.md).
