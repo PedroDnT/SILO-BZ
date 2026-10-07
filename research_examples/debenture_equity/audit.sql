@@ -64,8 +64,16 @@ WITH capture AS MATERIALIZED (
         coalesce((SELECT jsonb_agg(to_jsonb(k) - 'instrument_code' ORDER BY k.cnpj_cia)
             FROM candidate_rows k WHERE k.instrument_code = b.instrument_code), '[]'::jsonb) AS candidates
     FROM bonds b
+), fact_groups AS (
+    SELECT trade_date, instrument_code, settlement_date, trade_classification,
+        count(*) AS metric_count,
+        bool_and(metric IN ('quantity', 'trade_count', 'volume_brl', 'min_price',
+            'avg_price', 'max_price', 'last_price', 'reference_price', 'oscillation_pct')) AS known_metrics
+    FROM facts GROUP BY trade_date, instrument_code, settlement_date, trade_classification
 ), sessions AS (
     SELECT trade_date, count(*) AS facts, count(DISTINCT instrument_code) AS bonds,
+        (SELECT count(*) FROM fact_groups g WHERE g.trade_date = facts.trade_date
+            AND (g.metric_count <> 9 OR NOT g.known_metrics)) AS groups_with_bad_metrics,
         count(*) FILTER (WHERE isin IS NULL) AS missing_isin_facts,
         count(*) FILTER (WHERE source <> (SELECT source FROM capture)) AS wrong_source_facts,
         count(DISTINCT (instrument_code, settlement_date, trade_classification)) AS groups

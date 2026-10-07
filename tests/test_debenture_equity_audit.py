@@ -17,9 +17,11 @@ def evidence():
                     'requested_from': '2026-10-01', 'requested_to': '2026-10-01',
                     'raw_bytes': 100, 'debenture_rows': 1},
         'cash_sessions': ['2026-10-01'],
-        'sessions': [{'trade_date': '2026-10-01', 'facts': 1, 'groups': 1,
+        'sessions': [{'trade_date': '2026-10-01', 'facts': 9, 'groups': 1, 'groups_with_bad_metrics': 0,
                       'wrong_source_facts': 0}],
-        'metrics': [{'metric': 'last_price', 'facts': 1, 'populated': 1}],
+        'metrics': [{'metric': name, 'facts': 1, 'populated': 1} for name in
+                    ('quantity', 'trade_count', 'volume_brl', 'min_price', 'avg_price',
+                     'max_price', 'last_price', 'reference_price', 'oscillation_pct')],
         'bonds': [{'instrument_code': 'SYNTH01', 'candidate_count': 1,
                    'candidates': [{'cnpj_cia': '00000000000001',
                                    'equities': [{'ticker': 'TEST3', 'priced_sessions': 1}]}]}],
@@ -85,3 +87,19 @@ def test_sql_argument_accepts_only_uuid():
     sql = query(str(UUID(int=1)))
     assert '__CAPTURE_ID__' not in sql
     assert "'00000000-0000-0000-0000-000000000001'::uuid" in sql
+
+
+@pytest.mark.parametrize('defect', ['lost_group', 'lost_metric', 'unknown_metric'])
+def test_stored_fact_loss_does_not_hide_behind_complete_capture_metadata(evidence, defect):
+    if defect == 'lost_group':
+        evidence['capture']['debenture_rows'] = 2  # Second source group has disappeared.
+    else:
+        evidence['sessions'][0]['groups_with_bad_metrics'] = 1
+        if defect == 'lost_metric':
+            evidence['metrics'].pop()
+            evidence['sessions'][0]['facts'] = 8
+        else:
+            evidence['metrics'][0]['metric'] = 'invented'
+    result = summarize(evidence)
+    assert not result['capture_complete']
+    assert result['verdict'] == 'NOT READY'

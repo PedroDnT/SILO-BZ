@@ -32,11 +32,15 @@ def summarize(data: dict) -> dict:
         if len({c['cnpj_cia'] for c in bond['candidates']}) != bond['candidate_count']:
             raise ValueError('Duplicate candidate CNPJ')
     metrics = {m['metric']: m for m in data['metrics']}
+    if len(metrics) != len(data['metrics']):
+        raise ValueError('Duplicate metric identity')
     complete = (capture['status'] == 'complete' and bool(expected)
                 and not capture['missing_dates'] and not capture['dropped_rows']
                 and expected <= delivered and cash <= delivered
                 and {s['trade_date'] for s in sessions} <= delivered
-                and all(not s['wrong_source_facts'] for s in sessions))
+                and sum(s['groups'] for s in sessions) == capture['debenture_rows']
+                and all(not s['wrong_source_facts'] and not s['groups_with_bad_metrics']
+                        for s in sessions))
     if sum(m['facts'] for m in metrics.values()) != sum(s['facts'] for s in sessions):
         raise ValueError('Metric and session fact counts do not reconcile')
     unique = [b for b in bonds if b['candidate_count'] == 1]
