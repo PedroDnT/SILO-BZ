@@ -14,7 +14,7 @@ The provider is chosen by ``SILO_LLM_PROVIDER`` (``anthropic``, ``openai`` or
 vendor without touching the engine or the report. Defaults: ``anthropic`` runs
 ``claude-opus-5-5``; ``openai`` runs ``gpt-5.1`` at medium reasoning (the
 owner's choice, 2026-10-03); ``SILO_LLM_MODEL`` and ``SILO_LLM_EFFORT`` override
-either. No hosted tool (web search, file search, ...) is ever enabled: the
+either, and ``SILO_LLM_EFFORT_REDATOR`` / ``SILO_LLM_EFFORT_REVISOR`` override the effort for one role. No hosted tool (web search, file search, ...) is ever enabled: the
 Redator and the Revisor read only the masked engine JSON in the prompt; hosted
 tools are reserved for the later Investigator. Each vendor's key is read from its own
 variable only (``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``), passed explicitly to
@@ -110,6 +110,17 @@ UNKNOWN_MODEL_PRICE = (10.00, 50.00, 12.50, 1.00)
 _CHARS_PER_TOKEN_ESTIMATE = 3
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+
+def role_effort(role: str, base: str | None, explicit: bool) -> str | None:
+    """The reasoning effort for one call: ``SILO_LLM_EFFORT_<ROLE>`` (``REDATOR``, ``REVISOR``) when set and the
+    provider was not built with an explicit ``effort``, else the provider's own (``SILO_LLM_EFFORT`` or the default).
+    One variable per role lets the Revisor, which only judges sentences, run at a lower effort than the Redator."""
+    if not explicit:
+        per_role = (os.environ.get(f"SILO_LLM_EFFORT_{role.upper()}") or "").strip()
+        if per_role:
+            return per_role
+    return base
 
 
 class LLMError(RuntimeError):
@@ -332,6 +343,7 @@ class AnthropicProvider:
     ):
         self.model = model or os.environ.get("SILO_LLM_MODEL") or DEFAULT_MODEL
         self.effort = effort or os.environ.get("SILO_LLM_EFFORT") or DEFAULT_EFFORT
+        self._effort_explicit = bool(effort)
         self.max_tokens = max_tokens
         fb = fallbacks if fallbacks is not None else os.environ.get("SILO_LLM_FALLBACKS", "default")
         self.fallbacks = None if fb in ("", "off", "none") else fb
@@ -352,7 +364,7 @@ class AnthropicProvider:
 
     def complete(self, system: str, user: str, schema: type[BaseModel] | None = None) -> BaseModel | str:
         self.meter.check(self.model, len(system) + len(user), self.max_tokens)
-        output_config: dict[str, Any] = {"effort": self.effort}
+        output_config: dict[str, Any] = {"effort": role_effort(self.role, self.effort, self._effort_explicit)}
         if schema is not None:
             output_config["format"] = {"type": "json_schema", "schema": json_schema_for(schema)}
         kwargs: dict[str, Any] = {
@@ -454,6 +466,7 @@ class OpenAIProvider:
         self.model = model or os.environ.get("SILO_LLM_MODEL") or OPENAI_DEFAULT_MODEL
         eff = effort or os.environ.get("SILO_LLM_EFFORT") or OPENAI_DEFAULT_EFFORT
         self.effort = None if eff.strip().lower() == "off" else eff.strip()
+        self._effort_explicit = bool(effort)
         self.max_tokens = max_tokens
         self.meter = meter if meter is not None else CostMeter()
         self.role = role
@@ -479,8 +492,9 @@ class OpenAIProvider:
             "max_output_tokens": self.max_tokens,
             "store": False,
         }
-        if self.effort:
-            kwargs["reasoning"] = {"effort": self.effort}
+        effort = role_effort(self.role, self.effort, self._effort_explicit)
+        if effort and effort.lower() != "off":
+            kwargs["reasoning"] = {"effort": effort}
         if schema is None:
             response = self._client.responses.create(**kwargs)
         else:

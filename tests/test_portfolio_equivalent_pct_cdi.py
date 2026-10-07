@@ -334,7 +334,7 @@ def view(engine) -> dict:
 
 
 def test_the_demo_carries_both_and_every_gap_has_a_fixed_text(engine):
-    assert engine["schema_version"] == "1.14" and list(engine).index("equivalents") == list(engine).index("tax") + 1
+    assert engine["schema_version"] == "1.15" and list(engine).index("equivalents") == list(engine).index("tax") + 1
     eqs = engine["equivalents"]
     assert {ln["status"] for ln in eqs["lines"]} == {"encontrado", "sem_equivalente"}
     for ln in eqs["lines"]:
@@ -348,14 +348,14 @@ def test_the_demo_carries_both_and_every_gap_has_a_fixed_text(engine):
 
 def test_the_report_shows_the_equivalent_and_pct_of_cdi_where_the_engine_wrote_them(view):
     html = build.build(view, "fake")[0]
-    sec = html.split("<h2>Equivalente de mercado</h2>")[1].split("</section>")[0]
+    sec = html.split("<h2>ETF comparável (não é recomendação)</h2>")[1].split("</section>")[0]
     txt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", sec))
     for needle in ("equivalente de mercado; não é recomendação", "EXLF11", "R$ 4,20 bilhões", "01/10/2026",
                    "fonte de terceiros", "sem proventos", "mediana", REASON_TEXT["equivalente_sem_par"],
                    REASON_TEXT["equivalente_sem_classe"]):
         assert needle in txt, needle
     assert "melhor" not in txt.lower()
-    ret = html.split("<h2>Retorno por posição</h2>")[1].split("</section>")[0]
+    ret = html.split("<h2>Retorno por posição em detalhe</h2>")[1].split("</section>")[0]
     rtxt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", ret.split("<table")[1].split("</table>")[0]))
     shown = re.findall(r"\d+,\d+% do CDI", rtxt)
     expected = [values.format_value(view, f"returns.lines[{i}].windows[{j}].pct_of_cdi")

@@ -456,7 +456,7 @@ def test_the_credit_table_prints_statement_and_registry_side_by_side(view):
         assert render.v(view, path) in html_text, path
     assert "AGRO EXEMPLO" in html_text and "CDA de 05/2026" in html_text
     full, _ = build.build(view, "fake")
-    assert "<h2>Crédito direto no registro da CVM</h2>" in full and "<h2>Liquidez</h2>" in full
+    assert "<h2>Crédito direto no registro da CVM</h2>" in full and "<h2>Concentração e liquidez</h2>" in full
 
 
 def svg_of(fig: str) -> ET.Element:

@@ -278,7 +278,7 @@ def test_no_error_text_params_or_revisor_notes_reach_the_page():
     html, narrative = build.build(view, "fake")
     for bad in (SENTINEL, "erro literal", "falhou (", "PostgREST", "p_names", "Notas do Revisor", "portfolio_resolve falhou"):
         assert bad not in html, bad
-    gaps = html.split("O que não foi possível avaliar")[1].split("Metodologia")[0]
+    gaps = html.split("<h2>O que não foi possível avaliar</h2>")[1].split("Metodologia")[0]
     assert gaps.count("Linhas não identificadas") >= 1 and "uma consulta ao SILO falhou" in gaps
     # the unidentified lines come grouped: one line per reason, not one per line
     assert gaps.count("Linhas não identificadas") == len(eng["identification"]["unknown_groups"])
@@ -328,4 +328,4 @@ def test_the_gaps_keep_the_dormant_screen_coverage_limit(demo):
     dormant = [g for g in view["gaps"] if g["title"] == "Fundos dormentes"]
     assert len(dormant) == 1 and "R$ 1 bilhão" in dormant[0]["text"]
     html, _ = build.build(view, "fake")
-    assert "Fundos dormentes" in html.split("O que não foi possível avaliar")[1]
+    assert "Fundos dormentes" in html.split("<h2>O que não foi possível avaliar</h2>")[1]

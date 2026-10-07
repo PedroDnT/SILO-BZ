@@ -43,8 +43,8 @@ PL_LABEL = "patrimônio líquido do site etfsbrasil.com.br (fonte de terceiros),
 FEE_LABEL = ("taxa de administração do site etfsbrasil.com.br (fonte de terceiros), a mesma fonte das taxas de ETF "
              "na comparação de taxas; não é taxa divulgada à CVM")
 CHOICE_NOTE = ("O ETF é o maior por patrimônio líquido (site de terceiros, na data indicada) entre os ETFs ativos que "
-               "acompanham um índice ligado à classe ANBIMA do fundo na lista revisada pelo dono "
-               "(src/portfolio/rules/equivalents/class_index.yaml). Mesmo objetivo; não é recomendação de troca.")
+               "acompanham um índice ligado à classe ANBIMA do fundo na lista de classes revisada pelo dono "
+               "do SILO. Mesmo objetivo; não é recomendação de troca.")
 BAND_NOTE = "posição do retorno na distribuição da classe (p25, mediana, p75), não um ranking"
 CLASS_NOTE = ("Distribuição do retorno líquido de cota dos fundos FI ativos da mesma classe ANBIMA e do mesmo indicador "
               "de fundo de cotas (mínimo de 30 fundos), nas mesmas janelas do bloco de retorno.")

@@ -144,6 +144,17 @@ def test_artifacts_are_named_by_their_sha256():
     arts = trace.artifact_objects(b"{}", b"%PDF")
     assert arts == {f"artifacts/{trace.sha256_hex(b'{}')}.json": b"{}", f"artifacts/{trace.sha256_hex(b'%PDF')}.pdf": b"%PDF"}
     assert trace.artifact_objects(None, None) == {}
+    both = trace.artifact_objects(b"{}", None, b"<html></html>")
+    assert both == {f"artifacts/{trace.sha256_hex(b'{}')}.json": b"{}",
+                    f"artifacts/{trace.sha256_hex(b'<html></html>')}.html": b"<html></html>"}
+
+
+def test_the_root_span_names_the_html_it_kept():
+    rec = trace.RunRecord(start_ns=1, end_ns=2, status=200, stage="pdf", html=b"<html>x</html>")
+    root = trace.root_attributes(trace.build_trace(rec))
+    assert root["app.html.sha256"] == trace.sha256_hex(b"<html>x</html>") and root["app.html.bytes"] == "14"
+    bare = trace.root_attributes(trace.build_trace(trace.RunRecord(start_ns=1, end_ns=2, status=500, stage="engine")))
+    assert "app.html.sha256" not in bare
 
 
 # --- the server -------------------------------------------------------------------------------------------------------
@@ -181,18 +192,37 @@ def test_a_200_run_names_its_trace_and_serves_it_once_with_the_masked_engine_jso
     assert [s["name"] for s in spans][:3] == ["invoke_workflow diagnosis", "engine.run", "invoke_agent redator"]
     assert _attrs(spans[2])["gen_ai.provider.name"] == "fake"
 
-    (key, b64), = bundle["artifacts"].items()
-    engine_bytes = base64.b64decode(b64)
+    arts = {k: base64.b64decode(v) for k, v in bundle["artifacts"].items()}
+    (key,), = [[k for k in arts if k.endswith(".json")]]
+    engine_bytes = arts[key]
     assert key == f"artifacts/{root['app.engine_json.sha256']}.json" == f"artifacts/{trace.sha256_hex(engine_bytes)}.json"
+    # the report's HTML is kept beside it, whatever the output format, and hashes to the root span's attribute
+    (hkey,), = [[k for k in arts if k.endswith(".html")]]
+    html_bytes = arts[hkey]
+    assert hkey == f"artifacts/{root['app.html.sha256']}.html" == f"artifacts/{trace.sha256_hex(html_bytes)}.html"
+    assert html_bytes.startswith(b"<!") or b"<html" in html_bytes[:200].lower()
+    assert set(arts) == {key, hkey}
     engine = json.loads(engine_bytes)
     assert engine["statement"]["holder"] == {"titular": "[TITULAR]", "cpf": "[CPF]", "conta": "[CONTA]"}
 
     raw = got.data
     assert upload not in raw and upload[:64] not in engine_bytes
     assert base64.b64encode(upload)[:64] not in raw
-    text = raw.decode("utf-8") + engine_bytes.decode("utf-8")
+    text = raw.decode("utf-8") + engine_bytes.decode("utf-8") + html_bytes.decode("utf-8")
     for s in PRIVATE:
         assert s not in text, f"{s!r} reached the trace"
+
+
+def test_an_html_run_keeps_its_report_in_the_trace_too(app):
+    # the upload page asks for output_format=html, so these runs have no PDF: the HTML is what the owner reads later
+    r = app.post("/diagnose", data={"file": (io.BytesIO(TEMPLATE.read_bytes()), UPLOAD_NAME), "output_format": "html"},
+                 content_type="multipart/form-data", headers=_auth())
+    assert r.status_code == 200 and r.mimetype == "text/html"
+    bundle = _fetch(app, r.headers[server.TRACE_HEADER]).json
+    root = _attrs(assert_valid_otlp(bundle["trace"])[0])
+    assert "app.pdf.sha256" not in root
+    arts = {k: base64.b64decode(v) for k, v in bundle["artifacts"].items()}
+    assert arts[f"artifacts/{root['app.html.sha256']}.html"] == r.data  # exactly what the caller received
 
 
 def test_the_trace_header_never_appears_without_the_token(app):

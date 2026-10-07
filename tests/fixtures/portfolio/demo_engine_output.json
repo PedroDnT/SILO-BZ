@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.14",
+  "schema_version": "1.15",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -16161,7 +16161,7 @@
     "reason_codes": [],
     "title": "Principais riscos",
     "note": "Fatos da carteira com um limite fixo; não é previsão de mercado nem recomendação de compra, venda ou manutenção.",
-    "severity_rule": "semáforo fixo: atenção quando o valor é estritamente maior que o limite de atenção; moderado quando é estritamente maior que o limite moderado; baixo nos demais casos. Os limites estão no código do motor (src/portfolio/risks.py) e são os mesmos para toda carteira",
+    "severity_rule": "semáforo fixo: atenção quando o valor é estritamente maior que o limite de atenção; moderado quando é estritamente maior que o limite moderado; baixo nos demais casos. Os limites são fixos no motor do SILO e são os mesmos para toda carteira",
     "thresholds": {
       "concentracao_emissor": {
         "atencao_above_pct": 10.0,
@@ -19730,6 +19730,142 @@
         "coverage_portfolio_value_pct": 72.4462,
         "n_evaluated": 6
       }
+    },
+    "contribution": {
+      "label": "contribuição retroativa",
+      "note": "Contribuição retroativa: o extrato dá as posições em uma data e nenhum fluxo. O valor no início da janela de cada linha é o valor atual dividido por 1 mais o retorno líquido da janela; o peso é esse valor sobre a soma dos valores iniciais das linhas avaliadas; a contribuição é o peso vezes o retorno. Supõe que não houve aporte nem resgate. A soma é o retorno só da parte avaliada, nunca da carteira inteira.",
+      "windows": {
+        "12m": {
+          "status": "avaliado",
+          "reason_code": null,
+          "covered_return_pct": 14.499,
+          "start_value_brl": 3920621.7,
+          "end_value_brl": 4489073.3,
+          "n_lines": 6,
+          "coverage_portfolio_value_pct": 72.4462,
+          "lines": [
+            {
+              "line_no": 2,
+              "linha_extrato": "PETROBRAS PN",
+              "valor_brl": 988000.0,
+              "net_return_pct": 26.002017,
+              "start_value_brl": 784114.43,
+              "start_weight_pct": 19.9997,
+              "contribution_pp": 5.2003
+            },
+            {
+              "line_no": 3,
+              "linha_extrato": "GERAÇÃO L. PAR FIA",
+              "valor_brl": 264615.0,
+              "net_return_pct": 7.782715,
+              "start_value_brl": 245507.83,
+              "start_weight_pct": 6.262,
+              "contribution_pp": 0.4874
+            },
+            {
+              "line_no": 4,
+              "linha_extrato": "XP BANCOS FIC",
+              "valor_brl": 1387809.9,
+              "net_return_pct": 13.994772,
+              "start_value_brl": 1217432.94,
+              "start_weight_pct": 31.052,
+              "contribution_pp": 4.3457
+            },
+            {
+              "line_no": 5,
+              "linha_extrato": "XP LIQUIDEZ FIC",
+              "valor_brl": 902591.9,
+              "net_return_pct": 13.724449,
+              "start_value_brl": 793665.66,
+              "start_weight_pct": 20.2434,
+              "contribution_pp": 2.7783
+            },
+            {
+              "line_no": 7,
+              "linha_extrato": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+              "valor_brl": 770616.5,
+              "net_return_pct": 10.976314,
+              "start_value_brl": 694397.27,
+              "start_weight_pct": 17.7114,
+              "contribution_pp": 1.9441
+            },
+            {
+              "line_no": 8,
+              "linha_extrato": "HGLG11 CSHG LOGISTICA FII",
+              "valor_brl": 175440.0,
+              "net_return_pct": -5.425,
+              "start_value_brl": 185503.57,
+              "start_weight_pct": 4.7315,
+              "contribution_pp": -0.2567
+            }
+          ]
+        },
+        "6m": {
+          "status": "avaliado",
+          "reason_code": null,
+          "covered_return_pct": 6.3594,
+          "start_value_brl": 4220663.07,
+          "end_value_brl": 4489073.3,
+          "n_lines": 6,
+          "coverage_portfolio_value_pct": 72.4462,
+          "lines": [
+            {
+              "line_no": 2,
+              "linha_extrato": "PETROBRAS PN",
+              "valor_brl": 988000.0,
+              "net_return_pct": 12.266715,
+              "start_value_brl": 880047.13,
+              "start_weight_pct": 20.8509,
+              "contribution_pp": 2.5577
+            },
+            {
+              "line_no": 3,
+              "linha_extrato": "GERAÇÃO L. PAR FIA",
+              "valor_brl": 264615.0,
+              "net_return_pct": -6.926556,
+              "start_value_brl": 284307.73,
+              "start_weight_pct": 6.7361,
+              "contribution_pp": -0.4666
+            },
+            {
+              "line_no": 4,
+              "linha_extrato": "XP BANCOS FIC",
+              "valor_brl": 1387809.9,
+              "net_return_pct": 6.784179,
+              "start_value_brl": 1299640.0,
+              "start_weight_pct": 30.7923,
+              "contribution_pp": 2.089
+            },
+            {
+              "line_no": 5,
+              "linha_extrato": "XP LIQUIDEZ FIC",
+              "valor_brl": 902591.9,
+              "net_return_pct": 6.657495,
+              "start_value_brl": 846252.67,
+              "start_weight_pct": 20.0502,
+              "contribution_pp": 1.3348
+            },
+            {
+              "line_no": 7,
+              "linha_extrato": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+              "valor_brl": 770616.5,
+              "net_return_pct": 5.366188,
+              "start_value_brl": 731369.82,
+              "start_weight_pct": 17.3283,
+              "contribution_pp": 0.9299
+            },
+            {
+              "line_no": 8,
+              "linha_extrato": "HGLG11 CSHG LOGISTICA FII",
+              "valor_brl": 175440.0,
+              "net_return_pct": -2.013857,
+              "start_value_brl": 179045.72,
+              "start_weight_pct": 4.2421,
+              "contribution_pp": -0.0854
+            }
+          ]
+        }
+      }
     }
   },
   "tax": {
@@ -19740,7 +19876,7 @@
       "imposto_linhas_sem_regra"
     ],
     "position_date": "2026-09-30",
-    "note": "Fatos por posição a partir das regras versionadas em src/portfolio/rules/tax/ (nota #611). Valores em R$ são estimativas; nenhuma linha é recomendação. Sem total de imposto da carteira.",
+    "note": "Fatos por posição a partir das regras de imposto versionadas do SILO, cada uma com artigo e citação. Valores em R$ são estimativas; nenhuma linha é recomendação. Sem total de imposto da carteira.",
     "labels": {
       "estimate": "estimativa",
       "check": "a conferir",
@@ -19959,15 +20095,15 @@
     "not_covered": [
       {
         "tipo": "tesouro",
-        "text": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra."
+        "text": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público."
       },
       {
         "tipo": "FIDC",
-        "text": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra."
+        "text": "FIDC: fora das regras de imposto do SILO; sem regra."
       },
       {
         "tipo": "FIP",
-        "text": "FIP: fora da nota #611 (seção 6); sem arquivo de regra."
+        "text": "FIP: fora das regras de imposto do SILO; sem regra."
       }
     ],
     "lines": [
@@ -20003,7 +20139,7 @@
         "tax": {
           "status": "sem_regra",
           "status_label": "sem regra",
-          "selection_reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra.",
+          "selection_reason": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público.",
           "instrument": null,
           "instrument_label": null,
           "rules_file": null,
@@ -20025,11 +20161,11 @@
             "rate_pct": null,
             "basis": null,
             "reason_code": "imposto_sem_regra",
-            "reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra.",
+            "reason": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público.",
             "sources": []
           },
           "reason_code": "imposto_sem_regra",
-          "reason": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra."
+          "reason": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público."
         },
         "pension": null,
         "optimization": [],
@@ -20865,7 +21001,7 @@
         "tax": {
           "status": "sem_regra",
           "status_label": "sem regra",
-          "selection_reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra.",
+          "selection_reason": "FIDC: fora das regras de imposto do SILO; sem regra.",
           "instrument": null,
           "instrument_label": null,
           "rules_file": null,
@@ -20887,11 +21023,11 @@
             "rate_pct": null,
             "basis": null,
             "reason_code": "imposto_sem_regra",
-            "reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra.",
+            "reason": "FIDC: fora das regras de imposto do SILO; sem regra.",
             "sources": []
           },
           "reason_code": "imposto_sem_regra",
-          "reason": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra."
+          "reason": "FIDC: fora das regras de imposto do SILO; sem regra."
         },
         "pension": null,
         "optimization": [],
@@ -22022,7 +22158,7 @@
         "annualized": false
       }
     ],
-    "choice_note": "O ETF é o maior por patrimônio líquido (site de terceiros, na data indicada) entre os ETFs ativos que acompanham um índice ligado à classe ANBIMA do fundo na lista revisada pelo dono (src/portfolio/rules/equivalents/class_index.yaml). Mesmo objetivo; não é recomendação de troca.",
+    "choice_note": "O ETF é o maior por patrimônio líquido (site de terceiros, na data indicada) entre os ETFs ativos que acompanham um índice ligado à classe ANBIMA do fundo na lista de classes revisada pelo dono do SILO. Mesmo objetivo; não é recomendação de troca.",
     "class_note": "Distribuição do retorno líquido de cota dos fundos FI ativos da mesma classe ANBIMA e do mesmo indicador de fundo de cotas (mínimo de 30 fundos), nas mesmas janelas do bloco de retorno.",
     "band_note": "posição do retorno na distribuição da classe (p25, mediana, p75), não um ranking",
     "pl_label": "patrimônio líquido do site etfsbrasil.com.br (fonte de terceiros), não um documento da CVM",

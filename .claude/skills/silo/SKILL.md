@@ -48,7 +48,8 @@ Known ticker, empty window → 200 empty series. Never a guessed last close.
 
 1. `serve/catalog.py` `METRICS` (`id_type`, `grain`, `source`, `meaning`)
 2. `api.panel` union arm in `19_api_contract.sql`
-3. Bump `CATALOG_VERSION`
+3. Bump `CATALOG_VERSION`, then `python scripts/gen_catalog_sql.py` (it writes
+   `api.catalog()` in `19_api_contract.sql`; never edit that block by hand)
 4. Offline test; keep `_PANEL_METRICS == tuple(METRICS)`
 
 Serving open: limits before `fetchall` (step 3), honest returns (4), lookup (5),

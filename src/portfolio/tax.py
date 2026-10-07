@@ -84,13 +84,13 @@ FEE_BASIS = "taxa de administração divulgada x valor da posição no extrato"
 LOADING_TEXT = "taxa de carregamento: não impressa no extrato; não incluída"
 NO_FEE_TEXT = "sem taxa de administração (ação, título ou crédito direto)"
 SECTION_NOTE = (
-    "Fatos por posição a partir das regras versionadas em src/portfolio/rules/tax/ (nota #611). Valores em R$ são "
+    "Fatos por posição a partir das regras de imposto versionadas do SILO, cada uma com artigo e citação. Valores em R$ são "
     "estimativas; nenhuma linha é recomendação. Sem total de imposto da carteira."
 )
 NOT_COVERED = [
-    {"tipo": "tesouro", "text": "Tesouro Direto: a nota #611 não cobre o título público; sem arquivo de regra."},
-    {"tipo": "FIDC", "text": "FIDC: fora da nota #611 (seção 6); sem arquivo de regra."},
-    {"tipo": "FIP", "text": "FIP: fora da nota #611 (seção 6); sem arquivo de regra."},
+    {"tipo": "tesouro", "text": "Tesouro Direto: o SILO ainda não tem regra de imposto para o título público."},
+    {"tipo": "FIDC", "text": "FIDC: fora das regras de imposto do SILO; sem regra."},
+    {"tipo": "FIP", "text": "FIP: fora das regras de imposto do SILO; sem regra."},
 ]
 # Reason codes of this block (their fixed text is in common.REASON_TEXT).
 R_NO_RULE = "imposto_sem_regra"

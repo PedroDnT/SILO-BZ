@@ -39,7 +39,7 @@ SEVERITY_LABEL = {"atencao": "atenção", "moderado": "moderado", "baixo": "baix
 SEVERITY_RANK = {"atencao": 0, "moderado": 1, "baixo": 2}
 SEVERITY_RULE = (
     "semáforo fixo: atenção quando o valor é estritamente maior que o limite de atenção; moderado quando é estritamente "
-    "maior que o limite moderado; baixo nos demais casos. Os limites estão no código do motor (src/portfolio/risks.py) "
+    "maior que o limite moderado; baixo nos demais casos. Os limites são fixos no motor do SILO "
     "e são os mesmos para toda carteira"
 )
 NOTE = "Fatos da carteira com um limite fixo; não é previsão de mercado nem recomendação de compra, venda ou manutenção."

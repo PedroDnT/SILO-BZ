@@ -865,7 +865,32 @@ def _returns_view(eng: dict) -> dict | None:
         "coverage": [{"id": wid, **{k: (cov.get(wid) or {}).get(k) for k in ("evaluated_value_brl", "coverage_portfolio_value_pct",
                                                                               "n_evaluated")}} for wid in order if wid in cov],
         "lines": lines,
+        "contribution": _contribution_view(r.get("contribution"), order),
     }
+
+
+def _contribution_view(c: dict | None, order: list) -> dict | None:
+    """Engine 1.15: the retroactive contribution per window, copied; windows as a list in the engine's order and line
+    numbers as ``L<n>``. The sum is the return of the evaluated part only, with its coverage; the view adds no total."""
+    if not isinstance(c, dict):
+        return None
+    wins = []
+    for wid in order:
+        w = (c.get("windows") or {}).get(wid)
+        if not isinstance(w, dict):
+            continue
+        wins.append({
+            "id": wid, "status": w.get("status"), "reason_code": w.get("reason_code"),
+            "reason": reason_text(w.get("reason_code")) if w.get("reason_code") else None,
+            "covered_return_pct": w.get("covered_return_pct"),
+            "coverage_portfolio_value_pct": w.get("coverage_portfolio_value_pct"),
+            "start_value_brl": w.get("start_value_brl"), "end_value_brl": w.get("end_value_brl"), "n_lines": w.get("n_lines"),
+            "lines": [{"line_id": f"L{x['line_no']}", "instrument": x.get("linha_extrato"), "value_brl": x.get("valor_brl"),
+                       "net_return_pct": x.get("net_return_pct"), "start_value_brl": x.get("start_value_brl"),
+                       "start_weight_pct": x.get("start_weight_pct"), "contribution_pp": x.get("contribution_pp")}
+                      for x in w.get("lines") or []],
+        })
+    return {"label": c.get("label"), "note": c.get("note"), "windows": wins}
 
 
 def _benchmark_view(b: dict | None) -> dict | None:

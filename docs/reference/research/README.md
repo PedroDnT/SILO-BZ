@@ -145,3 +145,7 @@ Six notes answer the research tickets of the diagnosis map:
 - [`issue-document-sites.md`](issue-document-sites.md) (#510): 26 official pages where
   banks, brokers, securitizadoras and fiduciary agents publish CRA, CRI and
   debenture issue documents, read on 2026-10-06; BTG's Banco de Emissões not found.
+- [`report-structure-for-cio.md`](report-structure-for-cio.md) (#510): audit of the
+  portfolio diagnosis report and a proposed order for a consultancy CIO (answer
+  first, one summary page, annex), from NN/G, GOV.UK, the SEC Plain English
+  Handbook, Few, Tufte, WCAG, CVM Resolução 175 and CFA/GIPS, read on 2026-10-06.

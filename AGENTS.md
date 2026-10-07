@@ -18,7 +18,9 @@ sees. Long per-dataset notes belong in `docs/agents/dataset-notes.md`.
 
 ### Issue tracker
 
-GitHub Issues via `gh`. See `docs/agents/issue-tracker.md`.
+GitHub Issues via `gh`. See `docs/agents/issue-tracker.md`. Before a batch of
+issues, confirm every label exists and create one issue first (that file says how).
+The `tech-debt` skill runs the audit → issues → phase PR loop.
 
 ### Triage labels
 
@@ -84,18 +86,19 @@ a ticket. Unless the owner explicitly authorizes it, an agent must not start
 implementing the discovered work, raise it to active priority, or widen the
 current task to include it.
 
-## The shape of the system: 3 infra, 3 products
+## The shape of the system: 4 infra, 4 products
 
 Reach for this before reporting a problem — it decides whose problem it is, and
 symptoms routinely surface one layer away from their cause.
 
-**Infrastructure** (three, and only three):
+**Infrastructure** (four, and only four):
 
 |                    | Runs                                                              | Fails as                                        |
 | ------------------ | ----------------------------------------------------------------- | ----------------------------------------------- |
 | **GitHub Actions** | ingestion + parse (`run_daily`, `run_backfill`, health, watchdog) | a red run, a slice in `cvm_ingest_log`          |
 | **Supabase**       | the Postgres store                                                | disk pressure, a failing query, a missing grant |
 | **Vercel**         | hosting for `dashboard/` only; `webapp/` is not deployed          | a build error, a stale or mis-pointed domain    |
+| **Cloudflare**     | the portfolio-diagnosis demo: a Worker, the engine Container, private R2 for traces, an LLM provider (`deploy/cloudflare/`) | a Worker error, a Container timeout, a missing secret, an LLM refusal |
 
 **Products** (what anyone actually consumes):
 
@@ -104,6 +107,7 @@ symptoms routinely surface one layer away from their cause.
 | **the API**         | schema `api` + `serve/` | `docs/reference/API.md`, `api.catalog()`, `api.coverage()` |
 | **the dashboard**   | the Evidence sites      | parquet built at deploy time                     |
 | **the stored data** | the warehouse itself    | the integrity rules below                        |
+| **the diagnosis**   | `src/portfolio/` (statement readers, engine, report, investigator) behind the Cloudflare Worker | `docs/reference/portfolio/`, ADR 0001 (stateless), ADR 0003 (traces in R2) |
 
 Two consequences worth stating, both learned the expensive way:
 
@@ -275,7 +279,7 @@ three agree.
 ```bash
 # Setup
 python3 -m venv .venv && source .venv/bin/activate   # Python 3.12
-pip install -r requirements.txt
+pip install -r requirements-dev.txt  # requirements.txt (the ingest's) + what only the tests import
 bash scripts/install_hooks.sh        # installs .githooks (pre-commit: secrets, syntax)
 cp .env.example .env                 # set POSTGRES_URL (Supabase conn string, sslmode=require)
 
@@ -433,11 +437,11 @@ comments correctly), so author migrations to be psql-clean.
 ### Environment layout
 
 - Python **3.12** in a virtualenv at `.venv/` (gitignored, persisted in the VM snapshot).
-  The startup update script (`python3 -m venv .venv` + `pip install -r requirements.txt` +
-  `pip install duckdb`) keeps it fresh. Run Python via `.venv/bin/python` (or
+  The startup update script (`python3 -m venv .venv` + `pip install -r requirements-dev.txt`)
+  keeps it fresh. Run Python via `.venv/bin/python` (or
   `source .venv/bin/activate`); there is no global install of the project deps.
 - If `.venv/bin/pip` is missing, the snapshot venv is empty. Recreate it:
-  `sudo apt-get install -y python3.12-venv && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`.
+  `sudo apt-get install -y python3.12-venv && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`.
 - `duckdb` is required by the offline verification scripts but is used only for local dev;
   it is listed in `requirements.txt` under "Local dev / offline verification".
 - Git hooks live in `.githooks/` (enabled with `bash scripts/install_hooks.sh`, which sets

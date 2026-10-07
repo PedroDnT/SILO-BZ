@@ -10,8 +10,10 @@ bucket `silo-diagnosis-traces`, to improve the agents (Redator, Revisor) later:
 
 - an OTLP/JSON trace following the OpenTelemetry GenAI semantic conventions
   (pinned in `src/portfolio/trace.py`, `GENAI_SEMCONV`), and, as separate objects
-  named by SHA-256, the engine JSON and the PDF. The trace **does** contain
-  portfolio data; the owner accepted that it is sensitive.
+  named by SHA-256, the engine JSON, the report's HTML (every run, since
+  2026-10-06; the upload page asks for HTML, so those runs have no PDF) and the
+  PDF when one was made. The trace **does** contain portfolio data; the owner
+  accepted that it is sensitive.
 - Holder, CPF and account are masked in all of it: the statement readers replace
   them with fixed tokens before the engine runs (`src/portfolio/mask.py`).
 - The **original uploaded statement is never stored**, in R2 or anywhere else.
@@ -25,7 +27,7 @@ bucket `silo-diagnosis-traces`, to improve the agents (Redator, Revisor) later:
 
 Improving the narrative agents needs real runs to look at: what the engine
 found, what the Redator wrote, what the Revisor removed and why. Masked engine
-JSON and the PDF carry that; the uploaded file adds nothing the engine JSON does
+JSON, the HTML and the PDF carry that; the uploaded file adds nothing the engine JSON does
 not, and it is the one object that holds the unmasked holder.
 
 ## When to revisit

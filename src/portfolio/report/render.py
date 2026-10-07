@@ -12,6 +12,7 @@ from __future__ import annotations
 import html
 import os
 import re
+import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -129,10 +130,10 @@ def _findings_html(engine: dict, narrative: Narrative, section: str) -> str:
         return ""
     parts = []
     for f in items:
-        cites = ", ".join(e(c) for c in f.citations)
+        cites = " ".join(e(c) for c in f.citations)  # the provenance ids stay in the markup, not in the text
         parts.append(
-            f'<div class="achado"><strong>{substitute(engine, f.title)}</strong>'
-            f'{substitute(engine, f.text)} <span class="cit">[{cites}]</span></div>'
+            f'<div class="achado" data-fontes="{cites}"><strong>{substitute(engine, f.title)}</strong>'
+            f'{substitute(engine, f.text)}</div>'
         )
     return "\n".join(parts)
 
@@ -175,7 +176,7 @@ def _ident_section(engine: dict) -> str:
         badges = "".join(f' <span class="tag unk">{v(engine, f"{p}.badges[{j}].label")}</span>'
                          for j in range(len(ln.get("badges") or [])))
         rows.append([
-            v(engine, f"{p}.line_id"),
+            e(str(ln.get("line_id") or "")[1:]),  # the statement's own order, no engine code
             v(engine, f"{p}.instrument") + (f"<br><span class=cit>{v(engine, f'{p}.fund_name')}</span>" if ln.get("fund_name") else ""),
             e(ASSET_LABELS.get(ln.get("asset_type"), ln.get("asset_type") or "—")),
             code,
@@ -184,7 +185,7 @@ def _ident_section(engine: dict) -> str:
             f'<span class="tag {tag}">{e(STATUS_LABELS.get(status, status))}</span>{badges}{note}',
         ])
     return _table(
-        [("Linha", False), ("Ativo", False), ("Tipo", False), ("CNPJ / código", False),
+        [("Nº no extrato", False), ("Ativo", False), ("Tipo", False), ("CNPJ / código", False),
          ("Valor", True), ("Peso", True), ("Identificação", False)],
         rows,
     )
@@ -467,7 +468,7 @@ def _equivalents_section(engine: dict) -> str:
     return "\n".join(out)
 
 
-def _returns_section(engine: dict) -> str:
+def _returns_section(engine: dict, contribution: bool = True) -> str:
     """Engine 1.10: the return per position over 12 and 6 months, beside the CDI of the same dates. One row per line
     and window; a line not evaluated says why with the fixed text of its code. No portfolio total, mean or ranking:
     a negative fee per point is shown as computed and marked as never aggregated."""
@@ -551,8 +552,78 @@ def _returns_section(engine: dict) -> str:
                                         for w in ln.get("windows") or []):
         notes.append(v(engine, f"{b}.pct_of_cdi_note"))
     out.append("<ul>" + "".join(f"<li class=cit>{n}</li>" for n in notes if n and n != "—") + "</ul>")
+    if contribution:
+        out.append(_contribution_html(engine, ("6m",) if contribution == "6m" else ("12m", "6m")))
     if r.get("status") in ("partial", "unknown") and r.get("reason"):
         out.append(f'<p><span class="tag unk">{e(SECTION_STATUS_LABELS.get(r["status"], r["status"]))}</span> {v(engine, f"{b}.reason")}.</p>')
+    return "\n".join(out)
+
+
+def _contribution_html(engine: dict, windows: tuple[str, ...] = ("12m", "6m")) -> str:
+    """Engine 1.15: how much each line added to the return of the evaluated part, per window, back-cast from today's
+    values (the statement has no flows). Labelled retroactive; the total is the evaluated part's return with its
+    coverage, never the portfolio's. Lines are in statement order."""
+    c = (engine.get("returns") or {}).get("contribution")
+    if not c or not c.get("windows"):
+        return ""
+    b = "returns.contribution"
+    out = [f'<h3>Contribuição por posição <span class="tag est">{v(engine, f"{b}.label")}</span></h3>',
+           f"<p class=cit>{v(engine, f'{b}.note')}</p>"]
+    for i, w in enumerate(c["windows"]):
+        if w.get("id") not in windows:
+            continue
+        q = f"{b}.windows[{i}]"
+        label = e(WINDOW_LABEL.get(w.get("id"), w.get("id")))
+        if w.get("status") != "avaliado":
+            out.append(f'<p>{label}: <span class="tag unk">não avaliado</span> {v(engine, f"{q}.reason")}.</p>')
+            continue
+        rows = []
+        for k, ln in enumerate(w.get("lines") or []):
+            lq = f"{q}.lines[{k}]"
+            rows.append([f"{v(engine, f'{lq}.line_id')} {v(engine, f'{lq}.instrument')}", v(engine, f"{lq}.net_return_pct"),
+                         v(engine, f"{lq}.start_weight_pct"), v(engine, f"{lq}.contribution_pp")])
+        out.append(f"<p><strong>{label}</strong>: soma das contribuições = retorno só das {v(engine, f'{q}.n_lines')} linhas "
+                   f"avaliadas, <span class=v>{v(engine, f'{q}.covered_return_pct')}</span> ({v(engine, f'{q}.coverage_portfolio_value_pct')} "
+                   "do valor da carteira); não é o retorno da carteira.</p>")
+        out.append(_table([("Linha", False), ("Retorno líquido", True), ("Peso no início (retroativo)", True),
+                           ("Contribuição", True)], rows))
+    return "\n".join(out)
+
+
+def _returns_summary(engine: dict) -> str:
+    """Body table of the returns section (report restructure, stage 3): for each position with a 12-month return, the
+    net return, the CDI over the same dates and the difference, by the position's name. The windows, volatility,
+    drawdown, fee per point and the basis of each line are in the annex table. No total, mean or ranking."""
+    r = engine.get("returns") or {}
+    b = "returns"
+    rows = []
+    for i, ln in enumerate(r.get("lines") or []):
+        w = next(((j, w) for j, w in enumerate(ln.get("windows") or []) if w.get("id") == "12m"), None)
+        if not w or w[1].get("status") != "avaliado":
+            continue
+        j, win = w
+        q = f"{b}.lines[{i}]"
+        wq = f"{q}.windows[{j}]"
+        name = v(engine, f"{q}.instrument")
+        if ln.get("without_distributions"):
+            name += '<br><span class="tag unk">sem proventos</span>'
+        cdi = v(engine, f"{wq}.cdi_pct") if win.get("cdi_pct") is not None else "—"
+        diff = v(engine, f"{wq}.net_minus_cdi_pp") if win.get("cdi_pct") is not None else "—"
+        if win.get("pct_of_cdi") is not None:  # only for a fund whose filed benchmark is CDI or DI (engine 1.13)
+            diff += f"<br><span class=v>{v(engine, f'{wq}.pct_of_cdi')}</span>"
+        rows.append([name, f"<span class=v>{v(engine, f'{wq}.net_return_pct')}</span>", cdi, diff])
+    cov = next((i for i, c in enumerate(r.get("coverage") or []) if c.get("id") == "12m"), None)
+    out = [f"<p class=cit>{v(engine, f'{b}.note')}</p>"]
+    if rows:
+        out.append(_table([("Posição", False), ("Retorno líquido em 12 meses", True), ("CDI nas mesmas datas", True),
+                           ("Líquido menos CDI", True)], rows))
+    else:
+        out.append("<p>Nenhuma posição teve retorno de 12 meses avaliado.</p>")
+    if cov is not None:
+        out.append(f"<p class=cit>Posições com retorno avaliado: {v(engine, f'{b}.coverage[{cov}].n_evaluated')} de "
+                   f"{v(engine, f'{b}.n_lines')}, {v(engine, f'{b}.coverage[{cov}].coverage_portfolio_value_pct')} do valor da carteira. "
+                   "As demais não têm série de preços ou cotas no SILO; o motivo de cada uma, a janela de 6 meses, a volatilidade e a queda "
+                   'máxima estão no <a href="#s-retorno-por-posicao-em-detalhe">anexo</a>.</p>')
     return "\n".join(out)
 
 
@@ -757,7 +828,12 @@ def _bucket_table(engine: dict, base: str, label_key: str, label: str) -> str:
     return _table([(label, False), ("Valor", True), ("Peso", True)], rows)
 
 
-def _exposure_section(engine: dict) -> str:
+def _exposure_section(engine: dict, part: str = "all") -> str:
+    """"O que a carteira tem". ``part`` splits it for the report restructure (stage 3): ``body`` is the allocation by
+    class, the overlap table and the largest underlying exposures; ``detail`` is the flow diagrams, the look-through
+    chart, the indexer and the sector, which go to the annex; ``all`` is both, as before."""
+    if part == "detail":
+        return _exposure_detail(engine)
     lt = engine.get("lookthrough") or {}
     out = []
     if engine.get("allocation"):
@@ -778,15 +854,24 @@ def _exposure_section(engine: dict) -> str:
         name = v(engine, f"{q}.name") if s.get("name") else v(engine, f"{q}.key")
         rows.append([name, v(engine, f"{q}.level"), legs, v(engine, f"{q}.total_brl"), v(engine, f"{q}.total_pct")])
     out.append(_table([("Exposição", False), ("Nível", False), ("Caminhos", False), ("Total", True), ("Peso", True)], rows))
-    origin = charts.exposure_origin_chart(engine)
-    if origin:
-        out.append("<h3>De onde vem a exposição ao mesmo ativo</h3>")
-        out.append(origin)
     if lt.get("top_underlying"):
         out.append("<h3>O que está por baixo (maiores exposições)</h3>")
         rows = [[v(engine, f"lookthrough.top_underlying[{i}].name"), v(engine, f"lookthrough.top_underlying[{i}].value_brl"),
                  v(engine, f"lookthrough.top_underlying[{i}].weight_pct")] for i in range(len(lt["top_underlying"]))]
         out.append(_table([("Ativo subjacente", False), ("Valor", True), ("Peso", True)], rows))
+    if part == "body":
+        out.append('<p class=cit>Os diagramas de origem de cada exposição, o gráfico das maiores exposições, o indexador e o setor '
+                   'estão no <a href="#s-detalhe-da-exposicao">anexo</a>.</p>')
+        return "\n".join(out)
+    return "\n".join(out + [_exposure_detail(engine)])
+
+
+def _exposure_detail(engine: dict) -> str:
+    out = []
+    origin = charts.exposure_origin_chart(engine)
+    if origin:
+        out.append("<h3>De onde vem a exposição ao mesmo ativo</h3>")
+        out.append(origin)
     out.append(charts.lookthrough_chart(engine))
     out.append("<h3>Indexador</h3>")
     out.append(_bucket_table(engine, "indexer", "indexer", "Indexador"))
@@ -1003,13 +1088,18 @@ def _threshold_text(engine: dict, q: str, th: dict) -> str:
     return "<br>".join(parts) or "—"
 
 
-def _risks_section(engine: dict) -> str:
-    """Engine 1.8: "Principais riscos", one row per risk, the semáforo from fixed thresholds; every value a path."""
+def _risks_section(engine: dict, compact: bool = False) -> str:
+    """Engine 1.8: "Principais riscos", one row per risk, the semáforo from fixed thresholds; every value a path.
+
+    ``compact`` is the body table (report restructure, stage 3): only the rows evaluated at atenção or moderado, four
+    columns (risk, value, level, what it means) and no thresholds; the full table, with the limits, is in the annex."""
     rk = engine.get("risks") or {}
     out = [f"<p class=cit>{v(engine, 'risks.note')} Critério: {v(engine, 'risks.severity_rule')}.</p>"]
     rows = []
     for i, r in enumerate(rk.get("rows") or []):
         q = f"risks.rows[{i}]"
+        if compact and not (r.get("status") == "avaliado" and r.get("severity") in ("atencao", "moderado")):
+            continue
         if r.get("status") == "avaliado":
             unit = r.get("unit")
             value = f"<span class=v>{v(engine, f'{q}.value_{unit}')}</span>"
@@ -1039,9 +1129,17 @@ def _risks_section(engine: dict) -> str:
         else:
             value = "—"
             sev = f'<span class="tag unk">{v(engine, f"{q}.status_label")}</span><br><span class=cit>{v(engine, f"{q}.reason")}</span>'
-        rows.append([v(engine, f"{q}.risk"), value, sev, v(engine, f"{q}.explanation"),
-                     _threshold_text(engine, f"{q}.thresholds", r.get("thresholds") or {})])
-    out.append(_table([("Risco", False), ("Valor", False), ("Semáforo", False), ("O que mede", False), ("Limites", False)], rows)
+        row = [v(engine, f"{q}.risk"), value, sev, v(engine, f"{q}.explanation")]
+        rows.append(row if compact else row + [_threshold_text(engine, f"{q}.thresholds", r.get("thresholds") or {})])
+    if compact:
+        if not rows:
+            out.append("<p>Nenhuma linha avaliada ficou em atenção ou moderado. A tabela completa está no anexo.</p>")
+            return "\n".join(out)
+        out.append(_table([("Risco", False), ("Valor", False), ("Nível", False), ("O que significa", False)], rows)
+                   .replace("<table>", '<table class="riscos">', 1))
+        out.append('<p class=cit>Só as linhas em atenção ou moderado; a tabela completa, com os limites, está no anexo.</p>')
+        return "\n".join(out)
+    out.append(_table([("Risco", False), ("Valor", False), ("Nível", False), ("O que mede", False), ("Limites", False)], rows)
                .replace("<table>", '<table class="riscos">', 1))
     return "\n".join(out)
 
@@ -1293,7 +1391,7 @@ def _sources(engine: dict) -> str:
         when = v(engine, f"data_dates.{key}") if key else e(format_value({}, "d", dates.get(src))) if dates.get(src) else "data não informada"
         items.append(f"<li>{e(SOURCE_LABELS.get(src, src))}: dados até {when}</li>")
     endpoints = sorted({str(p.get("endpoint")) for p in engine.get("provenance") or [] if p.get("endpoint")})
-    tail = f"<p class=nota>Consultas ao SILO: {e(', '.join(endpoints))}.</p>" if endpoints else ""
+    tail = f'<p class=nota data-consultas="{e(" ".join(endpoints))}">Cada número vem de uma consulta registrada ao SILO; o registro fica com o rastro da execução.</p>' if endpoints else ""
     return "<ul>" + "".join(items) + "</ul>" + tail
 
 
@@ -1306,7 +1404,7 @@ def _client_fit_section(engine: dict) -> str:
     out.append("<p>" + e(fit.get("profile_assessment", "Perfil não avaliado.")) + "</p>")
     for key, label in (("horizon", "Horizonte"), ("liquidity", "Liquidez")):
         item = fit.get(key) or {}
-        out.append(f"<p><strong>{label}</strong>: {e(item.get('status', 'nao_avaliado'))}. {e(item.get('note'))}</p>")
+        out.append(f"<p><strong>{label}</strong>: {e(str(item.get('status', 'nao_avaliado')).replace('_', ' ').replace('nao ', 'não '))}. {e(item.get('note'))}</p>")
         if key == "horizon" and item.get("status") != "nao_avaliado":
             out.append("<p>Crédito além do horizonte: " + e(", ".join("L" + str(n) for n in item.get("line_nos_after_horizon", [])) or "nenhum identificado") +
                        "; sem vencimento: " + e(", ".join("L" + str(n) for n in item.get("line_nos_without_maturity", [])) or "nenhum identificado") + ".</p>")
@@ -1317,71 +1415,149 @@ def _client_fit_section(engine: dict) -> str:
     return "".join(out)
 
 
-def _brief(engine: dict, narrative: Narrative) -> str:
-    # The same checked GPT findings, selected rather than another paid model call.
-    out = ['<section class="brief"><h2>Brief para a reunião</h2>',
-           f"<p>Carteira: {v(engine, 'portfolio.total_brl')} · posições: {v(engine, 'portfolio.n_lines')} · não identificadas: {v(engine, 'portfolio.n_unknown')}</p>",
-           _findings_html(engine, replace(narrative, kept=[f for f in narrative.kept if f.section == "resumo"][:3]), "resumo")]
+def _points_to_check(engine: dict) -> list[str]:
+    """Page 1, "Pontos a conferir com o cliente": facts the engine already flags, in fixed wording with placeholders
+    (the Redator types nothing here), at most four, each naming a fund or issuer and never an action. FGC issuers above
+    the limit, restated fund reports, and funds that left their class's range at the strong level. Never "atenção"
+    rows of the risk table, which stay in that table (owner's rule)."""
+    kinds: list[list[str]] = [[], [], []]
+    fgc = (engine.get("concentration") or {}).get("fgc") or {}
+    for i, it in enumerate(fgc.get("issuers") or []):
+        if it.get("above_limit"):
+            q = f"concentration.fgc.issuers[{i}]"
+            kinds[0].append(f"<li><strong>Emissor acima do limite do FGC.</strong> {v(engine, q + '.issuer')} soma "
+                       f"{v(engine, q + '.eligible_value_brl')} em CDB, LCI e LCA, {v(engine, q + '.excess_brl')} acima de "
+                       f"{v(engine, 'concentration.fgc.limit_brl')}; a conferir: o limite é por CPF e instituição.</li>")
+    for i, it in enumerate((engine.get("restatements") or {}).get("items") or []):
+        q = f"restatements.items[{i}]"
+        kinds[1].append(f"<li><strong>Informe reapresentado.</strong> {v(engine, q + '.fund_name')} reapresentou o informe de "
+                   f"{v(engine, q + '.competencia')}; {v(engine, q + '.n_fields_changed')} campos mudaram; "
+                   f"{v(engine, q + '.assessment')}.</li>")
+    for i, it in enumerate((engine.get("movement") or {}).get("strong") or []):
+        q = f"movement.strong[{i}]"
+        kinds[2].append(f"<li><strong>Cota fora da faixa da classe.</strong> {v(engine, q + '.fund_name')}, em "
+                   f"{v(engine, q + '.month')}: retorno {v(engine, q + '.own_value_pct')} contra a média da classe "
+                   f"{v(engine, q + '.class_mean_pct')} ({v(engine, q + '.class_as_filed')}).</li>")
+    # one of each kind first, then the rest, so a long list of one kind does not push the others off the page
+    out: list[str] = []
+    for rank in range(max(map(len, kinds))):
+        out += [k[rank] for k in kinds if len(k) > rank]
+    return out[:4]
+
+
+def _resumo(engine: dict, narrative: Narrative, toc: list[tuple[str, str]]) -> str:
+    """Page 1: who and when, what to check, what it costs and how much of the portfolio that covers, what was not
+    assessed, and a contents list. Every figure is the engine's, printed through ``v``; nothing is aggregated here."""
+    out = ['<section class="brief" id="resumo"><h2>Resumo para a reunião</h2>']
+    constraints = ("restrições do cliente não informadas" if not ((engine.get("client_fit") or {}).get("declared"))
+                   else "restrições do cliente declaradas na seção própria")
+    out.append(f"<p>Carteira de {v(engine, 'portfolio.total_brl')} · {v(engine, 'portfolio.n_lines')} posições · "
+               f"{v(engine, 'portfolio.n_identified')} identificadas · {constraints}</p>")
+    out.append("<h3>Pontos a conferir com o cliente</h3>")
+    pts = _points_to_check(engine)
+    out.append("<ul>" + "".join(pts) + "</ul>" if pts else
+               "<p>As telas que rodaram não apontaram ponto a conferir. O que não foi possível avaliar está abaixo.</p>")
+    out.append(_findings_html(engine, replace(narrative, kept=[f for f in narrative.kept if f.section == "resumo"][:3]), "resumo"))
     fees = (engine.get("fees") or {}).get("summary") or {}
     if fees.get("adm_disclosed_fixed_per_year_brl") is not None:
-        out.append(f"<h3>Taxas</h3><p>{v(engine, 'fees.summary.adm_disclosed_fixed_per_year_brl')} por ano em administração fixa divulgada; ETFs e estimativas à parte no apêndice. Não representa custo total.</p>")
+        out.append(f"<h3>Custo</h3><p><strong>{v(engine, 'fees.summary.adm_disclosed_fixed_per_year_brl')} por ano</strong> "
+                   f"({v(engine, 'fees.summary.adm_disclosed_fixed_portfolio_pct')} da carteira): só a taxa de administração "
+                   f"divulgada, nos fundos que somam {v(engine, 'fees.summary.coverage_fixed_fund_value_pct')} do valor em fundos. "
+                   f"{v(engine, 'fees.summary.coverage_range_fund_value_pct')} têm só uma faixa de taxa (à parte) e "
+                   f"{v(engine, 'fees.summary.coverage_without_fee_fund_value_pct')} não têm taxa utilizável. Não é o custo total.</p>")
     else:
-        out.append("<h3>Taxas</h3><p>Não avaliado: total de administração fixa divulgada indisponível.</p>")
-    out.append('<h3>Riscos prioritários</h3><ul>')
-    risks = (engine.get("risks") or {}).get("rows") or []
-    for i, row in list(enumerate(risks))[:3]:
-        q = f"risks.rows[{i}]"
-        out.append(f"<li>{v(engine, q + '.risk')}: {v(engine, q + '.severity_label') if row.get('status') == 'avaliado' else 'não avaliado'}.</li>")
-    if not risks:
-        out.append('<li>Não avaliado: telas de risco indisponíveis.</li>')
-    out.append('</ul><h3>Retorno por posição</h3>')
+        out.append("<h3>Custo</h3><p>Não avaliado: total de administração fixa divulgada indisponível.</p>")
     ret = engine.get("returns") or {}
-    for i, cov in enumerate(ret.get("coverage") or []):
-        out.append(f"<p>{e(cov.get('id'))}: cobertura {v(engine, f'returns.coverage[{i}].coverage_portfolio_value_pct')}. Sem retorno total da carteira.</p>")
-    out.append('<ul>')
-    for i, row in list(enumerate(ret.get("lines") or []))[:3]:
-        w = (row.get("windows") or [{}])[0]
-        q = f"returns.lines[{i}]"
-        value = v(engine, q + '.windows[0].net_return_pct') if w.get('status') == 'avaliado' else 'não avaliado'
-        out.append(f"<li>{v(engine, q + '.line_id')}: {value}; {e(row.get('basis_label'))}.</li>")
-    out.append('</ul><h3>Limitações que mudam a leitura</h3><p>Dados ausentes não são zero. Cobertura parcial, proventos e datas estão no apêndice; grupo econômico não avaliado.</p>')
-    out.append('<a href="#apendice">Abrir análise detalhada</a></section>')
+    parts = []
+    if (engine.get("portfolio") or {}).get("n_unknown"):
+        parts.append(f"{v(engine, 'portfolio.n_unknown')} posições não identificadas")
+    if ret.get("n_not_evaluated"):
+        parts.append(f"retorno de {v(engine, 'returns.n_not_evaluated')} de {v(engine, 'returns.n_lines')} posições")
+    out.append("<h3>Não avaliado</h3><p>" + ("; ".join(parts) if parts else "Nenhuma posição ficou de fora das telas principais")
+               + '. Dados ausentes não são zero. Detalhes na seção <a href="#s-o-que-nao-foi-possivel-avaliar">O que não foi possível avaliar</a>.</p>')
+    out.append('<h3>Nesta análise</h3><p class="toc">' + " · ".join(f'<a href="#{sid}">{e(t)}</a>' for sid, t in toc) + "</p>")
+    out.append('<p class="cit">Não é recomendação de investimento. <a href="#aviso">Aviso ao final do relatório.</a></p></section>')
     return "".join(out)
+
+
+_SVG_RE = re.compile(r"(<svg\b.*?</svg>)", re.DOTALL)
+_LINE_ID_RE = re.compile(r"\bL(\d+)\b")
+
+
+def _line_names(engine: dict) -> dict[str, str]:
+    """``L<n>`` to the instrument as printed in the statement, escaped; a name that two lines share keeps its
+    statement order so the reader can tell them apart."""
+    lines = [(str(ln.get("line_id")), str(ln.get("instrument") or "")) for ln in engine.get("lines") or [] if ln.get("line_id")]
+    count: dict[str, int] = {}
+    for _lid, name in lines:
+        count[name] = count.get(name, 0) + 1
+    return {lid: e(name if count[name] == 1 else f"{name} (linha {lid[1:]} do extrato)") for lid, name in lines if name}
+
+
+def _readable_lines(html_text: str, engine: dict) -> str:
+    """The engine's line ids (``L5``) are codes: in the reader's text each is the instrument's name, as the statement
+    prints it. A name already printed beside its code is not doubled, and charts (SVG) keep their own labels."""
+    names = _line_names(engine)
+    if not names:
+        return html_text
+
+    def swap(chunk: str) -> str:
+        for lid, name in sorted(names.items(), key=lambda kv: -len(kv[0])):
+            chunk = chunk.replace(f"{lid} {name}", name)
+        return _LINE_ID_RE.sub(lambda m: names.get(f"L{m.group(1)}", m.group(0)), chunk)
+
+    return "".join(part if _SVG_RE.fullmatch(part) else swap(part) for part in _SVG_RE.split(html_text))
 
 
 def render_html(engine: dict, narrative: Narrative, assinatura: str | None = None) -> str:
     template = (TEMPLATES / "report.html").read_text(encoding="utf-8")
     css = (TEMPLATES / "report.css").read_text(encoding="utf-8")
 
-    def section(title: str, body: str) -> str:
-        return f"<section><h2>{e(title)}</h2>\n{body}\n</section>"
+    toc: list[tuple[str, str]] = []
 
+    def section(title: str, body: str, listed: bool = True) -> str:
+        sid = "s-" + re.sub(r"[^a-z0-9]+", "-", unicodedata.normalize("NFD", title.lower()).encode("ascii", "ignore").decode()).strip("-")
+        if listed:
+            toc.append((sid, title))
+        return f'<section id="{sid}"><h2>{e(title)}</h2>\n{body}\n</section>'
+
+    def f(key: str) -> str:
+        return _findings_html(engine, narrative, key)
+
+    # Report restructure, stage 3: the answers in the order a CIO asks (what needs attention, what it costs, what it
+    # holds, what it returned, what tax applies, what was re-filed, what could not be assessed); the line-by-line
+    # evidence, the full tables and the method go to the annex.
     corpo = [
-        section("Resumo", _findings_html(engine, narrative, "resumo")
-                + (f"<h3>{e(SECTION_TITLES['achados'])}</h3>" + _findings_html(engine, narrative, "achados")
-                   if narrative.status == "complete" and any(f.section == "achados" for f in narrative.kept) else "")),
-        *([section("Principais riscos", _risks_section(engine) + _findings_html(engine, narrative, "riscos"))]
-          if engine.get("risks") else []),
-        *([section("Quanto a carteira paga em taxas", _fee_headline_section(engine))]
+        *([section("O que pede atenção", _risks_section(engine, compact=True) + f("riscos"))] if engine.get("risks") else []),
+        *([section("Achados", f("achados"))]
+          if narrative.status == "complete" and any(x.section == "achados" for x in narrative.kept) else []),
+        *([section("Quanto a carteira paga em taxas", _fee_headline_section(engine) + f("taxas"))]
           if (engine.get("fees") or {}).get("summary") else []),
-        section("Identificação linha a linha", _ident_section(engine) + _findings_html(engine, narrative, "identificacao")),
-        *([section("Crédito direto no registro da CVM", _credit_section(engine))]
-          if (engine.get("credit") or {}).get("lines") else []),
-        section("Custo em taxas", _fees_section(engine) + _findings_html(engine, narrative, "taxas")),
-        section("Exposição", _exposure_section(engine) + _findings_html(engine, narrative, "exposicao")),
-        *([section("Concentração e vencimentos", _concentration_section(engine))] if engine.get("concentration") else []),
-        *([section("Liquidez", _liquidity_section(engine))] if engine.get("liquidity") else []),
-        *([section("Retorno por posição", _returns_section(engine) + _findings_html(engine, narrative, "retornos"))]
+        section("O que a carteira tem", _exposure_section(engine, "body") + f("exposicao")),
+        *([section("Concentração e liquidez", (_concentration_section(engine) if engine.get("concentration") else "")
+                   + (_liquidity_section(engine) if engine.get("liquidity") else ""))]
+          if engine.get("concentration") or engine.get("liquidity") else []),
+        *([section("Retorno passado contra o CDI", _returns_summary(engine) + _contribution_html(engine, ("12m",)) + f("retornos"))]
           if engine.get("returns") else []),
-        *([section("Taxa e imposto por posição", _tax_section(engine) + _findings_html(engine, narrative, "impostos"))]
-          if engine.get("tax") else []),
-        *([section("Equivalente de mercado", _equivalents_section(engine) + _findings_html(engine, narrative, "equivalentes"))]
-          if engine.get("equivalents") else []),
-        section("Reapresentações", _restatements_section(engine) + _findings_html(engine, narrative, "reapresentacoes")),
-        section("Sinais de risco", _risk_section(engine) + _findings_html(engine, narrative, "sinais_de_risco")),
+        *([section("Taxa e imposto por posição", _tax_section(engine) + f("impostos"))] if engine.get("tax") else []),
+        section("Informes reapresentados e movimento incomum",
+                _restatements_section(engine) + f("reapresentacoes") + _risk_section(engine) + f("sinais_de_risco")),
         section("O que não foi possível avaliar", _unknowns_section(engine, narrative)),
-        section("Metodologia e limitações", _method_section(engine, narrative)),
     ]
+    annex = [
+        section("Como cada posição foi identificada", _ident_section(engine) + f("identificacao"), listed=False),
+        *([section("Crédito direto no registro da CVM", _credit_section(engine), listed=False)]
+          if (engine.get("credit") or {}).get("lines") else []),
+        section("Detalhe da exposição", _exposure_section(engine, "detail"), listed=False),
+        section("Taxa por fundo", _fees_section(engine), listed=False),
+        *([section("Todos os riscos e seus limites", _risks_section(engine), listed=False)] if engine.get("risks") else []),
+        *([section("Retorno por posição em detalhe", _returns_section(engine, contribution="6m"), listed=False)]
+          if engine.get("returns") else []),
+        *([section("ETF comparável (não é recomendação)", _equivalents_section(engine) + f("equivalentes"), listed=False)]
+          if engine.get("equivalents") else []),
+        section("Metodologia e limitações", _method_section(engine, narrative), listed=False),
+    ]
+    toc.append(("apendice", "Anexo: evidência linha a linha e metodologia"))
     meta = (f"Data de referência da carteira: {v(engine, 'valuation_date')} · "
             f"Diagnóstico gerado em {v(engine, 'generated_at')}")
     aviso = ""
@@ -1393,7 +1569,10 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
         "css": css,
         "meta": meta,
         "aviso": aviso,
-        "corpo": _brief(engine, narrative) + (section("Restrições declaradas do cliente", _client_fit_section(engine)) if engine.get("client_fit") else "") + '<details id="apendice"><summary>Apêndice: análise completa</summary>' + "\n".join(corpo) + "</details>",
+        "corpo": _readable_lines(
+            _resumo(engine, narrative, toc) + (section("Restrições declaradas do cliente", _client_fit_section(engine)) if engine.get("client_fit") else "")
+            + "\n".join(corpo)
+            + '<details id="apendice"><summary>Anexo: evidência linha a linha e metodologia</summary>' + "\n".join(annex) + "</details>", engine),
         "fontes": _sources(engine),
         "assinatura": e(signature(assinatura)),
         "aviso_legal": DISCLAIMER_HTML,
