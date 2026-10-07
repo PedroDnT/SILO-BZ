@@ -7,3 +7,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # requirements.txt and requirements-dev.txt are pinned with == (#687);
+  # Dependabot proposes the moves. Keep pydantic and openai equal to
+  # requirements-report.txt and deploy/cloudflare/engine/requirements.txt.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
