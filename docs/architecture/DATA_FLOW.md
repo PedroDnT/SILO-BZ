@@ -71,7 +71,4 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 | dashboard                  | `public`, at build | last successful build |
 | research job               | landing tables     | when dispatched       |
 
-`serve/catalog.py` declares which `api.*` functions refuse or page;
-`serve/endpoint_manifest.py` reads that off the SQL, and tests pin the two.
-
 Deeper: [API](../reference/API.md), [data inventory](../reference/DATA_INVENTORY.md).
