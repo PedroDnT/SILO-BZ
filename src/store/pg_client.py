@@ -30,7 +30,9 @@ _RETRY_DELAYS = (5, 10, 20, 40)
 # kernel default keepalive (2h), and the next write then hangs until
 # `SSL SYSCALL error: EOF detected`. Probe after 30s idle so the pooler sees
 # traffic and a dead peer is noticed in ~60s instead of ~15 min.
-_KEEPALIVES = dict(
+# Public: serve/pool.py passes the same settings to the read API's pool, where
+# a connection can also sit idle between requests (#717).
+KEEPALIVES = dict(
     keepalives=1,
     keepalives_idle=30,
     keepalives_interval=10,
@@ -203,7 +205,7 @@ class _PgClient:
         self._size = pool_size or _get_pool_size()
         # minconn=1: open one eagerly so a bad POSTGRES_URL fails at startup
         # rather than on the first slice, an hour into a backfill.
-        self._pool = get_pool(url, minconn=1, maxconn=self._size, **_KEEPALIVES)
+        self._pool = get_pool(url, minconn=1, maxconn=self._size, **KEEPALIVES)
         self._slots = threading.Semaphore(self._size)
         logger.info("Postgres pool: %d connection(s)", self._size)
 
