@@ -13,6 +13,20 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 Infer the repo from `git remote -v`; `gh` does this automatically inside a clone.
 
+## Before a batch of issues
+
+GitHub rejects an issue whose label does not exist, and the MCP `issue_write` does
+not create labels. So, before creating more than one issue:
+
+1. List the labels: `gh api repos/{owner}/{repo}/labels --paginate -q '.[].name'`
+   (GraphQL, and so `gh label list`, is not available from Claude Code sessions).
+2. Create any missing one: `gh api -X POST repos/{owner}/{repo}/labels -f name=... -f color=... -f description=...`.
+3. Create one issue, check it landed with its labels, then the rest.
+
+Learned on 2026-10-06 (#677): 14 child issues bounced on `phase:*` labels that did
+not exist. The phase labels now exist (`phase:A` to `phase:D`), as does
+`ready-for-human`.
+
 ## Pull requests as a triage surface
 
 **No.** External pull requests are not triage requests by default.
