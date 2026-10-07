@@ -18,7 +18,9 @@ sees. Long per-dataset notes belong in `docs/agents/dataset-notes.md`.
 
 ### Issue tracker
 
-GitHub Issues via `gh`. See `docs/agents/issue-tracker.md`.
+GitHub Issues via `gh`. See `docs/agents/issue-tracker.md`. Before a batch of
+issues, confirm every label exists and create one issue first (that file says how).
+The `tech-debt` skill runs the audit → issues → phase PR loop.
 
 ### Triage labels
 
