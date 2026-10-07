@@ -4,6 +4,15 @@ Measured findings, source audits and reproducible demonstrations for the
 research vertical. It does not imply that every source is served or that any
 finding is investment advice.
 
+## COTAHIST storage and serving
+
+[`cotahist-storage-serving-map.md`](cotahist-storage-serving-map.md) maps every
+record-01 field to storage and existing SQL/API paths, all 43 CODBDI codes in
+B3's 2020 layout and six additional observed codes. The 2026-10-07 census finds
+29 codes in the held 2019–2026 tape. It separates missing field exposure from
+missing observations, records the direct 2019 ZIP check, and identifies dated
+dictionary, provenance and adapter gaps without changing ingestion or serving.
+
 ## Flagship demonstrations
 
 Run from the repository root with `python research_examples/<script>.py`:

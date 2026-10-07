@@ -11,7 +11,7 @@ icon: "calendar-clock"
 Everything is unadjusted; every row carries `adjusted: false`.
 
 <Warning>
-  **The grain is `(codneg, trade_date, term_days)`.** One code can print several terms in the same session — a 30-day and a 60-day forward on the same paper are different contracts at different prices. A query that ignores `term_days` sees what looks like duplicate dates.
+  **The grain is `(codneg, trade_date, market, board, term_days)`.** One code can print several terms or boards in the same session. Preserve those distinctions when indexing the observations.
 
   **There is no `underlying` column**, for the same reason as [options](/api-docs/options): the codneg root usually names the underlying paper, but B3 publishes no mapping, and deriving one would be inventing an identity join.
 </Warning>
@@ -43,7 +43,13 @@ Only the columns that need explaining:
 | `term_days` | COTAHIST `prazot`, the contract's term in days — **text**, as stored, not an integer. Part of the grain, same as `quotes.term_days`. |
 | `currency` | Defaults to `R$` when the source leaves it blank. The only column on this endpoint where a value is supplied rather than published. |
 | `quantity` | Exactly as COTAHIST publishes it — no lot normalisation. |
-| `adjusted` | Always `false`. There is no corporate-action adjustment anywhere in this warehouse. |
+| `adjusted` | Always `false` on this forward endpoint. |
+| `market`, `board` | Original TPMERC and CODBDI codes; keep both as source identity. |
+| `contract_price`, `contract_expiry` | PREEXE and DATVEN, the secondary-forward contract value and maturity as published; not yield or credit spread. |
+| `contract_correction` | INDOPC source code; the catalog carries a dated reference. Unknown descriptions remain null. |
+| `contract_points`, `contract_points_raw` | PTOEXE decoded with six implied decimals, and its original text. Zero filler or unreadable points decode to null; the raw text survives. |
+| `distribution_number` | DISMES sequence code, not a dividend amount. |
+| `fetched_at` | Warehouse timestamp, not a historical source-publication vintage. |
 
 Source-field provenance for the price columns, since the names differ from B3's:
 `spec` ← `especi`, `bid` ← `oferta_compra`, `ask` ← `oferta_venda`, `trades` ← `negocios`,
@@ -73,7 +79,7 @@ body = {"p_codneg": "PETR4T", "p_from": "2026-08-01", "p_to": "2026-08-26"}
 rows = requests.post(f"{URL}/rpc/termo_history", headers=H, json=body).json()
 
 # term_days is part of the key — index on it, don't collapse it away.
-df = pd.DataFrame(rows).set_index(["trade_date", "term_days"])
+df = pd.DataFrame(rows).set_index(["trade_date", "market", "board", "term_days"])
 ```
 
 ```javascript JavaScript
