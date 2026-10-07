@@ -14,15 +14,18 @@
 //     the row count and a provenance line (endpoint + parameters);
 //   * the only credential is the public anon / publishable key.
 
-import { CONTRACT, CONTRACT_VERSION, type ContractEntry } from "./contract.generated.ts";
+import { CONTRACT, CONTRACT_VERSION, type ContractEntry, ENDPOINT_NAMES } from "./contract.generated.ts";
 
 // ---------------------------------------------------------------------------
-// The tool list. One line per tool; the input schema and the contract prose
-// come from contract.generated.ts (openapi.json, itself generated from the
-// SQL). tests/test_mcp_contract.py pins this list to serve/catalog.py's
-// `postgrest` section, so adding an endpoint there without adding it here (or
-// the reverse) fails CI. A new endpoint: regenerate openapi.json +
-// contract.generated.ts (scripts/gen_mcp_contract.py), then add its t() line.
+// The tool list. WHICH tools exist is not decided here: ENDPOINT_NAMES in
+// contract.generated.ts is every api.* function and view granted to anon /
+// authenticated in the analytical SQL, and the input schema and contract prose
+// come from the same module (openapi.json). This file keeps only what the SQL
+// cannot say: each tool's title, an optional lead, and the order tools/list
+// shows them in. A new endpoint: regenerate openapi.json + contract.generated.ts
+// (scripts/gen_mcp_contract.py), then add its t() line below. An endpoint with
+// no title, or a title naming no endpoint, fails tests/test_mcp_contract.py
+// and fails this module at load.
 // ---------------------------------------------------------------------------
 
 export interface ToolSpec {
@@ -36,7 +39,8 @@ function t(name: string, title: string, lead?: string): ToolSpec {
   return { name, title, lead };
 }
 
-export const TOOL_SPECS: ToolSpec[] = [
+/** Title and optional lead per endpoint, in tools/list order. Hand-kept. */
+export const TOOL_TITLES: ToolSpec[] = [
   // Orientation — call these first.
   t("catalog", "Catalog (the contract)", "CALL FIRST AND CACHE. The whole read contract as JSON: metrics, constraints, limits, applicability, regime_breaks, screens, examples. When anything here disagrees with memory, the catalog wins."),
   t("coverage", "Coverage and freshness", "Call before claiming freshness or reading a null as a gap."),
@@ -132,6 +136,28 @@ export const TOOL_SPECS: ToolSpec[] = [
   t("lending_participants", "Lending participants (view)", RATCHET_LEAD()),
   t("investor_flow", "Investor flow (view)", RATCHET_LEAD()),
 ];
+
+/**
+ * The tools: exactly ENDPOINT_NAMES, titled and ordered by TOOL_TITLES. Fails
+ * at load, loudly, when the two disagree: a granted endpoint with no title
+ * would vanish from tools/list, and a title with no endpoint would publish a
+ * tool nobody can call.
+ */
+export function titledTools(titles: ToolSpec[], endpoints: readonly string[]): ToolSpec[] {
+  const seen = new Set<string>();
+  const dup = titles.filter((s) => seen.has(s.name) || !seen.add(s.name)).map((s) => s.name);
+  const known = new Set(endpoints);
+  const untitled = endpoints.filter((n) => !seen.has(n));
+  const orphan = titles.filter((s) => !known.has(s.name)).map((s) => s.name);
+  if (dup.length || untitled.length || orphan.length) {
+    throw new Error(
+      `silo-mcp: TOOL_TITLES disagrees with ENDPOINT_NAMES: duplicate [${dup}], endpoint with no title [${untitled}], title naming no endpoint [${orphan}]`,
+    );
+  }
+  return titles;
+}
+
+export const TOOL_SPECS: ToolSpec[] = titledTools(TOOL_TITLES, ENDPOINT_NAMES);
 
 function SCREEN_LEAD(): string {
   return "A SIGNAL, NOT A VERDICT: rows crossed a stated threshold in public filings; each carries `screen` and `params`. Read catalog().screens.<name>.meaning for what else produces the same pattern before repeating any row.";

@@ -1,23 +1,23 @@
 """Pin the silo-mcp edge function to the read contract, offline.
 
-Three sources must agree, and this is the test that fails when they do not:
+Which tools exist has one source: the ``api.*`` functions and views granted
+to anon / authenticated in the analytical SQL (``serve/endpoint_manifest.py``).
+``scripts/gen_mcp_contract.py`` writes that list (``ENDPOINT_NAMES``) into
+``supabase/functions/silo-mcp/contract.generated.ts`` beside each endpoint's
+schema and prose from ``openapi.json``, and refuses when openapi.json publishes
+a different set. ``serve/catalog.py``'s ``postgrest`` map is pinned to the same
+set by ``tests/test_endpoint_manifest.py``.
 
-* ``serve/catalog.py`` ``catalog_payload()["postgrest"]`` — what the catalog
-  tells an agent exists on the deployed surface;
-* ``openapi.json`` — generated from the SQL and carried into
-  ``supabase/functions/silo-mcp/contract.generated.ts`` by
-  ``scripts/gen_mcp_contract.py``;
-* ``supabase/functions/silo-mcp/tools.ts`` ``TOOL_SPECS`` — the hand-listed
-  MCP tools.
-
-Adding an endpoint to the catalog without a tool (or a tool without a catalog
-entry) fails here, as does editing openapi.json without regenerating the
-module. The Deno test next to the function checks behaviour; this one checks
-that the list cannot drift.
+The only hand-kept part is ``TOOL_TITLES`` in ``tools.ts``: a title and an
+optional lead per endpoint. An endpoint with no title, or a title naming no
+endpoint, fails here (and fails the module at load). Editing openapi.json or a
+grant without regenerating the module fails the staleness test. The Deno test
+next to the function checks behaviour; this one checks that nothing drifts.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from pathlib import Path
@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 from scripts import gen_mcp_contract
-from serve.catalog import catalog_payload
+from serve.endpoint_manifest import manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 FN_DIR = ROOT / "supabase" / "functions" / "silo-mcp"
@@ -46,24 +46,24 @@ MINIMUM = {
 }
 
 
-def _tool_specs() -> list[str]:
+def _titled() -> list[str]:
+    """The names TOOL_TITLES titles, in tools/list order."""
     src = TOOLS_TS.read_text(encoding="utf-8")
-    block = re.search(r"export const TOOL_SPECS: ToolSpec\[\] = \[(.*?)\n\];", src, re.S)
-    assert block, "TOOL_SPECS block not found in tools.ts"
+    block = re.search(r"export const TOOL_TITLES: ToolSpec\[\] = \[(.*?)\n\];", src, re.S)
+    assert block, "TOOL_TITLES block not found in tools.ts"
     return re.findall(r'^\s*t\("([a-z0-9_]+)"', block.group(1), re.M)
 
 
-def _catalog_resources() -> dict[str, tuple[str, str]]:
-    """resource name -> (verb, catalog key), from the catalog's postgrest map."""
-    out: dict[str, tuple[str, str]] = {}
-    for key, route in catalog_payload()["postgrest"].items():
-        verb, path = route.split(" ", 1)
-        assert path.startswith("/rest/v1/"), route
-        resource = path[len("/rest/v1/"):]
-        if resource.startswith("rpc/"):
-            resource = resource[len("rpc/"):]
-        out[resource] = (verb, key)
-    return out
+def _granted() -> dict:
+    """name -> Endpoint for every api.* object granted to anon/authenticated."""
+    return {name: e for name, e in manifest().items() if e.granted}
+
+
+def _generated_names() -> list[str]:
+    src = gen_mcp_contract.OUT.read_text(encoding="utf-8")
+    block = re.search(r"export const ENDPOINT_NAMES: string\[\] = (\[.*?\]);", src, re.S)
+    assert block, "ENDPOINT_NAMES not found in contract.generated.ts"
+    return json.loads(block.group(1))
 
 
 def _openapi() -> dict:
@@ -76,33 +76,42 @@ def test_generated_contract_is_current():
     assert actual == expected, "run: python scripts/gen_mcp_contract.py"
 
 
-def test_tool_list_has_no_duplicates_and_covers_minimum():
-    names = _tool_specs()
-    assert len(names) == len(set(names)), "duplicate tool in TOOL_SPECS"
-    missing = MINIMUM - set(names)
+def test_tool_names_are_the_granted_surface():
+    """ENDPOINT_NAMES is every granted api.* endpoint, read from the SQL."""
+    assert _generated_names() == sorted(_granted())
+    missing = MINIMUM - set(_generated_names())
     assert not missing, f"minimum MCP tools missing: {sorted(missing)}"
 
 
-def test_tool_list_matches_catalog_postgrest_exactly():
-    """One tool per catalog endpoint, plus `catalog` itself (which the
-    postgrest map does not list because it is the map)."""
-    tools = set(_tool_specs())
-    catalog = set(_catalog_resources()) | {"catalog"}
-    assert tools - catalog == set(), f"MCP tools absent from the catalog: {sorted(tools - catalog)}"
-    assert catalog - tools == set(), f"catalog endpoints with no MCP tool: {sorted(catalog - tools)}"
+def test_every_endpoint_has_exactly_one_title():
+    titled = _titled()
+    dups = sorted({n for n in titled if titled.count(n) > 1})
+    assert not dups, f"titled twice in TOOL_TITLES: {dups}"
+    granted = set(_granted())
+    untitled = sorted(granted - set(titled))
+    assert not untitled, f"granted endpoints with no title in tools.ts TOOL_TITLES (add a t() line): {untitled}"
+    orphans = sorted(set(titled) - granted)
+    assert not orphans, f"TOOL_TITLES names no granted endpoint (remove the t() line): {orphans}"
+
+
+def test_generation_refuses_an_openapi_that_disagrees_with_the_sql():
+    openapi = _openapi()
+    dropped = copy.deepcopy(openapi)
+    del dropped["paths"]["/rpc/panel"]
+    with pytest.raises(ValueError, match=r"granted but unpublished \['panel'\]"):
+        gen_mcp_contract.render(dropped)
+    extra = copy.deepcopy(openapi)
+    extra["paths"]["/not_granted"] = copy.deepcopy(openapi["paths"]["/equities"])
+    with pytest.raises(ValueError, match=r"published but not granted \['not_granted'\]"):
+        gen_mcp_contract.render(extra)
 
 
 def test_every_tool_has_a_contract_entry_of_the_right_kind():
     entries = gen_mcp_contract.build(_openapi())
-    resources = _catalog_resources()
-    for name in _tool_specs():
+    granted = _granted()
+    for name in _titled():
         assert name in entries, f"{name} is not in openapi.json"
-        kind = entries[name]["kind"]
-        if name == "catalog":
-            assert kind == "rpc"
-            continue
-        verb, key = resources[name]
-        assert (verb, kind) in {("POST", "rpc"), ("GET", "view")}, (name, verb, kind, key)
+        assert entries[name]["kind"] == granted[name].kind, (name, entries[name]["kind"], granted[name].kind)
 
 
 def test_rpc_schemas_are_the_openapi_bodies():
