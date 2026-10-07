@@ -303,6 +303,18 @@ def test_client_constraints_refused_before_engine(monkeypatch):
     assert r.headers['X-Silo-Stage'] == 'engine'
 
 
+@pytest.mark.parametrize('bad', ['{"horizon_date":"2000-01-01"}', '{"profile":"temerario"}', '{"other":1}',
+                                 '["not","a","dict"]', '{"liquidity_brl":"100"}', 'not json'])
+def test_every_bad_constraint_is_the_same_400(monkeypatch, bad):
+    def forbidden_client():
+        raise AssertionError('invalid input must not reach SILO')
+    monkeypatch.setenv(server.TOKEN_ENV, TOKEN)
+    app = server.create_app(client_factory=forbidden_client).test_client()
+    r = app.post('/diagnose', headers=_auth(), data={
+        'file': (io.BytesIO(TEMPLATE.read_bytes()), 'statement.xlsx'), 'client_constraints': bad})
+    assert r.status_code == 400
+
+
 def test_curl_default_form_content_type_does_not_consume_raw_upload(app):
     # Exact smoke wire format: curl --data-binary sends application/x-www-form-urlencoded.
     headers = {**_auth(), 'Content-Type': 'application/x-www-form-urlencoded'}
