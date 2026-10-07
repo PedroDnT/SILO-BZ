@@ -26,7 +26,7 @@ The Redator sees the masked JSON only: `assert_masked` refuses the call when any
 
 ## The placeholder rule
 
-A placeholder is `{{path}}`: dot-separated keys with `[i]` list indexes into the engine JSON, for example `{{fees.by_line[3].estimated_pct_year}}`. A sentence with a literal digit outside a placeholder is removed. A placeholder pointing at a missing key or a null is removed with its sentence. The renderer prints the value by the last key of its path (the table lives in `values.py`):
+A placeholder is `{{path}}`: dot-separated keys with `[i]` list indexes into the engine JSON, for example `{{fees.by_line[3].estimated_pct_year}}`. A sentence with a literal digit outside a placeholder is removed. A placeholder pointing at a missing key or a null is removed with its sentence. The renderer prints the value by the last key of its path (the table lives in `values.py` as `UNIT_RULES`, the one place a unit is decided; `format_as` prints a value in a unit):
 
 | Key | Unit in the engine JSON | Printed as |
 | --- | --- | --- |

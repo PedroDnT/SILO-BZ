@@ -191,7 +191,7 @@ def test_tax_in_reais_only_when_the_engine_computed_it(synthetic_tax_view):
     assert fii["tax"]["estimate"]["tax_brl"] == 2000.0
     txt = text_of(render._tax_section(synthetic_tax_view))
     assert "R$ 2.000,00 estimativa" in txt and "20,00% sobre o ganho de 12 meses de R$ 10.000,00 (retorno de 10,00%)" in txt
-    cdb = text_of(render._tax_brl_html(synthetic_tax_view, "tax.lines[2]", synthetic_tax_view["tax"]["lines"][2]["tax"]))
+    cdb = text_of(render._tax_brl_html(synthetic_tax_view["tax"]["lines"][2]["tax"]))
     assert not re.search(r"R\$ \d", cdb) and REASON_TEXT["ganho_12m_indisponivel"] in cdb  # no 12-month return: no figure
 
 

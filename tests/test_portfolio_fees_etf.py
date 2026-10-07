@@ -263,7 +263,7 @@ def test_a_row_without_a_snapshot_has_no_facts_and_the_report_prints_none():
     view = adapt._fee_line_view(9, {"cnpj": "1", "etf_site": es}, {})
     assert view["etf_facts_label"] is None and view["etf_site_as_of"] is None
     from src.portfolio.report.render import _etf_facts_html
-    assert _etf_facts_html({"x": view}, "x", view) == ""
+    assert _etf_facts_html(view) == ""
     # a non-integral count is not a count: None, never rounded into one
     assert _etf_site({**row, "etf_site_nr_cotistas": "12.5"}, {})["nr_cotistas"] is None
 
