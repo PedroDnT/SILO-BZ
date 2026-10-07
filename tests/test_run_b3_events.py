@@ -116,6 +116,30 @@ async def test_a_consolidated_trades_failure_exits_nonzero_after_the_others_ran(
     ing.daily_update_trade_consolidated.assert_awaited_once()
 
 
+async def test_credit_is_disabled_until_the_real_export_is_verified(monkeypatch):
+    monkeypatch.delenv("B3_CREDIT_ENABLED", raising=False)
+    with patch.object(rb, "B3Ingestor", return_value=_ingestor()), \
+         patch.object(rb, "B3CreditIngestor") as credit:
+        await rb.main()
+    credit.assert_not_called()
+
+
+async def test_credit_opt_in_runs_and_failure_does_not_skip_other_sources(monkeypatch):
+    monkeypatch.setenv("B3_CREDIT_ENABLED", "1")
+    ing = _ingestor()
+    credit = MagicMock()
+    credit.daily_update = AsyncMock(side_effect=RuntimeError("credit export timeout"))
+    with patch.object(rb, "B3Ingestor", return_value=ing), \
+         patch.object(rb, "B3CreditIngestor", return_value=credit):
+        with pytest.raises(SystemExit) as exc:
+            await rb.main()
+    assert exc.value.code == 1
+    credit.daily_update.assert_awaited_once()
+    ing.ingest_corporate_events.assert_awaited_once()
+    ing.ingest_cash_dividends.assert_awaited_once()
+    ing.ingest_index_levels.assert_awaited_once()
+
+
 yaml = pytest.importorskip("yaml")
 
 
