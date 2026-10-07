@@ -485,9 +485,27 @@ No `POSTGRES_URL` / Supabase credentials are needed for the core loop:
 npm run dev`) are read-only consumers that need a populated Supabase to render data.
 - `etf_market_snapshot` ingestion self-skips unless `APIFY_TOKEN` is set.
 
+## Working beside other agents
+
+Codex, Claude Code sessions, the B7 agents and the orchestrator write to this repo at
+the same time and do not see each other's sessions. GitHub is the one place they all
+see, so it is the lock (owner decision, 2026-10-07, #711):
+
+1. **Claim before you write.** Assign the issue, then comment one line that ends the
+   claim: `Claimed by: <agent> · branch <branch>` (`codex`, `claude`, `orchestrator`).
+   Every agent posts as the owner's account, so this line is the only way to tell who
+   claimed. Work with no issue opens a small one first.
+2. **Look for overlap first.** Compare the files you will touch with the changed files
+   of every open PR (`GET /repos/{o}/{r}/pulls/{n}/files`). On an overlap, wait or pick
+   other work; do not race it to a merge conflict.
+3. **Branch prefix names the agent:** `claude/`, `codex/`, `orchestrator/`, `agent/`
+   (B7 Routines), `research/`, `demo/`.
+4. GitHub is REST only from Claude Code sessions (`gh api repos/...`; GraphQL is 403).
+
 ## Codex task-boundary board
 
 - This repository uses the opt-in Codex task-boundary board in `.codex/coordination/project.yaml`.
 - Before substantial writes, load the installed `codex-coordinator` skill, list active claims from the primary worktree, and publish only this task's bounded claim.
+- The local board is Codex's own; also claim on GitHub as "Working beside other agents" says, so other agents see the claim.
 - Native Codex tasks remain the execution, messaging, and transcript authority; an explicitly requested goal Coordinator is on demand, with no heartbeat or mandatory pull-request workflow.
 - Reject cross-project notices and never store transcripts, reasoning, prompts, or tool output in Coordinator state.
