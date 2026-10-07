@@ -98,7 +98,7 @@ Failed fetches raise and write `cvm_ingest_log`; they are not auto-retried. Re-r
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # the ingest's requirements.txt plus what only the tests import
 bash scripts/install_hooks.sh      # pre-commit: secrets, syntax
 cp .env.example .env               # set POSTGRES_URL
 python scripts/apply_schema.py     # schema + migrations

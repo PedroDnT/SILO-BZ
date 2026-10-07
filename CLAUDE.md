@@ -34,4 +34,6 @@ The hooks in `.claude/settings.json`:
   (`-g` is allowed).
 
 Project skills are in `.claude/skills/` and the scheduled agents' prompts in
-`.claude/agents/`.
+`.claude/agents/`. Root `skills-lock.json` pins the vendored skills that the
+`skills` CLI installs into the gitignored `.agents/`; they are local, not
+project skills, and no symlink to them is tracked (#681).
