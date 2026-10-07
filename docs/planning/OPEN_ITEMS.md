@@ -525,3 +525,9 @@ Later dependencies remain REUNE traded rates/access, dated issuer/ultimate-oblig
 links (#660), compatible rate/benchmark conventions (#661), empirical issuer
 coverage and the past-only equity residual experiment. Holdings marks and this
 initial capture do not establish readiness for that experiment.
+
+Follow-up 2026-10-07 (UTC-3): a seven-calendar-day export delivered five dates,
+6,630 DEB groups and 59,670 facts, with zero drops; local storage and repeat-export
+latency are [measured](../reference/research/debenture-secondary-market-validation.md).
+Bounded smaller-slice recovery is implemented for export failures only. Production
+enablement, storage budget and full historical continuity remain open.

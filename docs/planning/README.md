@@ -44,3 +44,6 @@ Current closure sequence: [open issue resolution](OPEN_ISSUE_RESOLUTION.md), #65
 Debenture capture #662 has an initial, opt-in implementation, separate from #628's
 research acceptance. [OPEN_ITEMS item 18](OPEN_ITEMS.md#18-debenture-secondary-market-capture-662)
 tracks the two successful real-CSV checks, remaining coverage/rollout and bond→equity dependencies.
+
+Debenture [window/storage validation](../reference/research/debenture-secondary-market-validation.md)
+records the bounded sample and the smaller-slice recovery follow-up.
