@@ -4,9 +4,10 @@
 // GET  /health    answered by the Worker itself, public, no container
 // POST /diagnose  needs the shared token; starts a fresh engine Container for
 //                 this upload alone, forwards the statement with
-//                 `Authorization: Bearer`, returns the PDF, then stops it
+//                 `Authorization: Bearer`, returns the PDF, then stops it; answers the run's R2 trace key
+//                 as `x-silo-trace-key` (the page links to /traces#<key>)
 // GET  /traces    the owner's trace page (static shell, no data): asks for the token, lists runs, shows where an
-//                 asset's exposure comes from and downloads a run's PDF
+//                 asset's exposure comes from and downloads a run's PDF; /traces#<trace key> opens one run
 // GET  /api/traces, /api/traces/exposure, /api/traces/pdf, /api/traces/report, /api/traces/agents, /api/traces/investigation
 //                 need the same token; read the private R2 bucket through the binding (see below)
 // Anything else   404
@@ -51,8 +52,11 @@ interface Env {
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const TOKEN_HEADER = "x-demo-token";
-// The engine names each run's trace here; never passed to the client (not in PASS_HEADERS).
+// The engine names each run's trace here; not passed through (not in PASS_HEADERS).
 const TRACE_HEADER = "x-silo-trace-id";
+// The Worker's own answer header: the R2 key it writes the run's trace to, for a link to /traces#<key>.
+// Reading that key still needs the token, which the caller of /diagnose already holds.
+const TRACE_KEY_HEADER = "x-silo-trace-key";
 const TRACE_ID = /^[0-9a-f]{32}$/;
 const SHA256_KEY = /^artifacts\/[0-9a-f]{64}\.(json|html)$/;
 // The owner's trace page reads only keys of these two shapes: no other path reaches the bucket.
@@ -218,12 +222,15 @@ async function diagnose(request: Request, env: Env, ctx: ExecutionContext): Prom
 	// stop the instance, which frees the slot and discards its disk. The open
 	// /trace request keeps the instance up; sleepAfter is only the backstop.
 	const traceId = res.headers.get(TRACE_HEADER) ?? "";
+	const willStore = Boolean(env.TRACES) && TRACE_ID.test(traceId);
+	// The UTC day is fixed now, so the key sent to the client is the key written.
+	const day = new Date().toISOString().slice(0, 10).replaceAll("-", "/");
 	const isPdf = res.status === 200 && (res.headers.get("content-type") ?? "").startsWith("application/pdf");
 	ctx.waitUntil(
 		(async () => {
 			try {
-				if (env.TRACES && TRACE_ID.test(traceId)) {
-					await storeTrace(env.TRACES, container, env.DEMO_ACCESS_TOKEN as string, traceId, isPdf ? out : null);
+				if (willStore) {
+					await storeTrace(env.TRACES, container, env.DEMO_ACCESS_TOKEN as string, traceId, day, isPdf ? out : null);
 				}
 			} catch {
 				// A lost trace never fails the answer; nothing is logged.
@@ -240,6 +247,7 @@ async function diagnose(request: Request, env: Env, ctx: ExecutionContext): Prom
 		const v = res.headers.get(name);
 		if (v) headers.set(name, v);
 	}
+	if (willStore) headers.set(TRACE_KEY_HEADER, `traces/${day}/${traceId}.json`);
 	return new Response(out, { status: res.status, headers });
 }
 
@@ -271,7 +279,7 @@ function rootAttribute(bundle: TraceBundle, key: string): string | null {
 
 // One run's objects in R2 (ADR 0003). Each artifact is written under its own
 // SHA-256, computed here: a body that does not hash to its key is skipped.
-async function storeTrace(bucket: R2Bucket, container: { fetch: (r: Request) => Promise<Response> }, token: string, traceId: string, pdf: ArrayBuffer | null): Promise<void> {
+async function storeTrace(bucket: R2Bucket, container: { fetch: (r: Request) => Promise<Response> }, token: string, traceId: string, day: string, pdf: ArrayBuffer | null): Promise<void> {
 	const res = await container.fetch(
 		new Request(`http://container/trace/${traceId}`, { headers: { authorization: `Bearer ${token}` } }),
 	);
@@ -279,7 +287,6 @@ async function storeTrace(bucket: R2Bucket, container: { fetch: (r: Request) => 
 	const raw = await res.arrayBuffer();
 	const bundle = JSON.parse(new TextDecoder().decode(raw)) as TraceBundle;
 	if (bundle.trace_id !== traceId) return;
-	const day = new Date().toISOString().slice(0, 10).replaceAll("-", "/"); // UTC
 	const puts: Promise<unknown>[] = [];
 	for (const [key, b64] of Object.entries(bundle.artifacts ?? {})) {
 		if (!SHA256_KEY.test(key)) continue;
@@ -323,9 +330,11 @@ function json(status: number, body: unknown): Response {
 	return reply(status, JSON.stringify(body), "application/json; charset=utf-8");
 }
 
-// The last `days` UTC days of traces, newest first (at most 50).
+// The last `days` UTC days of traces (at most 30), newest first (at most 100).
+const MAX_LIST_DAYS = 30;
+const MAX_LIST_TRACES = 100;
 async function listTraces(url: URL, env: Env): Promise<Response> {
-	const days = Math.min(Math.max(Number(url.searchParams.get("days") ?? "3") || 3, 1), 14);
+	const days = Math.min(Math.max(Number(url.searchParams.get("days") ?? "3") || 3, 1), MAX_LIST_DAYS);
 	const found: { key: string; size: number; enviado: string }[] = [];
 	for (let d = 0; d < days; d++) {
 		const day = new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 10).replaceAll("-", "/");
@@ -335,7 +344,7 @@ async function listTraces(url: URL, env: Env): Promise<Response> {
 		}
 	}
 	found.sort((a, b) => b.enviado.localeCompare(a.enviado));
-	return json(200, { traces: found.slice(0, 50) });
+	return json(200, { traces: found.slice(0, MAX_LIST_TRACES) });
 }
 
 async function readTrace(env: Env, key: string | null): Promise<{ trace: unknown } | Response> {
@@ -493,15 +502,20 @@ input { width: 100%; padding: .6rem; border: 1px solid var(--line); border-radiu
 button { margin-top: 1.5rem; padding: .7rem 1.2rem; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
 button[disabled] { opacity: .6; cursor: wait; }
 #status { margin-top: 1rem; min-height: 1.5rem; }
+label.check { display: inline-flex; align-items: center; gap: .4rem; font-weight: 400; margin: .5rem 1rem 0 0; }
+label.check input { width: auto; }
+button.plain { margin-top: .5rem; padding: .3rem .8rem; background: transparent; color: inherit; border: 1px solid var(--line); font-weight: 400; cursor: pointer; }
+a { color: var(--accent); }
 </style>
 </head>
 <body>
 <main>
 <h1>Diagnóstico de carteira</h1>
-<p>Envie o extrato: o PDF do BTG ("Extrato da Conta Investimento" ou relatório de performance) ou a planilha modelo .xlsx. Com mais de uma conta, selecione um arquivo por conta: eles são somados num diagnóstico só. Até 10 MB no total. O arquivo enviado não é guardado. Guardamos, de forma privada, o relatório e a análise com nome, CPF e conta mascarados, para melhorar o serviço. O relatório leva alguns minutos.</p>
+<p>Envie o extrato: o PDF do BTG ("Extrato da Conta Investimento" ou relatório de performance) ou a planilha modelo .xlsx. Com mais de uma conta, selecione um arquivo por conta: eles são somados num diagnóstico só. Até 10 MB no total. O arquivo enviado não é guardado. Guardamos, de forma privada, o relatório e a análise com nome, CPF e conta mascarados, para melhorar o serviço. O relatório leva alguns minutos. O código de acesso só fica guardado neste navegador se você marcar "Lembrar neste aparelho"; "Esquecer" o apaga.</p>
 <form id="f">
 <label for="token">Código de acesso</label>
 <input id="token" type="password" autocomplete="off" required>
+<label class="check"><input id="remember" type="checkbox"> Lembrar neste aparelho</label><button id="forget" class="plain" type="button">Esquecer</button>
 <label for="file">Extratos (um por conta)</label>
 <input id="file" type="file" accept=".xlsx,.pdf" multiple required>
 <fieldset><legend>Restrições do cliente (opcional)</legend>
@@ -512,9 +526,26 @@ button[disabled] { opacity: .6; cursor: wait; }
 <p>Checagem factual; não aprova produtos nem substitui suitability. Não informe nome ou documentos.</p></fieldset>
 <button id="go" type="submit">Gerar diagnóstico</button>
 </form>
-<div id="status" role="status" aria-live="polite"></div><button id="print" type="button" hidden>Imprimir / salvar PDF</button><iframe id="report" title="Diagnóstico de carteira" sandbox="allow-same-origin allow-modals" style="width:100%;height:80vh;border:0" hidden></iframe>
+<div id="status" role="status" aria-live="polite"></div><p><a id="tracelink" href="/traces" hidden>Ver esta execução nos traces</a></p><button id="print" type="button" hidden>Imprimir / salvar PDF</button><iframe id="report" title="Diagnóstico de carteira" sandbox="allow-same-origin allow-modals" style="width:100%;height:80vh;border:0" hidden></iframe>
 </main>
 <script>
+// The access code is kept only when the box is ticked, only in this browser, and every storage call may throw
+// (blocked storage, private mode): then nothing is kept and the page works the same.
+const MEMO = "silo-demo-token";
+const recall = () => { try { return localStorage.getItem(MEMO) || ""; } catch (_) { return ""; } };
+const keep = (v) => { try { localStorage.setItem(MEMO, v); } catch (_) {} };
+const forget = () => { try { localStorage.removeItem(MEMO); } catch (_) {} };
+{
+  const saved = recall();
+  if (saved) { document.getElementById("token").value = saved; document.getElementById("remember").checked = true; }
+}
+document.getElementById("remember").addEventListener("change", (e) => { if (!e.target.checked) forget(); });
+document.getElementById("forget").addEventListener("click", () => {
+  forget();
+  document.getElementById("remember").checked = false;
+  document.getElementById("token").value = "";
+  document.getElementById("status").textContent = "Código esquecido neste aparelho.";
+});
 document.getElementById("print").addEventListener("click", () => {
   const frame = document.getElementById("report");
   frame.contentDocument.querySelectorAll("details").forEach(d => d.open = true);
@@ -540,12 +571,18 @@ f.addEventListener("submit", async (e) => {
   if (Object.keys(constraints).length) body.append("client_constraints", JSON.stringify(constraints));
   document.getElementById("report").hidden = true;
   document.getElementById("print").hidden = true;
+  document.getElementById("tracelink").hidden = true;
   go.disabled = true;
   st.textContent = "Gerando o diagnóstico. Isso leva alguns minutos; mantenha esta página aberta.";
   try {
     // multipart: the browser sets the content-type with its boundary, and the Worker forwards it.
     const r = await fetch("/diagnose", { method: "POST", headers: { "x-demo-token": token }, body });
     if (r.ok) {
+      if (document.getElementById("remember").checked) keep(token);
+      const traceKey = r.headers.get("x-silo-trace-key");
+      const tl = document.getElementById("tracelink");
+      tl.href = "/traces" + (traceKey ? "#" + traceKey : "");
+      tl.hidden = false;
       const frame = document.getElementById("report");
       frame.srcdoc = await r.text();
       frame.hidden = false;
@@ -615,19 +652,25 @@ pre { white-space: pre-wrap; word-break: break-word; border: 1px solid var(--lin
 .bar span { display: block; height: 8px; background: var(--accent); border-radius: 4px; min-width: 2px; }
 .sum { color: var(--fg); font-size: .95rem; margin: 0 0 .75rem; }
 .t-halo { paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; font-weight: 700; }
+label.check { display: inline-flex; align-items: center; gap: .4rem; }
+label.check input { width: auto; }
+select { padding: .55rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: inherit; font: inherit; }
+a { color: var(--accent); }
 </style>
 </head>
 <body>
 <main>
 <h1>Traces do diagnóstico</h1>
-<p>Só para o dono. Mostra as execuções guardadas de forma privada (nome, CPF e conta já mascarados) e de onde vem a exposição a um ativo. O código não fica guardado nesta página.</p>
+<p>Só para o dono. Mostra as execuções guardadas de forma privada (nome, CPF e conta já mascarados) e de onde vem a exposição a um ativo. O código só fica guardado neste navegador se você marcar "Lembrar neste aparelho"; "Esquecer" o apaga. Cada execução tem um link próprio (/traces#chave), que só abre com o código.</p>
 <label for="token">Código de acesso</label>
 <input id="token" type="password" autocomplete="off">
-<div class="row"><button class="main" id="list">Listar execuções</button></div>
+<div class="row"><label class="check"><input id="remember" type="checkbox"> Lembrar neste aparelho</label><button id="forget" type="button">Esquecer</button></div>
+<div class="row"><label for="days">Período</label><select id="days"><option value="3">3 dias</option><option value="7" selected>7 dias</option><option value="14">14 dias</option><option value="30">30 dias</option></select><button class="main" id="list">Listar execuções</button></div>
 <div id="status" role="status" aria-live="polite"></div>
 <ul id="traces"></ul>
 <div id="detail" hidden>
 <h2 id="detail-title"></h2>
+<p><a id="permalink" href="#">Link desta execução</a></p>
 <div class="row"><button class="main" id="html">Ver o relatório em HTML</button><button id="pdf">Baixar o PDF</button></div>
 <div class="row"><button id="print" type="button" hidden>Imprimir / salvar PDF</button></div>
 <iframe id="report" title="Relatório da execução" sandbox="allow-same-origin allow-modals" style="width:100%;height:80vh;border:0;margin-top:.5rem" hidden></iframe>
@@ -649,11 +692,19 @@ pre { white-space: pre-wrap; word-break: break-word; border: 1px solid var(--lin
 <script>
 const $ = (id) => document.getElementById(id);
 let key = null;
+let runs = [];
+// The access code is kept only when the box is ticked, only in this browser, and every storage call may throw
+// (blocked storage, private mode): then nothing is kept and the page works the same.
+const MEMO = "silo-demo-token";
+const recall = () => { try { return localStorage.getItem(MEMO) || ""; } catch (_) { return ""; } };
+const keep = (v) => { try { localStorage.setItem(MEMO, v); } catch (_) {} };
+const forget = () => { try { localStorage.removeItem(MEMO); } catch (_) {} };
 const tok = () => $("token").value.trim();
 const say = (t) => { $("status").textContent = t; };
 const when = (iso) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) + " (UTC-3)";
 async function api(path) {
   const r = await fetch(path, { headers: { "x-demo-token": tok() } });
+  if (r.ok && $("remember").checked) keep(tok());
   if (!r.ok) {
     let msg = "Erro " + r.status + ".";
     try { const j = await r.json(); if (j && j.erro) msg = j.erro; } catch (_) {}
@@ -858,10 +909,14 @@ async function showExposure(ticker) {
     $("out").textContent = j.texto;
   } catch (e) { $("out").textContent = e.message; }
 }
+// The run named in the address (/traces#traces/YYYY/MM/DD/<id>.json); the server checks its shape.
+const hashKey = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch (_) { return ""; } };
 async function openTrace(t) {
   key = t.key;
+  if (hashKey() !== key) history.replaceState(null, "", "#" + key);
+  $("permalink").href = "#" + key;
   $("detail").hidden = false;
-  $("detail-title").textContent = "Execução de " + when(t.enviado);
+  $("detail-title").textContent = "Execução de " + (t.enviado ? when(t.enviado) : t.key.slice(7, 17).split("/").reverse().join("/") + " (dia UTC)");
   $("groups").replaceChildren();
   $("flow").replaceChildren();
   $("out").hidden = true;
@@ -880,16 +935,45 @@ async function openTrace(t) {
     }
   } catch (e) { say(e.message); }
 }
-$("list").addEventListener("click", async () => {
+async function listRuns() {
   $("traces").replaceChildren();
   $("detail").hidden = true;
+  const days = $("days").value;
   say("Listando...");
   try {
-    const j = await (await api("/api/traces?days=7")).json();
-    say(j.traces.length ? "" : "Nenhuma execução nos últimos 7 dias.");
-    for (const t of j.traces) item($("traces"), when(t.enviado) + " · " + Math.round(t.size / 1024) + " KB", () => openTrace(t));
-  } catch (e) { say(e.message); }
+    const j = await (await api("/api/traces?days=" + encodeURIComponent(days))).json();
+    runs = j.traces;
+    say(runs.length ? (runs.length >= 100 ? "Mostrando as 100 execuções mais recentes." : "") : "Nenhuma execução nos últimos " + days + " dias.");
+    for (const t of runs) item($("traces"), when(t.enviado) + " · " + Math.round(t.size / 1024) + " KB", () => openTrace(t));
+    return true;
+  } catch (e) { say(e.message); return false; }
+}
+// Opens the run in the address, from the list when it is there (with its time), else by its key alone.
+function openFromHash() {
+  const h = hashKey();
+  if (!h || h === key || h.indexOf("traces/") !== 0) return;
+  openTrace(runs.find((t) => t.key === h) || { key: h, enviado: null });
+}
+$("list").addEventListener("click", async () => { key = null; if (await listRuns()) openFromHash(); });
+$("days").addEventListener("change", () => { if (tok()) $("list").click(); });
+$("remember").addEventListener("change", (e) => { if (e.target.checked) { if (tok()) keep(tok()); } else forget(); });
+$("forget").addEventListener("click", () => {
+  forget();
+  $("remember").checked = false;
+  $("token").value = "";
+  say("Código esquecido neste aparelho.");
 });
+window.addEventListener("hashchange", () => { if (tok()) openFromHash(); });
+{
+  const saved = recall();
+  if (saved) {
+    $("token").value = saved;
+    $("remember").checked = true;
+    $("list").click();
+  } else if (hashKey()) {
+    say("Informe o código e liste as execuções para abrir a do link.");
+  }
+}
 $("go").addEventListener("click", () => { const t = $("ticker").value.trim(); if (t && key) showExposure(t); });
 $("html").addEventListener("click", async () => {
   if (!key) return;
