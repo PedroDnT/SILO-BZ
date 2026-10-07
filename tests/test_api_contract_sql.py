@@ -16,6 +16,9 @@ from pathlib import Path
 
 import pytest
 
+from serve.catalog import LIMITS
+from serve.endpoint_manifest import function_chunks, manifest
+
 ROOT = Path(__file__).resolve().parents[1]
 SQL19_PATH = ROOT / "src" / "store" / "analytical" / "19_api_contract.sql"
 SQL12_PATH = ROOT / "src" / "store" / "analytical" / "12_grants_and_rls.sql"
@@ -24,127 +27,13 @@ MIG_OPTION_PATH = ROOT / "src" / "store" / "migrations" / "21_b3_cotahist_option
 
 SQL19 = SQL19_PATH.read_text(encoding="utf-8")
 SQL12 = SQL12_PATH.read_text(encoding="utf-8")
+ENDPOINTS = manifest()
 
 # ONE page size everywhere: PostgREST db-max-rows, the SDK's SERVER_ROW_CAP,
 # serve/app.py's _PAGE and catalog().limits.page.size. Since v26 NO function
 # has a cap+1 sentinel: every one of them fetches PANEL_PAGE + 1 rows, sees the
 # overflow, and REFUSES (22023) rather than trimming.
 PANEL_PAGE = 1000
-
-# Every set-returning function that refuses above one page, and how it behaves
-# above it. The three `paged` ones take a p_after cursor; the rest ask the
-# caller to narrow the window.
-PAGED_FUNCTIONS = ("api.panel", "api.quote_history", "api.fund_nav")
-RAISE_ONLY_FUNCTIONS = (
-    "api.option_history",
-    "api.termo_history",
-    "api.financials",
-    "api.financial_statement_history",
-    "api.company_financials",
-    "api.income_statements",
-    "api.balance_sheets",
-    "api.cash_flow_statements",
-    "api.anbima_classes",
-    "api.inflation",
-    "api.inflation_items",
-    "api.fii_property_history",
-    "api.focus_expectations",
-    # v34 (plan 2e): until v33 these three trimmed SILENTLY at the tier
-    # ceiling (500 / 5000). They now refuse like the rest; p_limit survives
-    # as an explicit newest-first head, so their page CTE reads
-    # LIMIT COALESCE(v_head, 1001) — see HEAD_PAGE below.
-    "api.fidc_cedentes",
-    "api.fidc_sacados",
-    "api.fidc_portfolio",
-    "api.fidc_tranches",
-    "api.fidc_aging",
-    # v41: the holdings pair (CDA blocks 4, 2, 6) trimmed SILENTLY at the
-    # tier ceiling until v40, the last two that did. Same explicit head.
-    "api.fund_holdings",
-    "api.fund_debentures",
-)
-# The raise-only functions whose p_limit is an explicit head (1..1000) rather
-# than a tier clamp. Without p_limit they fetch the page + 1 like every other.
-HEAD_FUNCTIONS = (
-    "api.fidc_cedentes", "api.fidc_sacados", "api.fidc_portfolio",
-    "api.fund_holdings", "api.fund_debentures",
-)
-CAPPED_FUNCTIONS = PAGED_FUNCTIONS + RAISE_ONLY_FUNCTIONS
-
-# The forensic screens (v31) live in 23_api_screens.sql, not in 19, so FUNCS
-# (parsed from 19 alone) does not carry them; tests/test_api_screens_contract.py
-# owns their bodies. They are raise-only: published in limits.page.all and
-# limits.page.functions.raise_only beside the 19 functions.
-SCREEN_FUNCTIONS = (
-    "api.screen_zombie_growth",
-    "api.screen_captive_vehicles",
-    "api.screen_evergreen_aging",
-    "api.screen_overdue_securit",
-    "api.screen_dormant_funds",
-    "api.screen_dormant_trend",
-    "api.screen_delinquency_drivers",
-    # v37: the filing-behaviour screens live in 25_api_filing_screens.sql
-    # (tests/test_filing_screens_contract.py owns their bodies). Raise-only.
-    "api.screen_restatements",
-    "api.screen_late_filers",
-    "api.screen_silent_filers",
-)
-
-# v38: held-but-unserved datasets in 26_api_events_macro.sql
-# (tests/test_wave3_contract.py owns the bodies). Raise-only.
-WAVE3_FUNCTIONS = (
-    "api.company_events",
-    "api.macro_series",
-    "api.ptax",
-)
-
-# v42: the rate curve in 27_api_rates.sql (tests/test_rates_contract.py
-# owns the bodies). Raise-only.
-RATES_FUNCTIONS = (
-    "api.future_curve",
-    "api.future_series",
-    "api.curve",
-    "api.curve_history",
-)
-
-# v43: the research universe in 28_api_research.sql (tests/test_research_universe_contract.py
-# owns the body). Raise-only.
-RESEARCH_FUNCTIONS = ("api.research_universe",)
-
-# v45: the benchmark index in 29_api_index.sql (tests/test_index_history_contract.py
-# owns the body). It PAGES with a date cursor, like quote_history, so it is
-# published under limits.page.functions.paged, not raise_only.
-INDEX_FUNCTIONS = ("api.index_history",)
-
-# v65: B3's FORWARD segment in 32_api_trade_consolidated.sql
-# (tests/test_trade_consolidated_history_contract.py owns the body). It
-# PAGES with a date cursor, like index_history.
-TRADE_CONSOLIDATED_FUNCTIONS = ("api.trade_consolidated_history",)
-
-# v51: the portfolio-diagnosis reads in 31_api_portfolio.sql
-# (tests/test_portfolio_contract.py owns the bodies). Raise-only. v54 adds
-# portfolio_movement (tests/test_portfolio_movement_contract.py); v62 adds
-# portfolio_instruments and portfolio_fund_terms (tests/test_portfolio_instruments_terms_contract.py).
-PORTFOLIO_FUNCTIONS = (
-    "api.portfolio_resolve",
-    "api.portfolio_fees",
-    "api.portfolio_lookthrough",
-    "api.portfolio_movement",
-    "api.portfolio_instruments",
-    "api.portfolio_fund_terms",
-    "api.portfolio_fee_peers",
-    "api.class_return_distribution",
-    "api.portfolio_equivalents",
-)
-
-# The FNET register (v33) and its restatement diff (v40) live in
-# 24_api_fnet.sql, for the same reason: FUNCS does not carry them,
-# tests/test_fnet_api_contract.py owns the bodies. All three are raise-only.
-FNET_FUNCTIONS = (
-    "api.fund_documents",
-    "api.fund_restatements",
-    "api.fund_restatement_diff",
-)
 
 LANDING_PATTERN = re.compile(
     r"\b(?:public\.)?(?:cvm_\w+|b3_cotahist\w*|vw_b3_(?:quote_vista|instrument_typed))\b",
@@ -162,61 +51,44 @@ def _statements(sql: str) -> list[str]:
     return [s.strip() for s in _strip_comments(sql).split(";") if s.strip()]
 
 
-def _function_chunks(sql: str) -> dict[str, str]:
-    """Map function name -> full CREATE OR REPLACE FUNCTION chunk (up to the
-    next CREATE statement or end of file)."""
-    out: dict[str, str] = {}
-    pattern = re.compile(
-        r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(api\.\w+)", re.I
-    )
-    starts = [(m.start(), m.group(1).lower()) for m in pattern.finditer(sql)]
-    for i, (pos, name) in enumerate(starts):
-        end = starts[i + 1][0] if i + 1 < len(starts) else len(sql)
-        out[name] = sql[pos:end]
-    return out
+FUNCS = function_chunks(SQL19_PATH)
 
-
-FUNCS = _function_chunks(SQL19)
-
+# Every public function 19 defines: granted to anon or authenticated, as
+# serve/endpoint_manifest.py reads the GRANTs. The grant tests below then check
+# each one role by role.
 EXPECTED_FUNCTIONS = {
-    "api.quote_history",
-    "api.quote_latest",
-    "api.option_chain",
-    "api.option_history",
-    "api.option_exercises",
-    "api.termo_history",
-    "api.fund_profile",
-    "api.fund_nav",
-    "api.search_funds",
-    "api.fund_holdings",
-    "api.coverage",
-    "api.panel",
-    "api.lookup",
-    "api.catalog",
-    "api.financials",
-    "api.financial_statement_history",
-    "api.company_financials",
-    "api.income_statements",
-    "api.balance_sheets",
-    "api.cash_flow_statements",
-    "api.anbima_classes",
-    "api.fund_debentures",
-    "api.metric_coverage",
-    "api.fidc_cedentes",
-    "api.fidc_sacados",
-    "api.fidc_portfolio",
-    "api.inflation",
-    "api.inflation_items",
-    "api.fii_property_history",
-    "api.focus_expectations",
-    "api.fidc_tranches",
-    "api.fidc_aging",
+    f"api.{name}" for name, e in ENDPOINTS.items()
+    if e.kind == "rpc" and e.granted and f"api.{name}" in FUNCS
 }
 
+# Every set-returning function that refuses above one page, and how it behaves
+# above it, restricted to the ones 19 defines (FUNCS parses 19 alone; the other
+# analytical files' bodies are owned by their own contract tests). DERIVED from
+# the declared intent in serve/catalog.py (limits.page) rather than typed again
+# here: tests/test_endpoint_manifest.py pins that declaration against the SQL.
+# The `paged` ones take a p_after cursor; the rest ask the caller to narrow the
+# window.
+PAGED_FUNCTIONS = tuple(
+    f"api.{n}" for n in LIMITS["page"]["functions"]["paged"] if f"api.{n}" in FUNCS
+)
+RAISE_ONLY_FUNCTIONS = tuple(
+    f"api.{n}" for n in LIMITS["page"]["functions"]["raise_only"] if f"api.{n}" in FUNCS
+)
+# The raise-only functions whose p_limit is an explicit head (1..1000) rather
+# than a tier clamp. Without p_limit they fetch the page + 1 like every other.
+# v34 (plan 2e): until v33 the FIDC three trimmed SILENTLY at the tier ceiling
+# (500 / 5000); v41: the holdings pair (CDA blocks 4, 2, 6), the last two that
+# did. Their page CTE reads LIMIT COALESCE(v_head, 1001).
+HEAD_FUNCTIONS = (
+    "api.fidc_cedentes", "api.fidc_sacados", "api.fidc_portfolio",
+    "api.fund_holdings", "api.fund_debentures",
+)
+CAPPED_FUNCTIONS = PAGED_FUNCTIONS + RAISE_ONLY_FUNCTIONS
+
 # Internal helpers: called only from inside SECURITY DEFINER functions, which
-# execute as the owner, so they need no client grant. Keeping them out of
-# EXPECTED_FUNCTIONS is what makes "every public function is granted to anon"
-# and "no internal helper is" two separate, checkable claims.
+# execute as the owner, so they need no client grant. Every function 19
+# defines is either granted (EXPECTED_FUNCTIONS) or declared here, so a new
+# function that is neither fails test_all_expected_api_functions_present.
 INTERNAL_FUNCTIONS = {
     "api.caller_tier",
     "api.assert_panel_ids",
@@ -653,25 +525,8 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     from sdk.silo_client.client import SERVER_ROW_CAP
     limits = catalog_payload()["limits"]
     assert limits["page"]["size"] == PANEL_PAGE == SERVER_ROW_CAP == limits["rows_per_response"]["value"]
-    # Every capped function is published, split by whether it hands back a
-    # cursor or asks the caller to narrow.
-    page = limits["page"]
-    assert set(page["all"]) == {
-        f.split(".", 1)[1]
-        for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
-        + RATES_FUNCTIONS + RESEARCH_FUNCTIONS + INDEX_FUNCTIONS + PORTFOLIO_FUNCTIONS
-        + TRADE_CONSOLIDATED_FUNCTIONS
-    }
-    assert set(page["functions"]["paged"]) == {
-        f.split(".", 1)[1]
-        for f in PAGED_FUNCTIONS + INDEX_FUNCTIONS + TRADE_CONSOLIDATED_FUNCTIONS
-    }
-    assert set(page["functions"]["raise_only"]) == {
-        f.split(".", 1)[1]
-        for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
-        + RATES_FUNCTIONS + RESEARCH_FUNCTIONS + PORTFOLIO_FUNCTIONS
-    }
-
+    # Which functions are published as paged / raise-only, against the SQL:
+    # tests/test_endpoint_manifest.py.
 
 
 def test_row_cap_error_says_why_and_how():
@@ -1572,45 +1427,11 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
         "skip or repeat a row at a page edge, so the requirement is part of "
         "the contract, not an implementation detail"
     )
-    # The count moves with the surface: eleven at v30 (inflation,
-    # inflation_items), eighteen at v31 (the seven screen_* functions), twenty
-    # since v32 (fidc_tranches, fidc_aging), twenty-two since v33
-    # (fund_documents, fund_restatements), twenty-five since v34
-    # (fidc_cedentes, fidc_sacados, fidc_portfolio stopped trimming),
-    # twenty-seven since v35 (balance_sheets, cash_flow_statements), thirty since
-    # v37 (the three filing-behaviour screens), thirty-three since v38
-    # (company_events, macro_series, ptax), thirty-six since v39
-    # (financial_statement_history, fii_property_history, focus_expectations),
-    # thirty-seven since v40 (fund_restatement_diff), thirty-nine since v41
-    # (fund_holdings, fund_debentures stopped trimming), forty-three since v42
-    # (future_curve, future_series, curve, curve_history), forty-four since v43
-    # (research_universe), forty-five since v45 (index_history, which pages),
-    # forty-eight since v51 (the three portfolio reads), forty-nine since v54
-    # (portfolio_movement), fifty-one since v62 (portfolio_instruments,
-    # portfolio_fund_terms), fifty-two since v63 (portfolio_fee_peers),
-    # fifty-three since v65 (trade_consolidated_history, which pages), fifty-four
-    # since v66 (class_return_distribution), fifty-five since v67
-    # (portfolio_equivalents). The
-    # prose said "eight" for two versions while listing nine — pin the word
-    # to the tuples so it cannot drift again.
-    assert "fifty-five" in c.lower().split(), "all fifty-five capped functions refuse"
-    assert (
-        len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
-        + len(WAVE3_FUNCTIONS) + len(RATES_FUNCTIONS) + len(RESEARCH_FUNCTIONS)
-        + len(INDEX_FUNCTIONS) + len(PORTFOLIO_FUNCTIONS)
-        + len(TRADE_CONSOLIDATED_FUNCTIONS)
-    ) == 55
-    for fn in WAVE3_FUNCTIONS:
-        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
-    for fn in HEAD_FUNCTIONS:
-        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
-    for fn in FNET_FUNCTIONS:
-        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
-    for fn in RATES_FUNCTIONS:
-        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
-    for fn in (RESEARCH_FUNCTIONS + INDEX_FUNCTIONS + PORTFOLIO_FUNCTIONS
-               + TRADE_CONSOLIDATED_FUNCTIONS):
-        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
+    # The count moves with the surface (eleven at v30, fifty-five at v68). The
+    # prose once said "eight" for two versions while listing nine, so the count
+    # words are now derived from limits.page, and
+    # tests/test_endpoint_manifest.py checks the count, every name, and the
+    # declaration against the SQL.
 
 
 def test_cap_constraint_warns_that_rpc_paging_does_not_work():

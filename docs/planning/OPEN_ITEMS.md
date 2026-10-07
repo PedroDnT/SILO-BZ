@@ -462,7 +462,12 @@ before changing rule 4.
 4. **Candidate 01, one home for each API endpoint's facts.** The inventory found
    no drift across 67 endpoints, so the large refactor is not recommended. An
    optional small version: generate the `catalog.postgrest` dict and pin the SDK
-   version. Owner has not decided.
+   version. Owner has not decided. Partly done 2026-10-07 (architecture
+   review, `claude/arch-endpoint-manifest`): `serve/endpoint_manifest.py` reads
+   each endpoint's kind, parameters, grant and paging off the SQL; the row-cap
+   lists and counts in `serve/catalog.py` come from one declaration that
+   `tests/test_endpoint_manifest.py` pins against it. The `postgrest` dict is
+   still typed by hand (now checked against the manifest).
 5. **Candidates 03 to 06, untouched:** the CVM dataset matrix in one place; one
    source runner for the `run_*` entry points; row ingest as one module (parse,
    drop, count); a read-side seam so SQL rules are not restated in Python.

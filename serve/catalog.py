@@ -826,6 +826,126 @@ NOTEBOOK_REDUCERS: Dict[str, str] = {
     "spread": "First column minus second column of the wide matrix, dates aligned.",
 }
 
+# The row-cap INTENT of every set-returning function in schema `api`: which
+# ones refuse above one 1000-row page (api.assert_row_cap, 22023) and, of
+# those, which hand back a p_after cursor. Declared here, by hand, on purpose:
+# limits.page and the counts in the row-cap constraint are derived from these
+# two, and tests/test_endpoint_manifest.py pins them against what the SQL does
+# (serve/endpoint_manifest.py), so the published contract cannot drift from it.
+#
+# Walking the whole series is the normal case for these, so they take a
+# cursor, keyed as below (limits.page.functions.paged).
+_PAGED_CURSORS: Dict[str, str] = {
+    "panel": (
+        "'<date>|<id>|<metric>|<asset_class>' copied from the last "
+        "row; order is date, id, metric, asset_class"
+    ),
+    "quote_history": (
+        "the last row's trade_date as 'YYYY-MM-DD'; order is "
+        "trade_date. Keep the same p_fields on every page, and "
+        "restart when data_revision changes between pages"
+    ),
+    # v45: the index levels (29_api_index.sql) — IBOV from 1968 is
+    # 14,489 rows, so walking it is the normal case.
+    "index_history": (
+        "the last row's trade_date as 'YYYY-MM-DD'; order is "
+        "trade_date"
+    ),
+    # v65: the FORWARD segment of B3's consolidated trade file
+    # (32_api_trade_consolidated.sql), one ticker per call.
+    "trade_consolidated_history": (
+        "the last row's trade_date as 'YYYY-MM-DD'; order is "
+        "trade_date"
+    ),
+    "fund_nav": (
+        "the last row's period as 'YYYY-MM-DD'; order is period, "
+        "entity_type. PAGING REQUIRES p_entity_type — the cursor "
+        "is a bare period, which is unique only within one family, "
+        "and 385 CNPJs file under two (fi + fidc) in the same "
+        "month. Without it you get 22023, not a wrong answer. "
+        "Whole-result mode needs no p_entity_type and labels every "
+        "row with its family"
+    ),
+}
+
+# Every function that refuses above one page, in publication order
+# (limits.page.all). The ones not in _PAGED_CURSORS are raise-only
+# (limits.page.functions.raise_only): a window over one page there is a
+# mistake, not a walk (an option series lives months; a statement has tens of
+# rows), so they refuse and ask you to narrow instead of handing you a cursor.
+_CAPPED_FUNCTIONS: List[str] = [
+    "panel", "quote_history", "fund_nav", "option_history",
+    "termo_history", "financials", "company_financials", "income_statements",
+    "balance_sheets", "cash_flow_statements",
+    "anbima_classes", "inflation", "inflation_items",
+    "financial_statement_history", "fii_property_history",
+    "focus_expectations",
+    # v34: the FIDC concentration tabs, which until v33 trimmed silently at
+    # the tier ceiling. p_limit (1..1000) is an explicit newest-first head,
+    # not a cursor.
+    "fidc_cedentes", "fidc_sacados", "fidc_portfolio",
+    # v32: the FIDC structure tabs.
+    "fidc_tranches", "fidc_aging",
+    # v41: fund holdings (CDA blocks 4, 2, 6), which until v40 trimmed
+    # silently at the tier ceiling. p_limit (1..1000) is an explicit
+    # newest-first head, not a cursor.
+    "fund_holdings", "fund_debentures",
+    # v33: the FNET register — a year of one fund's documents, or a month of
+    # restatements, is a window to narrow.
+    "fund_documents", "fund_restatements",
+    # v40: what a restatement changed — one document, or one fund's window,
+    # is small; narrow it, never walk it.
+    "fund_restatement_diff",
+    # v31: a screen is a short list or the wrong screen — raise its
+    # thresholds or pin its output filter, never walk it.
+    "screen_zombie_growth", "screen_captive_vehicles",
+    "screen_evergreen_aging", "screen_overdue_securit",
+    "screen_dormant_funds", "screen_dormant_trend",
+    "screen_delinquency_drivers",
+    # v37: the filing-behaviour screens (25_api_filing_screens.sql).
+    "screen_restatements", "screen_late_filers", "screen_silent_filers",
+    # v38: held-but-unserved datasets (26_api_events_macro.sql) — a window to
+    # narrow, never a series to walk.
+    "company_events", "macro_series", "ptax",
+    # v42: the rate curve (27_api_rates.sql) — one session is tens to
+    # hundreds of rows, and a history is a window.
+    "future_curve", "future_series", "curve", "curve_history",
+    # v43: the research universe (28_api_research.sql) — no parameter narrows
+    # it; it is one page today (639 pairs).
+    "research_universe",
+    # v45 and v65: these two page (see _PAGED_CURSORS).
+    "index_history", "trade_consolidated_history",
+    # v51: the portfolio reads (31_api_portfolio.sql) — a set of funds or
+    # lines is split by the caller, never walked.
+    "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
+    # v62: statement codes and fund terms, split by the caller too.
+    "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
+    # v66: two rows for one class; nothing to walk.
+    "class_return_distribution",
+    # v68: a set of classes, split by the caller.
+    "portfolio_equivalents",
+]
+
+_NUMBER_WORDS = (
+    "zero one two three four five six seven eight nine ten eleven twelve "
+    "thirteen fourteen fifteen sixteen seventeen eighteen nineteen"
+).split()
+_TENS_WORDS = {
+    2: "twenty", 3: "thirty", 4: "forty", 5: "fifty",
+    6: "sixty", 7: "seventy", 8: "eighty", 9: "ninety",
+}
+
+
+def _number_word(n: int) -> str:
+    """0..99 in words, hyphenated as the prose writes them ("fifty-five")."""
+    if n < 20:
+        return _NUMBER_WORDS[n]
+    tens, ones = divmod(n, 10)
+    return _TENS_WORDS[tens] + (f"-{_NUMBER_WORDS[ones]}" if ones else "")
+
+
+_N_SCREENS = sum(1 for n in _CAPPED_FUNCTIONS if n.startswith("screen_"))
+
 CONSTRAINTS = [
     "PORTFOLIO FEE PEERS ARE A CURRENT EXTRATO SNAPSHOT, NOT A HISTORY OR SAVING ESTIMATE. portfolio_fee_peers compares positive administration fees up to 5 percent/year filed within 36 months, within the same ANBIMA class, FUNDO_COTAS S/N and FI versus CLASSES-FIF document scope. Active means a non-null quota in the current or previous two reference months. ETFs enter the group (v66, #609) only through the owner-reviewed ANBIMA class to index map, because CVM files no ANBIMA class for an ETF: an active ETF whose underlying index is mapped to the class is a peer in each of the class's cells, with the third-party etfsbrasil fee (etf_market_snapshot), never a CVM-disclosed one, and is counted apart (n_etf_peers beside n_fund_peers, etf_peer_tickers, etf_peer_fee_source). At least 30 usable FUND fees (including the target when eligible) are required; ETFs never make a group qualify, they only join one that already has 30 funds (owner, #609 Q18); no wider fallback. Percentile uses midrank ties; difference is percentage points from the median. Future/latest-only documents, zero or invalid fees and insufficient groups are explicitly not compared. Performance fees, total expense and replacement recommendations are outside scope.",
     "A CLASS RETURN DISTRIBUTION IS A STATISTIC OF FUNDS, NOT A BENCHMARK OR A RECOMMENDATION. class_return_distribution (v66, #609) gives, for one ANBIMA class exactly as filed in the Extrato and one FUNDO_COTAS flag, the p25, median and p75 of the FI funds' net quota return (fact_fund_monthly's stable quota subclass, the quota fund_nav serves) over 12 and 6 months ending at the close of one month. Active funds as in portfolio_fee_peers; a fund with no positive quota at either end, or with a quota subclass change, is excluded and counted. Fewer than 30 funds with a return, or an incomplete month: nao_avaliado with a reason, never a wider class. ETFs are not in the universe; an equivalent ETF's own return is set against these numbers by the caller.",
@@ -943,7 +1063,7 @@ CONSTRAINTS = [
     "WHY (the response is one 1000-row page and SILO never returns a silently "
     "truncated result) and HOW to fix it for that function, in the message and "
     "again as PostgREST's `details` / `hint`. That is all "
-    "fifty-five — panel, quote_history, fund_nav, option_history, termo_history, "
+    f"{_number_word(len(_CAPPED_FUNCTIONS))} — panel, quote_history, fund_nav, option_history, termo_history, "
     "financials, financial_statement_history, company_financials, "
     "income_statements, balance_sheets, "
     "cash_flow_statements, anbima_classes, "
@@ -951,10 +1071,10 @@ CONSTRAINTS = [
     "fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, "
     "fund_restatements, fund_restatement_diff, company_events, macro_series, "
-    "ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, trade_consolidated_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers, class_return_distribution, portfolio_equivalents and the ten "
-    "screen_* functions "
+    "ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, trade_consolidated_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers, class_return_distribution, portfolio_equivalents and the "
+    f"{_number_word(_N_SCREENS)} screen_* functions "
     "(`limits.page.all`). "
-    "FIVE OF THEM PAGE with p_after: panel, quote_history, fund_nav, index_history and trade_consolidated_history. Send "
+    f"{_number_word(len(_PAGED_CURSORS)).upper()} OF THEM PAGE with p_after: panel, quote_history, fund_nav, index_history and trade_consolidated_history. Send "
     "p_after='' for the first page, then the key from the last row — for the "
     "panel 'date|id|metric|asset_class', for quote_history, fund_nav, index_history and trade_consolidated_history just "
     "that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until "
@@ -1402,29 +1522,7 @@ LIMITS = {
     "page": {
         "size": 1000,
         # Every set-returning function, split by what it offers ABOVE one page.
-        "all": [
-            "panel", "quote_history", "fund_nav", "option_history",
-            "termo_history", "financials", "company_financials", "income_statements",
-            "balance_sheets", "cash_flow_statements",
-            "anbima_classes", "inflation", "inflation_items",
-            "financial_statement_history", "fii_property_history",
-            "focus_expectations",
-            "fidc_cedentes", "fidc_sacados", "fidc_portfolio",
-            "fidc_tranches", "fidc_aging",
-            "fund_holdings", "fund_debentures",
-            "fund_documents", "fund_restatements", "fund_restatement_diff",
-            "screen_zombie_growth", "screen_captive_vehicles",
-            "screen_evergreen_aging", "screen_overdue_securit",
-            "screen_dormant_funds", "screen_dormant_trend",
-            "screen_delinquency_drivers",
-            "screen_restatements", "screen_late_filers", "screen_silent_filers",
-            "company_events", "macro_series", "ptax",
-            "future_curve", "future_series", "curve", "curve_history",
-            "research_universe", "index_history", "trade_consolidated_history",
-            "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
-            "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
-            "class_return_distribution", "portfolio_equivalents",
-        ],
+        "all": list(_CAPPED_FUNCTIONS),
         # The protocol every cursor below shares.
         "cursor_protocol": (
             "p_after: null = whole result (refused above 1000 rows); "
@@ -1432,93 +1530,8 @@ LIMITS = {
             "the next page; a page shorter than 1000 is the last"
         ),
         "functions": {
-            # Walking the whole series is the normal case, so these take a
-            # cursor, keyed as below.
-            "paged": {
-                "panel": (
-                    "'<date>|<id>|<metric>|<asset_class>' copied from the last "
-                    "row; order is date, id, metric, asset_class"
-                ),
-                "quote_history": (
-                    "the last row's trade_date as 'YYYY-MM-DD'; order is "
-                    "trade_date. Keep the same p_fields on every page, and "
-                    "restart when data_revision changes between pages"
-                ),
-                # v45: the index levels (29_api_index.sql) — IBOV from 1968 is
-                # 14,489 rows, so walking it is the normal case.
-                "index_history": (
-                    "the last row's trade_date as 'YYYY-MM-DD'; order is "
-                    "trade_date"
-                ),
-                # v65: the FORWARD segment of B3's consolidated trade file
-                # (32_api_trade_consolidated.sql), one ticker per call.
-                "trade_consolidated_history": (
-                    "the last row's trade_date as 'YYYY-MM-DD'; order is "
-                    "trade_date"
-                ),
-                "fund_nav": (
-                    "the last row's period as 'YYYY-MM-DD'; order is period, "
-                    "entity_type. PAGING REQUIRES p_entity_type — the cursor "
-                    "is a bare period, which is unique only within one family, "
-                    "and 385 CNPJs file under two (fi + fidc) in the same "
-                    "month. Without it you get 22023, not a wrong answer. "
-                    "Whole-result mode needs no p_entity_type and labels every "
-                    "row with its family"
-                ),
-            },
-            # A window over one page here is a mistake, not a walk (an option
-            # series lives months; a statement has tens of rows), so these
-            # refuse and ask you to narrow instead of handing you a cursor.
-            "raise_only": [
-                "option_history", "termo_history", "financials",
-                "company_financials", "income_statements",
-                "balance_sheets", "cash_flow_statements", "anbima_classes",
-                "inflation", "inflation_items",
-                "financial_statement_history", "fii_property_history",
-                "focus_expectations",
-                # v34: the FIDC concentration tabs, which until v33 trimmed
-                # silently at the tier ceiling. p_limit (1..1000) is an
-                # explicit newest-first head, not a cursor.
-                "fidc_cedentes", "fidc_sacados", "fidc_portfolio",
-                # v32: the FIDC structure tabs.
-                "fidc_tranches", "fidc_aging",
-                # v41: fund holdings (CDA blocks 4, 2, 6), which until v40
-                # trimmed silently at the tier ceiling. p_limit (1..1000) is
-                # an explicit newest-first head, not a cursor.
-                "fund_holdings", "fund_debentures",
-                # v33: the FNET register — a year of one fund's documents,
-                # or a month of restatements, is a window to narrow.
-                "fund_documents", "fund_restatements",
-                # v40: what a restatement changed — one document, or one
-                # fund's window, is small; narrow it, never walk it.
-                "fund_restatement_diff",
-                # v31: a screen is a short list or the wrong screen — raise
-                # its thresholds or pin its output filter, never walk it.
-                "screen_zombie_growth", "screen_captive_vehicles",
-                "screen_evergreen_aging", "screen_overdue_securit",
-                "screen_dormant_funds", "screen_dormant_trend",
-                "screen_delinquency_drivers",
-                # v37: the filing-behaviour screens (25_api_filing_screens.sql).
-                "screen_restatements", "screen_late_filers", "screen_silent_filers",
-                # v38: held-but-unserved datasets (26_api_events_macro.sql) —
-                # a window to narrow, never a series to walk.
-                "company_events", "macro_series", "ptax",
-                # v42: the rate curve (27_api_rates.sql) — one session is
-                # tens to hundreds of rows, and a history is a window.
-                "future_curve", "future_series", "curve", "curve_history",
-                # v43: the research universe (28_api_research.sql) — no
-                # parameter narrows it; it is one page today (639 pairs).
-                "research_universe",
-                # v51: the portfolio reads (31_api_portfolio.sql) — a set of
-                # funds or lines is split by the caller, never walked.
-                "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
-                # v62: statement codes and fund terms, split by the caller too.
-                "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
-                # v66: two rows for one class; nothing to walk.
-                "class_return_distribution",
-                # v68: a set of classes, split by the caller.
-                "portfolio_equivalents",
-            ],
+            "paged": _PAGED_CURSORS,
+            "raise_only": [n for n in _CAPPED_FUNCTIONS if n not in _PAGED_CURSORS],
         },
         "over_cap": (
             "SQLSTATE 22023 naming the function — nothing is trimmed to fit. "
