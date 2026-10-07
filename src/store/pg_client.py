@@ -157,6 +157,20 @@ def _get_pool_size() -> int:
     return size
 
 
+def get_pool(dsn: str, *, minconn: int = 1, maxconn: int, **connect_kwargs: Any) -> Any:
+    """Build a psycopg2 ``ThreadedConnectionPool``: the one pool factory.
+
+    Every Postgres connection in ``src/`` and ``serve/`` comes from a pool
+    this function builds: the ingest's ``_PgClient`` and the read-only
+    ``serve.pool.ServePool``. A connection setting (SSL mode, keepalives,
+    timeouts) is then fixed in one place. ``connect_kwargs`` go to libpq
+    as-is; each caller keeps its own checkout and discard rules.
+    """
+    return psycopg2.pool.ThreadedConnectionPool(
+        minconn, maxconn, dsn=dsn, **connect_kwargs
+    )
+
+
 class _PgClient:
     """Pooled Postgres client for the ingest pipeline.
 
@@ -189,9 +203,7 @@ class _PgClient:
         self._size = pool_size or _get_pool_size()
         # minconn=1: open one eagerly so a bad POSTGRES_URL fails at startup
         # rather than on the first slice, an hour into a backfill.
-        self._pool = psycopg2.pool.ThreadedConnectionPool(
-            1, self._size, dsn=url, **_KEEPALIVES
-        )
+        self._pool = get_pool(url, minconn=1, maxconn=self._size, **_KEEPALIVES)
         self._slots = threading.Semaphore(self._size)
         logger.info("Postgres pool: %d connection(s)", self._size)
 
