@@ -367,3 +367,42 @@ async def test_real_pg_client_writes_capture_dates_facts_and_single_audit(monkey
             assert cur.fetchone()[0] == 36
     finally:
         conn.closeall()
+
+async def test_failed_export_recovers_without_losing_unknown_edge_dates(capture):
+    ing, _ = capture
+    start, end = date(2026, 10, 2), date(2026, 10, 6)
+    ing.ingest = AsyncMock(side_effect=[B3BdiFetchError('timeout'), 9, 18])
+    with patch.object(C, 'known_sessions', return_value=[start, date(2026, 10, 5)]):
+        assert await ing.ingest_resilient(start, end) == 27
+    assert [call.args for call in ing.ingest.await_args_list] == [
+        (start, end), (start, date(2026, 10, 4)), (date(2026, 10, 5), end),
+    ]
+
+
+async def test_recovery_failure_retains_acknowledged_child_count(capture):
+    ing, _ = capture
+    ing.ingest = AsyncMock(side_effect=[B3BdiFetchError('timeout'), 9,
+                                        C.ingest_log.PartialIngestError('write failed', rows=3)])
+    with patch.object(C, 'known_sessions', return_value=[date(2026, 10, 1), DAY]):
+        with pytest.raises(C.ingest_log.PartialIngestError) as exc:
+            await ing.ingest_resilient(date(2026, 10, 1), DAY)
+    assert exc.value.rows == 12
+
+
+@pytest.mark.parametrize('error', [B3BdiParseError('layout'),
+                                   C.ingest_log.PartialIngestError('missing day'),
+                                   RuntimeError('database')])
+async def test_semantic_and_database_failure_never_retry_network(capture, error):
+    ing, _ = capture
+    ing.ingest = AsyncMock(side_effect=error)
+    with pytest.raises(type(error)):
+        await ing.ingest_resilient(date(2026, 10, 1), DAY)
+    assert ing.ingest.await_count == 1
+
+
+async def test_export_failure_with_only_one_known_session_does_not_recurse(capture):
+    ing, _ = capture
+    ing.ingest = AsyncMock(side_effect=B3BdiFetchError('timeout'))
+    with pytest.raises(B3BdiFetchError):
+        await ing.ingest_resilient(DAY, DAY)
+    assert ing.ingest.await_count == 1

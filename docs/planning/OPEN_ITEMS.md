@@ -527,3 +527,16 @@ Later dependencies remain REUNE traded rates/access, dated issuer/ultimate-oblig
 links (#660), compatible rate/benchmark conventions (#661), empirical issuer
 coverage and the past-only equity residual experiment. Holdings marks and this
 initial capture do not establish readiness for that experiment.
+
+Follow-up 2026-10-07 (UTC-3): a seven-calendar-day export delivered five dates,
+6,630 DEB groups and 59,670 facts, with zero drops; local storage and repeat-export
+latency are [measured](../reference/research/debenture-secondary-market-validation.md).
+Bounded smaller-slice recovery is implemented for export failures only. Production
+enablement, storage budget and full historical continuity remain open.
+
+Daily-run blocker diagnosed on 2026-10-07 (UTC-3): run 37579395989 failed while
+replaying `DROP INDEX uq_fi_cda_acoes`, so COTAHIST never ran. Catalog guards
+now preserve valid matching indexes and skip absent constraint drops; real
+changes still run. Local reader-lock, key-widening and NULL-uniqueness tests
+passed. [Recovery plan](../reference/research/ingest-recovery-2026-10-07.md).
+Production application and the data recovery are pending owner approval.
