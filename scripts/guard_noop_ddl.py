@@ -1,6 +1,6 @@
 """Rewrite no-op / long-held DDL so daily schema apply does not lock.
 
-Two PostgreSQL traps show up when daily ingest re-applies schema.sql + every
+PostgreSQL traps show up when daily ingest re-applies schema.sql + every
 migration against a live warehouse:
 
 1. `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` takes AccessExclusiveLock
@@ -43,6 +43,13 @@ migration against a live warehouse:
    refresh-if-empty, or pg_cron CONCURRENTLY), a separate statement that
    does not insert into pg_type.
 
+3. Adjacent DROP INDEX / CREATE UNIQUE INDEX pairs rebuild an already-correct
+   index every day. Run 37579395989 (2026-10-07) failed at the DROP of
+   uq_fi_cda_acoes before ingestion. For simple btree column keys with NULLS
+   NOT DISTINCT, probe the catalog and retain valid matching indexes. Missing
+   or different indexes still execute the original DDL. An absent constraint's
+   DROP CONSTRAINT IF EXISTS is also catalog-guarded to avoid a no-op lock.
+
 Statements inside DO $$ blocks are left alone — those are already
 catalog-guarded (see migrations/03_precision.sql, 06_etf.sql).
 
@@ -83,6 +90,15 @@ _CREATE_MV = re.compile(
 )
 _WITH_NO_DATA_TAIL = re.compile(r"\bWITH\s+NO\s+DATA\s*$", re.IGNORECASE)
 _WITH_DATA_TAIL = re.compile(r"\bWITH\s+DATA\s*$", re.IGNORECASE)
+_DROP_INDEX = re.compile(r"^DROP INDEX IF EXISTS ([\w.]+);$", re.I)
+_DROP_CONSTRAINT = re.compile(
+    r"^ALTER TABLE ([\w.]+) DROP CONSTRAINT IF EXISTS ([\w]+);$", re.I,
+)
+_REBUILD_INDEX = re.compile(
+    r"^CREATE UNIQUE INDEX IF NOT EXISTS ([\w.]+)\s+ON ([\w.]+)\s*"
+    r"\(([a-z_][a-z_0-9]*(?:\s*,\s*[a-z_][a-z_0-9]*)*)\)\s+NULLS NOT DISTINCT;$",
+    re.I,
+)
 
 
 def _sql_literal(value: str) -> str:
@@ -275,9 +291,91 @@ def guard_matview_sql(sql: str) -> str:
     return "".join(parts)
 
 
+def guard_index_rebuild_sql(sql: str) -> str:
+    """Skip adjacent simple UNIQUE index rebuilds only when the catalog matches.
+
+    Narrow grammar: ordinary unquoted column keys, default btree semantics,
+    NULLS NOT DISTINCT. Expressions, partial indexes and other DDL stay intact.
+    A missing, invalid or different index still executes the original pair.
+    """
+    chunks = split_sql_statements(sql)
+    out = []
+    i = 0
+    while i < len(chunks):
+        drop = _DROP_INDEX.fullmatch(_statement_body(chunks[i]))
+        create = (_REBUILD_INDEX.fullmatch(_statement_body(chunks[i + 1]))
+                  if drop and i + 1 < len(chunks) else None)
+        if not create or drop.group(1) != create.group(1):
+            out.append(chunks[i])
+            i += 1
+            continue
+        name, table, keys = create.groups()
+        cols = [c.strip().lower() for c in keys.split(",")]
+        values = ", ".join(_sql_literal(c) for c in cols)
+        pair = _statement_body(chunks[i]) + "\n" + chunks[i + 1].strip()
+        guard = f"""DO $silo_guard_index$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_index x
+    JOIN pg_class idx ON idx.oid = x.indexrelid
+    JOIN pg_am am ON am.oid = idx.relam
+    WHERE x.indexrelid = to_regclass({_sql_literal(name)})
+      AND x.indrelid = to_regclass({_sql_literal(table)})
+      AND x.indisunique AND x.indisvalid AND x.indisready AND x.indimmediate
+      AND x.indnullsnotdistinct
+      AND am.amname = 'btree' AND x.indpred IS NULL AND x.indexprs IS NULL
+      AND x.indnkeyatts = {len(cols)} AND x.indnatts = {len(cols)}
+      AND ARRAY(SELECT pg_get_indexdef(x.indexrelid, n, true)
+                FROM generate_series(1, x.indnatts) n) = ARRAY[{values}]
+      AND NOT EXISTS (SELECT 1 FROM unnest(x.indoption) opt WHERE opt <> 0)
+      AND NOT EXISTS (
+        SELECT 1 FROM unnest(x.indclass) op
+        JOIN pg_opclass oc ON oc.oid = op WHERE NOT oc.opcdefault
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM unnest(x.indkey::smallint[], x.indcollation::oid[]) k(attnum, coll)
+        JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = k.attnum
+        WHERE k.coll <> a.attcollation
+      )
+  ) THEN
+    {pair}
+  END IF;
+END
+$silo_guard_index$;
+"""
+        out.append(_keep_lead(chunks[i], guard))
+        i += 2
+    return "".join(out)
+
+
+def guard_drop_constraint_sql(sql: str) -> str:
+    """An absent constraint must not acquire an exclusive table lock either."""
+    out = []
+    for chunk in split_sql_statements(sql):
+        body = _statement_body(chunk)
+        match = _DROP_CONSTRAINT.fullmatch(body)
+        if not match:
+            out.append(chunk)
+            continue
+        table, name = match.groups()
+        guarded = f"""DO $silo_guard_constraint$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint
+             WHERE conrelid = to_regclass({_sql_literal(table)})
+               AND conname = {_sql_literal(name.lower())}) THEN
+    {body}
+  END IF;
+END
+$silo_guard_constraint$;
+"""
+        out.append(_keep_lead(chunk, guarded))
+    return "".join(out)
+
+
 def guard_noop_ddl(sql: str) -> str:
-    """Apply every apply-time DDL rewrite (ADD COLUMN probe + matview WITH NO DATA)."""
-    return guard_matview_sql(guard_add_column_sql(sql))
+    """Apply catalog guards and defer initial materialized-view population."""
+    return guard_index_rebuild_sql(guard_drop_constraint_sql(
+        guard_matview_sql(guard_add_column_sql(sql))))
 
 
 def iter_wrappable(sql: str) -> Iterable[str]:
@@ -296,7 +394,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Rewrite no-op ADD COLUMN IF NOT EXISTS and CREATE MATERIALIZED "
-            "VIEW IF NOT EXISTS (WITH NO DATA) so daily schema apply does not lock."
+            "VIEW IF NOT EXISTS, absent constraint drops and matching index rebuilds."
         ),
     )
     parser.add_argument("path", help="SQL file to rewrite (stdout)")

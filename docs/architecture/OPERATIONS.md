@@ -52,6 +52,7 @@ after a run    publish_check  also runs when a Daily CVM Ingest run ends green, 
   `rebuild_dashboard=true`.
 - Writers share the `supabase-ingest` concurrency group. Health and
   publish_check are read-only and may overlap.
+- Schema replay skips matching indexes and absent constraints.
 - DEB capture: opt-in, with smaller-slice export recovery.
   [Contract](../reference/research/debenture-secondary-market-capture.md).
 

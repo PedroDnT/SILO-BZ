@@ -47,3 +47,6 @@ tracks the two successful real-CSV checks, remaining coverage/rollout and bondâ†
 
 Debenture [window/storage validation](../reference/research/debenture-secondary-market-validation.md)
 records the bounded sample and the smaller-slice recovery follow-up.
+
+[Daily schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md):
+local fix verified; production apply and COTAHIST recovery pending approval.
