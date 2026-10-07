@@ -13,3 +13,13 @@ openai==3.24.0
 
 # tests/test_research_agent_eval.py
 openai-agents==0.22.3
+
+# Testing
+pytest==9.0.3
+pytest-asyncio==1.4.0
+hypothesis==6.168.5
+
+# Local dev / offline verification: scripts/seed_local_db.py and
+# scripts/run_analysis_local.py seed and query a local DuckDB file (no
+# Supabase credentials). No workflow and no production module imports it.
+duckdb==1.5.6

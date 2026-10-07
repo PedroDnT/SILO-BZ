@@ -95,7 +95,7 @@ If nothing verifiable changed, stop. No-op: "no verifiable change since
    if it assigns one; otherwise `agent/scout-YYYY-MM-DD`).
 2. Edit `docs/planning/COMPETITIVE_GAPS.md` §2 and/or §3 only. Do not run a
    formatter over the file; keep the diff to the lines you changed.
-3. Run `python3 -m pytest tests/ -q` (install `requirements.txt` first if
+3. Run `python3 -m pytest tests/ -q` (install `requirements-dev.txt` first if
    needed). It must stay green; you touched no code, so a red run means stop
    and report, not "fix".
 4. Commit with a message that says what changed and ends with the

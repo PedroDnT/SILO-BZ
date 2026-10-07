@@ -23,7 +23,7 @@ those were not re-run this time.
 ## Prerequisites (macOS)
 
 `initdb`/`pg_ctl`/`psql` on `PATH` (Homebrew `postgresql@16`), `.venv/` with
-`requirements.txt` installed. Playwright is **not** a repo dependency;
+`requirements-dev.txt` installed. Playwright is **not** a repo dependency;
 install it once into its own folder:
 
 ```bash

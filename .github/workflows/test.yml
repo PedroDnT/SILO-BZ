@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The pre-push hook's dropped-row check (.claude/hooks/pre-push-docs.sh),
       # for the merges it never sees. On 2026-09-26 an update of #322's branch
@@ -128,7 +128,7 @@ jobs:
     env:
       POSTGRES_URL: postgresql://postgres:ci@localhost:5432/silo_ci
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Supabase provides anon/authenticated; a vanilla postgres:15 does not.
       # silo_api is created by 12_grants_and_rls.sql itself (guarded).
@@ -693,6 +693,11 @@ jobs:
       # incomplete captures refuse, and raw observations stay private.
       - name: credit capture vintages behave (executed, not just compiled)
         run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/b3_credit_behaviour.sql
+
+      - name: identical index replay preserves indexes; required widening still applies
+        run: |
+          python3 scripts/guard_noop_ddl.py tests/sql/guard_index_replay_behaviour.sql > /tmp/guard-index-test.sql
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f /tmp/guard-index-test.sql
 
       # Own Python, not the runner's system one: Ubuntu's /usr/bin/python3 is
       # PEP 668 externally-managed, so a bare `pip install` there is one image
