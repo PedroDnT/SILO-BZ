@@ -97,7 +97,6 @@ def test_server_cost_header_and_trace_include_the_investigator(monkeypatch):
         Path(out_path).write_bytes(b"%PDF-1.7\n% stub\n")
         return Path(out_path)
 
-    monkeypatch.setattr(server, "html_to_pdf", stub_pdf)
 
     class Booking:
         def __init__(self, meter):
@@ -110,7 +109,7 @@ def test_server_cost_header_and_trace_include_the_investigator(monkeypatch):
             return R.not_run_section("sem_gatilho_investigador")
 
     app = server.create_app(client_factory=lambda: FakeClient(load_fake_rows(FAKE_ROWS)),
-                            investigator_factory=lambda meter: Booking(meter)).test_client()
+                            investigator_factory=lambda meter: Booking(meter), pdf_renderer=stub_pdf).test_client()
     r = app.post("/diagnose", data=TEMPLATE.read_bytes(), headers={"Authorization": "Bearer tok"})
     assert r.status_code == 200, r.data[:200]
     assert float(r.headers["X-Silo-Cost-Usd"]) == pytest.approx(0.225)
