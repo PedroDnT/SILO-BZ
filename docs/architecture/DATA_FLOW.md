@@ -32,6 +32,9 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   missing from the file keep theirs.
 - The B3 BDI group (lending, investor flow) has no backfill. See the ratchet in
   [SYSTEM](SYSTEM.md).
+- OTC DEB (migration 74): `b3_credit_capture` saves raw CSV and knowledge time;
+  `fact_credit_market` stores long metrics. Missing sessions/drops fail the slice.
+  Daily capture is opt-in pending rollout; history uses weekly slices.
 
 ## Analytical
 

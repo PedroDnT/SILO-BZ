@@ -962,9 +962,18 @@ def test_every_api_function_revoked_from_public():
 
 
 # ---------------------------------------------------------------------------
-# api.catalog() parity with serve/catalog.py (INSTRUMENTS.md: the SQL copy is
-# pinned to catalog_payload(), same pattern as the caps-lockstep test)
+# api.catalog() is generated from serve/catalog.py (INSTRUMENTS.md: the SQL
+# copy serves catalog_payload(); scripts/gen_catalog_sql.py writes it)
 # ---------------------------------------------------------------------------
+
+def test_api_catalog_generated_block_is_current():
+    from scripts import gen_catalog_sql
+
+    assert SQL19 == gen_catalog_sql.splice(SQL19, gen_catalog_sql.render_block()), (
+        "api.catalog() in 19_api_contract.sql is stale against "
+        "serve.catalog.catalog_payload(); run: python scripts/gen_catalog_sql.py"
+    )
+
 
 def _embedded_catalog_json() -> str:
     chunk = FUNCS["api.catalog"]
@@ -973,15 +982,20 @@ def _embedded_catalog_json() -> str:
     return m.group(1)
 
 
-def test_api_catalog_matches_serve_catalog_payload_exactly():
+def test_api_catalog_serves_catalog_payload():
+    """The generated literal parses back to catalog_payload()."""
     from serve.catalog import catalog_payload
 
-    embedded = json.loads(_embedded_catalog_json())
-    assert embedded == catalog_payload(), (
-        "api.catalog()'s jsonb literal drifted from serve.catalog.catalog_payload(). "
-        "Regenerate the $json$ block in 19_api_contract.sql (command in its header "
-        "comment) and bump CATALOG_VERSION."
-    )
+    assert json.loads(_embedded_catalog_json()) == catalog_payload()
+
+
+def test_gen_catalog_sql_refuses_a_payload_that_breaks_its_quoting():
+    from scripts import gen_catalog_sql
+
+    with pytest.raises(ValueError):
+        gen_catalog_sql.render_block({"agent": "ends the literal $json$ early"})
+    with pytest.raises(ValueError):
+        gen_catalog_sql.splice("no markers here", gen_catalog_sql.render_block())
 
 
 def test_catalog_limits_are_the_sql_tier_clamps():

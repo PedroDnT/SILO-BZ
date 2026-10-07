@@ -104,6 +104,20 @@ async def main(args: argparse.Namespace) -> None:
     if (getattr(args, "months", None) or getattr(args, "repair_gaps", False)) and not doc_type:
         raise SystemExit("--months / --repair-gaps require --entity fi --doc-type <t>")
 
+    credit_start = getattr(args, "b3_credit_start", None)
+    credit_end = getattr(args, "b3_credit_end", None)
+    if credit_start or credit_end:
+        if not (credit_start and credit_end):
+            raise SystemExit("--b3-credit-start and --b3-credit-end are both required")
+        from src.pipeline.b3_credit_pipeline import B3CreditIngestor
+
+        # Alone, bounded weekly requests; an incomplete slice stops with a red
+        # audit. Zero DEB rows is valid when all sessions contain other assets.
+        await B3CreditIngestor().backfill(
+            date.fromisoformat(credit_start), date.fromisoformat(credit_end)
+        )
+        return
+
     # FNET runs alone: it is paced at one request a second against an
     # undocumented endpoint, so it never rides along with a default backfill.
     if getattr(args, "fnet_only", False):
@@ -446,6 +460,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--b3-start-year", type=int, default=2019,
         help="First year of B3 COTAHIST yearly zips (default: 2019)"
+    )
+    parser.add_argument(
+        "--b3-credit-start", default=None,
+        help="Only OTC debenture ConsolidatedRecords, from this ISO date (weekly slices)"
+    )
+    parser.add_argument(
+        "--b3-credit-end", default=None,
+        help="Last completed day for --b3-credit-start; does not assume M-18 is available"
     )
     return parser.parse_args()
 

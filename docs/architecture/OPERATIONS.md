@@ -22,12 +22,10 @@ after a run    publish_check  also runs when a Daily CVM Ingest run ends green, 
 ## A red day
 
 - Rows that landed stay landed.
-- One red source does not hold back the matviews, `api.panel` or the dashboard:
-  ANALYZE, the apply and the hook run after a failed `run_daily`, and the run
-  stays red. Accepted risk: they then reflect partly fresh data, the red source
-  possibly a day old. `landed_at` and `api.coverage()` say which source.
-- A probe or schema failure, or a failed apply, still holds back the apply and
-  the hook: they stay at the last good run until the next one, or
+- After a failed `run_daily`, ANALYZE, the apply and deploy hook still run.
+  Matviews, `api.panel` and the dashboard may be partly stale; the run stays red.
+  `landed_at` and `api.coverage()` identify freshness by source.
+- Probe/schema/apply failures hold back publication until a successful run or
   `mode=analytics-only` with `rebuild_dashboard=true`.
 - Plain-view endpoints (quotes, short interest) show new data at once. Their
   matview-fed columns do not: `days_to_cover` joins `mv_b3_adtv_21`, and
@@ -54,6 +52,8 @@ after a run    publish_check  also runs when a Daily CVM Ingest run ends green, 
   `rebuild_dashboard=true`.
 - Writers share the `supabase-ingest` concurrency group. Health and
   publish_check are read-only and may overlap.
+- `B3_CREDIT_ENABLED=1` enables seven-day DEB capture in B3 events/watchdog;
+  default off pending rollout. [Commands](../reference/research/debenture-secondary-market-capture.md).
 
 ## Not automated
 
