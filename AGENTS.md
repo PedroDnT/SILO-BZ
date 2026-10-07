@@ -272,7 +272,9 @@ message built by `assert_row_cap`) — none trims silently. A new endpoint also 
 catalog entry, a regenerated `openapi.json` (`scripts/gen_openapi.py`) and a regenerated
 MCP contract (`scripts/gen_mcp_contract.py` + a `t()` line in
 `supabase/functions/silo-mcp/tools.ts`); `tests/test_mcp_contract.py` fails until all
-three agree.
+three agree. A new or changed signature also regenerates the SDK's
+`sdk/silo_client/contract.json` (`scripts/gen_sdk_contract.py`), which `SiloClient.rpc()`
+checks calls against; `tests/test_sdk_rpc.py` fails while it is stale.
 
 ## Commands
 
