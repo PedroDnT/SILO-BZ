@@ -158,7 +158,7 @@ def test_an_extrato_in_range_shows_no_lamina_line(runs):
     assert bl["lamina_beside_label"] is None and bl["scale_flag_label"] is None
     view = adapt.to_view(doc)
     i = next(k for k, b in enumerate(view["fees"]["by_line"]) if b["cnpj"] == CNPJ)
-    assert "lâmina informa" not in " ".join(render._fee_row(view, f"fees.by_line[{i}]", view["fees"]["by_line"][i]))
+    assert "lâmina informa" not in " ".join(render._fee_row(view["fees"]["by_line"][i]))
 
 
 def test_an_extrato_zero_without_a_lamina_has_no_line_and_is_still_to_check(runs):

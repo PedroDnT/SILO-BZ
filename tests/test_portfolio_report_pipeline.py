@@ -38,6 +38,17 @@ def test_brazilian_formatting(engine):
     assert values.format_value(engine, "fees.total_disclosed_brl_year") == "—"
 
 
+def test_units_are_declared_in_one_table():
+    assert values.unit_for("estimated_pct_year") == values.PCT and values.unit_for("value_brl") == values.BRL
+    assert values.unit_for("pct_12m") == values.PLAIN  # the unit is a word after the measure, never the first one
+    assert values.unit_for("old_num", {"leaf": "VL_PL"}) == values.BRL
+    assert values.unit_for("old_num", {"leaf": "QT_COTAS"}) == values.PLAIN
+    # a path relative to a dict read from the view prints the same text as the full path from the root
+    doc = {"r": {"diff": [{"leaf": "VL_PL", "old_num": 1.5e6}]}}
+    assert values.format_value(doc, "r.diff[0].old_num") == values.format_value(doc["r"]["diff"][0], "old_num") == "R$ 1,5 milhão"
+    assert values.format_as("2026-08-01", values.MONTH) == "08/2026" and values.format_as("2026-08-01", values.PLAIN) == "01/08/2026"
+
+
 def test_timestamps_are_shown_in_utc_minus_3_with_utc_in_parentheses(engine):
     assert values.format_value(engine, "generated_at") == "03/10/2026 13:00 (UTC-3) (16:00 UTC)"
     assert engine["generated_at"] == "2026-10-03T16:00:00Z"  # stored value untouched

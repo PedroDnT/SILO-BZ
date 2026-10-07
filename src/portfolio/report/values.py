@@ -2,12 +2,14 @@
 
 A placeholder is ``{{path}}``: dot-separated keys with ``[i]`` list indexes,
 for example ``{{fees.by_line[3].estimated_pct_year}}``. The renderer is the
-only place a figure becomes text, and it formats by the path's last key:
+only place a figure becomes text. ``unit_for`` decides a figure's unit from
+the path's last key by the declared ``UNIT_RULES``, and ``format_as`` prints a
+value in a unit; ``format_value`` reads a path and prints it:
 
 | key                          | unit in the engine JSON | printed as            |
 | ---------------------------- | ----------------------- | --------------------- |
-| contains ``_brl``            | reais                   | ``R$ 1.234,56`` / ``R$ 187,3 milhões`` |
-| contains ``_pct``            | percent (1.65 = 1,65%)  | ``1,65%``             |
+| ``brl`` or a ``_brl`` word   | reais                   | ``R$ 1.234,56`` / ``R$ 187,3 milhões`` |
+| ``pct`` or a ``_pct`` word   | percent (1.65 = 1,65%)  | ``1,65%``             |
 | contains ``cnpj``            | 14 digits               | ``00.000.000/0000-00``|
 | ``month`` / ``competencia`` / ends ``_month`` | ISO date, first of month | ``08/2026`` |
 | ends ``_pp``                 | percentage points       | ``-0,43 p.p.``        |
@@ -16,7 +18,7 @@ only place a figure becomes text, and it formats by the path's last key:
 | ISO timestamp                | UTC                     | ``03/10/2026 13:00 (UTC-3) (16:00 UTC)`` |
 | ``old_num`` / ``new_num`` / ``change_brl`` of a ``VL_*`` leaf | reais | as ``_brl`` |
 
-This table is the report's one dependency on the engine's unit convention
+This table, written as ``UNIT_RULES`` and ``DIFF_NUMBER_KEYS``, is the report's one dependency on the engine's unit convention
 (``docs/reference/portfolio/redator-revisor.md``); change it here when the engine's
 schema doc says otherwise.
 """
@@ -33,7 +35,6 @@ _TOKEN_RE = re.compile(r"([^.\[\]]+)|\[(\d+)\]")
 _PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\[\d+\]|\.[A-Za-z_][A-Za-z0-9_]*)*$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$")
-_MONTH_KEYS = {"month", "competencia", "mes"}
 
 # Brasília: UTC-3, no daylight saving since 2019 (owner's display rule).
 BRT = timezone(timedelta(hours=-3), "UTC-3")
@@ -169,60 +170,84 @@ def fmt_timestamp(s: str) -> str:
     return dt.astimezone(BRT).strftime("%d/%m/%Y %H:%M") + f" (UTC-3) ({utc:%H:%M} UTC)"
 
 
+# The units, decided once: every figure's unit comes from ``unit_for`` and every figure's text from ``format_as``.
+BRL, PCT, PP, PCT_CDI, CNPJ, MONTH, PLAIN = "brl", "pct", "pp", "pct_cdi", "cnpj", "month", "plain"
+
+# The engine's unit convention, declared (docs/reference/portfolio/redator-revisor.md, "The placeholder rule"): a
+# figure's key names its unit, ``<what>_<unit>[_<qualifier>...]`` (``value_brl``, ``estimated_pct_year``,
+# ``net_minus_cdi_pp``, ``end_month``). Each pattern is matched against the lowercased last key of a path and the first
+# that matches decides. A key no rule matches is ``PLAIN``: printed by its type (number, ISO date, timestamp, text).
+UNIT_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"^pct_of_cdi$"), PCT_CDI),  # engine 1.13: the phrase "% do CDI" is the formatter's, never the writer's
+    (re.compile(r"^brl$|_brl(?=_|$)"), BRL),
+    (re.compile(r"^pct$|_pct(?=_|$)"), PCT),
+    (re.compile(r"cnpj"), CNPJ),  # cnpj, fund_cnpj, cnpj_securit, p_cnpjs[i]
+    (re.compile(r"_pp$"), PP),
+    (re.compile(r"_month$|^(month|competencia|mes)$"), MONTH),  # engine 1.10: base_month, max_drawdown_peak_month
+)
+
+# The one unit the key cannot carry: a restatement diff row's numbers (``restatements.items[i].diff[j]``) are reais
+# when the row's filed field (``leaf``) is a ``VL_*`` value, and plain otherwise.
+DIFF_NUMBER_KEYS = frozenset({"old_num", "new_num", "change", "change_num"})
+
+
+def unit_for(key: str, parent: Any = None) -> str:
+    """The unit of the figure at ``key`` of the dict ``parent``: one of the constants above."""
+    low = key.lower()
+    for pattern, unit in UNIT_RULES:
+        if pattern.search(low):
+            return unit
+    if low in DIFF_NUMBER_KEYS and isinstance(parent, dict) and str(parent.get("leaf", "")).upper().startswith("VL_"):
+        return BRL
+    return PLAIN
+
+
 def unit_of(doc: Any, path: str) -> str:
-    """``brl`` | ``pct`` | ``pp`` | ``cnpj`` | ``month`` | ``date`` | ``plain`` for the leaf at ``path``."""
-    key = last_key(path).lower()
-    if key == "pct_of_cdi":
-        return "pct_cdi"  # engine 1.13: the phrase "% do CDI" is the formatter's, never the writer's
-    if "_brl" in key or key == "brl":
-        return "brl"
-    if "_pct" in key or key == "pct":
-        return "pct"
-    if "cnpj" in key:
-        return "cnpj"
-    if key.endswith("_pp"):
-        return "pp"
-    if key.endswith("_month"):
-        return "month"  # engine 1.10: base_month, end_month, max_drawdown_peak_month (first of month)
-    if key in ("old_num", "new_num", "change", "change_num"):
-        parent = resolve(doc, parent_path(path))
-        if isinstance(parent, dict) and str(parent.get("leaf", "")).upper().startswith("VL_"):
-            return "brl"
-    if key in _MONTH_KEYS:
-        return "month"
-    return "plain"
+    """``unit_for`` the leaf at ``path`` of ``doc``, which may be the view or any dict read from it."""
+    key = last_key(path)
+    if key.lower() not in DIFF_NUMBER_KEYS:
+        return unit_for(key)
+    tokens = parse_path(path)
+    return unit_for(key, resolve(doc, join_path(tokens[:-1])) if len(tokens) > 1 else doc)
 
 
-def format_value(doc: Any, path: str, value: Any = MISSING) -> str:
-    """The Brazilian text for the leaf at ``path`` (``value`` overrides the lookup)."""
-    v = resolve(doc, path) if value is MISSING else value
-    unit = unit_of(doc, path)
+def format_as(v: Any, unit: str) -> str:
+    """The Brazilian text for the value ``v`` in ``unit`` (a constant above)."""
     if v is None or v is MISSING:
         return "—"
     if isinstance(v, bool):
         return "sim" if v else "não"
     if is_number(v):
-        if unit == "brl":
+        if unit == BRL:
             return fmt_brl(float(v))
-        if unit == "pct":
+        if unit == PCT:
             return fmt_pct(float(v))
-        if unit == "pp":
+        if unit == PP:
             return f"{fmt_number(float(v), 2)} p.p."
-        if unit == "pct_cdi":
+        if unit == PCT_CDI:
             return f"{fmt_number(float(v), 2)}% do CDI"
         if isinstance(v, int):
             return fmt_number(v, 0)
         decimals = min(6, max(2, len(repr(float(v)).split(".")[1].rstrip("0"))))
         return fmt_number(float(v), decimals)
     if isinstance(v, str):
-        if unit == "cnpj":
+        if unit == CNPJ:
             return fmt_cnpj(v)
         if _DATE_RE.match(v):
-            return fmt_date(v, month_only=(unit == "month"))
+            return fmt_date(v, month_only=(unit == MONTH))
         if _TS_RE.match(v):
             return fmt_timestamp(v)
         return v
     return str(v)
+
+
+def format_value(doc: Any, path: str, value: Any = MISSING) -> str:
+    """The Brazilian text for the leaf at ``path`` (``value`` overrides the lookup).
+
+    ``doc`` is the view or any dict read from it, with ``path`` relative to it: a helper handed a fee line formats
+    ``format_value(line, "estimated_pct_year")``, the same text as the full path from the view's root."""
+    unit = unit_of(doc, path)
+    return format_as(resolve(doc, path) if value is MISSING else value, unit)
 
 
 def is_date_string(v: Any) -> bool:
