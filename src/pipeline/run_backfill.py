@@ -57,7 +57,7 @@ from typing import List, Optional, Sequence, Tuple
 # Allow running as python -m src.pipeline.run_backfill from repo root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.pipeline.cvm_pipeline import CVMIngestor
+from src.pipeline.cvm_pipeline import CVMIngestor, CVMRunFailed
 from src.pipeline.gaps import missing_fi_months
 from src.pipeline.bacen_pipeline import BacenIngestor
 from src.pipeline.b3_pipeline import B3Ingestor
@@ -180,13 +180,19 @@ async def main(args: argparse.Namespace) -> None:
         if months is not None and not months:
             raise SystemExit("--months matched no slices")
 
-        cvm_totals = await ingestor.backfill(
-            start_year=args.start_year,
-            end_year=args.end_year,
-            entity_filter=args.entity,
-            doc_type_filter=doc_type,
-            months=months,
-        )
+        # A failed slice raises CVMRunFailed after every other slice ran (#691).
+        # The other sources still run; ensure_no_failed_slices fails the
+        # process at the end, from the same ledger.
+        try:
+            cvm_totals = await ingestor.backfill(
+                start_year=args.start_year,
+                end_year=args.end_year,
+                entity_filter=args.entity,
+                doc_type_filter=doc_type,
+                months=months,
+            )
+        except CVMRunFailed as exc:
+            cvm_totals = exc.totals
         totals.update(cvm_totals)
         cvm_failures = list(ingestor.failures)
         cvm_skips = list(ingestor.skips)
@@ -337,8 +343,10 @@ def ensure_no_failed_slices(failures: Sequence) -> None:
 
     ensure_rows_landed() only catches the all-zero case. The 2026-08-27
     balancete backfill upserted ~81.7M rows and exited 0 while 32 monthly
-    slices had failed — every ingest_* method catches its own exception, writes
-    the audit row and returns 0, so the totals looked healthy and CI was green.
+    slices had failed — every ingest_* method then caught its own exception,
+    wrote the audit row and returned 0, so the totals looked healthy and CI
+    was green. Since #691 a failed slice raises; backfill() raises CVMRunFailed
+    after every slice ran, and this check fails the process from the ledger.
     A backfill that did not load what it was asked to load is a failed backfill.
 
     'skipped' slices (CVM 404 for a month that is not published yet) are not in

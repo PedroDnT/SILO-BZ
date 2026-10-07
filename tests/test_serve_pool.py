@@ -29,7 +29,16 @@ def test_pool_is_created_once():
         with pool.connection():
             pass
         assert tcp.call_count == 1
-        assert tcp.call_args.args == (1, 3, "postgresql://x")
+        # Built by pg_client.get_pool, the one pool factory.
+        assert tcp.call_args.args == (1, 3)
+        # With the four keepalive settings of the ingest pool (#717).
+        assert tcp.call_args.kwargs == {
+            "dsn": "postgresql://x",
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 10,
+            "keepalives_count": 3,
+        }
         inner = tcp.return_value
         assert inner.getconn.call_count == 2
         assert inner.putconn.call_count == 2

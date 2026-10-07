@@ -43,3 +43,15 @@ the two dashboard hosts serve `dashboard/`, not this directory. The open item is
 [`docs/planning/OPEN_ITEMS.md` item 3](../docs/planning/OPEN_ITEMS.md#3-growth-is-fixed-in-the-repo-but-not-published-anywhere).
 `vercel.json` hardcodes `cd dashboard` for install/build/output and `scripts/vercel_should_build.sh` only triggers on `dashboard/`, so a change here can never reach Vercel. Run it locally (`npm install && npm run dev`), or add a second Vercel project pointed at this directory or any static host pointed at
 `build/`.
+
+**Dependencies are unmaintained until item 3 is decided** (#688). This
+directory has no `package-lock.json` and no `overrides`, so each
+`npm install` resolves new versions inside the caret ranges of
+`package.json`. Its ranges also differ from `dashboard/`:
+`core-components ^4.0.0` (dashboard `^5`) and `plugin-connector ^2.0.0`.
+The security pins in `dashboard/package.json` (see `dashboard/README.md`,
+"Dependency overrides") do not apply here. A lockfile is not committed now,
+because nothing builds or deploys this site and a lockfile would change
+nothing anyone runs. When item 3 gives this site a host, align its Evidence
+versions with `dashboard/`, copy the overrides that still apply, and commit
+the lockfile in the same change.

@@ -89,6 +89,34 @@ def test_valid_constraints_reach_the_engine(stmt):
     assert "conservador" in res.html and "suitability" in res.html
 
 
+def test_constraints_are_validated_once_per_run(stmt, monkeypatch):
+    from src.portfolio import client_fit
+    calls = []
+    real = client_fit.validate_input
+
+    def counting(raw, position_date):
+        calls.append(raw)
+        return real(raw, position_date)
+
+    monkeypatch.setattr(client_fit, "validate_input", counting)
+    c = {"profile": "conservador", "horizon_date": "2027-01-01", "liquidity_brl": "1000", "liquidity_date": "2027-01-01"}
+    res = diagnosis.diagnose(stmt, _client, constraints=c, provider_name="fake")
+    assert calls == [c]
+    assert res.engine["client_fit"]["declared"] == real(c, stmt.position_date)
+
+
+def test_the_engine_takes_only_validated_constraints(stmt):
+    from src.portfolio import client_fit
+    from src.portfolio.engine import run_engine
+
+    with pytest.raises(TypeError):  # raw input that skipped the entry point's validation
+        run_engine(stmt, _client(), client_constraints={"profile": "conservador"})
+    earlier = stmt.position_date.replace(year=stmt.position_date.year - 1)
+    other = client_fit.declare({"profile": "conservador"}, earlier)
+    with pytest.raises(ValueError):  # validated against another statement date
+        run_engine(stmt, _client(), client_constraints=other)
+
+
 def test_an_llm_failure_is_report_failed_with_the_type_name_only(stmt, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     rec = trace.RunRecord(start_ns=0, end_ns=0, status=500, stage="read")

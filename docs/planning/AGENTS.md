@@ -101,8 +101,9 @@ schedule or a permission, and retiring an agent are all PRs to this file.
 | Scout    | `.claude/agents/scout.md`    | Mondays 10:00            | TBD        | web read; COMPETITIVE_GAPS.md only        | 1 draft PR | disable the routine |
 | Builder  | `.claude/agents/builder.md`  | Wednesdays 10:00         | TBD        | own branch; no schema apply, deploy or DB | 1 draft PR | disable the routine |
 | Sentinel | `.claude/agents/sentinel.md` | daily 08:51              | `trig_012S452r8KbfeRNkua8DVwzr` | read-only                            | 1 issue    | disable the routine |
+| Orchestrator | `.claude/skills/orchestrate/SKILL.md` | on demand (the owner starts a session) | none, not a Routine | own branch per issue; gate files allowed, then the owner merges | 1 PR per issue, ready for review | do not start it |
 
-All three prompt files exist (written 2026-09-25). A routine id is filled in
+The Orchestrator (map #695, 2026-10-07) is not a Routine: the owner starts each run, so its PRs open ready for review with auto-merge on green, except a PR that touches a gate file, which the owner merges by hand, and it may edit gate files (§1's rule binds the Routines). Its PRs carry `agent:orchestrator` and the §3c provenance block. All three prompt files exist (written 2026-09-25). A routine id is filled in
 by the owner's session when that routine is created, one at a time, after
 the labels exist; until a row has one, that agent does not run.
 

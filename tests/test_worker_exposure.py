@@ -83,10 +83,36 @@ def test_the_routes_are_owner_only_and_read_only_keys():
     # the bucket is reached only through keys of the two strict shapes
     assert r"const TRACE_KEY = /^traces\/\d{4}\/\d{2}\/\d{2}\/[0-9a-f]{32}\.json$/;" in src
     assert "const SHA256 = /^[0-9a-f]{64}$/;" in src
-    # the page shell carries no data; the token is never put in a URL or stored
+    # the page shell carries no data; the token is never put in a URL, and it is stored only on the owner's
+    # opt-in (2026-10-07): in this browser's localStorage, every access inside try/catch, with a way to forget it
+    for name in ("const PAGE = `", "const TRACES_PAGE = `"):
+        page = src[src.index(name):]
+        page = page[:page.index("</html>")]
+        assert "sessionStorage" not in page and "?token" not in page and "token=" not in page
+        assert page.count("localStorage") == 3
+        for line in page.splitlines():
+            if "localStorage." in line:
+                assert "try {" in line and "catch (_)" in line, line
+        assert 'id="remember" type="checkbox"' in page and 'id="forget"' in page
+        assert "Lembrar neste aparelho" in page and "não fica guardado" not in page
     page = src[src.index("const TRACES_PAGE"):]
-    assert "localStorage" not in page and "sessionStorage" not in page and "?token" not in page
     assert "textContent" in page and "innerHTML" not in page
+
+
+def test_the_list_reaches_back_30_days_and_100_runs_and_a_run_has_its_own_link():
+    src = INDEX_TS.read_text(encoding="utf-8")
+    assert "const MAX_LIST_DAYS = 30;" in src and "const MAX_LIST_TRACES = 100;" in src
+    lister = src[src.index("async function listTraces"):src.index("async function readTrace")]
+    assert ", 1), MAX_LIST_DAYS)" in lister and "found.slice(0, MAX_LIST_TRACES)" in lister
+    assert "limit: 100" in lister  # one R2 list per UTC day, as before
+    page = src[src.index("const TRACES_PAGE"):]
+    for days in ("3", "7", "14", "30"):
+        assert f'<option value="{days}"' in page
+    assert "location.hash" in page and '"hashchange"' in page
+    # the upload answer names the key the trace is written to, built as storeTrace builds it
+    assert 'headers.set(TRACE_KEY_HEADER, `traces/${day}/${traceId}.json`)' in src
+    assert 'await bucket.put(`traces/${day}/${traceId}.json`' in src
+    assert 'r.headers.get("x-silo-trace-key")' in src
 
 
 def test_the_flow_lists_each_line_with_what_it_puts_in():

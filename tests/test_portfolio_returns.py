@@ -237,7 +237,8 @@ def test_gross_is_net_plus_the_fee_blocks_fee_and_half_of_it_for_six_months():
     w12, w6 = one(sec)["windows"]["12m"], one(sec)["windows"]["6m"]
     assert w12["gross_return_est_pct"] == pytest.approx(w12["net_return_pct"] + 2.0, abs=1e-6)
     assert w6["gross_return_est_pct"] == pytest.approx(w6["net_return_pct"] + 1.0, abs=1e-6)
-    assert w12["gross_label"] == "estimativa" and w12["fee_pct_period"] == 2.0 and w6["fee_pct_period"] == 1.0
+    assert w12["fee_pct_period"] == 2.0 and w6["fee_pct_period"] == 1.0
+    assert "gross_label" not in w12  # engine 2.0: the report labels the gross "estimativa" (report/labels.py)
     assert {"tool": "portfolio_fees", "call_id": 99, "args": {}, "data_date": "2026-08-01"} in w12["sources"]
     assert "portfolio_fees" not in [p.tool for p in client.provenance]  # never fetched again
 
@@ -393,7 +394,7 @@ def test_a_failed_series_call_is_recorded_and_the_line_is_not_evaluated():
 def test_demo_return_block():
     doc = json.loads(FIXTURE.read_text(encoding="utf-8"))
     r = doc["returns"]
-    assert doc["schema_version"] == "1.15" and list(doc).index("returns") == list(doc).index("risks") + 1
+    assert doc["schema_version"] == "2.0" and list(doc).index("returns") == list(doc).index("risks") + 1
     by = {ln["line_no"]: ln for ln in r["lines"]}
     assert {n for n, ln in by.items() if ln["status"] == "avaliado"} == {2, 3, 4, 5, 7, 8}
     assert by[1]["reason_code"] == "retorno_tesouro_sem_serie" and by[6]["reason_code"] == "retorno_fidc_sem_classe"

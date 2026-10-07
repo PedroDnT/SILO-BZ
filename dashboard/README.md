@@ -115,6 +115,38 @@ The snapshot is therefore at most a day old; `/` and `/ops` show when it was
 built (`sources/supabase/build_stamp.sql`). Can also be served as a static build — point
 any static host at `build/`.
 
+### Dependency overrides
+
+`package.json` has 11 `overrides`. They are security pins added by hand
+under Evidence 40.1.8. JSON has no comments, so the reason for each is here.
+Measured 2026-10-07 with `npm audit` (against `package-lock.json`) and the
+npm bulk advisory endpoint. "From" is the version the override key names.
+Where the key names no version, the unpinned version was not measured.
+
+| Override                                 | Pinned to | Advisories the pin clears                                                   | Pinned version still reported                                                     |
+| ---------------------------------------- | --------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `qs`                                     | 6.16.0    | not measured (key names no version)                                         | none                                                                              |
+| `body-parser`                            | 1.20.8    | not measured (key names no version)                                         | none                                                                              |
+| `minimatch@9.0.3`                        | 9.0.9     | GHSA-3ppc-4f35-3m26, GHSA-7r86-cg39-jmmj, GHSA-23c5-xmqv-rm74 (ReDoS, high) | none                                                                              |
+| `nanoid@3.3.8`                           | 3.3.18    | GHSA-xwg4-73v4-xw9w, GHSA-28wg-ghj8-5hjv, GHSA-2v37-7h3g-55p8 (high)                             | none                                                                              |
+| `trim@0.0.1`                             | 0.0.3     | GHSA-w5p7-h5w8-2hfq (ReDoS, high)                                           | none                                                                              |
+| `prismjs@1.29.0`                         | 1.30.0    | GHSA-x7hr-w5r2-h6wg (DOM clobbering, moderate)                              | none                                                                              |
+| `cookie@0.6.0`                           | 0.7.2     | GHSA-pxg6-pf52-xh8x (low)                                                   | none                                                                              |
+| `vitest`                                 | 3.2.6     | not measured (key names no version)                                         | GHSA-82fw-gwwq-j7x9 (fixed in 4.1.11)                                             |
+| `@melt-ui/svelte` → `nanoid`             | 5.1.16    | not measured (key names no version)                                         | none                                                                              |
+| `vite`                                   | 5.4.21    | not measured (key names no version)                                         | GHSA-4w7w-66w2-5vf9, GHSA-v6wh-96g9-6wx3, GHSA-fx2h-pf6j-xcff (fixed above 6.4.2) |
+| `cmdk-sv` → `@melt-ui/svelte` → `nanoid` | 5.1.16    | not measured (key names no version)                                         | none                                                                              |
+
+With the overrides in place, `npm audit` still reports 37 packages (2
+critical, 13 high, 22 moderate). Most come from Evidence's own ranges
+(`svelte`, `@sveltejs/kit`, `tailwindcss`, `braces`, `tinypool`, `echarts`).
+An override cannot fix them without a major bump that Evidence 40 does not
+support. The `vite` and `vitest` pins hold a version that is still reported:
+they hold vite 5 and vitest 3, which do not clear the advisory.
+
+On the next Evidence bump, remove the overrides, run `npm audit`, keep only
+the ones still needed, and update this table (#688).
+
 ### Analytics
 
 Visits are counted by Vercel Web Analytics. `pages/+layout.svelte` is the Evidence

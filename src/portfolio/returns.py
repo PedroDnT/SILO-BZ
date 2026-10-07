@@ -64,7 +64,6 @@ from src.portfolio.movement import default_movement_month
 
 EVALUATED = "avaliado"
 NOT_EVALUATED = "nao_avaliado"
-STATUS_LABELS = {EVALUATED: "avaliado", NOT_EVALUATED: "não avaliado"}
 
 # (id, months, share of the annual fee charged in the window, volatility note)
 WINDOWS = (
@@ -79,12 +78,7 @@ FUND = "cota_fundo"
 TOTAL_RETURN = "close_total_return"
 CLOSE = "close_sem_proventos"
 FIXED_INCOME_ETF = "last_price_etf_renda_fixa"
-BASIS_LABELS = {
-    FUND: "cota mensal do fundo (fund_nav): líquida das taxas do fundo, bruta de IR",
-    TOTAL_RETURN: "fechamento com dividendos e JCP reinvestidos (close_total_return); JCP bruto de IR",
-    CLOSE: "fechamento sem proventos (close): variação de preço",
-    FIXED_INCOME_ETF: "último preço do arquivo consolidado da B3 (last_price), sem proventos",
-}
+# The reader text of a status or a basis is the report's (src/portfolio/report/labels.py, engine 2.0).
 TOOLS = {
     FUND: "fund_nav",
     TOTAL_RETURN: "quote_history",
@@ -431,7 +425,6 @@ def _route(li: LineId) -> tuple[str | None, str | None]:
 def _empty_window(code: str | None, reason: str | None) -> dict[str, Any]:
     return {
         "status": NOT_EVALUATED,
-        "status_label": STATUS_LABELS[NOT_EVALUATED],
         "reason_code": code,
         "reason": reason,
         "base_month": None,
@@ -461,7 +454,6 @@ def _empty_window(code: str | None, reason: str | None) -> dict[str, Any]:
         "fee_reason_code": None,
         "fee_pct_period": None,
         "gross_return_est_pct": None,
-        "gross_label": "estimativa",
         "fee_per_point": None,
         "fee_per_point_excluded_from_aggregates": None,
         "fee_per_point_note": None,
@@ -493,10 +485,8 @@ def _line(
         "name": li.name,
         "valor_brl": brl(p.valor),
         "basis": basis,
-        "basis_label": BASIS_LABELS.get(basis),
         "without_distributions": basis in (CLOSE, FIXED_INCOME_ETF),
         "status": NOT_EVALUATED,
-        "status_label": STATUS_LABELS[NOT_EVALUATED],
         "reason_code": None,
         "reason": None,
         "fee": None,
@@ -540,7 +530,7 @@ def _line(
     for wid, n, frac, vol_note in WINDOWS:
         rec["windows"][wid] = _window(months[-(n + 1):], n, frac, vol_note, points, basis, fee, cdi, call, bench)
     if any(w["status"] == EVALUATED for w in rec["windows"].values()):
-        rec.update(status=EVALUATED, status_label=STATUS_LABELS[EVALUATED])
+        rec["status"] = EVALUATED
     else:
         first = rec["windows"]["12m"]
         rec.update(reason_code=first["reason_code"], reason=first["reason"])
@@ -749,7 +739,6 @@ def _window(
     w = _empty_window(None, None)
     w.update(
         status=EVALUATED,
-        status_label=STATUS_LABELS[EVALUATED],
         base_month=iso(months[0]),
         end_month=iso(months[-1]),
         base_date=iso(points[months[0]]["date"]),
