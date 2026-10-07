@@ -1,4 +1,4 @@
-"""The engine's JSON (schema 1.x) as the report's view.
+"""The engine's JSON (schema 1.x and 2.x) as the report's view.
 
 The Redator, the Revisor and the renderer were written against a view of the engine's output
 (``tests/fixtures/portfolio/report_provisional_engine_output.json``: ``lines``, ``fees.by_line``,
@@ -7,7 +7,8 @@ named differently (``docs/reference/portfolio/engine-output.md``), so this modul
 table of that page as code: it renames, selects and reshapes. It computes no figure, with one exception
 (``cda_age_months``, two engine dates subtracted): every number
 is copied from the engine document (percentages the view needs are fields the engine writes,
-``portfolio_pct`` and friends), and every label that says what a fee is comes from the engine.
+``portfolio_pct`` and friends), and every label that says what a fee is comes from the engine. The return, tax and
+market-equivalent blocks write codes only (engine 2.0): their reader text is ``report/labels.py``'s, added here.
 
 The view holds no holder, account or statement-file identifier (the engine's ``statement.holder``
 is not copied), so the Redator's ``assert_masked`` stays true.
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.portfolio.report import labels as reader_text
 from src.portfolio.sections import SCREEN_FAILED, dated_keys, report_gaps, sections_view
 from src.portfolio.sections import codes_text as _codes_text, reason_text
 
@@ -798,9 +800,13 @@ def _returns_view(eng: dict) -> dict | None:
         wins = []
         for wid in order:
             w = (ln.get("windows") or {}).get(wid)
-            if not isinstance(w, dict):  # keep the position: windows[0] is always 12 months, windows[1] 6
-                w = {"status": "nao_avaliado", "status_label": "não avaliado", "reason_code": None}
+            missing = not isinstance(w, dict)
+            if missing:  # keep the position: windows[0] is always 12 months, windows[1] 6
+                w = {"status": "nao_avaliado", "reason_code": None}
             out = {k: v for k, v in w.items() if k not in RETURN_WINDOW_DROP}
+            out["status_label"] = reader_text.RETURN_STATUS.get(w.get("status"))
+            if not missing:  # every engine window carries the gross estimate's label
+                out["gross_label"] = reader_text.GROSS_LABEL
             out.update(
                 id=wid,
                 reason=reason_text(w.get("reason_code")) if w.get("reason_code") or w.get("status") != "avaliado" else None,
@@ -815,9 +821,10 @@ def _returns_view(eng: dict) -> dict | None:
         lines.append({
             "line_id": f"L{ln['line_no']}", "instrument": ln.get("linha_extrato"), "tipo": ln.get("tipo"),
             "cnpj": ln.get("cnpj"), "ticker": ln.get("ticker"), "name": ln.get("name"), "value_brl": ln.get("valor_brl"),
-            "basis": ln.get("basis"), "basis_label": ln.get("basis_label"),
+            "basis": ln.get("basis"), "basis_label": reader_text.RETURN_BASIS.get(ln.get("basis")),
             "without_distributions": ln.get("without_distributions"),
-            "status": ln.get("status"), "status_label": ln.get("status_label"), "reason_code": ln.get("reason_code"),
+            "status": ln.get("status"), "status_label": reader_text.RETURN_STATUS.get(ln.get("status")),
+            "reason_code": ln.get("reason_code"),
             "reason": reason_text(ln.get("reason_code")) if ln.get("reason_code") else None,
             "fee": {"status": fee.get("status"), "reason_code": fee.get("reason_code"),
                     "reason": reason_text(fee.get("reason_code")) if fee.get("reason_code") else None,
@@ -903,12 +910,15 @@ def _equivalents_view(eng: dict) -> dict | None:
         etf_v = None
         if isinstance(etf, dict):
             etf_v = {k: v for k, v in etf.items() if k != "sources"}
+            etf_v.update(pl_label=reader_text.EQUIVALENT_PL, fee_label=reader_text.EQUIVALENT_FEE,
+                         basis_label=reader_text.RETURN_BASIS.get(etf.get("basis")))
             etf_v["fee_reason"] = reason_text(etf.get("fee_reason_code")) if etf.get("fee_reason_code") else None
             etf_v["provenance"] = _prov(etf.get("sources"))
         wins = []
         for w in ln.get("windows") or []:
             out = {k: v for k, v in w.items() if k not in EQUIVALENT_WINDOW_DROP}
             out.update(
+                etf_band_label=reader_text.BANDS.get(w.get("etf_band")), fund_band_label=reader_text.BANDS.get(w.get("fund_band")),
                 etf_reason=reason_text(w.get("etf_reason_code")) if w.get("etf_reason_code") else None,
                 etf_series_reason=reason_text(w.get("etf_series_reason_code")) if w.get("etf_series_reason_code") else None,
                 fund_reason=reason_text(w.get("fund_reason_code")) if w.get("fund_reason_code") else None,
@@ -931,7 +941,7 @@ def _equivalents_view(eng: dict) -> dict | None:
         "label": e.get("label"), "as_of": e.get("as_of"), "end_month": e.get("end_month"),
         "windows": [{k: w.get(k) for k in ("id", "months", "base_month", "end_month", "annualized")} for w in e.get("windows") or []],
         "choice_note": e.get("choice_note"), "class_note": e.get("class_note"), "band_note": e.get("band_note"),
-        "pl_label": e.get("pl_label"), "fee_label": e.get("fee_label"),
+        "pl_label": reader_text.EQUIVALENT_PL, "fee_label": reader_text.EQUIVALENT_FEE,
         "n_fund_lines": e.get("n_fund_lines"), "n_found": e.get("n_found"), "n_without": e.get("n_without"),
         "found_value_brl": e.get("found_value_brl"), "coverage_portfolio_value_pct": e.get("coverage_portfolio_value_pct"),
         "lines": lines,
@@ -957,11 +967,18 @@ def _tax_view(eng: dict) -> dict | None:
     if not isinstance(t, dict):
         return None
     lines = []
+    fee_basis = {fl.get("line_no"): (fl.get("headline") or {}).get("basis") for fl in (eng.get("fees") or {}).get("lines") or []}
     for ln in t.get("lines") or []:
         tax = ln.get("tax") or {}
         est = tax.get("estimate") or {}
-        fee = ln.get("fee") or {}
+        fee = dict(ln.get("fee") or {})
+        # the ETF's third-party fee says where it comes from in the fee block's own words
+        fee["third_party_label"] = fee_basis.get(ln.get("line_no")) if fee.get("third_party") else None
         tax_v = _no_rule_source({k: v for k, v in tax.items() if k not in ("estimate", "reason")})
+        tax_v.update(status_label=reader_text.TAX_STATUS.get(tax.get("status")), rate_text=reader_text.tax_rate_text(tax),
+                     instrument_label=reader_text.tax_instrument_label(tax))
+        for c in tax_v.get("candidates") or []:
+            c["rate_today_text"] = reader_text.pct_text(c.get("rate_today_pct"))
         tax_v["reason"] = reason_text(tax.get("reason_code")) if tax.get("reason_code") else None
         tax_v["act"] = (tax.get("rule_source") or {}).get("act")
         tax_v["estimate"] = {**_no_rule_source({k: v for k, v in est.items() if k != "reason"}),
@@ -972,7 +989,9 @@ def _tax_view(eng: dict) -> dict | None:
             "fee": _no_rule_source(fee),
             "holding": _no_rule_source(ln.get("holding") or {}),
             "tax": tax_v,
-            "pension": _no_rule_source(ln.get("pension")) if ln.get("pension") else None,
+            "pension": ({**_no_rule_source(ln["pension"]), "regime_label": reader_text.PENSION_REGIME,
+                         "base_text": reader_text.PENSION_BASE, "irrevocable_text": reader_text.PENSION_IRREVOCABLE}
+                        if ln.get("pension") else None),
             "optimization": _no_rule_source(ln.get("optimization") or []),
             "iof": _no_rule_source(ln.get("iof")) if ln.get("iof") else None,
             "a_conferir": [{k: a.get(k) for k in ("id", "text", "label", "decides_rate")} for a in ln.get("a_conferir") or []],
@@ -1108,7 +1127,7 @@ def _provenance_view(eng: dict) -> tuple[list[dict], dict[str, str]]:
 
 
 def is_engine_output(doc: dict) -> bool:
-    return str(doc.get("schema_version", "")).startswith("1.") and "statement" in doc and "identification" in doc
+    return str(doc.get("schema_version", "")).startswith(("1.", "2.")) and "statement" in doc and "identification" in doc
 
 
 def to_view(eng: dict) -> dict:
