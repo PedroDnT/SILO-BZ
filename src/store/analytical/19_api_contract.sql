@@ -6026,19 +6026,18 @@ GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT,
 -- ---------------------------------------------------------------------------
 -- The same JSON serve/catalog.py's catalog_payload() serves at /v1/catalog,
 -- as one jsonb constant, so an agent on the Data API can self-describe
--- without the local adapter. An offline test
--- (tests/test_api_contract_sql.py) pins this literal to catalog_payload()
--- by deep equality — editing serve/catalog.py without regenerating this
--- block fails CI, and vice versa. Regenerate with:
---   .venv/bin/python -c "import json; from serve.catalog import catalog_payload; print(json.dumps(catalog_payload(), indent=2, ensure_ascii=False))"
--- Catalog changes bump CATALOG_VERSION in serve/catalog.py (mirrored in the
--- "version" key below).
+-- without the local adapter. The statement between the GENERATED markers is
+-- written by scripts/gen_catalog_sql.py from catalog_payload(); edit
+-- serve/catalog.py and rerun it, never the block. tests/test_api_contract_sql.py
+-- fails while the block is stale. Catalog changes bump CATALOG_VERSION in
+-- serve/catalog.py (the "version" key below follows it).
 --
 -- SECURITY INVOKER (the file-wide DEFINER rule does not apply): the body
 -- reads no relation at all — it returns a constant — so DEFINER would grant
 -- owner rights for nothing. INVOKER is the minimal privilege, and with no
 -- object references there is no search_path surface to pin.
 
+-- BEGIN GENERATED api.catalog() (scripts/gen_catalog_sql.py) — do not edit
 CREATE OR REPLACE FUNCTION api.catalog()
 RETURNS jsonb
 LANGUAGE sql
@@ -7125,6 +7124,7 @@ SELECT $json${
 }
 $json$::jsonb;
 $fn$;
+-- END GENERATED api.catalog()
 
 COMMENT ON FUNCTION api.catalog() IS
     'Machine-readable metric/constraint catalog, identical to serve/ /v1/catalog (pinned by an offline test). Constant jsonb; SECURITY INVOKER because it reads nothing.';
