@@ -28,7 +28,7 @@ import re
 import sys
 import os
 from datetime import date, datetime, timezone
-from typing import Any, Awaitable, Dict, List, Optional, Set, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -233,12 +233,12 @@ class IngestTask:
 class SliceFailure:
     """One (entity, doc_type, period) that this run recorded as 'error'.
 
-    Exists because every ingest_* method catches its own exception, writes the
-    audit row and returns 0 — so a run could finish with a third of history
-    missing and still exit 0 (the 2026-08-27 balancete backfill did exactly
-    that). The ledger carries that fact back to the CLI without changing the
-    `-> int` contract of ~50 ingest methods or the one-audit-row-per-attempt
-    rule.
+    Exists because every ingest_* method used to catch its own exception,
+    write the audit row and return 0 — so a run could finish with a third of
+    history missing and still exit 0 (the 2026-08-27 balancete backfill did
+    exactly that). Since #691 a failed slice also raises CVMSliceError; the
+    ledger is still how a run collects every failed slice before it raises
+    CVMRunFailed, and how the CLI names them.
     """
     entity: str
     doc_type: str
@@ -257,6 +257,36 @@ class SliceFailure:
         if self.year:
             period = f" {self.year}" + (f"-{self.month:02d}" if self.month else "")
         return f"{self.entity}/{self.doc_type}{period}: {self.error}"
+
+
+class CVMSliceError(RuntimeError):
+    """One or more CVM slices ended 'error' (owner decision, 2026-10-06, #691).
+
+    Raised by CVMIngestor._audited AFTER the slice's 'error' audit row and its
+    failure-ledger entry are written. A 'skipped' slice (CVM has not published
+    it) never raises. The orchestrators (daily_update, backfill) catch it per
+    slice, so one failed slice does not stop the others, and raise
+    CVMRunFailed at the end.
+    """
+
+    def __init__(self, failures: List[SliceFailure]) -> None:
+        self.failures = list(failures)
+        first = str(self.failures[0]) if self.failures else "unknown slice"
+        more = f" (+{len(self.failures) - 1} more)" if len(self.failures) > 1 else ""
+        super().__init__(f"CVM slice failed: {first}{more}")
+
+
+class CVMRunFailed(RuntimeError):
+    """A CVM daily_update or backfill finished with failed slices.
+
+    Raised after every slice has run. ``totals`` holds the rows that did land,
+    ``failures`` the failed slices, so a caller can report both.
+    """
+
+    def __init__(self, failures: List[SliceFailure], totals: Dict[str, int]) -> None:
+        self.failures = list(failures)
+        self.totals = dict(totals)
+        super().__init__(f"{len(self.failures)} failed CVM slice(s)")
 
 
 # ---------------------------------------------------------------------------
@@ -629,6 +659,10 @@ class CVMIngestor:
         for task, result in zip(tasks, results):
             if isinstance(result, int):
                 totals[task.table] += result
+            elif isinstance(result, CVMSliceError):
+                # Already in the ledger and in cvm_ingest_log (_audited wrote
+                # both before it raised). Recording it again would count it twice.
+                continue
             else:
                 logger.error("%s failed [%s]: %s", label, task.description, result)
                 # An exception that escaped the ingest method itself never
@@ -676,7 +710,8 @@ class CVMIngestor:
         error: Optional[str] = None,
         fetched: Optional[int] = None,
         deleted: Optional[int] = None,
-    ) -> None:
+    ) -> str:
+        # Returns the status it resolved: 'ok', 'skipped' or 'error'.
         # `deleted` is how many stored rows a per-fund replace removed (the
         # monthly CDA blocks, migration 68). It is written only when given, so
         # every other slice leaves rows_deleted NULL ("does not replace"), not 0.
@@ -704,6 +739,17 @@ class CVMIngestor:
             self._record_failure(run_id, error or "unknown error", rows)
         elif status == "skipped":
             self._record_skip(run_id, error or "not published")
+        self._write_finish(run_id, rows, status, error, deleted)
+        return status
+
+    def _write_finish(
+        self,
+        run_id: str,
+        rows: int,
+        status: str,
+        error: Optional[str],
+        deleted: Optional[int],
+    ) -> None:
         # The shared connection may have idled out during a long fetch (CVM
         # hangs of 15+ min killed it in the 2026-06-10 backfill, leaving every
         # slice stuck 'running'). Reconnect once and retry so the audit log
@@ -772,6 +818,76 @@ class CVMIngestor:
             period_year=year, period_month=month, upsert=upsert_rows,
             rows_deleted=deleted,
         )
+
+    async def _audited(
+        self,
+        entity: str,
+        doc_type: str,
+        year: Optional[int],
+        month: Optional[int],
+        work: Callable[[], Awaitable[Union[int, Tuple[int, int]]]],
+        *,
+        stats: Optional[Dict[str, int]] = None,
+    ) -> int:
+        """Run one CVM slice under one cvm_ingest_log row. Returns its rows.
+
+        The one copy of the start / try / finish block every ingest_* method
+        used to repeat (#691). ``work`` is a zero-arg coroutine factory. It
+        returns the rows upserted, or ``(rows, fetched)`` when it knows how
+        many source rows it read (``_classify_finish`` turns "fetched rows,
+        upserted none" into an error).
+
+        * 'ok': returns the rows.
+        * 'skipped' (CVM has not published the slice, e.g. a 404): returns 0.
+        * 'error': writes the 'error' row and the ledger entry, then raises
+          CVMSliceError, as BACEN does (owner decision, 2026-10-06). The
+          orchestrators catch it per slice and fail the run at the end.
+
+        ``stats`` is the CDA blocks' counter: its ``rows_deleted`` goes to the
+        audit row, also when a later batch failed after earlier ones committed.
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, entity, doc_type, year, month)
+        name = f"{entity}/{doc_type}"
+        if year:
+            name += f" {year}" + (f"-{month:02d}" if month else "")
+        try:
+            result = await work()
+        except Exception as exc:
+            logger.warning("ingest %s failed: %s", name, _describe(exc))
+            # rows_deleted only for a slice that replaces rows; NULL otherwise.
+            extra = {} if stats is None else {"deleted": stats.get("rows_deleted") or None}
+            status = self._log_finish(run_id, 0, _describe(exc), **extra)
+            if status == "error":
+                raise CVMSliceError([self.failures[-1]]) from exc
+            return 0
+        rows, fetched = result if isinstance(result, tuple) else (result, None)
+        extra = {} if stats is None else {"deleted": stats.get("rows_deleted", 0)}
+        status = self._log_finish(run_id, rows, fetched=fetched, **extra)
+        if status == "error":
+            # The data contract: source rows fetched, none upserted.
+            raise CVMSliceError([self.failures[-1]])
+        logger.info("%s: %d rows", name, rows)
+        return rows
+
+    async def _isolated(self, operation: Awaitable[int]) -> int:
+        """Await one slice for an orchestrator; a failed slice counts 0 rows.
+
+        Only CVMSliceError is caught: its audit row and ledger entry are
+        already written, and daily_update / backfill raise CVMRunFailed for it
+        after the other slices ran. Any other exception propagates.
+        """
+        try:
+            return await operation
+        except CVMSliceError:
+            return 0
+
+    def _raise_if_failed(self, totals: Dict[str, int]) -> None:
+        """End of a run: raise CVMRunFailed when any slice ended 'error'."""
+        if self.failures:
+            for failure in self.failures:
+                logger.error("CVM slice failed: %s", failure)
+            raise CVMRunFailed(self.failures, totals)
 
     def _monthly_targets(self, entity: str, doc_type: str, today: date) -> List[Tuple[int, int]]:
         """Months a daily run should fetch for a monthly (entity, doc_type).
@@ -869,19 +985,10 @@ class CVMIngestor:
     # ------------------------------------------------------------------
 
     async def ingest_fi_diario(self, year: int, month: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", "inf_diario", year, month)
-        rows_inserted = 0
-        try:
+        async def work():
             raw_rows = await self._fetch_all_pages("fi", "inf_diario", year, month)
-            rows_inserted = await self._store(ingest_fi_diario, self._supabase, raw_rows)
-        except Exception as exc:
-            logger.warning("ingest_fi_diario %d-%02d failed: %s", year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/inf_diario %d-%02d: %d rows", year, month, rows_inserted)
-        return rows_inserted
+            return await self._store(ingest_fi_diario, self._supabase, raw_rows), len(raw_rows)
+        return await self._audited("fi", "inf_diario", year, month, work)
 
     # ------------------------------------------------------------------
     # FI — historical daily snapshot (2000-2020) from HIST/ yearly ZIPs
@@ -902,40 +1009,39 @@ class CVMIngestor:
         Flushes every _PAGE_SIZE records to keep peak memory manageable (a full
         year of FI daily rows does not fit comfortably in memory at once).
         """
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", "inf_diario", year, None)
-        rows_inserted = 0
-        fetched = 0
-        errors: List[str] = []
-        for month in range(1, 13):
-            try:
-                raw_rows = await self._fetch_all_pages("fi", "hist_inf_diario", year, month)
-            except Exception as exc:
-                # A month missing from an old archive is normal (the series starts
-                # mid-year in 2000). Record it and keep going — the other months
-                # are still real data.
-                logger.warning("ingest_fi_hist_diario %d-%02d failed: %s", year, month, _describe(exc))
-                errors.append(f"{month:02d}: {exc}")
-                continue
-            fetched += len(raw_rows)
-            chunk: List[Dict[str, Any]] = []
-            for row in raw_rows:
-                chunk.append(row)
-                if len(chunk) >= _PAGE_SIZE:
+        async def work():
+            rows_inserted = 0
+            fetched = 0
+            errors: List[str] = []
+            for month in range(1, 13):
+                try:
+                    raw_rows = await self._fetch_all_pages("fi", "hist_inf_diario", year, month)
+                except Exception as exc:
+                    # A month missing from an old archive is normal (the series
+                    # starts mid-year in 2000). Record it and keep going — the
+                    # other months are still real data.
+                    logger.warning("ingest_fi_hist_diario %d-%02d failed: %s", year, month, _describe(exc))
+                    errors.append(f"{month:02d}: {exc}")
+                    continue
+                fetched += len(raw_rows)
+                chunk: List[Dict[str, Any]] = []
+                for row in raw_rows:
+                    chunk.append(row)
+                    if len(chunk) >= _PAGE_SIZE:
+                        rows_inserted += ingest_fi_diario(self._supabase, chunk)
+                        chunk = []
+                if chunk:
                     rows_inserted += ingest_fi_diario(self._supabase, chunk)
-                    chunk = []
-            if chunk:
-                rows_inserted += ingest_fi_diario(self._supabase, chunk)
-
-        if errors and rows_inserted == 0:
-            self._log_finish(run_id, 0, "; ".join(errors))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=fetched)
-        logger.info(
-            "fi/hist_inf_diario %d: %d rows from %d month(s)",
-            year, rows_inserted, 12 - len(errors),
-        )
-        return rows_inserted
+            if errors and rows_inserted == 0:
+                # Every month failed: the slice fails (or is skipped, when the
+                # messages say CVM has not published it), as before.
+                raise RuntimeError("; ".join(errors))
+            logger.info(
+                "fi/hist_inf_diario %d: %d rows from %d month(s)",
+                year, rows_inserted, 12 - len(errors),
+            )
+            return rows_inserted, fetched
+        return await self._audited("fi", "inf_diario", year, None, work)
 
     # ------------------------------------------------------------------
     # FI — historical portfolio composition (2005-2022) from HIST/ ZIPs
@@ -943,10 +1049,8 @@ class CVMIngestor:
 
     async def ingest_fi_hist_cda(self, year: int) -> int:
         """Ingest one full year of historical FI portfolio composition from HIST/."""
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", "cda", year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fi", "hist_cda", year, None)
             # Flush in chunks: a yearly archive does not fit comfortably in memory.
             chunk: List[Dict[str, Any]] = []
@@ -963,13 +1067,8 @@ class CVMIngestor:
                     chunk = []
             if chunk:
                 rows_inserted += ingest_fi_cda(self._supabase, chunk, year, None)
-        except Exception as exc:
-            logger.warning("ingest_fi_hist_cda %d failed: %s", year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/hist_cda %d: %d rows", year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fi", "cda", year, None, work)
 
     async def _ingest_hist_cda_block(self, doc_type: str, dataset: str, fn: Any, year: int) -> int:
         """One yearly HIST holdings block (BLC_4 or BLC_2).
@@ -985,10 +1084,8 @@ class CVMIngestor:
         `cda`. Sharing the aggregate's audit rows would make a failed holdings
         year look like a successful CDA year to the backfill coverage gate.
         """
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", doc_type, year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fi", dataset, year, None)
             chunk: List[Dict[str, Any]] = []
             for row in raw_rows:
@@ -998,13 +1095,8 @@ class CVMIngestor:
                     chunk = []
             if chunk:
                 rows_inserted += fn(self._supabase, chunk, year, None)
-        except Exception as exc:
-            logger.warning("ingest_fi_hist_%s %d failed: %s", doc_type, year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/hist_%s %d: %d rows", doc_type, year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fi", doc_type, year, None, work)
 
     async def ingest_fi_hist_cda_acoes(self, year: int) -> int:
         """One year of pre-2023 equity holdings (CDA block 4) from HIST/."""
@@ -1040,31 +1132,21 @@ class CVMIngestor:
         own cvm_ingest_log row: if block 4 parses and block 2 does not, the
         audit log has to say so per slice, not report one blended outcome.
         """
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", doc_type, year, month)
-        rows_inserted = 0
         # Each fund in the file replaces its stored rows of this month
         # (ingest_fi._store_cda_block); the rows that removed go in the slice's
         # rows_deleted, also when a later batch fails after earlier ones
         # committed.
         stats: Dict[str, int] = {"rows_deleted": 0}
-        try:
+
+        async def work():
             raw_rows = await self._fetch_all_pages("fi", doc_type, year, month)
             rows_inserted = await self._store(fn, self._supabase, raw_rows, year, month, stats)
-        except Exception as exc:
-            logger.warning("ingest fi/%s %d-%02d failed: %s", doc_type, year, month, _describe(exc))
-            self._log_finish(
-                run_id, 0, _describe(exc), deleted=stats["rows_deleted"] or None
+            logger.info(
+                "fi/%s %d-%02d: %d stale rows removed", doc_type, year, month,
+                stats["rows_deleted"],
             )
-            return 0
-        self._log_finish(
-            run_id, rows_inserted, fetched=len(raw_rows), deleted=stats["rows_deleted"]
-        )
-        logger.info(
-            "fi/%s %d-%02d: %d rows, %d stale removed",
-            doc_type, year, month, rows_inserted, stats["rows_deleted"],
-        )
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fi", doc_type, year, month, work, stats=stats)
 
     async def ingest_fi_cda_acoes(self, year: int, month: int) -> int:
         """FI equity holdings — the fund-to-ticker edge."""
@@ -1085,19 +1167,12 @@ class CVMIngestor:
     # ------------------------------------------------------------------
 
     async def ingest_fi_perfil(self, year: int, month: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", "perfil_mensal", year, month)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fi", "perfil_mensal", year, month)
             rows_inserted = await self._store(ingest_fi_perfil, self._supabase, raw_rows, year, month)
-        except Exception as exc:
-            logger.warning("ingest_fi_perfil %d-%02d failed: %s", year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/perfil_mensal %d-%02d: %d rows", year, month, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fi", "perfil_mensal", year, month, work)
 
     # ------------------------------------------------------------------
     # FI — lamina (CVM fi-doc-lamina): the fees and redemption terms a fund files
@@ -1110,19 +1185,12 @@ class CVMIngestor:
         members; they are not ingested. A month CVM has not published 404s and is
         logged `skipped` by _log_finish, not `error`.
         """
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", "lamina", year, month)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fi", "lamina", year, month)
             rows_inserted = await self._store(ingest_fi_lamina, self._supabase, raw_rows)
-        except Exception as exc:
-            logger.warning("ingest_fi_lamina %d-%02d failed: %s", year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/lamina %d-%02d: %d rows", year, month, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fi", "lamina", year, month, work)
 
     # ------------------------------------------------------------------
     # FI - Extrato das Informacoes (CVM fi-doc-extrato): the fees and terms a fund files
@@ -1136,21 +1204,14 @@ class CVMIngestor:
         logged `skipped` by _log_finish, not `error`. Only cvm_fi_extrato is
         written; no other table is locked.
         """
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", "extrato", None, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fi", "extrato", None, None)
             rows_inserted = await self._store(
                 ingest_fi_extrato, self._supabase, raw_rows, "extrato_fi.csv",
             )
-        except Exception as exc:
-            logger.warning("ingest_fi_extrato failed: %s", _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/extrato: %d rows", rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fi", "extrato", None, None, work)
 
     async def ingest_fi_extrato_ano(self, year: int) -> int:
         """One extrato_fi_YYYY.csv: every version filed in that year.
@@ -1158,50 +1219,34 @@ class CVMIngestor:
         Yearly, so the audit row carries period_year and a NULL month. The files
         are refreshed weekly with re-filings; history from 2021 is backfill's job.
         """
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", "extrato_ano", year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fi", "extrato_ano", year, None)
             rows_inserted = await self._store(
                 ingest_fi_extrato, self._supabase, raw_rows, f"extrato_fi_{year}.csv",
             )
-        except Exception as exc:
-            logger.warning("ingest_fi_extrato_ano %d failed: %s", year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/extrato_ano %d: %d rows", year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fi", "extrato_ano", year, None, work)
 
     # ------------------------------------------------------------------
     # FI — monthly balance sheet  (BALANCETE)
     # ------------------------------------------------------------------
 
     async def ingest_fi_balancete(self, year: int, month: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", "balancete", year, month)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fi", "balancete", year, month)
             rows_inserted = await self._store(ingest_fi_balancete, self._supabase, raw_rows)
-        except Exception as exc:
-            logger.warning("ingest_fi_balancete %d-%02d failed: %s", year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/balancete %d-%02d: %d rows", year, month, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fi", "balancete", year, month, work)
 
     # ------------------------------------------------------------------
     # FIDC — monthly snapshot (current 2025+ format)
     # ------------------------------------------------------------------
 
     async def ingest_fidc_mensal(self, year: int, month: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fidc", "mensal", year, month)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fidc", "mensal", year, month)
             # tab_IV has no delinquency column; the figure downstream screens
             # read lives in tab_VI of the same ZIP. A tab_VI failure must not
@@ -1225,13 +1270,8 @@ class CVMIngestor:
                 )
                 rows_ii = []
             rows_inserted = ingest_fidc_mensal(self._supabase, raw_rows, rows_vi, rows_ii)
-        except Exception as exc:
-            logger.warning("ingest_fidc_mensal %d-%02d failed: %r", year, month, exc)
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fidc/mensal %d-%02d: %d rows", year, month, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fidc", "mensal", year, month, work)
 
     # ------------------------------------------------------------------
     # FIDC — historical monthly data (2013-2024) from HIST/ yearly ZIPs
@@ -1239,12 +1279,12 @@ class CVMIngestor:
 
     async def ingest_fidc_hist_mensal(self, year: int) -> int:
         """Ingest one full year of historical FIDC monthly data from HIST/."""
+        # Twelve slices, one audit row each. A failed month does not stop the
+        # other eleven; the year raises once, after all twelve ran.
         total = 0
+        failed: List[SliceFailure] = []
         for month in range(1, 13):
-            run_id = str(uuid4())
-            self._log_start(run_id, "fidc", "mensal", year, month)
-            rows_inserted = 0
-            try:
+            async def work(month: int = month) -> int:
                 rows_ii, rows_iii = await asyncio.gather(
                     self._fetch_all_pages("fidc", "hist_mensal_tab_ii", year, month),
                     self._fetch_all_pages("fidc", "hist_mensal_tab_iii", year, month),
@@ -1313,17 +1353,16 @@ class CVMIngestor:
                         "raw":           residual,
                     })
 
-                rows_inserted = upsert_rows(
+                return upsert_rows(
                     self._supabase, "cvm_fidc_mensal", records,
                     conflict_columns="cnpj,period",
                 )
-            except Exception as exc:
-                logger.warning("ingest_fidc_hist_mensal %d-%02d failed: %s", year, month, _describe(exc))
-                self._log_finish(run_id, 0, _describe(exc))
-                continue
-            self._log_finish(run_id, rows_inserted)
-            logger.info("fidc/hist_mensal %d-%02d: %d rows", year, month, rows_inserted)
-            total += rows_inserted
+            try:
+                total += await self._audited("fidc", "mensal", year, month, work)
+            except CVMSliceError as exc:
+                failed.extend(exc.failures)
+        if failed:
+            raise CVMSliceError(failed)
         return total
 
     # ------------------------------------------------------------------
@@ -1334,10 +1373,8 @@ class CVMIngestor:
     # covers 2013-present, as for the concentration tabs below.
 
     async def ingest_fidc_tranche(self, year: int, month: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fidc", "mensal_tab_x2", year, month)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             rows_x2, rows_x3, rows_x6 = await asyncio.gather(
                 self._fetch_all_pages("fidc", _fidc_tab_doc_type("x2", year), year, month),
                 self._fetch_all_pages("fidc", _fidc_tab_doc_type("x3", year), year, month),
@@ -1346,48 +1383,26 @@ class CVMIngestor:
             rows_inserted = ingest_fidc_tranche(
                 self._supabase, rows_x2, rows_x3, rows_x6, year, month
             )
-        except Exception as exc:
-            logger.warning("ingest_fidc_tranche %d-%02d failed: %s", year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(
-            run_id, rows_inserted,
-            fetched=len(rows_x2) + len(rows_x3) + len(rows_x6),
-        )
-        logger.info("fidc/tranche %d-%02d: %d rows", year, month, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(rows_x2) + len(rows_x3) + len(rows_x6)
+        return await self._audited("fidc", "mensal_tab_x2", year, month, work)
 
     async def ingest_fidc_tranche_flows(self, year: int, month: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fidc", "mensal_tab_x4", year, month)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fidc", _fidc_tab_doc_type("x4", year), year, month)
             rows_inserted = ingest_fidc_tranche_flows(self._supabase, raw_rows)
-        except Exception as exc:
-            logger.warning("ingest_fidc_tranche_flows %d-%02d failed: %s", year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fidc/tranche_flows %d-%02d: %d rows", year, month, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fidc", "mensal_tab_x4", year, month, work)
 
     async def ingest_fidc_aging(self, year: int, month: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fidc", "mensal_tab_vi", year, month)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages(
                 "fidc", _fidc_tab_doc_type("vi", year), year, month,
             )
             rows_inserted = ingest_fidc_aging(self._supabase, raw_rows)
-        except Exception as exc:
-            logger.warning("ingest_fidc_aging %d-%02d failed: %s", year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fidc/aging %d-%02d: %d rows", year, month, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fidc", "mensal_tab_vi", year, month, work)
 
     # ------------------------------------------------------------------
     # FIDC — concentration and credit quality (tabs I, II, VIII, X, X_7; both eras)
@@ -1400,22 +1415,15 @@ class CVMIngestor:
     async def _ingest_fidc_tab(
         self, tab: str, label: str, store: Any, year: int, month: int,
     ) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fidc", f"mensal_tab_{tab}", year, month)
-        rows_inserted = 0
         raw_rows: List[Dict[str, Any]] = []
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages(
                 "fidc", _fidc_tab_doc_type(tab, year), year, month,
             )
             rows_inserted = store(self._supabase, raw_rows)
-        except Exception as exc:
-            logger.warning("ingest_fidc_%s %d-%02d failed: %s", label, year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fidc/%s %d-%02d: %d rows", label, year, month, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fidc", f"mensal_tab_{tab}", year, month, work)
 
     async def ingest_fidc_setor(self, year: int, month: int) -> int:
         return await self._ingest_fidc_tab("ii", "setor", ingest_fidc_setor, year, month)
@@ -1437,38 +1445,24 @@ class CVMIngestor:
     # ------------------------------------------------------------------
 
     async def ingest_fiagro_mensal(self, year: int, month: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fiagro", "mensal", year, month)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fiagro", "mensal", year, month)
             rows_inserted = ingest_fiagro_mensal(self._supabase, raw_rows)
-        except Exception as exc:
-            logger.warning("ingest_fiagro_mensal %d-%02d failed: %s", year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fiagro/mensal %d-%02d: %d rows", year, month, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fiagro", "mensal", year, month, work)
 
     # ------------------------------------------------------------------
     # FIP — periodic (trimestral / inf_quadrimestral)
     # ------------------------------------------------------------------
 
     async def ingest_fip_periodic(self, doc_type: str, year: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fip", doc_type, year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fip", doc_type, year, None)
             rows_inserted = ingest_fip_periodic(self._supabase, raw_rows, doc_type, year)
-        except Exception as exc:
-            logger.warning("ingest_fip_periodic %s %d failed: %s", doc_type, year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fip/%s %d: %d rows", doc_type, year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fip", doc_type, year, None, work)
 
     # ------------------------------------------------------------------
     # FII — monthly (mensal_geral, mensal_ativo_passivo, mensal_complemento)
@@ -1476,38 +1470,24 @@ class CVMIngestor:
 
     async def ingest_fii_mensal(self, doc_type: str, year: int) -> int:
         """doc_type is one of: mensal_geral | mensal_ativo_passivo | mensal_complemento."""
-        run_id = str(uuid4())
-        self._log_start(run_id, "fii", doc_type, year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fii", doc_type, year, None)
             rows_inserted = ingest_fii_mensal(self._supabase, raw_rows, doc_type)
-        except Exception as exc:
-            logger.warning("ingest_fii_mensal %s %d failed: %s", doc_type, year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fii/%s %d: %d rows", doc_type, year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fii", doc_type, year, None, work)
 
     # ------------------------------------------------------------------
     # FII — periodic (trimestral, anual, dfin)
     # ------------------------------------------------------------------
 
     async def ingest_fii_periodic(self, doc_type: str, year: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fii", doc_type, year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fii", doc_type, year, None)
             rows_inserted = ingest_fii_periodic(self._supabase, raw_rows, doc_type, year)
-        except Exception as exc:
-            logger.warning("ingest_fii_periodic %s %d failed: %s", doc_type, year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fii/%s %d: %d rows", doc_type, year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fii", doc_type, year, None, work)
 
     # ------------------------------------------------------------------
     # FII — property register (INF_TRIMESTRAL _imovel_ member -> cvm_fii_imovel)
@@ -1518,19 +1498,12 @@ class CVMIngestor:
     # ------------------------------------------------------------------
 
     async def ingest_fii_imovel(self, year: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fii", "trimestral_imovel", year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fii", "trimestral_imovel", year, None)
             rows_inserted = ingest_fii_imovel(self._supabase, raw_rows, year)
-        except Exception as exc:
-            logger.warning("ingest_fii_imovel %d failed: %s", year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fii/trimestral_imovel %d: %d rows", year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("fii", "trimestral_imovel", year, None, work)
 
     # ------------------------------------------------------------------
     # Fund registry — DENOM_SOCIAL + status from CVM cadastral files
@@ -1540,22 +1513,15 @@ class CVMIngestor:
         """Ingest fund registry from CVM cadastral static CSVs for fi and fii."""
         if entity not in ("fi", "fii"):
             return 0
-        run_id = str(uuid4())
-        self._log_start(run_id, entity, "cad", None, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages(entity, "cad", None, None)
             if entity == "fi":
                 rows_inserted = ingest_fund_registry_fi(self._supabase, raw_rows)
             else:
                 rows_inserted = ingest_fund_registry(self._supabase, raw_rows, entity)
-        except Exception as exc:
-            logger.warning("ingest_fund_registry %s failed: %s", entity, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("%s/cad: %d rows", entity, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited(entity, "cad", None, None, work)
 
     async def ingest_fund_registry_cvm175(self) -> int:
         """Ingest the CVM-175 unified registry: registro_fundo, registro_classe
@@ -1578,24 +1544,22 @@ class CVMIngestor:
             ingest_fund_registry_cvm175, ingest_registro_level,
         )
 
+        # Three slices; a failed member does not stop the other two, and the
+        # call raises once, after all three ran.
         total = 0
+        failed: List[SliceFailure] = []
         for doc_type in ("registro_fundo", "registro_classe", "registro_subclasse"):
-            run_id = str(uuid4())
-            self._log_start(run_id, "fi", doc_type, None, None)
-            rows = 0
-            raw_rows: List[Dict[str, Any]] = []
-            try:
+            async def work(doc_type: str = doc_type):
                 raw_rows = await self._fetch_all_pages("fi", doc_type, None, None)
                 if doc_type != "registro_subclasse":
                     ingest_fund_registry_cvm175(self._supabase, raw_rows)
-                rows = ingest_registro_level(self._supabase, raw_rows, doc_type)
-            except Exception as exc:
-                logger.warning("ingest_fund_registry_cvm175 %s failed: %s", doc_type, _describe(exc))
-                self._log_finish(run_id, 0, _describe(exc))
-                continue
-            self._log_finish(run_id, rows, fetched=len(raw_rows))
-            logger.info("fi/%s: %d rows", doc_type, rows)
-            total += rows
+                return ingest_registro_level(self._supabase, raw_rows, doc_type), len(raw_rows)
+            try:
+                total += await self._audited("fi", doc_type, None, None, work)
+            except CVMSliceError as exc:
+                failed.extend(exc.failures)
+        if failed:
+            raise CVMSliceError(failed)
         return total
 
     # ------------------------------------------------------------------
@@ -1606,92 +1570,57 @@ class CVMIngestor:
         """Load the curated ETF seed, enrich from cad_fi, upsert cvm_etf_registry."""
         from src.pipeline.ingest_etf import load_etf_seed, ingest_etf_registry
 
-        run_id = str(uuid4())
-        self._log_start(run_id, "etf", "registry", None, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             seed = load_etf_seed()
             cad_rows = await self._fetch_all_pages("fi", "cad", None, None)
             rows_inserted = ingest_etf_registry(self._supabase, seed, cad_rows)
-        except Exception as exc:
-            logger.warning("ingest_etf_registry failed: %s", _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted)
-        logger.info("etf/registry: %d rows", rows_inserted)
-        return rows_inserted
+            return rows_inserted
+        return await self._audited("etf", "registry", None, None, work)
 
     # ------------------------------------------------------------------
     # SECURIT — per-series data (classe CSV) and cash flows (fluxo_caixa CSV)
     # ------------------------------------------------------------------
 
     async def ingest_securit_serie(self, doc_type: str, year: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "securit", doc_type, year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("securit", doc_type, year, None)
             rows_inserted = ingest_securit_serie(self._supabase, raw_rows, doc_type, year)
-        except Exception as exc:
-            logger.warning("ingest_securit_serie %s %d failed: %s", doc_type, year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("securit/%s %d: %d rows", doc_type, year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("securit", doc_type, year, None, work)
 
     async def ingest_securit_fluxo(self, doc_type: str, year: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "securit", doc_type, year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("securit", doc_type, year, None)
             rows_inserted = ingest_securit_fluxo(self._supabase, raw_rows, doc_type, year)
-        except Exception as exc:
-            logger.warning("ingest_securit_fluxo %s %d failed: %s", doc_type, year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("securit/%s %d: %d rows", doc_type, year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("securit", doc_type, year, None, work)
 
     # ------------------------------------------------------------------
     # SECURIT — monthly emissions (cra_mensal, cri_mensal, ots_mensal)
     # ------------------------------------------------------------------
 
     async def ingest_securit_mensal(self, instrument_type: str, year: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "securit", instrument_type, year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("securit", instrument_type, year, None)
             rows_inserted = ingest_securit_mensal(self._supabase, raw_rows, instrument_type, year)
-        except Exception as exc:
-            logger.warning("ingest_securit_mensal %s %d failed: %s", instrument_type, year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("securit/%s %d: %d rows", instrument_type, year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("securit", instrument_type, year, None, work)
 
     # ------------------------------------------------------------------
     # SECURIT — financial statements (dfin_cra, dfin_cri)
     # ------------------------------------------------------------------
 
     async def ingest_securit_dfin(self, instrument_type: str, year: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "securit", instrument_type, year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("securit", instrument_type, year, None)
             rows_inserted = ingest_securit_dfin(self._supabase, raw_rows, instrument_type, year)
-        except Exception as exc:
-            logger.warning("ingest_securit_dfin %s %d failed: %s", instrument_type, year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("securit/%s %d: %d rows", instrument_type, year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("securit", instrument_type, year, None, work)
 
     # ------------------------------------------------------------------
     # CIA_ABERTA — company registry (CAD, static single CSV)
@@ -1704,19 +1633,12 @@ class CVMIngestor:
         and once per daily-update invocation. Follows the same shape as
         ingest_fund_registry.
         """
-        run_id = str(uuid4())
-        self._log_start(run_id, "cia_aberta", "cad", None, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("cia_aberta", "cad", None, None)
             rows_inserted = ingest_cia_company(self._supabase, raw_rows)
-        except Exception as exc:
-            logger.warning("ingest_cia_cad failed: %s", _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("cia_aberta/cad: %d rows", rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("cia_aberta", "cad", None, None, work)
 
     # ------------------------------------------------------------------
     # CIA_ABERTA — IPE material-facts feed (yearly ZIP, one CSV inside)
@@ -1724,19 +1646,12 @@ class CVMIngestor:
 
     async def ingest_cia_ipe(self, year: int) -> int:
         """Ingest one full year of IPE press events into cia_event."""
-        run_id = str(uuid4())
-        self._log_start(run_id, "cia_aberta", "ipe", year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages("cia_aberta", "ipe", year, None)
             rows_inserted = ingest_cia_event(self._supabase, raw_rows)
-        except Exception as exc:
-            logger.warning("ingest_cia_ipe %d failed: %s", year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("cia_aberta/ipe %d: %d rows", year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("cia_aberta", "ipe", year, None, work)
 
     # ------------------------------------------------------------------
     # CIA_ABERTA — FCA valores mobiliários (the published CNPJ↔ticker map)
@@ -1749,21 +1664,14 @@ class CVMIngestor:
         csv_name_pattern selects only the valor_mobiliario one. ~1k rows per
         year — CVM's published company↔ticker mapping.
         """
-        run_id = str(uuid4())
-        self._log_start(run_id, "cia_aberta", "fca_valor_mobiliario", year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             raw_rows = await self._fetch_all_pages(
                 "cia_aberta", "fca_valor_mobiliario", year, None
             )
             rows_inserted = ingest_cia_ticker(self._supabase, raw_rows)
-        except Exception as exc:
-            logger.warning("ingest_cia_fca %d failed: %s", year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("cia_aberta/fca_valor_mobiliario %d: %d rows", year, rows_inserted)
-        return rows_inserted
+            return rows_inserted, len(raw_rows)
+        return await self._audited("cia_aberta", "fca_valor_mobiliario", year, None, work)
 
     # ------------------------------------------------------------------
     # CIA_ABERTA — ITR / DFP financial statements (yearly ZIP, ~19 CSVs)
@@ -1776,10 +1684,8 @@ class CVMIngestor:
         and the scoped statement members (BPA/BPP/DRE/DFC_*/DMPL/DRA/DVA × con/ind)
         to cia_account. Returns the combined upserted row count.
         """
-        run_id = str(uuid4())
-        self._log_start(run_id, "cia_aberta", doc_type, year, None)
-        rows_inserted = 0
-        try:
+        async def work():
+            rows_inserted = 0
             # One pass over a lazy iterator: each member is parsed, upserted and
             # released before the next is read, so peak memory is one member,
             # not the whole ~19-CSV archive.
@@ -1804,16 +1710,11 @@ class CVMIngestor:
                     "— likely a bad fetch; re-run this slice serially",
                     doc_type, year, n_members, account_members,
                 )
-        except Exception as exc:
-            logger.warning("ingest_cia_itr_dfp %s %d failed: %s", doc_type, year, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        # account_members counts the source rows seen; the contract in _log_finish
-        # turns "saw source rows, wrote none" into an error rather than the
-        # warning-only check above.
-        self._log_finish(run_id, rows_inserted, fetched=account_members)
-        logger.info("cia_aberta/%s %d: %d rows", doc_type, year, rows_inserted)
-        return rows_inserted
+            # account_members counts the source rows seen; the contract in
+            # _log_finish turns "saw source rows, wrote none" into an error
+            # rather than the warning-only check above.
+            return rows_inserted, account_members
+        return await self._audited("cia_aberta", doc_type, year, None, work)
 
     def _held_cia_documents(
         self, doc_type: str, ref_dates: List[date]
@@ -1860,11 +1761,9 @@ class CVMIngestor:
             typed, _ = apply_map(row, key_map)
             return typed.get("cd_cvm"), typed.get("dt_refer"), typed.get("versao")
 
-        run_id = str(uuid4())
-        self._log_start(run_id, "cia_aberta", doc_type, year, None)
-        rows_inserted = 0
-        fetched = 0
-        try:
+        async def work():
+            rows_inserted = 0
+            fetched = 0
             members = await self._cia_fetcher.fetch_zip_members_async(
                 doc_type, year, include_summary=True
             )
@@ -1928,18 +1827,12 @@ class CVMIngestor:
                 fetched += len(done)
                 if done:
                     rows_inserted += ingest_cia_filing(self._supabase, done, doc_type)
-        except Exception as exc:
-            logger.warning(
-                "ingest_cia_itr_dfp_new_versions %s %d failed: %s", doc_type, year, _describe(exc)
+            logger.info(
+                "cia_aberta/%s %d new versions: %d document(s), %d rows",
+                doc_type, year, len(new_docs), rows_inserted,
             )
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=fetched)
-        logger.info(
-            "cia_aberta/%s %d new versions: %d document(s), %d rows",
-            doc_type, year, len(new_docs), rows_inserted,
-        )
-        return rows_inserted
+            return rows_inserted, fetched
+        return await self._audited("cia_aberta", doc_type, year, None, work)
 
     # ------------------------------------------------------------------
     # Orchestrated runs
@@ -2000,15 +1893,15 @@ class CVMIngestor:
         # with its Denominacao_Social, so the legacy fetch only logged a daily
         # error while adding nothing.
         if _want("fi") and doc_type_filter is None:
-            totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
+            totals["cvm_fund_registry"] += await self._isolated(self.ingest_fund_registry("fi"))
 
         # -- CVM-175 unified registry (active universe, all fund families) --
         if _want("fi") and doc_type_filter is None:
-            totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
+            totals["cvm_fund_registry"] += await self._isolated(self.ingest_fund_registry_cvm175())
 
         # -- ETF registry (distinct entity: curated seed, self-fetches cad_fi) --
         if _want("etf"):
-            totals["cvm_etf_registry"] += await self.ingest_etf_registry()
+            totals["cvm_etf_registry"] += await self._isolated(self.ingest_etf_registry())
 
         # -- FI ----------------------------------------------------------
         if _want("fi"):
@@ -2022,12 +1915,12 @@ class CVMIngestor:
             # month repair must not drag them in.
             if _want_fi_doc("inf_diario") and months is None:
                 for year in hist_diario_years:
-                    n = await self.ingest_fi_hist_diario(year)
+                    n = await self._isolated(self.ingest_fi_hist_diario(year))
                     totals["cvm_fi_diario"] += n
 
             if _want_fi_doc("cda") and months is None:
                 for year in hist_cda_years:
-                    n = await self.ingest_fi_hist_cda(year)
+                    n = await self._isolated(self.ingest_fi_hist_cda(year))
                     totals["cvm_fi_cda"] += n
 
             # Holdings for the same pre-2023 span, from blocks 4 and 2 of the
@@ -2035,16 +1928,16 @@ class CVMIngestor:
             # one, so selecting a single doc type fetches a single block.
             if _want_fi_doc("cda_acoes") and months is None:
                 for year in hist_cda_years:
-                    totals["cvm_fi_cda_acoes"] += await self.ingest_fi_hist_cda_acoes(year)
+                    totals["cvm_fi_cda_acoes"] += await self._isolated(self.ingest_fi_hist_cda_acoes(year))
 
             if _want_fi_doc("cda_cotas") and months is None:
                 for year in hist_cda_years:
-                    totals["cvm_fi_cda_cotas"] += await self.ingest_fi_hist_cda_cotas(year)
+                    totals["cvm_fi_cda_cotas"] += await self._isolated(self.ingest_fi_hist_cda_cotas(year))
 
             if _want_fi_doc("cda_debentures") and months is None:
                 for year in hist_cda_years:
                     totals["cvm_fi_cda_debentures"] += (
-                        await self.ingest_fi_hist_cda_debentures(year)
+                        await self._isolated(self.ingest_fi_hist_cda_debentures(year))
                     )
 
             # The Extrato is a snapshot plus yearly files of versions, not monthly:
@@ -2058,11 +1951,11 @@ class CVMIngestor:
                         "(extrato_fi_YYYY.csv), not --months or --repair-gaps"
                     )
                 for year in (y for y in years if y >= _FI_EXTRATO_FIRST_YEAR):
-                    totals["cvm_fi_extrato"] += await self.ingest_fi_extrato_ano(year)
+                    totals["cvm_fi_extrato"] += await self._isolated(self.ingest_fi_extrato_ano(year))
                 # backfill.yml runs one job per year: only the job that reaches
                 # the current year reads the 34 MB current file, not all of them.
                 if end_year >= today.year:
-                    totals["cvm_fi_extrato"] += await self.ingest_fi_extrato()
+                    totals["cvm_fi_extrato"] += await self._isolated(self.ingest_fi_extrato())
 
             month_pairs = (
                 sorted(set(months)) if months is not None
@@ -2154,7 +2047,7 @@ class CVMIngestor:
             current_years = [y for y in years if y >= 2025]
 
             for year in hist_years:
-                n = await self.ingest_fidc_hist_mensal(year)
+                n = await self._isolated(self.ingest_fidc_hist_mensal(year))
                 totals["cvm_fidc_mensal"] += n
 
             if current_years:
@@ -2320,7 +2213,7 @@ class CVMIngestor:
         # CAD: single static file — run once.
         # IPE: one yearly ZIP per year.
         if _want("cia_aberta"):
-            n_cad = await self.ingest_cia_cad()
+            n_cad = await self._isolated(self.ingest_cia_cad())
             totals["cia_company"] += n_cad
 
             cia_years = [y for y in years if y >= _CIA_IPE_FIRST_YEAR]
@@ -2386,6 +2279,8 @@ class CVMIngestor:
             self._refresh_etf_metrics()
 
         logger.info("Backfill complete: %s", totals)
+        # Every slice ran; a failed one now fails the run (#691).
+        self._raise_if_failed(totals)
         return totals
 
     def _plan_daily_monthly_tasks(
@@ -2561,15 +2456,15 @@ class CVMIngestor:
         # Fund registry refresh
         # FII omitted on purpose — CVM retired FII/CAD/; registro_fundo covers it.
         if "fi" in daily_entities:
-            totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
+            totals["cvm_fund_registry"] += await self._isolated(self.ingest_fund_registry("fi"))
 
         # CVM-175 unified registry refresh (active universe, all fund families)
         if "fi" in daily_entities:
-            totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
+            totals["cvm_fund_registry"] += await self._isolated(self.ingest_fund_registry_cvm175())
 
         # ETF registry refresh (distinct entity: curated seed, self-fetches cad_fi)
         if "etf" in daily_entities:
-            totals["cvm_etf_registry"] += await self.ingest_etf_registry()
+            totals["cvm_etf_registry"] += await self._isolated(self.ingest_etf_registry())
 
         tasks.extend(self._plan_daily_monthly_tasks(daily_entities, today))
 
@@ -2584,7 +2479,7 @@ class CVMIngestor:
 
         # Registry refresh is a sequential prerequisite for CIA slices.
         if "cia_aberta" in daily_entities:
-            await self.ingest_cia_cad()
+            await self._isolated(self.ingest_cia_cad())
 
         tasks.extend(self._plan_daily_annual_tasks(daily_entities, year, today))
 
@@ -2601,6 +2496,8 @@ class CVMIngestor:
             self._refresh_etf_metrics()
 
         logger.info("Daily update complete: %s", totals)
+        # Every slice ran; a failed one now fails the run (#691).
+        self._raise_if_failed(totals)
         return totals
 
 

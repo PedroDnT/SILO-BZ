@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.pipeline.cvm_pipeline import CVMIngestor, SliceFailure
+from src.pipeline.cvm_pipeline import CVMIngestor, CVMRunFailed, SliceFailure
 from src.pipeline.gaps import MonthGap, missing_fi_months
 from src.pipeline.run_backfill import ensure_no_failed_slices, parse_months
 
@@ -360,13 +360,15 @@ class TestFailLoudly:
             return 100
 
         ing.ingest_fi_balancete = flaky
-        totals = await ing.backfill(
-            start_year=2019, end_year=2019,
-            entity_filter="fi", doc_type_filter="balancete",
-            months=[(2019, 4), (2019, 5), (2019, 6)],
-        )
+        # The run raises after every slice ran (#691), and carries the totals.
+        with pytest.raises(CVMRunFailed) as raised:
+            await ing.backfill(
+                start_year=2019, end_year=2019,
+                entity_filter="fi", doc_type_filter="balancete",
+                months=[(2019, 4), (2019, 5), (2019, 6)],
+            )
 
-        assert totals["cvm_fi_balancete_resumo"] == 200
+        assert raised.value.totals["cvm_fi_balancete_resumo"] == 200
         assert len(ing.failures) == 1
         assert ing.failures[0].month == 4
         with pytest.raises(SystemExit):
@@ -383,11 +385,12 @@ class TestFailLoudly:
             raise RuntimeError("connection reset")
 
         ing.ingest_fi_balancete = boom
-        await ing.backfill(
-            start_year=2019, end_year=2019,
-            entity_filter="fi", doc_type_filter="balancete",
-            months=[(2019, 4)],
-        )
+        with pytest.raises(CVMRunFailed):
+            await ing.backfill(
+                start_year=2019, end_year=2019,
+                entity_filter="fi", doc_type_filter="balancete",
+                months=[(2019, 4)],
+            )
         assert len(ing.failures) == 1
         assert "connection reset" in ing.failures[0].error
 

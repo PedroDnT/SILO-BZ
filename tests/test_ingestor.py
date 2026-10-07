@@ -362,6 +362,12 @@ class TestCVMIngestorOrchestration:
         ingestor.ingest_fi_diario = AsyncMock(return_value=1)
         ingestor.ingest_fi_cda = AsyncMock(return_value=1)
         ingestor.ingest_fi_perfil = AsyncMock(return_value=1)
+        # The FI slices below were left unmocked and failed quietly into the
+        # ledger; since #691 a failed slice raises CVMRunFailed, so mock them.
+        for name in ("ingest_fi_cda_acoes", "ingest_fi_cda_cotas",
+                     "ingest_fi_cda_debentures", "ingest_fi_lamina",
+                     "ingest_fi_balancete", "ingest_fi_extrato"):
+            setattr(ingestor, name, AsyncMock(return_value=1))
         ingestor.ingest_fidc_mensal = AsyncMock(return_value=1)
         ingestor.ingest_fidc_tranche = AsyncMock(return_value=1)
         ingestor.ingest_fidc_tranche_flows = AsyncMock(return_value=1)
@@ -669,6 +675,8 @@ def _mocked_daily_ingestor():
     for name in (
         "ingest_fund_registry", "ingest_fund_registry_cvm175", "ingest_etf_registry",
         "ingest_fi_diario", "ingest_fi_cda", "ingest_fi_perfil",
+        "ingest_fi_cda_acoes", "ingest_fi_cda_cotas", "ingest_fi_cda_debentures",
+        "ingest_fi_lamina", "ingest_fi_balancete", "ingest_fi_extrato",
         "ingest_fidc_mensal", "ingest_fidc_tranche", "ingest_fidc_tranche_flows",
         "ingest_fidc_aging", "ingest_fidc_setor", "ingest_fidc_scr",
         "ingest_fidc_sacado", "ingest_fidc_cedente", "ingest_fidc_garantia",

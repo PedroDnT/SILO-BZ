@@ -19,7 +19,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.pipeline.cvm_pipeline import CVMIngestor
+from src.pipeline.cvm_pipeline import CVMIngestor, CVMRunFailed
 from src.pipeline.bacen_pipeline import BacenIngestor
 from src.pipeline.anbima_pipeline import AnbimaIngestor
 from src.pipeline.b3_pipeline import B3Ingestor
@@ -45,25 +45,22 @@ async def main() -> None:
     failures: list[tuple[str, Exception]] = []
 
     cvm_ingestor = CVMIngestor()
-    totals = await cvm_ingestor.daily_update()
-    # Every ingest_* method catches its own exception, writes the audit row
-    # and returns 0, so daily_update() itself does not raise when CVM is
-    # blocked. Run 33237536770 (2026-08-29 06:00) logged 44 CVMHostUnreachable
-    # slices, upserted 0 CVM rows, then continued to BACEN/B3/ANBIMA and only
-    # went red because b3_corporate_events hit an SSL EOF. DB Health then
-    # failed on those unhealed slices. Fail the process for them — but AFTER
-    # the other sources have run, so a CVM IP block does not skip BACEN/B3.
-    if cvm_ingestor.failures:
+    # A failed CVM slice writes its 'error' audit row and raises (#691, owner
+    # decision 2026-10-06). daily_update runs every other slice first, then
+    # raises CVMRunFailed with the totals that did land. Run 33237536770
+    # (2026-08-29 06:00) logged 44 CVMHostUnreachable slices and upserted 0
+    # CVM rows; the process must fail for that — but AFTER the other sources
+    # have run, so a CVM IP block does not skip BACEN/B3.
+    try:
+        totals = await cvm_ingestor.daily_update()
+    except CVMRunFailed as exc:
+        totals = dict(exc.totals)
         logger.error(
-            "Daily CVM update finished with %d failed slice(s):",
-            len(cvm_ingestor.failures),
+            "Daily CVM update finished with %d failed slice(s):", len(exc.failures),
         )
-        for failure in cvm_ingestor.failures:
+        for failure in exc.failures:
             logger.error("  %s", failure)
-        failures.append((
-            "cvm",
-            RuntimeError(f"{len(cvm_ingestor.failures)} failed slice(s)"),
-        ))
+        failures.append(("cvm", exc))
 
     # BACEN: incremental refresh — re-fetches the last ~30 days; cheap.
     try:
