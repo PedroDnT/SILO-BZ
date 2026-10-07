@@ -193,8 +193,8 @@ class TestWiring:
     def test_audit_keys_match_what_the_methods_log(self):
         src = (ROOT / "src/pipeline/cvm_pipeline.py").read_text()
         # exactly one audit row per slice: the current file and each yearly file
-        assert 'self._log_start(run_id, "fi", "extrato", None, None)' in src
-        assert 'self._log_start(run_id, "fi", "extrato_ano", year, None)' in src
+        assert 'self._audited("fi", "extrato", None, None, work)' in src
+        assert 'self._audited("fi", "extrato_ano", year, None, work)' in src
         assert '"cvm_fi_extrato"' in re.search(r"_ALL_TABLES: List\[str\] = \[.*?\]", src, re.S).group(0)
 
     def test_the_daily_run_plans_the_current_file(self):
