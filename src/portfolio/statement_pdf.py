@@ -764,6 +764,9 @@ def _detail_header(text: str) -> list[str] | None:
                 rest = rest[len(c) :]
                 break
         else:
+            # a last column cut at the page edge ('Def' for 'Defasagem', #751): it holds no value we read
+            if len(rest) >= 3 and any(c.startswith(rest) for c in DETAIL_COLUMNS):
+                break
             return None
     return cols if cols and cols[0] == "ativo" and "saldobruto" in cols else None
 
@@ -802,6 +805,8 @@ def _detail_rows(lines, diag: Diagnostics) -> list[DetailRow]:
         if k.startswith("arentabilidadecompleta") or k.startswith("rentabilidadecompleta") or k.startswith("movimentacoesdaconta"):
             end = j
             break
+    if any(_carteira_strategy(t) for _, _, t in lines[start + 1 : end]):
+        return _detail_rows_blocks(lines[start + 1 : end], diag)
     out: list[DetailRow] = []
     header: list[str] | None = None
     strat: str | None = None
@@ -848,6 +853,121 @@ def _detail_rows(lines, diag: Diagnostics) -> list[DetailRow]:
         out.append(DetailRow(name=name, strategy_key=strat, saldo_bruto=saldo, quantidade=qtd, vencimento=venc, taxa=taxa, preco=preco))
     diag.detail_rows = len(out)
     return out
+
+
+# The 2026-08 layout (#751): each detail table opens with '<estratégia> ... Em carteira NN% R$ ...', its header
+# spans three lines ('Preço'/'Valor' above, 'médio'/'aplicado' below), and each row is a block between blank
+# lines: the name and the rate wrap above and below the one line that holds the values.
+_HEADER_WORDS = ("aplicado", "preco", "valor", "medio")
+
+
+def _carteira_strategy(text: str) -> str | None:
+    k = key(split_row(text)[0])
+    return k[: -len("emcarteira")] if k.endswith("emcarteira") and k[: -len("emcarteira")] in STRATEGIES else None
+
+
+def _is_header_context(text: str) -> bool:
+    rest = key(text)
+    while rest:
+        w = next((w for w in _HEADER_WORDS if rest.startswith(w)), None)
+        if w is None:
+            return False
+        rest = rest[len(w) :]
+    return True
+
+
+def _detail_rows_blocks(section, diag: Diagnostics) -> list[DetailRow]:
+    out: list[DetailRow] = []
+    header: list[str] | None = None
+    taxa_lo: int | None = None
+    strat: str | None = None
+    block: list[str] = []
+
+    def flush() -> None:
+        nonlocal block
+        if block and header is not None:
+            row = _block_row(block, header, taxa_lo, strat)
+            if row is None:
+                diag.detail_lines_unread += len(block)
+            else:
+                out.append(row)
+        elif block:
+            diag.detail_lines_unread += len(block)
+        block = []
+
+    for _, _, text in section:
+        if not text.strip():
+            flush()
+            continue
+        s = _carteira_strategy(text)
+        if s is not None:
+            flush()
+            strat, header = s, None
+            continue
+        hdr = _detail_header(text)
+        if hdr is not None:
+            flush()
+            header = hdr
+            m = re.search(r"\bTaxa\b", text)
+            taxa_lo = m.start() - 15 if m and "taxa" in hdr else None
+            continue
+        k = key(split_row(text)[0])
+        if _is_header_context(text) or k.startswith("total") or FURNITURE.match(k) or _DATE_RANGE.search(text):
+            flush()
+            continue
+        block.append(text)
+    flush()
+    diag.detail_rows = len(out)
+    return out
+
+
+def _block_row(block: list[str], header: list[str], taxa_lo: int | None, strat: str | None) -> DetailRow | None:
+    """One detail row from its block of lines; None when the block has not exactly one line of values."""
+    value_at = [i for i, t in enumerate(block) if re.search(r"R\$\s*\S", t)]
+    if len(value_at) != 1:
+        return None
+    vi = value_at[0]
+    toks = [(m.start(), m.group()) for m in re.finditer(r"\S+", block[vi])]
+    r_at = [i for i, (_, t) in enumerate(toks) if t == "R$"]
+    moneys = [toks[i + 1][1] for i in r_at if i + 1 < len(toks) and is_money(toks[i + 1][1])]
+    if not moneys:
+        return None
+    before = toks[: r_at[0]]
+    dates = [i for i, (_, t) in enumerate(before) if _DATE_TOKEN.match(t)]
+    venc = qtd = None
+    if "datainicial" in header and dates:
+        name_end = dates[0]
+        nxt = before[dates[0] + 1][1] if dates[0] + 1 < len(before) else None
+        qtd = parse_br_number(nxt) if nxt is not None and is_money(nxt) else None
+        if "vencimento" in header and len(dates) > 1:
+            venc = _opt_date(before[dates[1]][1])
+    else:
+        name_end = next((i for i, (_, t) in enumerate(before) if is_money(t)), len(before))
+        qtd = parse_br_number(before[name_end][1]) if name_end < len(before) else None
+    used = set(range(name_end)) | set(dates) | ({dates[0] + 1} if dates and qtd is not None else set())
+    # the rate: what stands in the 'Taxa' column, above, on and below the line of values, in reading order
+    taxa_parts: list[str] = []
+    name_parts: list[str] = []
+    for i, line in enumerate(block):
+        if i == vi:
+            name_parts.append(" ".join(t for _, t in before[:name_end]))
+            if taxa_lo is not None:
+                taxa_parts += [t for j, (p, t) in enumerate(before) if j not in used and p >= taxa_lo]
+            continue
+        line_toks = [(m.start(), m.group()) for m in re.finditer(r"\S+", line)]
+        name_parts.append(" ".join(t for p, t in line_toks if taxa_lo is None or p < taxa_lo))
+        if taxa_lo is not None:
+            taxa_parts += [t for p, t in line_toks if p >= taxa_lo]
+    preco = parse_br_number(moneys[1]) if "precomedio" in header and "preco" in header and len(moneys) > 1 else None
+    return DetailRow(
+        name=join_fragments(name_parts),
+        strategy_key=strat,
+        saldo_bruto=parse_br_number(moneys[0]),
+        quantidade=qtd,
+        vencimento=venc,
+        taxa=" ".join(taxa_parts) or None,
+        preco=preco,
+    )
 
 
 def _opt_number(tok: str | None) -> Decimal | None:

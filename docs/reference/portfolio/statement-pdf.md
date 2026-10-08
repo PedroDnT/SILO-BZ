@@ -57,6 +57,14 @@ is then the gross total minus the consolidated `Total`, accepted only when it ex
 digits by one, and `Statement.notes` says so. Check 4 below then ties by construction; check 3
 still ties the leaves on their own.
 
+Its `Detalhamento dos Ativos` (#751) opens each table with `<estratégia> ... Em carteira NN% R$ ...`,
+wraps the header over three lines (`Preço`/`Valor` above, `médio`/`aplicado` below, the last column
+cut at the page edge as `Def`), and prints each row as a block between blank lines: the one line
+with `R$` holds the values, the name wraps above and below it at the left, and the rate wraps in the
+`Taxa` column (`IPCA` / `+` / `6,20%`). The reader reads that block shape only when a table opens
+with `Em carteira`; the older layout keeps its line reader. The join to positions is unchanged
+(strategy and value). A row with no `Data Inicial` (a ticker) reads name, then quantity.
+
 Names keep no stray spaces (#756): `-layout` splits words next to `t`, `f` and `r` (`Marf rig`),
 while `pdftotext -raw` on the same bytes (STDIN again) prints them whole. A run of 2 to 4 name
 tokens is joined only when the joined word is in that raw text and one piece is not a word there,
