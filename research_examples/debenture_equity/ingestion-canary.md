@@ -98,3 +98,51 @@ Credit ingestion can be evaluated independently. Its report always keeps
 credit canary is not an accepted development input or a model prediction. Before
 recurring approval, also measure the existing seven-calendar-day refresh cost and
 review daily/watchdog completion timing relative to the research cutoff.
+
+## Recurring rollout: exact remaining engineering boundary
+
+Verified against the current checkout on 08/10: both
+`.github/workflows/daily_ingest.yml` and `.github/workflows/watchdog.yml` call
+`src.pipeline.run_b3_events`, whose credit branch requires the literal environment
+value `1`. Neither workflow exports `B3_CREDIT_ENABLED`. Creating a repository
+variable alone therefore does **not** activate this path.
+
+After specific recurring approval, the smallest wiring change is a step-local
+`env` entry on each existing B3 events step:
+
+```yaml
+env:
+  B3_CREDIT_ENABLED: ${{ vars.B3_CREDIT_ENABLED }}
+```
+
+This is a proposed change, not applied wiring. Inspect the live repository
+variable before merging that wiring: an existing value `1` would activate the
+next eligible run. With no variable or a value other than `1`, credit remains off.
+The approval must cover both workflow paths, activation and operational storage;
+it must not be inferred from approval of the one-session canary.
+
+`B3CreditIngestor.daily_update()` requests yesterday minus six calendar days
+through yesterday. A successful full-window refresh retains another capture
+vintage, including overlap with earlier captures. This is not a missing-date-only
+fetch. On transport/export failure, `ingest_resilient` can issue one child request
+per known cash session; parse, completeness and database failures do not trigger
+this splitting. A one-session canary does not establish weekly-window latency,
+repeated-vintage storage growth or the number/cost of fallback attempts.
+
+Acceptance after approved activation requires the first three **scheduled cash
+sessions**, with workflow/run identity and actual UTC-3 completion times, requested
+and delivered date census, source bytes/hash, dropped rows, per-capture facts and
+one audit each, cumulative relation/database growth, and research archive/replay
+receipts before their cutoff. Include weekend/holiday refreshes in cumulative
+cost even though they do not count as the three cash sessions. A green workflow
+without credit capture/audit evidence does not pass. A watchdog recovery does not
+replace a scheduled-session acceptance observation. Partial/failed captures remain
+visible and are excluded from research reads.
+
+The current workflow also applies schema before ingestion. Do not dispatch the
+whole workflow as a substitute for the separately approved, no-schema canary.
+The recurring package must explicitly acknowledge that existing workflow behavior.
+Turning the variable off stops subsequent credit branch executions; it does not
+cancel in-flight writes, undo captures, certify retention or delete evidence.
+No automatic cleanup, new schedule, schema change or production variable change
+is authorized or performed here.
