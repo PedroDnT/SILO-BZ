@@ -12,6 +12,20 @@ classifications are built from. Layout cross-checked against the
 
 ## Register-01 fields
 
+Catalog v69 publishes a machine-readable reference at `catalog().cotahist`:
+source-field aliases, route applicability and all CODBDI codes in the
+[B3 layout revision 2.0, 2020-10-05](https://www.b3.com.br/data/files/33/67/B9/50/D84057102C784E47AC094EA8/SeriesHistoricas_Layout.pdf),
+plus observed codes absent from that document. Descriptions for the latter stay
+null. The table below and the existing fund-subtype rules describe storage and
+classification; a dated dictionary label must not replace those rules.
+
+Existing routes expose original `market`, `board` and contract fields.
+Cash and termo use `contract_price`, `contract_expiry`, `contract_correction`
+and `contract_points`; option routes retain their existing strike/expiry names.
+`contract_points_raw` preserves PTOEXE text, including leading zeros.
+`distribution_number` is available beyond options too. Neither a code in the
+dictionary nor a field in a schema proves historical observations exist.
+
 | Pos | B3 name | Meaning | Silo column |
 |---|---|---|---|
 | 1–2 | TIPREG | Record type (00 header / 01 quote / 99 trailer) | filter only |
@@ -60,7 +74,7 @@ classifications are built from. Layout cross-checked against the
 | 013 | Put **exercise** (event) | `option_exercises` |
 | 017 | Leilão (auction print) | `auctions` |
 | 020 | Fracionário (odd lot) | typed cash endpoints, `lot=odd` |
-| 021 | Undocumented in B3's table; measured rows carry codbdi 93 and `Q`-suffixed tickers | treated as odd lot (documented assumption) |
+| 021 | Block trading: observed on Midpoint (`M`) and BBT (`Q`) instruments; exact official code-table label unavailable | typed cash endpoints, `lot=block` |
 | 030 | Termo (forward) | [`termo`](/api-docs/termo) |
 | 070 | Call quotes | [`options`](/api-docs/options) |
 | 080 | Put quotes | [`options`](/api-docs/options) |
@@ -81,7 +95,9 @@ codbdi-14 tickers matched; zero codbdi-12/13 did):
 | 13 | FIAGRO quotas |
 | 14 | ETF quotas (a `FIDC` ESPECI here would be a listed FIDC) |
 | 10 | Direitos e recibos (rights/receipts) |
-| 96, 93 | Fractional / odd-lot boards |
+| 96 | Fractional / odd-lot board |
+| 92 | Midpoint Order Book (observed mapping) |
+| 93 | Book of Block Trade (observed mapping) |
 | 46–54 | Auction boards |
 | 62 | Termo |
 | 78 / 82 | Call / put option boards |
@@ -117,3 +133,18 @@ check digit. Two consequences the API uses:
   prints). They are option-settlement indices, not the official close, so they are
   not served as an index series: use `index_history`. `IBOV11` printed on expiry days
   only through 2024, weekly in 2025 and on nearly every session since December 2025.
+
+### Supplemental code interpretations (reviewed 2026-10-07)
+
+The 2020 layout labels remain unchanged. Catalog `cotahist.supplemental_interpretations`
+records interpretations with source URLs and unknown validity intervals:
+13 FIAGRO; 34 non-sponsored BDRs (DRN); 35 sponsored BDRs and associated
+instruments (DR1/DR2/DR3, also PPLA11 UNT); 36 ETF BDRs (DRE).
+These mappings are observed in the [2026-10-05 source file](https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D05102026.ZIP), not certified code-table labels.
+
+B3's [block-trading documentation](https://clientes.b3.com.br/c/document_library/get_file?groupId=20119&uuid=88b5af46-5e95-a026-9d92-bb5e598086c0)
+defines M as Midpoint and Q as BBT. Source records associate 92/M and 93/Q
+with market 021. The previous odd-lot interpretation of 021 was incorrect.
+INDOPC 0 is interpreted as BRL/no correction index indicated using the related
+[Títulos Negociáveis layout](https://bvmf.bmfbovespa.com.br/cias-listadas/Titulos-Negociaveis/download/Titulos_Negociaveis.PDF),
+which maps ICOATV 0 to R$; it does not explicitly define INDOPC 0.

@@ -366,3 +366,93 @@ def test_period_repeated_as_a_page_header_is_still_read():
     assert len(pages) >= 4
     st, _ = parse_pdf_pages(pages)
     assert st.position_date == dt.date(2025, 12, 31)
+
+
+# ---------------------------------------------------------------------------
+# The 2026-08 layout (#747): synthetic text in the shape pdftotext gives for it
+# ---------------------------------------------------------------------------
+
+
+def _two(left: str, right: str = "") -> str:
+    return (left.ljust(66) + right).rstrip()
+
+
+def layout_2026_08_pages() -> list[str]:
+    cover = ["BTG Pactual          Relatório de Performance", f"Nome   {HOLDER_NAME}", f"Conta Investimento   {HOLDER_ACCOUNT}"]
+    p2 = [
+        "Relatório de Performance",
+        "Período de 01/08/2026 a 31/08/2026",
+        "Patrimônio bruto              R$ 205.000,00",
+        "",
+        # the summary table wraps the label around its value line
+        "                                                      Cont a",
+        "                                                                     2,44%      R$ 5.000,00",
+        "                                                      corrent e",
+        "Página 2 de 4",
+    ]
+    p3 = [
+        "Relatório de Performance",
+        "Posição consolidada dos investimentos",
+        "",
+        # the column header, one word per line
+        _two("                Posição", "                Posição"),
+        _two("At ivo                                  % t ot al", "At ivo                                  % t ot al"),
+        _two("                 brut a", "                 brut a"),
+        "",
+        _two("Renda Fixa                120.000,00     60,00", "Fundo de Invest iment o   80.000,00     40,00"),
+        "",
+        _two("  Inflação                120.000,00     60,00", "  Alt ernat ivo           80.000,00     40,00"),
+        "",
+        # a long name in two halves around a line that holds only the two columns' values
+        _two("    EMISSORA EXEMPLO CREDITO", "    FUNDO GAMA CRED"),
+        _two("                          100.000,00     50,00", "                          50.000,00     25,00"),
+        _two("FINANCIAMENTO - CDB-CDB999X", "AGRO FIDC RESP LIMITADA*"),
+        "",
+        _two("    OUTRA EMISSORA - DEB-ABCD11*   20.000,00     10,00", "    FUNDO DELTA FIM          30.000,00     15,00"),
+        "",
+        _two("", "Tot al                    200.000,00    100,00"),
+        "Página 3 de 4",
+    ]
+    # the strategy-return table and the attribution chart follow, with no 'Detalhamento' between
+    p4 = [
+        "Relatório de Performance",
+        "E, quando abrimos a rentabilidade por estratégia, os números são",
+        "                    31,74%      1,23%      1,23%",
+        "Pós-fixado",
+        "               R$ 335.370,18    R$ 3.852,12",
+        "Atribuição de Resultado",
+        " R$ 15,00K",
+        "Página 4 de 4",
+    ]
+    return ["\n".join(p) for p in (cover, p2, p3, p4)]
+
+
+def test_layout_2026_08_reads_and_reconciles():
+    st, diag = parse_pdf_pages(layout_2026_08_pages())
+    got = {(p.estrategia_corretora, p.linha_extrato, p.valor) for p in st.positions}
+    assert got == {
+        ("Inflação", "EMISSORA EXEMPLO CREDITO FINANCIAMENTO - CDB-CDB999X", D("100000.00")),
+        ("Inflação", "OUTRA EMISSORA - DEB-ABCD11*", D("20000.00")),
+        ("Alternativo", "FUNDO GAMA CRED AGRO FIDC RESP LIMITADA*", D("50000.00")),
+        ("Alternativo", "FUNDO DELTA FIM", D("30000.00")),
+        ("Conta corrente", "Conta corrente", D("5000.00")),
+    }
+    assert st.stated_total == st.sum_of_lines == D("205000.00")
+    assert diag.two_column_pages == 1 and diag.wrap_ambiguous == 0
+
+
+def test_layout_2026_08_wrapped_cash_needs_the_exact_three_line_shape():
+    pages = edit(layout_2026_08_pages(), 1, "corrent e", "outra coisa")
+    with pytest.raises(StatementTotalMismatch) as e:
+        parse_pdf_pages(pages)
+    assert "folhas + conta corrente x Patrimônio bruto: gap R$ -5000.00" in str(e.value)
+
+
+def test_layout_2026_08_cut_cash_is_derived_only_when_the_printed_digits_agree():
+    # The report printed the cash with its last digit cut: gross minus the 'Total' must extend it by one digit.
+    st, _ = parse_pdf_pages(edit(layout_2026_08_pages(), 1, "R$ 5.000,00", "R$ 5.000,0"))
+    caixa = next(p for p in st.positions if p.tipo == "caixa")
+    assert caixa.valor == D("5000.00") and st.sum_of_lines == st.stated_total
+    assert any("cortada" in n and "'5.000,0'" in n for n in st.notes)
+    with pytest.raises(StatementTotalMismatch):
+        parse_pdf_pages(edit(layout_2026_08_pages(), 1, "R$ 5.000,00", "R$ 5.001,0"))
