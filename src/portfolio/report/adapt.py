@@ -781,6 +781,26 @@ def _movement_view(eng: dict) -> dict | None:
 
 
 RETURN_WINDOW_DROP = ("sources", "reason", "cdi_reason_code", "fee_reason_code", "null_reasons")
+
+
+def _contracted_view(c: dict | None, order: list) -> dict | None:
+    """Schema 2.1, method C: the contracted return of a bank credit line, windows in the engine's order, reasons as
+    fixed texts. It is shown in the annex only, apart from every measured figure (owner's decision pending, #766)."""
+    if not isinstance(c, dict):
+        return None
+    wins = []
+    for wid in order:
+        w = (c.get("windows") or {}).get(wid) or {"status": "nao_avaliado", "reason_code": None}
+        out = {k: v for k, v in w.items() if k != "sources"}
+        out.update(id=wid, reason=reason_text(w.get("reason_code")) if w.get("status") != "avaliado" else None,
+                   pct_of_cdi_reason=reason_text(w.get("pct_of_cdi_reason_code")) if w.get("pct_of_cdi_reason_code") else None,
+                   provenance=_prov(w.get("sources")))
+        wins.append(out)
+    return {"label": c.get("label"), "taxa_texto": c.get("taxa_texto"), "rate": c.get("rate"),
+            "data_inicial": c.get("data_inicial"), "data_inicial_source": c.get("data_inicial_source"),
+            "vencimento": c.get("vencimento"), "status": c.get("status"), "reason_code": c.get("reason_code"),
+            "reason": reason_text(c.get("reason_code")) if c.get("reason_code") else None,
+            "notes": list(c.get("notes") or []), "windows": wins, "provenance": _prov(c.get("sources"))}
 EQUIVALENT_WINDOW_DROP = ("sources", "class_source_reason", "etf_reason", "class_reason")
 
 
@@ -833,6 +853,8 @@ def _returns_view(eng: dict) -> dict | None:
             "performance_fee_filed": ln.get("performance_fee_filed"),
             # engine 1.13: the filed benchmark as filed, and whether it is CDI-like (the reason is a fixed text)
             "benchmark": _benchmark_view(ln.get("benchmark")),
+            "credit_code": ln.get("credit_code"),  # schema 2.1: the CETIP code of a CRA / CRI on the curve
+            "contracted": _contracted_view(ln.get("contracted"), order),  # schema 2.1, method C: annex only
             "notes": list(ln.get("notes") or []),
             "windows": wins,
             "provenance": _prov(ln.get("sources"), fee.get("sources"),
@@ -849,6 +871,8 @@ def _returns_view(eng: dict) -> dict | None:
         "definition": r.get("definition"), "gross_note": r.get("gross_note"), "sharpe_drag_note": r.get("sharpe_drag_note"),
         "drawdown_note": r.get("drawdown_note"), "performance_note": r.get("performance_note"), "note": r.get("note"),
         "pct_of_cdi_note": r.get("pct_of_cdi_note"),
+        "pct_of_cdi_credit_note": r.get("pct_of_cdi_credit_note"),  # schema 2.1
+        "contracted_note": r.get("contracted_note"),  # schema 2.1
         "cdi": {"series": cdi.get("series"), "sgs_code": cdi.get("sgs_code"), "unit": cdi.get("unit"),
                 "convention": cdi.get("convention"), "n_rates": cdi.get("n_rates"), "first_date": cdi.get("first_date"),
                 "last_date": cdi.get("last_date"), "status": cdi.get("status"), "reason_code": cdi.get("reason_code"),
@@ -856,7 +880,9 @@ def _returns_view(eng: dict) -> dict | None:
                 "provenance": _prov(cdi.get("sources"))},
         "n_lines": r.get("n_lines"), "n_evaluated": r.get("n_evaluated"), "n_not_evaluated": r.get("n_not_evaluated"),
         "coverage": [{"id": wid, **{k: (cov.get(wid) or {}).get(k) for k in ("evaluated_value_brl", "coverage_portfolio_value_pct",
-                                                                              "n_evaluated")}} for wid in order if wid in cov],
+                                                                              "n_evaluated", "contracted_value_brl",
+                                                                              "contracted_coverage_portfolio_value_pct",
+                                                                              "n_contracted")}} for wid in order if wid in cov],
         "lines": lines,
         "contribution": _contribution_view(r.get("contribution"), order),
     }

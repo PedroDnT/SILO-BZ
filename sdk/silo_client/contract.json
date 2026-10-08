@@ -402,6 +402,18 @@
     "p_ids"
    ]
   },
+  "portfolio_credit_returns": {
+   "params": [
+    "p_classes",
+    "p_codes",
+    "p_end_month",
+    "p_series"
+   ],
+   "required": [
+    "p_codes",
+    "p_end_month"
+   ]
+  },
   "portfolio_equivalents": {
    "params": [
     "p_as_of",

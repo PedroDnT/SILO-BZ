@@ -504,7 +504,9 @@ def template_findings(engine: dict) -> dict:
                f"líquido ({{{{{q}.basis_label}}}}).")
         if wins[0].get("cdi_pct") is not None:
             txt += (f" O CDI das mesmas datas rendeu {{{{{w}.cdi_pct}}}}, uma diferença de {{{{{w}.net_minus_cdi_pp}}}} em relação ao CDI.")
-        if wins[0].get("pct_of_cdi") is not None:  # engine 1.13: only where the engine wrote it (filed benchmark CDI or DI)
+        if wins[0].get("pct_of_cdi") is not None and ln.get("basis") == "curva_securitizadora":  # schema 2.1
+            txt += f" A taxa impressa no extrato é atrelada ao CDI: o retorno equivale a {{{{{w}.pct_of_cdi}}}}."
+        elif wins[0].get("pct_of_cdi") is not None:  # engine 1.13: only where the engine wrote it (filed benchmark CDI or DI)
             txt += f" O índice de referência arquivado do fundo é CDI ou DI: o retorno equivale a {{{{{w}.pct_of_cdi}}}}."
         add("retornos", "Retorno líquido em doze meses", txt, ln.get("provenance"))
 

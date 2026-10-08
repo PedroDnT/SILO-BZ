@@ -551,11 +551,59 @@ def _returns_section(view: dict, contribution: bool = True) -> str:
     if r.get("pct_of_cdi_note") and any(w.get("pct_of_cdi") is not None for ln in r.get("lines") or []
                                         for w in ln.get("windows") or []):
         notes.append(v(view, f"{b}.pct_of_cdi_note"))
+    if r.get("pct_of_cdi_credit_note") and any(ln.get("basis") == "curva_securitizadora" for ln in r.get("lines") or []):
+        notes.append(v(view, f"{b}.pct_of_cdi_credit_note"))
     out.append("<ul>" + "".join(f"<li class=cit>{n}</li>" for n in notes if n and n != "—") + "</ul>")
+    out.append(_contracted_html(view))
     if contribution:
         out.append(_contribution_html(view, ("6m",) if contribution == "6m" else ("12m", "6m")))
     if r.get("status") in ("partial", "unknown") and r.get("reason"):
         out.append(f'<p><span class="tag unk">{e(SECTION_STATUS_LABELS.get(r["status"], r["status"]))}</span> {v(view, f"{b}.reason")}.</p>')
+    return "\n".join(out)
+
+
+CREDIT_NA_CODES = ("credito_nao_cdi",)  # schema 2.1: direct credit on IPCA or prefixado, "% do CDI" is n/a
+
+
+def _contracted_html(view: dict) -> str:
+    """Schema 2.1 (#766, method C): the contracted return of each bank credit line, apart from the measured table and
+    from every total: the rate the statement prints applied to the CDI or IPCA of the window. Annex only, until the
+    owner decides whether it may sit beside the measured returns."""
+    r = view.get("returns") or {}
+    b = "returns"
+    rows = []
+    na = False
+    for i, ln in enumerate(r.get("lines") or []):
+        c = ln.get("contracted")
+        if not c:
+            continue
+        cq = f"{b}.lines[{i}].contracted"
+        asset = (f"{v(view, f'{b}.lines[{i}].line_id')} {v(view, f'{b}.lines[{i}].instrument')}"
+                 f"<br><span class=cit>taxa impressa: {v(view, f'{cq}.taxa_texto')}</span>")
+        for j, w in enumerate(c.get("windows") or []):
+            wq = f"{cq}.windows[{j}]"
+            label = e(WINDOW_LABEL.get(w.get("id"), w.get("id")))
+            if w.get("status") != "avaliado":
+                rows.append([asset if j == 0 else "", label, f"<span class=cit>{v(view, f'{wq}.reason')}</span>", "—", "—"])
+                continue
+            label += f"<br><span class=cit>{v(view, f'{wq}.base_date')} a {v(view, f'{wq}.end_date')}</span>"
+            acc = f"<span class=v>{v(view, f'{wq}.accrual_pct')}</span>"
+            if w.get("approximation"):
+                acc += f"<br><span class=cit>{v(view, f'{wq}.approximation')}</span>"
+            vs = v(view, f"{wq}.net_minus_cdi_pp")
+            if w.get("pct_of_cdi") is not None:
+                vs += f"<br><span class=v>{v(view, f'{wq}.pct_of_cdi')}</span>"
+            elif w.get("pct_of_cdi_reason_code") in CREDIT_NA_CODES:
+                vs, na = vs + "<br>n/a¹", True
+            rows.append([asset if j == 0 else "", label, acc, v(view, f"{wq}.cdi_pct"), vs])
+    if not rows:
+        return ""
+    out = [f'<h3>Retorno contratado <span class="tag est">não é retorno medido</span></h3>',
+           f"<p class=cit>{v(view, f'{b}.contracted_note')}</p>",
+           _table([("Linha e taxa", False), ("Janela", False), ("Retorno contratado", True), ("CDI nas mesmas datas", True),
+                   ("Contratado menos CDI (e % do CDI)", True)], rows)]
+    if na and r.get("pct_of_cdi_credit_note"):
+        out.append(f"<p class=cit>¹ {v(view, f'{b}.pct_of_cdi_credit_note')}.</p>")
     return "\n".join(out)
 
 
@@ -597,6 +645,7 @@ def _returns_summary(view: dict) -> str:
     r = view.get("returns") or {}
     b = "returns"
     rows = []
+    credit_na = False
     for i, ln in enumerate(r.get("lines") or []):
         w = next(((j, w) for j, w in enumerate(ln.get("windows") or []) if w.get("id") == "12m"), None)
         if not w or w[1].get("status") != "avaliado":
@@ -607,9 +656,13 @@ def _returns_summary(view: dict) -> str:
         name = v(view, f"{q}.instrument")
         if ln.get("without_distributions"):
             name += '<br><span class="tag unk">sem proventos</span>'
+        if ln.get("basis") == "curva_securitizadora":  # schema 2.1: method A, never a market price
+            name += '<br><span class="tag est">valor na curva</span>'
         cdi = v(view, f"{wq}.cdi_pct") if win.get("cdi_pct") is not None else "—"
         diff = v(view, f"{wq}.net_minus_cdi_pp") if win.get("cdi_pct") is not None else "—"
-        if win.get("pct_of_cdi") is not None:  # only for a fund whose filed benchmark is CDI or DI (engine 1.13)
+        if win.get("pct_of_cdi_reason_code") in CREDIT_NA_CODES:  # schema 2.1: one footnote, not a reason per row
+            pct_cdi, credit_na = "n/a¹", True
+        elif win.get("pct_of_cdi") is not None:  # only for a fund whose filed benchmark is CDI or DI (engine 1.13)
             pct_cdi = f"<span class=v>{v(view, f'{wq}.pct_of_cdi')}</span>"
         elif win.get("pct_of_cdi_reason"):  # the engine's fixed reason, also for a share or an FII: never "0" or "—"
             pct_cdi = f"<span class=cit>{v(view, f'{wq}.pct_of_cdi_reason')}</span>"
@@ -624,11 +677,17 @@ def _returns_summary(view: dict) -> str:
                    .replace("<table>", '<table class="ret-cdi">', 1))
     else:
         out.append("<p>Nenhuma posição teve retorno de 12 meses avaliado.</p>")
+    if credit_na and r.get("pct_of_cdi_credit_note"):
+        out.append(f"<p class=cit>¹ {v(view, f'{b}.pct_of_cdi_credit_note')}.</p>")
     if cov is not None:
         out.append(f"<p class=cit>Posições com retorno avaliado: {v(view, f'{b}.coverage[{cov}].n_evaluated')} de "
                    f"{v(view, f'{b}.n_lines')}, {v(view, f'{b}.coverage[{cov}].coverage_portfolio_value_pct')} do valor da carteira. "
                    "As demais não têm série de preços ou cotas no SILO; o motivo de cada uma, a janela de 6 meses, a volatilidade e a queda "
                    'máxima estão no <a href="#s-retorno-por-posicao-em-detalhe">anexo</a>.</p>')
+        if (r.get("coverage") or [])[cov].get("n_contracted"):  # schema 2.1: method C, counted apart
+            out.append(f"<p class=cit>Retorno contratado de crédito bancário, à parte e só no anexo (não é retorno medido): "
+                       f"{v(view, f'{b}.coverage[{cov}].n_contracted')} linha(s), "
+                       f"{v(view, f'{b}.coverage[{cov}].contracted_coverage_portfolio_value_pct')} do valor da carteira.</p>")
     return "\n".join(out)
 
 

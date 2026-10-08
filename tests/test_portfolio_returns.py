@@ -363,8 +363,10 @@ def test_lines_without_a_series_are_not_evaluated_with_a_fixed_code_and_no_call(
     )
     sec, client = run(lines, {})
     codes = [ln["reason_code"] for ln in sec["lines"]]
-    assert codes == ["retorno_tesouro_sem_serie", "retorno_credito_sem_serie", "retorno_credito_sem_serie",
-                     "retorno_credito_sem_serie", "retorno_credito_sem_serie", "retorno_fidc_sem_classe",
+    # schema 2.1: a CDB or LCA points to its contracted return in the annex; a CRA with no register match is not
+    # identified for method A; a debênture waits for its method (owner's threshold)
+    assert codes == ["retorno_tesouro_sem_serie", "retorno_contratado_anexo", "retorno_contratado_anexo",
+                     "retorno_linha_nao_identificada", "retorno_debenture_metodo_pendente", "retorno_fidc_sem_classe",
                      "retorno_linha_nao_identificada"]
     assert all(ln["status"] == "nao_avaliado" and ln["basis"] is None for ln in sec["lines"])
     assert all(c in REASON_TEXT for c in codes)
@@ -394,11 +396,16 @@ def test_a_failed_series_call_is_recorded_and_the_line_is_not_evaluated():
 def test_demo_return_block():
     doc = json.loads(FIXTURE.read_text(encoding="utf-8"))
     r = doc["returns"]
-    assert doc["schema_version"] == "2.0" and list(doc).index("returns") == list(doc).index("risks") + 1
+    assert doc["schema_version"] == "2.1" and list(doc).index("returns") == list(doc).index("risks") + 1
     by = {ln["line_no"]: ln for ln in r["lines"]}
-    assert {n for n, ln in by.items() if ln["status"] == "avaliado"} == {2, 3, 4, 5, 7, 8}
+    assert {n for n, ln in by.items() if ln["status"] == "avaliado"} == {2, 3, 4, 5, 7, 8, 11}
     assert by[1]["reason_code"] == "retorno_tesouro_sem_serie" and by[6]["reason_code"] == "retorno_fidc_sem_classe"
-    assert by[9]["reason_code"] == by[10]["reason_code"] == "retorno_credito_sem_serie"
+    # schema 2.1: the CDB and LCA point to their contracted return (the demo prints no initial date, so it is not
+    # computed); the CRA is on the securitizer's curve; the debênture waits for its method
+    assert by[9]["reason_code"] == by[10]["reason_code"] == "retorno_contratado_anexo"
+    assert by[9]["contracted"]["reason_code"] == "contratado_sem_data_inicial"
+    assert by[11]["basis"] == "curva_securitizadora" and by[11]["windows"]["12m"]["pct_of_cdi_reason_code"] == "credito_nao_cdi"
+    assert by[12]["reason_code"] == "retorno_debenture_metodo_pendente"
     # Geração FIA: performance filed, negative 6-month gross shown and excluded
     assert by[3]["performance_fee_filed"] and by[3]["windows"]["6m"]["fee_per_point_excluded_from_aggregates"] is True
     assert by[3]["windows"]["6m"]["fee_per_point"] < 0
@@ -448,6 +455,9 @@ def test_demo_contribution_sums_to_the_covered_return_and_the_weights_to_100():
         assert w["status"] == "avaliado"
         assert sum(x["contribution_pp"] for x in w["lines"]) == pytest.approx(w["covered_return_pct"], abs=1e-3)
         assert sum(x["start_weight_pct"] for x in w["lines"]) == pytest.approx(100.0, abs=1e-3)
-        assert w["coverage_portfolio_value_pct"] == doc["returns"]["coverage"][wid]["coverage_portfolio_value_pct"]
-        evaluated = [ln["line_no"] for ln in doc["returns"]["lines"] if ln["windows"][wid]["status"] == "avaliado"]
+        # schema 2.1: the CRA on the curve is left out of the sum, and out of the share it covers
+        assert [x["line_no"] for x in w["excluded_lines"]] == [11]
+        assert w["coverage_portfolio_value_pct"] < doc["returns"]["coverage"][wid]["coverage_portfolio_value_pct"]
+        evaluated = [ln["line_no"] for ln in doc["returns"]["lines"]
+                     if ln["windows"][wid]["status"] == "avaliado" and ln["basis"] != "curva_securitizadora"]
         assert [x["line_no"] for x in w["lines"]] == evaluated  # statement order, nothing ranked
