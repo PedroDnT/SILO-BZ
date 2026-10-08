@@ -402,6 +402,18 @@
     "p_ids"
    ]
   },
+  "portfolio_credit_curve": {
+   "params": [
+    "p_codes",
+    "p_from",
+    "p_to"
+   ],
+   "required": [
+    "p_codes",
+    "p_from",
+    "p_to"
+   ]
+  },
   "portfolio_equivalents": {
    "params": [
     "p_as_of",

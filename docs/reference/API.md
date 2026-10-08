@@ -443,7 +443,7 @@ Nine functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
 map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`): three since v51,
 `portfolio_movement` since v54, `portfolio_instruments` and `portfolio_fund_terms`
 since v61 (`portfolio_instruments` serves a CRA or CRI ISIN since v67), `portfolio_fee_peers` since v63,
-`class_return_distribution` since v66 and `portfolio_equivalents` since v68.
+`class_return_distribution` since v66, `portfolio_equivalents` since v68 and `portfolio_credit_curve` since v71.
 All are raise-only on the one 1000-row page and anon-callable like the rest of
 `api`. Seven take a set of funds, codes or lines; `class_return_distribution` takes
 one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a name search that guesses.
@@ -668,6 +668,17 @@ one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a n
   It names an ETF with the same objective, not a recommendation.
 - A merge deploys nothing: the functions go live on the next analytical apply
   (`daily_ingest` `mode=analytics-only`), the MCP tools after `deploy_mcp.yml`.
+- **`api.portfolio_credit_curve(p_codes, p_from, p_to)`** (catalog v71, #766): a CRA
+  or CRI month by month on the securitizer's curve (`cvm_securit_serie`). One row per
+  code (at most 40, a leading `CRA-` or `CRI-` stripped) and month (at most 25): `pu` =
+  `valor_certificados` / `quantidade_certificados`, `paid_per_unit` = (`rendimentos` +
+  `amortizacoes`) / quantity, and `factor` = (`pu` + `paid_per_unit`) / the previous
+  `pu`, only when `month_flag` is NULL. `month_flag` names why a month is unknown:
+  `mes_ausente`, `mais_de_uma_serie`, `valor_nao_informado`, `mes_anterior_desconhecido`,
+  `quantidade_mudou`, `pagamento_maior_que_pu`, `pu_repetido`, `queda_sem_evento_arquivado`,
+  `retorno_mensal_fora_da_faixa` (outside -3% to +3% a month). The first month is the base
+  and has no factor. It is the securitizer's curve, not a market price; nothing is filled
+  in and `rentabilidade` is not read.
 
 ### Using the research seam
 

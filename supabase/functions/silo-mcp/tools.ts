@@ -116,6 +116,7 @@ export const TOOL_TITLES: ToolSpec[] = [
   t("portfolio_fee_peers", "Administration fee versus comparable FI peers and mapped ETFs (class, fund-of-funds flag and scope)"),
   t("class_return_distribution", "12- and 6-month net quota return percentiles of an ANBIMA class (>= 30 funds)"),
   t("portfolio_equivalents", "Market equivalent of an ANBIMA class: ETFs on its mapped indices, largest by third-party PL"),
+  t("portfolio_credit_curve", "A CRA or CRI month by month on the securitizer's curve, with a flag on every unknown month"),
   t("portfolio_fees", "Fees: disclosed (Extrato, lamina, cad_fi) beside a balancete estimate"),
   t("portfolio_lookthrough", "Look-through of funds into their holdings (CDA blocks 1, 2, 4, 6)"),
   t("portfolio_movement", "Is a fund's month unusual for its ANBIMA class (quota return, winsorized z, nao_avaliado with reason)"),

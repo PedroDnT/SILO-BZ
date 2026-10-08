@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "70";
+export const CONTRACT_VERSION = "71";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -65,6 +65,7 @@ export const ENDPOINT_NAMES: string[] = [
   "option_exercises",
   "option_history",
   "panel",
+  "portfolio_credit_curve",
   "portfolio_equivalents",
   "portfolio_fee_peers",
   "portfolio_fees",
@@ -3465,6 +3466,48 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_ids"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_credit_curve": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_credit_curve",
+    "description": "A CRA or CRI month by month on the securitizer's curve (catalog v71, #766). Per code (trimmed, upper-cased, a leading CRA- or CRI- stripped) and per month from p_from to p_to: the cvm_securit_serie row with codigo_cetip = code (one row per series at its highest versao), pu = valor_certificados / quantidade_certificados, paid_per_unit = (rendimentos + amortizacoes) / quantidade_certificados, and factor = (pu + paid_per_unit) / previous pu only when month_flag is NULL. month_flag says why a month is unknown: mes_ausente, mais_de_uma_serie, valor_nao_informado, mes_anterior_desconhecido, quantidade_mudou, pagamento_maior_que_pu, pu_repetido (equal pu, nothing paid), queda_sem_evento_arquivado (pu falls, nothing paid), retorno_mensal_fora_da_faixa (outside -3% to +3% a month). The first month is the base and gets no factor. The value is the securitizer's curve, not a market price; nothing is filled in, and rentabilidade is not read. At most 40 codes and 25 months, else 22023; at most one 1000-row page, refused above it, never trimmed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_codes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        }
+      },
+      "required": [
+        "p_codes",
+        "p_from",
+        "p_to"
       ],
       "additionalProperties": false
     }
