@@ -387,7 +387,7 @@ def _fees_view(eng: dict, names: dict[int, str]) -> dict:
         "by_line": by_line,
         "findings": findings,
         "underlying": underlying,
-        "summary": _fee_summary_view(fees.get("summary")),
+        "summary": _fee_summary_view(fees.get("summary"), t, (eng.get("statement") or {}).get("sum_of_lines_brl")),
         "comparison": _fee_comparison_view(fees.get("comparison")),
     }
 
@@ -402,11 +402,19 @@ def _fee_comparison_view(sm: dict | None) -> dict | None:
     return out
 
 
-def _fee_summary_view(sm: dict | None) -> dict | None:
-    """Engine 1.8: "Quanto a carteira paga em taxas", copied (every figure is the engine's), line numbers as ``L<n>``."""
+def _fee_summary_view(sm: dict | None, totals: dict | None = None, portfolio_brl: float | None = None) -> dict | None:
+    """Engine 1.8: "Quanto a carteira paga em taxas", copied (every figure is the engine's), line numbers as ``L<n>``.
+
+    #765: ``coverage_fixed_portfolio_pct`` and ``coverage_range_portfolio_pct`` are the value in funds with that fee
+    (``fees.totals.fund_value_with_fixed_fee_brl``, ``..._fee_range_brl``) over the statement's total, in percent: one
+    division of two engine fields, nothing summed, so the cost headline can say how much of the portfolio it covers."""
     if not isinstance(sm, dict):
         return None
     out = {k: v for k, v in sm.items() if k != "not_included"}
+    for key, base in (("coverage_fixed_portfolio_pct", "fund_value_with_fixed_fee_brl"),
+                      ("coverage_range_portfolio_pct", "fund_value_with_fee_range_brl")):
+        val = (totals or {}).get(base)
+        out[key] = round(val / portfolio_brl * 100, 4) if val is not None and portfolio_brl else None
     out["not_included"] = [{"id": x.get("id"), "text": x.get("text"), "line_ids": [f"L{n}" for n in x.get("line_nos") or []],
                             "value_brl": x.get("value_brl")} for x in sm.get("not_included") or []]
     return out

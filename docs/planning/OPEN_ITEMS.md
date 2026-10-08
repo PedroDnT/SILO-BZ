@@ -516,37 +516,133 @@ Implemented on `demo/brief-client-fit`: brief, expandable appendix, HTML upload 
 
 ## 18. Debenture secondary-market capture (#662)
 
-**Initial implementation, not deployed (2026-10-07, UTC-3).** Following the
-owner's request to begin building after the audit, B3 `ConsolidatedRecords`
-capture now has a glossary-grounded parser, raw retrieval evidence and knowledge
-time, a long DEB fact, incomplete-range refusal, audited writes, bounded backfill
-and an opt-in daily integration (migration 74). Real exports for 2026-10-06 and
-2025-12-11 passed with zero dropped rows: respectively 1,467/1,349 DEB groups and
-775/821 distinct codes. Full files remain local/ignored, with no production rows;
-the fixture is synthetic. [Evidence, hashes and commands](../reference/research/debenture-secondary-market-capture.md).
+**Approved recovery validated; experiment still inconclusive (2026-10-08,
+UTC-3).** PR #734 merged as `2c1ef8c38989820f5678bd4df193e420d24156ac`.
+Following specific owner approvals, migration 74 and captures for 06/10 and
+30/09–06/10 landed in production. Read-only recheck: both snapshots complete,
+zero drops; the five-session capture contains 59,670 facts and 1,181 DEB codes.
+COTAHIST 06/10 was recovered once: 17,453 rows, including 1,533 cash rows.
+Do not repeat that recovery or run an annual backfill. Permanent credit capture
+remains off under the approved rollout scope.
 
-Acceptance remains open: verify continuous historical coverage and legacy depth,
-budget storage (the recent one-day raw file is 20.7 MB), then obtain owner approval for production migration
-and enablement. Daily opt-in remains off; neither #662 nor research #628 is closed.
+The [executable audit and experiment gates](../reference/research/debenture-equity-experiment.md)
+now reproduce existing-data coverage and name candidates, including commercial
+names: 804 unique CNPJ candidates, two ambiguous, 375 unmatched. Of the unique
+candidates, 365 bond codes reach equities with positive cash closes in this
+window, representing 82 candidate CNPJs. These are not verified issuance links.
+The [read-only runner](../../research_examples/debenture_equity/README.md) never
+loads data or certifies strict historical PIT from retrieval dates.
 
-Later dependencies remain REUNE traded rates/access, dated issuer/ultimate-obligor
-links (#660), compatible rate/benchmark conventions (#661), empirical issuer
-coverage and the past-only equity residual experiment. Holdings marks and this
-initial capture do not establish readiness for that experiment.
+Offline experiment/preparation now implemented; twenty-six documented original-issuer
+links are available (ALPA13, ALUP18, ANIM18, ASAI18, BSA318, BRKMA6, CAMLB1, CSED12,
+ARML13, CSAN18, CCROA5, CTEE18, CGASA1, ENEV13, DXCO13, EGIE27, BRST15, DESK17, HYPEA8, IOCHA3, IRBR12, ITSA17, JHSF1A, MATD12, JALL13, MILSA0). The runner uses current total-return equity/IBOV exports, trailing
+beta, past-liquidity equity selection, chronological purges and dependence checks.
+Initial live run: four one-session outcomes, no primary five-session outcomes.
+Owner approved all 13 recovery slices for 01/07–29/09. After an initial transport
+failure, all 13 are now complete: 770,562 facts, zero drops, valid hashes, audits
+`ok` and nine distinct metrics per source group. The execution-time peak credit
+allocation increase was 400,982,016 bytes (later 386,850,816), below the 1 GB stop.
+All 69 known study sessions are delivered;
+no recovery windows remain. Expanded twenty-six-link offline run: 935 overlapping horizon rows from 22 issuers
+(355/336/244 at 1/5/20 sessions; ENEV3/BRST3 lack trailing beta history, MATD12/MILSA0 only have excluded intragroup trades), all inconclusive; strict PIT still zero. FCA recorded
+listing intervals are enforced and exact-date sector robustness is implemented;
+available B3 sector history starts 16/09 and cannot cover training. The three-month pilot
+cannot meet fixed training/validation/test floors despite completed recovery;
+dated identity changes, longer protocol, sector coverage and power assessment remain.
+The documentary candidate target is met, but the primary untouched test still has
+18 issuers/15 dates, below its unchanged acceptance floors.
 
+A [versioned prospective design candidate](../../research_examples/debenture_equity/prospective-design.md)
+now specifies 90/50/100 reference sessions, cutoff and immutable label/input
+requirements, a development-only power grid and the requirement-by-requirement
+completion audit. It is unactivated. A local retention helper now verifies hashes, byte budgets and
+actual-clock cutoffs without fetching or certifying PIT; collector/evaluator and
+power assessment implementation, owner acceptance and future elapsed history remain.
+The evaluator foundation now separates frozen features from coherent realized
+label vintages, preserving class/ISIN, alpha/beta and prior pilot behavior.
+Archive/input integration now reparses raw credit, validates availability and
+calendar coverage, and selects complete company FCA filings without resurrecting
+removed tickers. Independent completeness/source acceptance, prediction/label
+availability and power assessment remain open.
+An offline realized-outcome replay now links one on-time label archive to its
+frozen input, verifies post-exit collection/publication and checks actual
+availability at a fit cutoff. Accepted original-version selection, availability-aware
+fitting, frozen predictions and independent source/convention acceptance remain.
+Canonical original slots now refuse replacement within an externally pinned
+first-input scope and do not search alternative archives. Pre-outcome acceptance
+of that pin, prediction-bound inputs, late/missing/revision handling and
+availability-aware fitting remain required.
+First-test fitting preparation now uses canonical available development labels,
+fixed 90/50 calendar cuts, purged train/validation tuning and final-refit lineage.
+It is offline preparation, not proof of publication before entry; inventory
+acceptance, frozen prediction publication/reuse, power and financial/PIT gates remain.
+Local prediction publication/reuse now enforces actual-clock cutoffs, exact
+original-fit replay and unchanged initial parameters on later test signals.
+It does not activate the design or establish the exchange entry-close; accepted
+scope/inventory, power, sector robustness, collector/retention and source/PIT gates remain.
+The necessary nested-development date audit now proves V2's horizon-20 ceiling
+is only 37 primary / 34 delayed dates, below the unchanged 60-date power floor.
+A separate unactivated V3 120/60/100 proposal gives 74 delayed dates in perfect
+coverage, not estimated power. V2/defaults and all floors remain intact. Actual
+nested losses/calibration, acceptance and prospective observations remain required;
+the V3 302-session storage scenario grants no additional production authority.
+Canonical-archive nested development loss generation is now implemented with
+availability/exit purges, expanding training/rolling validation, frozen feature
+binding and sparse OOS loss/parameter lineage. It loads no test labels and makes
+no timely-publication or power claim. Fold-rule acceptance, qualifying real
+prospective observations, sector/issuer robustness, null/block calibration and
+MC uncertainty remain; no test activation or production authority is added.
+Conditional crossed-issuer/non-circular calendar-block simulation now preserves
+the full OOS session axis and missing activity, reports null/gain-grid rejection
+frequencies with MC intervals and counts empty/incomplete draws. It is numerical
+preparation, not independent training/activity or hybrid-inference calibration.
+No qualifying prospective history or sector/dominance/delay acceptance is supplied,
+and all reports retain not-estimable/no-MDE/no-activation/PIT-false status.
+The nested development comparison now optionally learns sector controls only
+from available purged training labels, excludes missing/unseen sectors, preserves
+date floors and reports successful-fold category/attrition counts. Frozen sector
+binding and separate controlled/uncontrolled loss scopes are enforced. Actual
+coverage, held-out controlled predictions/scoring, dominance/delay/placebos and
+independent training/activity calibration still need evidence; primary prediction
+publication and production are unchanged.
 
-Follow-up 2026-10-07 (UTC-3): a seven-calendar-day export delivered five dates,
-6,630 DEB groups and 59,670 facts, with zero drops; local storage and repeat-export
-latency are [measured](../reference/research/debenture-secondary-market-validation.md).
-Bounded smaller-slice recovery is implemented for export failures only. Production
-enablement, storage budget and full historical continuity remain open.
+The approved three-month recovery and its storage checks are complete. The
+[execution reset](../reference/research/debenture-equity-experiment.md#execution-reset-reviewed-2026-10-08-utc-3)
+puts one complete collector/archive/replay rehearsal and a concrete one-session
+approval package first (2–4 hours estimated active effort, checkpoint at 2 hours).
+Ingestion is mandatory: an approved canary must persist raw captures, validated
+facts and one audit per capture through the existing ingestor. Then deliver
+specifically approved recurring daily/watchdog ingestion, verifying the first
+three scheduled cash sessions, cutoff archives and cumulative cost. Permanent
+capture stays off until that approval; ingestion need not wait for model/power
+acceptance. Reuse existing equity/FCA/benchmark/sector ingestion.
+The [credit ingestion canary package](../../research_examples/debenture_equity/ingestion-canary.md)
+is implemented locally with a hash-pinned 08/10 single-session request, expiry
+09/10 at 10:00 UTC-3, explicit size/storage thresholds, private retained response
+and exact persisted fact/audit verification. Owner then authorized an immediate
+07/10 retrospective operational attempt: on 08/10 at 18:44 UTC-3 the 32,893,413-byte
+export exceeded the approved 30 MB gate; one error audit recorded zero facts,
+no capture landed and credit allocation was unchanged. The superseded 09/10
+heartbeat is paused; no retry/activation followed. See the canary runbook for evidence.
+The local source-backed FCA adapter and seven-component collector are implemented:
+current retained ZIP evidence covers 26 reviewed CNPJs and 32 equity/unit rows.
+The bounded SELECT ran, but returned zero qualifying credit captures; no real
+seven-component archive exists. Links reviewed through 06/10 require dated
+review for 08/10 eligibility. Historical PIT and independent completeness remain open. Keep credit-ingestion acceptance separate from
+full research snapshot/PIT acceptance. Specific canary approval remains required.
+Then: accepted prospective development contract
+with dated identity/source/convention and storage/retention gates; real development
+calibration; frozen untouched-test evaluation. No further statistical helpers or
+cohort expansion precede the collection seam. Protocols/floors and production
+authority remain unchanged; elapsed history cannot be accelerated by local code.
+REUNE traded
+rates/access and benchmark conventions (#661) remain separate dependencies under
+ADR 0004. Neither #662 nor #628 is closed by this pilot recovery.
 
-Daily-run blocker diagnosed on 2026-10-07 (UTC-3): run 37579395989 failed while
-replaying `DROP INDEX uq_fi_cda_acoes`, so COTAHIST never ran. Catalog guards
-now preserve valid matching indexes and skip absent constraint drops; real
-changes still run. Local reader-lock, key-widening and NULL-uniqueness tests
-passed. [Recovery plan](../reference/research/ingest-recovery-2026-10-07.md).
-Production application and the data recovery are pending owner approval.
+Historical [local capture/storage measurements](../reference/research/debenture-secondary-market-validation.md)
+and [schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md)
+remain timestamped evidence of their earlier state. The production approvals and
+recoveries above supersede their then-pending rollout status.
 
 
 ## 19. COTAHIST preserved fields and code reference (#720)
@@ -560,3 +656,34 @@ Production analytical apply, MCP redeployment and live acceptance remain pending
 No new collection or source-vintage archive is part of this change.
 [Audit and field map](../reference/research/cotahist-storage-serving-map.md).
 
+
+The separately approved 40 MB 07/10 operational canary succeeded on 08/10 at
+18:49:55 UTC-3: 13,806 facts / 1,534 nine-metric groups, zero drops/missing dates,
+raw hash and exact persisted facts reconciled, one successful audit, exit 0 and
+valid completion receipt. Credit allocation grew 14,270,464 bytes; elapsed time
+141.195 seconds. Evidence and limitations are in the debenture ingestion-canary
+runbook. The earlier failed audit remains visible. No schema, permanent activation,
+new dataset or PIT certification; the next-day heartbeat stays paused. Recurring
+weekly-window cost and the first three scheduled cash sessions remain unverified.
+
+
+The [recurring activation package](../../research_examples/debenture_equity/recurring-ingestion-approval.md) revalidates the existing 30/09–06/10 production window (59,670 facts, 82.13 MB raw, 73.103 seconds) instead of repeating it. Local repeat allocation was 38.53 MB, not a production measurement. The owner approved recurring daily/watchdog activation. The environment wiring is in PR #769; enabling the repository variable follows its green merge. First-three-session acceptance remains pending.
+
+## 20. Diagnosis coverage: three gaps to close (#765), proposal for the owner
+
+**Status: proposal, not built. Needs the owner's approval before any work.** From the trace audit of the
+2026-10-08 real report (`docs/reference/research/report-v2-trace-audit.md`). Shares are of that portfolio's value.
+Ranked by share of the portfolio against the work to close it.
+
+| # | Gap | Share | Smallest change that closes it | Work |
+| --- | --- | --- | --- | --- |
+| 1 | 2 funds ambiguous: "a cota não desempatou" | 19,55% | `api.portfolio_resolve` compares the statement's quota only on the exact position date, and both lines had none that day. Compare on the last quota filed on or before that date (a few business days back), or with the quota implied by value over quantity from the "Detalhamento" table (#751). The BTG performance PDF prints no CNPJ, so a CNPJ tie-break does not apply. Check first that both candidates file a daily quota (a FIDC or FIAGRO does not). | Rule fix in SQL, catalog bump, test |
+| 2 | 2 Tesouro titles without a return | 9,07% | Tesouro Direto price history as a new public dataset (one fetcher, one table, one `api.*` function), then the returns block reads it like a quote. The public file and its terms are not checked yet. | New data, small |
+| 3 | 2 debentures without a return | 8,03% | SILO already captures B3 OTC debenture prices (`b3_credit_observations`, migration 74). Grant a serving function and read it as the debenture's price series. | Rule over existing data |
+
+Not in the top three: 6 CRA and CRI without a return (21,52%), already measured by #766 (the securitizer's curve in
+`cvm_securit_serie` evaluates 1 of the 6 with its guards; the owner decides the guards,
+`docs/reference/research/portfolio-return-coverage.md` section 8), and 1 CDB unidentified (15,45%; no public
+bank-issuance registry is ingested). Item 3 uses B3's own OTC prices, not #766's method B (the median fund mark,
+which evaluates 0 of the 2 debentures). Two suspected join gaps to check before any build: 2 multimercado funds with
+no CDA for 2026-04 (6,99%) and the same 2 with 9 and 10 of 13 month-end quotas missing.

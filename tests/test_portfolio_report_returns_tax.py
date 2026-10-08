@@ -371,16 +371,16 @@ def _page1(view):
 
 def test_page_one_lists_points_to_check_by_name_from_engine_facts(view):
     _, page = _page1(view)
-    assert "Pontos a conferir com o cliente" in page
+    assert "O que pede atenção" in page  # #765: the fixed points, then one line per risk row at atenção or moderado
     assert "Emissor acima do limite do FGC" in page and "BANCO EXEMPLO" in page  # an issuer, never an L-id
     assert "Informe reapresentado" in page and "Cota fora da faixa da classe" in page
     assert re.search(r"\bL\d+\b", page) is None
-    assert len(re.findall(r"<li>", page.split("Pontos a conferir")[1].split("</ul>")[0])) <= 4
+    assert len(render._points_to_check(view)) <= 4
 
 
 def _restated_points(view):
     _, page = _page1(view)
-    pts = page.split("Pontos a conferir")[1].split("</ul>")[0]
+    pts = page.split("O que pede atenção")[1].split("</ul>")[0]
     return [li for li in re.findall(r"<li>(.*?)</li>", pts, re.S) if "Informe reapresentado" in li]
 
 
@@ -410,7 +410,7 @@ def test_a_missing_field_count_reads_not_available_never_a_dash(view):
 
 def test_page_one_shows_the_fixed_fee_and_the_range_side_by_side_never_summed(view):
     _, page = _page1(view)
-    cost = page.split("<h3>Custo</h3>")[-1].split("<h3>")[0]
+    cost = page.split("<h3>Quanto custa</h3>")[-1].split("<h3>")[0]
     s = view["fees"]["summary"]
     for k in ("adm_disclosed_fixed_per_year_brl", "adm_disclosed_range_low_per_year_brl",
               "adm_disclosed_range_high_per_year_brl", "coverage_fixed_fund_value_pct", "coverage_range_fund_value_pct"):
@@ -421,7 +421,7 @@ def test_page_one_shows_the_fixed_fee_and_the_range_side_by_side_never_summed(vi
               "adm_disclosed_range_low_portfolio_pct", "adm_disclosed_range_high_portfolio_pct"):
         v2["fees"]["summary"][k] = None
     _, page2 = _page1(v2)
-    cost2 = page2.split("<h3>Custo</h3>")[-1].split("<h3>")[0]
+    cost2 = page2.split("<h3>Quanto custa</h3>")[-1].split("<h3>")[0]
     assert "nenhum fundo com faixa divulgada" in cost2 and "R$ 0,00" not in cost2
 
 
@@ -435,7 +435,9 @@ def test_page_one_states_the_cost_with_its_coverage_and_what_was_not_assessed(vi
     _, page = _page1(view)
     s = view["fees"]["summary"]
     assert values.format_value(view, "fees.summary.adm_disclosed_fixed_per_year_brl") in page
-    for k in ("coverage_fixed_fund_value_pct", "coverage_range_fund_value_pct", "coverage_without_fee_fund_value_pct"):
+    # #765: the coverage of each known fee over the whole portfolio, and over the fund value in small type
+    for k in ("coverage_fixed_portfolio_pct", "coverage_range_portfolio_pct", "coverage_fixed_fund_value_pct",
+              "coverage_range_fund_value_pct"):
         assert values.format_value(view, f"fees.summary.{k}") in page
     assert "Não é o custo total" in page and "Não avaliado" in page
     assert s["adm_disclosed_fixed_per_year_brl"] is not None
@@ -505,7 +507,7 @@ def test_two_lines_with_the_same_name_keep_their_statement_order():
 BODY_ORDER = ("Resumo para a reunião", "O que pede atenção", "Achados", "Quanto a carteira paga em taxas", "O que a carteira tem",
               "Concentração e liquidez", "Retorno passado contra o CDI", "Taxa e imposto por posição",
               "Informes reapresentados e movimento incomum", "O que não foi possível avaliar")
-ANNEX = ("Como cada posição foi identificada", "Crédito direto no registro da CVM", "Detalhe da exposição", "Taxa por fundo", "Todos os riscos e seus limites",
+ANNEX = ("Resumo escrito pelo redator", "Como cada posição foi identificada", "Crédito direto no registro da CVM", "Detalhe da exposição", "Taxa por fundo", "Todos os riscos e seus limites",
          "Retorno por posição em detalhe", "ETF comparável (não é recomendação)", "Metodologia e limitações")
 
 
@@ -552,12 +554,11 @@ def test_the_body_return_table_shows_pct_of_cdi_or_the_engine_reason_never_zero_
         if w["pct_of_cdi"] is not None:
             assert values.format_value(w, "pct_of_cdi") in pct and "do CDI" in pct
             seen_value = True
-        elif w["pct_of_cdi_reason_code"] in render.CREDIT_NA_CODES:  # schema 2.1: direct credit, one footnote
-            assert re.sub(r"<[^>]+>", "", pct).strip() == "n/a¹"
-            assert "¹ " + render.e(view["returns"]["pct_of_cdi_credit_note"]) in sec
-        else:
-            assert render.e(REASON_TEXT[w["pct_of_cdi_reason_code"]]) in pct  # also for a share (pct_cdi_so_fundos)
-            assert re.sub(r"<[^>]+>", "", pct).strip() not in ("", "—", "0", "0,00%")
+        else:  # #765: "n/a" in the cell, the engine's reason once in the footnote (also for a share and, schema 2.1,
+            # for direct credit on IPCA or prefixado)
+            assert pct.strip() == "n/a"
+            reason = render.e(REASON_TEXT[w["pct_of_cdi_reason_code"]])
+            assert reason not in rows[0] and sec.count(reason) == 1
             seen_reason = True
     assert seen_value and seen_reason
 

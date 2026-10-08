@@ -3,14 +3,12 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
-## 2026-10-08 · claude/credit-direct-return-cdi (#766)
+## 2026-10-08 · claude/credit-direct-return-build (#766)
 
-**Done.** Part 1, measurement: the brief's acceptance test for method A (MRV's CRI 24I1980390 near 110% of the CDI)
-failed on the report's window (53.0%: the 2026-04 coupon was never filed), and the session stopped as the brief said.
-The case is in `docs/reference/research/portfolio-return-coverage.md`, section 8. Part 2, after the owner accepted the
+**Done.** The build that follows #768 (the measurement and the stop at MRV's test case), after the owner accepted the
 two guards: `api.portfolio_credit_returns` (catalog v71, `31_api_portfolio.sql`), engine schema 2.1 (`returns.py`,
-new `contracted.py`), the BTG reader keeps 'Data inicial', the report shows A in the body table ("valor na curva",
-"n/a¹" with one footnote) and C in the annex only. On the real 2026-08-31 statement: measured 12-month coverage 8.06%
+new `contracted.py`), the BTG reader keeps 'Data inicial', the report shows A in the body table ("valor na curva";
+"n/a" with the reason in #765's one footnote) and C in the annex only. On the real 2026-08-31 statement: measured 12-month coverage 8.06%
 to 10.65% (Marfrig CRA, 14.54%, 99.38% of the CDI); contracted return apart, 18.43% (OMNI CDB IPCA + 6,20%: 10.69%;
 CDCA 11,87% a.a.: 11.87%).
 
@@ -26,8 +24,64 @@ checks, and the production rows of the six codes); it is not applied to producti
 
 **Outside scope.** Method B (debentures): waits for the owner's threshold, and section 8 shows no threshold evaluates a
 semiannual payer. The Supabase MCP did not answer; production reads used `psql` in read-only mode. Seen, not fixed: the
-tax block could read the same 'Data inicial' (it reads only `data_aplicacao`).
+tax block could read the same 'Data inicial' (it reads only `data_aplicacao`). Fixed while merging main: a stray
+`||||||| d25f70ee` conflict marker main carried in this file.
 
+## 2026-10-08 · claude/report-v2-trace-audit (#765)
+
+**Done.** Phase 1: the trace of the real report of 2026-10-08 17:25 UTC-3 read through `scripts/trace_view.py`, its
+engine JSON, HTML and PDF downloaded outside the repository; causes of problems A to G and the coverage gaps ranked by
+share of the portfolio in `docs/reference/research/report-v2-trace-audit.md` (positions by type and share only, no
+names: the repository is public). Phase 2, presentation only: page 1 in the reader's order (cost with its coverage of
+the portfolio, return coverage, one line per risk row at atenção or moderado, one sentence on what was not assessed),
+"% do CDI" as n/a with one footnote, Redator prompt rules 7 and 8 and Revisor rule 9 against restating the risk table,
+the two English strings in Portuguese, and a test that fails if an internal word reaches the reader. Phase 3: proposal
+in `OPEN_ITEMS.md` item 20, not built.
+
+**Before and after** (`--provider fake`, outside the repository):
+
+| Input | Pages | Words | "a conferir" | "estimativa" | "não avaliad" | Page 2 lines |
+| --- | --- | --- | --- | --- | --- | --- |
+| Real engine JSON, before | 35 | 13.601 | 56 | 42 | 66 | 46 |
+| Real engine JSON, after | 35 | 13.581 | 55 | 42 | 65 | 46 |
+| Demo fixture, before | 40 | 14.819 | 60 | 51 | 49 | 43 |
+| Demo fixture, after | 40 | 14.861 | 58 | 51 | 49 | 43 |
+
+The real PDF from the run (gpt-5.1) had 37 pages and 13.297 words; the fake writer gives different prose, so the
+counts compare only within one input.
+
+**Decisions.**
+- Page 1 lists risk rows at atenção or moderado, against the stage-1 choice (#749 era) to keep them in the table only:
+  the owner's item 7 asks for one line per finding. At most five lines, then "Mais N"; a row a fixed point already
+  states is left out, and so is `movimento_anormal`, whose level is the table-only one.
+- The coverage over the portfolio is one division of two engine fields in `adapt.py` (no engine change, nothing summed).
+- The Revisor's restatement rule applies only to `riscos` and `resumo`, and runs after the older rules so their
+  reasons stay.
+
+**Assumptions.** Problem B (page 2 holding only the disclaimer) does not reproduce with the fake writer; it came from
+the real Redator's three long findings on page 1, which no longer print there. Not checked with the paid Redator.
+
+**Outside scope.** `brew install pango` and WeasyPrint in `.venv` to build PDFs locally, removed again at the end.
+`test_the_pdf_carries_the_diagrams` fails with WeasyPrint installed, on `main` too; CI does not install WeasyPrint.
+
+## 2026-10-08 · claude/credit-direct-return-cdi (#766)
+
+**Done.** Measurement only, read-only against production; no code, migration, catalog or MCP change. The brief's
+acceptance test for method A (MRV's CRI 24I1980390 near 110% of the CDI) failed on the report's window
+(2025-08 to 2026-08): 53.0%, because the securitizer did not file the 2026-04 coupon. The brief says to stop there, so
+the session stopped and wrote the case in `docs/reference/research/portfolio-return-coverage.md`, section 8: the
+formula gives 109.9% to 110.1% on every complete window; guarded A evaluates 1 of 6 CRA/CRI (Marfrig, 99.4%);
+B evaluates 0 of 2 debentures at any threshold (two coupon months in every 12-month window); coverage 8.06% to
+about 10.65%, not 30%.
+
+**Decisions.** None taken for the owner. Proposed, not built: guards `queda_sem_evento_arquivado`, `pu_repetido`,
+`quantidade_mudou`, `mes_ausente`, and a third one for an implausible PU (CRA02500001).
+
+**Assumptions.** The 08/10 report's position date is 2026-08-31 (its CDI, 14.63%, matches that window). The
+paper values come from the report PDF on the owner's machine; no client data is in the repo.
+
+**Outside scope.** Seen, not fixed: the report's rates for lines 1 and 2 (CDB "IPCA + 6,20%", NTN-B "IPCA + 7,00%")
+may be shifted by one row; check against the PDF. The Supabase MCP did not answer in this session.
 ## 2026-10-07 · claude/risk-table-fgc-caveat-once (#754)
 
 **Done.** Follow-up to #749, item 3c, `src/portfolio/report/render.py` only. The risk table row `fgc_acima_limite`

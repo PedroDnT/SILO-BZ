@@ -14746,7 +14746,7 @@
         "n_rows": null
       }
     ],
-    "dormant_coverage_note": "Cobertura do screen de fundos dormentes: todas as cascas vazias (empty_shell) e os fundos parked com PL de última competência igual ou acima de R$ 1 bilhão. Um fundo parked abaixo disso NÃO foi avaliado (a chamada sem filtro é recusada pelo SILO por exceder uma página de 1.000 linhas).",
+    "dormant_coverage_note": "Cobertura da tela de fundos dormentes: todas as cascas vazias e os fundos parados (sem atividade) com PL de última competência igual ou acima de R$ 1 bilhão. Um fundo parado abaixo disso NÃO foi avaliado (a chamada sem filtro é recusada pelo SILO por exceder uma página de 1.000 linhas).",
     "abnormal_movement": "Movimento incomum: avaliado na seção movement (retorno mensal da cota contra a classe ANBIMA do fundo), não neste bloco.",
     "lines": [
       {

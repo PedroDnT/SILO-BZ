@@ -92,7 +92,7 @@ REASON_TEXT = {
     "queda_sem_evento_arquivado": "o valor na curva cai em um mês da janela sem pagamento arquivado (cupom ou amortização não informados); retorno não avaliado",
     "pagamento_acima_do_pu": "o pagamento arquivado no mês supera o valor do certificado: informe inconsistente; retorno não avaliado",
     "taxa_credito_sem_taxa_adm": "crédito direto: sem taxa de administração; o spread embutido não é publicado",
-    "credito_nao_cdi": "n/a: a taxa impressa no extrato não é atrelada ao CDI (IPCA ou prefixado); só a diferença para o CDI em p.p.",
+    "credito_nao_cdi": "crédito direto atrelado a IPCA ou prefixado (a taxa impressa no extrato não contém CDI): só a diferença para o CDI em p.p.",
     "taxa_nao_informada": "o extrato não imprime a taxa do papel: '% do CDI' não calculado; só a diferença para o CDI em p.p.",
     "retorno_contratado_anexo": "crédito bancário sem série de preços: o retorno medido não existe; o retorno contratado está no anexo",
     "contratado_taxa_ilegivel": "taxa impressa no extrato não legível como % do CDI, CDI + spread, IPCA + spread ou prefixado: retorno contratado não calculado",

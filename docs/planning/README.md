@@ -8,7 +8,7 @@
 | [SERVING.md](SERVING.md)                         | The serving roadmap, step by step                                                                                                  | Step 8 (widen the panel) — everything else done or obsoleted                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | [INSTRUMENTS.md](INSTRUMENTS.md)                 | How each B3 instrument class is ingested and served                                                                                | Design reference, no queue                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | [SDK.md](SDK.md)                                 | What `sdk/silo_client` is today and what is missing                                                                                | pandas dependency, PyPI, wheel CI, async                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| [OPEN_ITEMS.md](OPEN_ITEMS.md)                   | **The** register of what is deliberately not done                                                                                  | Nineteen items, ten of them done (moved to `../archive/OPEN_ITEMS_DONE.md`, a pointer each); open are 3, 10, 11, 13, 14 (the §7 backlog), 15 (portfolio diagnosis), 17 (audit protocol: review candidates, typed CVM skip) and 18 (brief and client constraints); item 19 tracks COTAHIST field/code serving (#720), with production acceptance pending; the tech-debt audit of 2026-10-06 is issue #677; read this before starting anything                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| [OPEN_ITEMS.md](OPEN_ITEMS.md)                   | **The** register of what is deliberately not done                                                                                  | Twenty items, ten of them done (moved to `../archive/OPEN_ITEMS_DONE.md`, a pointer each); open are 3, 10, 11, 13, 14 (the §7 backlog), 15 (portfolio diagnosis), 17 (audit protocol: review candidates, typed CVM skip) and 18 (brief and client constraints); item 19 tracks COTAHIST field/code serving (#720), with production acceptance pending; item 20 proposes the three diagnosis coverage gaps to close next (#765), awaiting the owner; the tech-debt audit of 2026-10-06 is issue #677; read this before starting anything                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | [CHANGELOG.md](CHANGELOG.md)                     | Append-only log, one row per merged branch; the newest 60 (older: `docs/archive/changelog/`; newer: one file per branch in `changelog.d/`) | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | [SESSION_LOG.md](SESSION_LOG.md) | Per-session log the owner asks for: branch, what was done, decisions, assumptions, scope | Started 2026-10-07 (#749) |
 | [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md)       | Who else does this, what they have that we don't, and what nobody has (2026-09-23)                                                 | Snapshot; its §7 backlog is sequenced in `OPEN_ITEMS.md` item 14                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -42,12 +42,49 @@ Brief and client constraints (#607, #614): [contract](../reference/portfolio/bri
 
 Current closure sequence: [open issue resolution](OPEN_ISSUE_RESOLUTION.md), #658 smoke fix → #607 → #517 real-file evidence → #510 readiness; #628 research separately.
 
-Debenture capture #662 has an initial, opt-in implementation, separate from #628's
-research acceptance. [OPEN_ITEMS item 18](OPEN_ITEMS.md#18-debenture-secondary-market-capture-662)
-tracks the two successful real-CSV checks, remaining coverage/rollout and bond→equity dependencies.
+Debenture capture #662 has an opt-in implementation and fifteen approved, complete
+production snapshots. Permanent capture remains off. COTAHIST 06/10 was recovered.
+[OPEN_ITEMS item 18](OPEN_ITEMS.md#18-debenture-secondary-market-capture-662) tracks
+current status; earlier [window/storage validation](../reference/research/debenture-secondary-market-validation.md)
+and [schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md) remain
+historical measurements. The [executable readiness audit and experiment gates](../reference/research/debenture-equity-experiment.md)
+separate name candidates from confirmed links and retrieval time from historical PIT.
+All 13 approved recovery slices now passed hash, audit and nine-metric checks:
+69/69 study sessions are covered, with allocation growth below the approved 1 GB
+stop. The expanded pilot has 935 overlapping horizon outcomes, all inconclusive;
+the three-month period cannot satisfy confirmatory floors. Twenty-six original issuers
+are documented; 22 yield outcomes under the existing history requirements. Dated sector robustness is implemented but lacks training history.
+An [unactivated prospective design](../../research_examples/debenture_equity/prospective-design.md)
+records the longer candidate, frozen power grid, snapshot/label rules and completion audit.
+Permanent capture remains off; broader identity review, a longer frozen protocol,
+statistical power and strict PIT acceptance remain open.
+The [2026-10-08 execution reset](../reference/research/debenture-equity-experiment.md#execution-reset-reviewed-2026-10-08-utc-3)
+prioritizes one complete input-collection/archive rehearsal and an exact canary
+approval package before additional statistical tooling. Engineering readiness,
+approved production and future confirmatory observations are separate milestones;
+the existing frozen requirements and production boundaries remain intact.
+Ingestion is a required delivery: the approved canary must persist raw/facts/audit,
+followed by separately approved recurring daily/watchdog activation and verification
+of the first three scheduled cash sessions, actual cutoff archives and cumulative
+cost. Export/replay alone does not complete engineering; the permanent gate stays
+off until production activation is specifically approved.
+The [one-session credit ingestion package](../../research_examples/debenture_equity/ingestion-canary.md)
+is now locally implemented/testable; its 08/10 request expires 09/10 at 10:00
+UTC-3 and is unexecuted. The owner replaced its scheduled execution with a
+07/10 operational attempt on 08/10: the 32.89 MB response exceeded the approved
+30 MB gate, leaving zero facts/no capture and one error audit. The heartbeat is
+paused; no retry or recurring activation occurred. The local source-backed FCA adapter and
+[collector](../../research_examples/debenture_equity/collector.md) now retain/rederive
+current ZIP evidence and assemble seven components. Zero qualifying credit captures
+in the bounded SELECT prevent a real archive; dated link review, independent
+completeness and historical PIT remain open.
 
-Debenture [window/storage validation](../reference/research/debenture-secondary-market-validation.md)
-records the bounded sample and the smaller-slice recovery follow-up.
 
-[Daily schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md):
-local fix verified; production apply and COTAHIST recovery pending approval.
+The separately approved 40 MB 07/10 operational canary succeeded on 08/10 at
+18:49:55 UTC-3: 13,806 facts / 1,534 nine-metric groups, zero drops/missing dates,
+raw hash and exact persisted facts reconciled, one successful audit, exit 0 and
+valid completion receipt. Credit allocation grew 14,270,464 bytes; elapsed time
+141.195 seconds. Evidence and limitations are in the debenture ingestion-canary
+runbook. The earlier failed audit remains visible. No schema, permanent activation,
+new dataset or PIT certification; the next-day heartbeat stays paused. Recurring
+weekly-window cost and the first three scheduled cash sessions remain unverified.

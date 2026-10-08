@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "signal_date": "2026-10-07",
+  "calendar": {
+    "sessions": [
+      "2026-10-07",
+      "2026-10-08"
+    ],
+    "source_url": "https://www.b3.com.br/data/files/20/57/01/AA/06A1F910ADC36BE9AC094EA8/OC%20041-2026-VNC%20ERRATA%20-%20CALENDARIO%20DE%20FERIADOS%20EM%202026_PT.pdf",
+    "observed_at": "2026-10-08T20:01:51.410928+00:00",
+    "evidence_note": "07/10 completed cash session confirmed by bounded COTAHIST SELECT on 08/10 at 18:43 UTC-3. Official B3 calendar supports 07\u201308/10 scheduled sessions. No original-date observation claim."
+  },
+  "cutoff_at": "2026-10-08T22:29:00.334669+00:00",
+  "max_raw_bytes": 30000000,
+  "max_facts": 30000,
+  "max_relation_growth_bytes": 100000000,
+  "max_database_bytes": 135000000000,
+  "timeout_seconds": 300,
+  "attempts": 1,
+  "permanent_enablement": false,
+  "purpose": "retrospective_operational",
+  "prepared_at": "2026-10-08T21:44:00.334669+00:00",
+  "research_cutoff_at": "2026-10-08T10:00:00-03:00",
+  "plan_sha256": "cf182e73f90ee4c8b003bf780c6c29cba1e808ac2d8b15dcccdac63d137607a2"
+}
