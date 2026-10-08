@@ -3,6 +3,25 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-08 · claude/credit-return-method-a-c (#766)
+
+**Done.** The owner re-issued #766. The MRV stop was checked again on production (unchanged), and the owner chose A with
+guards, no B, C in the annex. Built: `api.portfolio_credit_curve` (catalog v71: catalog, openapi, MCP and SDK contracts
+regenerated, SQL behaviour test), engine 2.1 (`basis` `curva_securitizadora`, `returns.contracted`), the PDF reader's
+"Data Inicial", and the annex section "Retorno contratado (não é retorno de mercado)". Results in
+`docs/reference/research/portfolio-return-coverage.md` section 9.
+
+**Decisions.**
+- Two guards beyond #766: `pagamento_maior_que_pu` and a ±3% monthly band, measured on every CRA/CRI month 2025-01 to
+  2026-08. `pu_repetido` only fires with nothing paid. The band is left to the owner.
+- `data_inicial` is a field of its own; `data_aplicacao`, which the tax block reads, is not filled from the PDF.
+- C's "% do CDI" only for "p% do CDI" and "CDI + s%"; IPCA by whole month, no pro rata.
+
+**Assumptions.** Coverage measured with the function body run read-only on production; the function itself is not in
+production (no migration run). `--provider fake` only.
+
+**Outside scope.** A local Postgres cluster (`~/silo-pg-ci`) to regenerate `openapi.json` and run the SQL test.
+
 ## 2026-10-08 · claude/report-v2-trace-audit (#765)
 
 **Done.** Phase 1: the trace of the real report of 2026-10-08 17:25 UTC-3 read through `scripts/trace_view.py`, its

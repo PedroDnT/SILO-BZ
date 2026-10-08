@@ -25,6 +25,17 @@ measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the val
 
 1.14 (#607/#614): additive `client_fit`, with validated declared constraints and factual cash/maturity checks; no suitability approval. See [contract](brief-client-fit.md).
 1.15 (map #510, owner 2026-10-06): additive `returns.contribution`, the retroactive contribution per position and window (see `returns`, below); no portfolio total.
+2.1 (#766, owner 2026-10-08; catalog v71): keys added, none renamed or removed. A CRA or CRI line has `basis`
+`curva_securitizadora` (method A): `api.portfolio_credit_curve`, one call for every CRA and CRI of the statement, gives
+each month's factor on the securitizer's curve, and the window compounds them; a month the function flags makes the
+window not evaluated with `curva_<flag>` and `unknown_months[]` (`month`, `flag`). "% do CDI" only when the rate the
+securitizer filed names the CDI in every month of the window, else `taxa_nao_cdi` or `taxa_nao_informada`. Every line
+gains `code` (the CETIP code a curve line was read by, else null). New `returns.contracted` (method C): the rate the
+statement prints accrued over the window on the CDI or the IPCA, for CDB, LCI, LCA and a credit line `outro` (CDCA),
+labelled "retorno contratado", apart from `returns.lines`, the coverage and the contribution; the report prints it in
+the annex only. `statement.positions[]` gains `data_inicial` (the PDF's "Data Inicial"). Debentures (method B) are not
+built: every 12-month window has two coupon months (`portfolio-return-coverage.md` section 8).
+
 2.0 (2026-10-07): keys removed, none added. The return, tax and market-equivalent blocks stop writing reader text the report derives from their codes and figures (`src/portfolio/report/labels.py`, added by `adapt` at the same view paths, so the report and the Redator's placeholders are unchanged): `returns.lines[].basis_label` and `status_label`, every return window's `status_label` and `gross_label`; `tax.lines[].fee.third_party_label`, `tax.lines[].tax.status_label`, `instrument_label`, `rate_text` and `candidates[].rate_today_text`, `tax.lines[].pension.regime_label`, `base_text` and `irrevocable_text`; `equivalents.pl_label` and `fee_label`, `equivalents.lines[].etf.pl_label`, `fee_label` and `basis_label`, and every window's `etf_band_label` / `fund_band_label`. The report reads a 1.x document as before (its labels are replaced by the same text).
 
 1.13 (#609 owner's resolution and #606 addendum Q36, 2026-10-05; catalog v68). Keys were added, none renamed, retyped
@@ -606,7 +617,8 @@ A line (every statement line, in order): `line_no`, `linha_extrato`, `tipo`, `cn
 | `close_total_return`        | `quote_history(..., p_fields [close_total_return, close_total_return_null_reason])` | `ação` (or `outro` of class equity). A null is `retorno_total_nulo` with its reason, never the price return.                    |
 | `close_sem_proventos`       | `quote_history(..., p_fields [close])`                                              | `FII` with a ticker; `ETF` that `lookup` found on the cash tape. "Sem proventos": an ETF that distributes is understated.       |
 | `last_price_etf_renda_fixa` | `trade_consolidated_history(p_ticker, p_from, p_to)`, `last_price`                  | `ETF` known only from the ETF registry (not on COTAHIST). Tool unknown or refused: `etf_rf_sem_api`. `ref_price` is never read. |
-| null                        | none                                                                                | Tesouro, CDB, LCI, LCA, CRA, CRI, debênture, FIDC (tranche unknown), FIP, cash, unidentified line: a fixed `retorno_*` code.    |
+| `curva_securitizadora` (2.1) | `portfolio_credit_curve(p_codes, p_from, p_to)`, `factor` per month             | CRA or CRI with a CETIP code. A flagged month is unknown, never filled in. Not a market price.                                     |
+| null                        | none                                                                                | Tesouro, CDB, LCI, LCA, CRA or CRI without a code, debênture, FIDC (tranche unknown), FIP, cash, unidentified line: a fixed `retorno_*` code.    |
 
 The month-end value of a ticker is its last session in the month on or before the position date (`date` says
 which). A window needs all its month-ends (13 for `12m`, 7 for `6m`), else `serie_incompleta` with
