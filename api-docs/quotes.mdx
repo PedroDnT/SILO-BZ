@@ -91,6 +91,12 @@ api.quote_history(p_ticker TEXT,
 
 **The raw close is an explicit selection:** `p_fields: ["close"]`, or any of `open`, `high`, `low`, `average`, `bid`, `ask`, `close_unit`, `trades`, `quantity`, `volume`, `quotation_factor`, `board`, `isin`, `short_name`, `spec`, `currency`, `asset_class`, `source`, `coverage_start`, `coverage_end`, `prior_no_trade_sessions`, `events_proven_at`, `data_revision` (types in `catalog().defaults.quote_history.available`). Keep the same `p_fields` on every page.
 
+Additional preserved fields are opt-in: `market`, `term_days`, `contract_price`,
+`contract_expiry`, `contract_correction`, `contract_points`, `contract_points_raw`,
+`distribution_number` and `fetched_at`. The last is warehouse time, not original
+publication time. See `catalog().cotahist` for the source aliases and dated code
+reference. No change to the default adjusted-price selection.
+
 ```bash
 curl -s -X POST "$SILO_URL/rpc/quote_history" \
   -H "apikey: $SILO_ANON_KEY" \
