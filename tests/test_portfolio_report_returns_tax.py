@@ -561,3 +561,19 @@ def test_the_contents_list_ends_with_the_annex(built_demo):
     toc = built_demo.split('<p class="toc">')[1].split("</p>")[0]
     assert toc.rstrip().endswith("Anexo: evidência linha a linha e metodologia</a>")
     assert 'href="#apendice"' in toc and 'id="apendice"' in built_demo
+
+
+def _risk_row_html(html, risk_name):
+    full = html.split('<table class="riscos">')[-1].split("</table>")[0]  # the annex table: every row
+    return next(tr for tr in full.split("<tr>") if render.e(risk_name) in tr)
+
+
+def test_the_fgc_risk_row_prints_its_caveat_once_and_keeps_a_different_one(view):
+    html = render.render_html(view, render.Narrative(status="unknown"))
+    rows = {r["id"]: r for r in view["risks"]["rows"]}
+    fgc = _risk_row_html(html, rows["fgc_acima_limite"]["risk"])
+    assert fgc.count("limite por CPF e instituição") == 1 and fgc.count("a conferir") == 1
+    assert "emissores impressos cujos CDB, LCI e LCA somam mais que o limite do FGC" in fgc  # the rest stays
+    sem = _risk_row_html(html, rows["credito_sem_fgc"]["risk"])
+    assert "conglomerado" in sem  # a caveat the check_label does not carry is never dropped
+    assert rows["fgc_acima_limite"]["explanation"].endswith("a conferir: limite por CPF e instituição")  # engine text unchanged
