@@ -44,7 +44,7 @@ def test_brief_precedes_details_and_preserves_missing_values():
     engine.pop('returns', None)
     html = render_html(engine, Narrative(status='unknown'))
     assert html.index('Resumo para a reunião') < html.index('<details id="apendice">')
-    assert 'total de administração fixa divulgada indisponível' in html
+    assert 'nenhuma taxa de administração divulgada, fixa ou em faixa, para mostrar' in html
     assert 'Texto interpretativo indisponível' in html
     assert 'Sem retorno total da carteira' not in html  # no return series was supplied
 

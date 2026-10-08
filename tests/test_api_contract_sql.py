@@ -287,7 +287,7 @@ def test_typed_cash_view_exposes_lot(view):
     chunk = body[body.index(f"CREATE OR REPLACE VIEW {view} AS"):]
     chunk = chunk[: chunk.index(";")]
     assert re.search(
-        r"CASE\s+v\.tpmerc\s+WHEN\s+'010'\s+THEN\s+'standard'\s+ELSE\s+'odd'\s+END\s+AS\s+lot",
+        r"CASE\s+v\.tpmerc\s+WHEN\s+'010'\s+THEN\s+'standard'\s+WHEN\s+'020'\s+THEN\s+'odd'\s+WHEN\s+'021'\s+THEN\s+'block'\s+END\s+AS\s+lot",
         chunk,
     ), f"{view} does not derive a lot column from tpmerc"
 
@@ -1188,20 +1188,14 @@ _TYPED_CASH_VIEWS = [
 ]
 
 
-def test_every_cash_view_exposes_close_unit_as_a_trailing_column():
-    # Trailing, because CREATE OR REPLACE VIEW can only APPEND columns: a
-    # close_unit inserted mid-list would fail to deploy over the live view.
+def test_every_cash_view_preserves_close_unit_before_additive_source_fields():
+    # close_unit was the previous last column. New columns must follow it,
+    # because CREATE OR REPLACE VIEW can only append to the deployed shape.
     for view in _TYPED_CASH_VIEWS:
         i = SQL19.index(f"CREATE OR REPLACE VIEW {view} AS")
         body = SQL19[i : SQL19.index("FROM public.vw_b3_instrument_typed v", i)]
         assert "AS close_unit" in body, f"{view} is missing close_unit"
-        last_col = [
-            ln.strip() for ln in body.splitlines() if ln.strip() and not ln.strip().startswith("--")
-        ][-1]
-        assert last_col.endswith("AS close_unit"), (
-            f"{view}: close_unit must be the LAST column (CREATE OR REPLACE VIEW "
-            f"can only append), found trailing {last_col!r}"
-        )
+        assert body.index("AS close_unit") < body.index("AS market"), view
 
 
 def test_close_unit_divides_the_published_factor_and_guards_zero():

@@ -1,0 +1,1 @@
+| 2026-10-07 | claude/sessionstart-hook | **SessionStart hook shows main and open PRs.** `.claude/hooks/session-start.sh` fetches `origin/main` and prints its last 5 commits and the open PRs through the REST API, so a Claude Code session sees parallel work before it claims an issue. It never blocks a session. Documented in `CLAUDE.md`. |
