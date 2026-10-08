@@ -113,6 +113,7 @@ jobs:
       # the last 7 days, so this is the same idempotent re-run.
       - name: Refresh rates and market data (recovery)
         if: ${{ !cancelled() && (steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true') }}
+        timeout-minutes: 30
         env:
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
           CBOE_VIX_LICENSED: ${{ vars.CBOE_VIX_LICENSED }}
