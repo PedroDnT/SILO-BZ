@@ -66,7 +66,7 @@ REDATOR_DROP_KEYS = frozenset({"reason", "error", "errors", "params", "args", "e
                                "table_only", "tree", "exposure_origin",
                                # #765: the page-1 cost coverage over the portfolio is the renderer's, not prose
                                "coverage_fixed_portfolio_pct", "coverage_range_portfolio_pct",
-                               # schema 2.1 (#766): the contracted return is annex-only until the owner decides; the
+                               # schema 2.1 (#766): the contracted return is annex-only (owner, 2026-10-08); the
                                # Redator never sees it, so no finding can cite it
                                "contracted", "contracted_value_brl", "contracted_coverage_portfolio_value_pct",
                                "n_contracted", "contracted_note"})

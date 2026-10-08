@@ -2829,9 +2829,8 @@ COMMENT ON FUNCTION api.portfolio_equivalents(TEXT[], DATE) IS
 --     median 1.08 and p25 0.885, and 29% are above 3 (a payment filed in
 --     another month than the pu's fall, or a value that is not the coupon:
 --     CRA02400AYL filed 238.01 a unit in 2026-05 for a fall of about 60).
---     The owner accepted queda_sem_evento_arquivado and pu_repetido on
---     2026-10-08; the band of pagamento_incompativel is a proposal for the
---     owner (#766, decision 4).
+--     The owner accepted queda_sem_evento_arquivado, pu_repetido and the
+--     0.5 .. 1.5 band of pagamento_incompativel on 2026-10-08 (#766).
 --   rentabilidade is never read (almost always 0 as filed).
 -- It is the securitizer's value on the curve, not a market price, and it
 -- carries no credit event SILO does not see in the filing.

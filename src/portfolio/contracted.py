@@ -4,7 +4,7 @@ SILO has no price series for these papers. What the statement prints is a rate (
 "IPCA + 6,20%", "13,84% a.a."). Applied to the CDI or the IPCA of the window, it gives what the contract pays over the
 window: a "retorno contratado", with no credit risk and no mark to market, gross of income tax. It is never a measured
 return: it lives in the line's ``contracted`` block, never in ``windows``, ``coverage``'s measured share, the
-contribution or the body table (the owner decides whether it may join the measured table).
+contribution or the body table (owner, 2026-10-08: annex only).
 
 Rules, fixed (never tuned per paper):
 

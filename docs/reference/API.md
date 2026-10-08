@@ -679,8 +679,8 @@ one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a n
   `valor_invalido`, `quantidade_mudou`, `pu_repetido`, `queda_sem_evento_arquivado`
   (the pu falls and no payment is filed: never read as a loss),
   `pagamento_acima_do_pu`, `pagamento_incompativel` (a payment month whose return is
-  outside 0.5 to 1.5 times the line's median month with no payment; a proposal for the
-  owner, #766). `rentabilidade` is never read. Measured 2026-10-08:
+  outside 0.5 to 1.5 times the line's median month with no payment; owner, 2026-10-08,
+  #766). `rentabilidade` is never read. Measured 2026-10-08:
   MRV's CRI 24I1980390 (110% of the CDI) gives 109.9% to 110.1% of the CDI on
   every complete 12-month window, and its 2026-04 coupon was never filed. It is
   the securitizer's value on the curve, not a market price.

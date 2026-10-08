@@ -317,7 +317,8 @@ credit 47.97%, return coverage 8.06%: DEBB11 and GOLD11). Its CDI over
 if it failed. It failed on the report's window, and the session stopped. The
 owner then accepted guards (a) and (b) below (2026-10-08), and A and C were
 built: `api.portfolio_credit_returns` (catalog v71) and engine schema 2.1.
-Method B waits for the owner's threshold.
+Method B is not built: the owner decided (2026-10-08) that no PU-fall threshold
+is used, since none evaluates a semiannual payer (below).
 
 ### Method A: the securitizer's curve (`cvm_securit_serie`)
 
@@ -366,7 +367,7 @@ Method B waits for the owner's threshold.
   2025-06 coupon one month before the fall) or a value that is not the coupon.
   Proposed and built: a payment month is unknown when its return is outside 0.5
   to 1.5 times the median of the line's months with no payment in the 13, or
-  when fewer than 3 such months exist. The owner decides the band (decision 4).
+  when fewer than 3 such months exist. The owner accepted the band on 2026-10-08.
   With it, Marfrig stays evaluated and CRA02400AYL's 6-month window is not.
 - **`taxa_juros` is free text that changes between months of one series.**
   MRV: "110.000 % do CDI", "Não definido + 1.100", "110.0000% CDI",
@@ -405,7 +406,7 @@ window. Read from the statement PDF with this branch (2026-10-08): OMNI CDB
 2024-08-13 to 2031-07-15. The rate of the CDB is the one the PDF prints; an
 earlier note in this section that it might be shifted one row was wrong.
 Built as a separate `contracted` block, shown in the annex only, never in the
-measured table, coverage or contribution (the owner decides whether it may sit
+measured table, coverage or contribution (the owner decided on 2026-10-08 that it stays apart; it may not sit
 beside A and B).
 
 ### Engine run on the real statement (schema 2.1, 2026-10-08)
