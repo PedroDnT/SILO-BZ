@@ -1,0 +1,131 @@
+{
+  "version": 2,
+  "status": "design_candidate_not_activated",
+  "purpose": "Prospective liquidity-only confirmatory design; requires owner acceptance, development power gate and elapsed data before test activation",
+  "pilot_protocol_sha256": "c26a949418ebc10f5d948f27cfcd16460c0d79512b648d2b898d7d6b657c5122",
+  "calendar": {
+    "basis": "verified cash sessions; no assumed holidays or fixed civil end date",
+    "equity_warmup_sessions": 126,
+    "training_reference_sessions": 90,
+    "validation_reference_sessions": 50,
+    "untouched_test_reference_sessions": 100,
+    "outcome_tail_sessions": 22,
+    "signal_sessions": 240,
+    "total_new_sessions": 262,
+    "start_rule": "First approved cash session after method, identity, retention and power-design freeze; never backdate",
+    "activation_rule": "Do not activate untouched test before development power assessment is accepted; if insufficient, version a new design before any test outcomes are inspected"
+  },
+  "information_cutoff": {
+    "timezone": "America/Sao_Paulo",
+    "local_time": "10:00:00",
+    "cash_session_offset_from_signal": 1,
+    "late_input_policy": "Exclude and count; no substitution with later fetch or later restored file",
+    "ready_rule": "Source response, query completion, complete snapshot and persisted manifest all precede cutoff"
+  },
+  "method": {
+    "primary_horizon": 5,
+    "horizons": [
+      1,
+      5,
+      20
+    ],
+    "entry_delay_sessions": 1,
+    "robustness_delay_sessions": 2,
+    "beta_window": 126,
+    "min_beta_observations": 100,
+    "liquidity_window": 20,
+    "min_liquidity_observations": 10,
+    "min_train_dates": 30,
+    "min_validation_dates": 10,
+    "min_test_dates": 60,
+    "min_test_issuers": 20,
+    "ridge_grid": [
+      0.01,
+      0.1,
+      1.0,
+      10.0,
+      100.0
+    ],
+    "bootstrap_block_sessions": 20,
+    "bootstrap_repetitions": 1000,
+    "placebo_repetitions": 100,
+    "family_alpha": 0.05,
+    "seed": 628,
+    "primary_credit_classification": "EXTRAGRUPO",
+    "credit_features": [
+      "credit_log_volume",
+      "credit_log_trades",
+      "credit_active_bonds"
+    ],
+    "equity_features": [
+      "equity_momentum_5",
+      "equity_volatility_20",
+      "equity_log_volume_20"
+    ],
+    "return_basis": "total_return",
+    "benchmark": "IBOV",
+    "price_signal_policy": "excluded until contractual cash-flow/event windows are verified",
+    "rate_signal_policy": "excluded until observed REUNE rates and conventions are available"
+  },
+  "identity_gate": {
+    "min_initial_documentary_candidates": 25,
+    "min_eligible_untouched_test_issuers_before_dominance_exclusion": 21,
+    "full_cnpj_only": true,
+    "dated_transfer_review_required": true,
+    "eligibility_selection": "Documentary validity, historical availability and liquidity only; never predictive outcomes",
+    "new_issuer_policy": "No silent replacement or sample change after freeze"
+  },
+  "snapshot_components": [
+    "verified_cash_calendar",
+    "credit_full_capture_and_audit_census",
+    "equity_quote_responses_and_adjustment_revision",
+    "ibov_response_and_conventions",
+    "complete_relevant_fca_vintages_and_identity_evidence",
+    "dated_sector_input",
+    "frozen_model_and_feature_manifest"
+  ],
+  "label_policy": {
+    "first_archive_cutoff": "10:00 America/Sao_Paulo on first verified cash session after exit",
+    "coherent_equity_revision_required": true,
+    "coherent_benchmark_revision_required": true,
+    "late_label_policy": "Exclude from tuning/evaluation until actually archived; never treat reference date as known_at",
+    "later_revision_policy": "Keep original immutable labels; report separately frozen revision sensitivity, never overwrite",
+    "feature_policy": "Features/alpha/beta remain from information-cutoff snapshot; no refit with future labels"
+  },
+  "power_design": {
+    "relative_mse_gain_grid": [
+      0,
+      0.01,
+      0.025,
+      0.05,
+      0.1,
+      0.2
+    ],
+    "target_power": 0.8,
+    "family_alpha": 0.05,
+    "horizon_count": 3,
+    "seed": 628,
+    "outer_repetitions": 1000,
+    "block_sessions_grid": [
+      20,
+      40
+    ],
+    "development_only": true,
+    "input_requirement": "Chronological nested rolling-origin out-of-sample paired losses on development data only; training, tuning and label-availability purges enforced",
+    "resampling": "Crossed full-CNPJ and non-circular calendar-block resampling on actual observation mask, retaining missing activity and overlapping horizons",
+    "interpretation": "Conditional loss-test sensitivity, not end-to-end learning power; model-training uncertainty and source sparsity require separate calibration",
+    "minimum_development_oos_dates": 60,
+    "minimum_development_oos_issuers": 20,
+    "failure_rule": "If losses, dependence blocks, calibration or coverage are insufficient, report not_estimable; no minimum detectable gain or test activation"
+  },
+  "production": {
+    "authorized": false,
+    "permanent_credit_enabled": false,
+    "schema_apply": false,
+    "new_datasets": false,
+    "historical_recovery_windows_remaining": 0,
+    "candidate_storage_projection_bytes": 1641520128,
+    "projection_basis": "Executed recovery peak 400982016 allocated bytes / 64 newly recovered sessions; scenario only, excludes snapshots/WAL/backups and future source variation",
+    "execution_allowed_by_this_file": false
+  }
+}

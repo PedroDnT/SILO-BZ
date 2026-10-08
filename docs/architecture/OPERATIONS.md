@@ -46,14 +46,14 @@ after a run    publish_check  also runs when a Daily CVM Ingest run ends green, 
   `analytics-only`. `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo
   (`deploy/cloudflare/`, Worker plus engine Container) needs
   `deploy_cloudflare.yml`, which ends with a paid end-to-end report.
-- A merge does not publish the dashboard either: `vercel.json` disables
-  git-triggered production deployments on `main`. Only the deploy hook
-  publishes, from a scheduled run whose apply succeeded or a dispatch with
-  `rebuild_dashboard=true`.
+- Dashboard merges do not publish: `vercel.json` disables production Git deploys.
+  The deploy hook publishes after a scheduled successful apply or a dispatch
+  with `rebuild_dashboard=true`.
 - Writers share the `supabase-ingest` concurrency group. Health and
   publish_check are read-only and may overlap.
 - Schema replay skips matching indexes and absent constraints.
-- DEB capture: opt-in, with smaller-slice export recovery.
+- DEB: daily/watchdog pass `vars.B3_CREDIT_ENABLED`; only `1` enables
+  seven-day refresh with smaller-slice recovery.
   [Contract](../reference/research/debenture-secondary-market-capture.md).
 
 ## Not automated

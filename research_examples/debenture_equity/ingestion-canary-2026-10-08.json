@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "signal_date": "2026-10-08",
+  "calendar": {
+    "sessions": [
+      "2026-10-08",
+      "2026-10-09"
+    ],
+    "source_url": "https://www.b3.com.br/data/files/20/57/01/AA/06A1F910ADC36BE9AC094EA8/OC%20041-2026-VNC%20ERRATA%20-%20CALENDARIO%20DE%20FERIADOS%20EM%202026_PT.pdf",
+    "observed_at": "2026-10-08T20:01:51.410928+00:00",
+    "evidence_note": "Official B3 041/2026-VNC, Annex 1. October closure is 12/10. 08/10 and 09/10 are ordinary Thursday/Friday scheduled sessions; verify exceptional notices before execution. Calendar is not evidence of actual future trading."
+  },
+  "cutoff_at": "2026-10-09T10:00:00-03:00",
+  "max_raw_bytes": 30000000,
+  "max_facts": 30000,
+  "max_relation_growth_bytes": 100000000,
+  "max_database_bytes": 135000000000,
+  "timeout_seconds": 300,
+  "attempts": 1,
+  "permanent_enablement": false,
+  "plan_sha256": "d63f084db7eb4912b047b9503ab384efa1dea7f839c74975fd140f3af9db23ae"
+}
