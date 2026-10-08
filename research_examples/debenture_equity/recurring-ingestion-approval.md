@@ -92,3 +92,13 @@ heartbeat remains paused. Request approval for **daily/watchdog wiring and
 activation under these initial acceptance/stop rules**. Scientific protocol,
 issuer review dates, source conventions, archival acceptance and elapsed-market
 history remain separate open requirements. Do not close the overall research goal.
+
+
+## Approval and rollout in progress
+
+Owner approved daily/watchdog activation on 08/10. The reviewed environment
+patch is now applied locally; publication, green CI and merged-main verification
+must precede setting the repository variable. No immediate full-workflow dispatch
+is required. The next three scheduled cash-session observations and operational
+stop checks remain pending. Earlier “unapplied/unapproved” statements above
+describe the package as presented before this approval.

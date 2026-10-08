@@ -122,6 +122,8 @@ jobs:
       - name: Refresh B3 corporate events and cash dividends (recovery)
         if: ${{ !cancelled() && (steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true') }}
         timeout-minutes: 75
+        env:
+          B3_CREDIT_ENABLED: ${{ vars.B3_CREDIT_ENABLED }}
         run: python -m src.pipeline.run_b3_events
 
       - name: Report no-op
