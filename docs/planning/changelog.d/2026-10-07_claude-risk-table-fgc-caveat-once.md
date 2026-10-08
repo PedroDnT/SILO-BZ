@@ -1,0 +1,1 @@
+| 2026-10-07 | claude/risk-table-fgc-caveat-once | **Risk table: FGC caveat once (#754).** The renderer prints a risk row's "a conferir" clause once: when the row's `check_label` already carries the explanation's clause word for word, the explanation is printed without it. `fgc_acima_limite` loses its duplicate; `credito_sem_fgc` keeps its conglomerado caveat. No engine change. |
