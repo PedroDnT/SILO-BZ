@@ -128,7 +128,10 @@ SELECT jsonb_build_object(
  'equities',coalesce((SELECT jsonb_agg(q) FROM equities),'[]'::jsonb),
  'benchmark',coalesce((SELECT jsonb_agg(to_jsonb(b)) FROM api.index_history('IBOV','{eq_start}','{end}') b),'[]'::jsonb),
  'fca',coalesce((SELECT jsonb_agg(jsonb_build_object('cnpj',cnpj_cia,'ticker',codneg,
-   'data_refer',data_refer,'fetched_at',fetched_at,'version',versao,'document_id',id_documento))
+   'data_refer',data_refer,'fetched_at',fetched_at,'version',versao,'document_id',id_documento,
+   'market',mercado,'segment',segmento,'security_type',valor_mobiliario,'share_class',sigla_classe,
+   'dt_inicio_neg',dt_inicio_neg,'dt_fim_neg',dt_fim_neg,
+   'dt_inicio_list',dt_inicio_list,'dt_fim_list',dt_fim_list))
    FROM public.cia_ticker WHERE codneg IN (SELECT ticker FROM (VALUES {ticker_values}) t(ticker))
    AND valor_mobiliario IN ('Ações Ordinárias','Ações Preferenciais','Units')
    AND data_refer <= '{end}'::date),'[]'::jsonb),

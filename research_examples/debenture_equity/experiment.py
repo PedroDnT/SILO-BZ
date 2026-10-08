@@ -17,6 +17,7 @@ SAO_PAULO = ZoneInfo('America/Sao_Paulo')
 METRICS = {'quantity', 'trade_count', 'volume_brl', 'min_price', 'avg_price',
            'max_price', 'last_price', 'reference_price', 'oscillation_pct'}
 ROW_KEY = ['capture_id', 'instrument_code', 'trade_date', 'settlement_date', 'trade_classification']
+FCA_INTERVAL_FIELDS = {'dt_inicio_neg', 'dt_fim_neg', 'dt_inicio_list', 'dt_fim_list'}
 
 
 def timestamp(value):
@@ -58,6 +59,8 @@ def validate_bundle(bundle, protocol):
     if bundle['return_basis'] != 'total_return' or bundle['benchmark_code'] != 'IBOV':
         raise ValueError('Equity and benchmark must both represent total returns')
     timestamp(bundle['exported_at'])
+    if any(not FCA_INTERVAL_FIELDS <= record.keys() for record in bundle['fca']):
+        raise ValueError('FCA interval fields missing; re-export the existing-data bundle')
     if len({c['capture_id'] for c in bundle['captures']}) != len(bundle['captures']):
         raise ValueError('Duplicate capture identity')
     census = {c['capture_id']: c for c in bundle['credit_census']}
@@ -135,6 +138,30 @@ def credit_snapshot(bundle, cutoff):
     return rows, {d for _, d in chosen}
 
 
+def active_fca_records(records, signal_date):
+    """Retrospective reference-date selection; this does not certify publication PIT."""
+    latest = {}
+    for record in records:
+        if record['data_refer'] > signal_date:
+            continue
+        key = record['cnpj'], record['ticker']
+        rank = record['data_refer'], int(record.get('version') or 0)
+        if key not in latest or rank > latest[key][0]:
+            latest[key] = rank, [record]
+        elif rank == latest[key][0]:
+            latest[key][1].append(record)
+    active = []
+    for _, filing_records in latest.values():
+        # A segment change can close one listing and open another in one filing.
+        for record in filing_records:
+            if all((not record.get(start) or record[start] <= signal_date)
+                   and (not record.get(end) or signal_date <= record[end])
+                   for start, end in [('dt_inicio_neg', 'dt_fim_neg'),
+                                      ('dt_inicio_list', 'dt_fim_list')]):
+                active.append(record)
+    return active
+
+
 def build_panel(bundle, links, protocol, mode='retrospective', delay=None):
     """No fills. Each target starts after availability and uses past-only beta/class choice."""
     if mode not in ('retrospective', 'strict_pit'):
@@ -201,12 +228,13 @@ def build_panel(bundle, links, protocol, mode='retrospective', delay=None):
         if not mapped:
             exclusions['no_eligible_credit_observation'] += 1
             continue
+        active_fca = active_fca_records(bundle['fca'], d)
         for cnpj, bonds in pd.DataFrame(mapped).groupby('cnpj'):
-            fca = [f for f in bundle['fca'] if f['cnpj'] == cnpj and f['data_refer'] <= d]
+            fca = [f for f in active_fca if f['cnpj'] == cnpj]
             eligible = []
             for ticker in sorted({f['ticker'] for f in fca} & prices.keys()):
                 # A reused ticker claimed by multiple CNPJs is never guessed.
-                owners = {f['cnpj'] for f in bundle['fca'] if f['ticker'] == ticker and f['data_refer'] <= d}
+                owners = {f['cnpj'] for f in active_fca if f['ticker'] == ticker}
                 prior_vol = volumes[ticker].iloc[max(0, i-p['liquidity_window']):i]
                 if owners == {cnpj} and prior_vol.count() >= p['min_liquidity_observations']:
                     eligible.append((float(prior_vol.mean()), ticker))

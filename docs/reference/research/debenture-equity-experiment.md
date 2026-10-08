@@ -70,6 +70,16 @@ retrospective observation-date evidence; strict historical PIT cannot be recover
 by relabeling their trade date. Separate that study from prospective knowledge-time
 validation. FCA reference dates and latest aliases do not establish publication times.
 
+The bounded export now carries FCA negotiation and listing start/end dates. For
+each full CNPJ/ticker, the runner takes the latest reference/version no later than
+the signal, then requires that signal to fall within both recorded intervals,
+including their endpoints. All listing rows within that reference/version remain
+eligible for interval checks, preserving segment changes. Null bounds remain
+unknown; the export cannot establish delisting
+from a ticker's absence in a later full filing. Existing bundles lacking the four
+date fields require a fresh export. These checks improve retrospective identity
+selection without certifying original-date publication knowledge.
+
 The local [reviewed links](../../../research_examples/debenture_equity/reviewed_links.json)
 cite official issuance documents and SND records for three **original issuers**:
 

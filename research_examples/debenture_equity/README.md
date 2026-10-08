@@ -61,6 +61,16 @@ Execute the printed SELECT through Supabase MCP. Save only its `bundle` object
 locally, without truncation. Credit capture censuses validate both all stored groups
 and the selected export scope. Never commit the bundle or raw source data.
 
+The export includes FCA negotiation/listing start and end dates. The runner uses
+the latest reference/version per full CNPJ and ticker as of each signal date,
+then retains all listing rows in that filing and respects both recorded intervals
+(inclusive endpoints). Segment changes may legitimately close one row and open
+another within the same filing. An older open record cannot
+override a newer closure. Missing interval dates and tickers removed entirely from
+a later filing remain unproven: this bounded export is not a full FCA snapshot
+absence audit, and reference dates do not prove publication-time availability.
+Older local bundles must be exported again to include these date fields.
+
 ```sh
 .venv/bin/python -m research_examples.debenture_equity.prepare \
   --plan-bundle .context/debenture-equity-bundle.json

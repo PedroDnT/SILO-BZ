@@ -53,6 +53,8 @@ def synthetic():
               'cash_sessions': dates, 'return_basis': 'total_return', 'benchmark_code': 'IBOV',
               'exported_at': '2026-10-07T21:00:00-03:00', 'protocol_sha256': fingerprint(p),
               'fca': [{'cnpj': '00000000000001', 'ticker': t, 'data_refer': '2026-01-01',
+                       'dt_inicio_neg': None, 'dt_fim_neg': None,
+                       'dt_inicio_list': None, 'dt_fim_list': None,
                        'fetched_at': '2026-08-28T12:00:00-03:00'} for t in ('TEST3', 'TEST4')]}
     return bundle, links, p
 
@@ -78,6 +80,51 @@ def test_source_classification_spelling_does_not_remove_valid_trades(synthetic):
         fact['trade_classification'] = fact['trade_classification'].title()
     actual, _ = build_panel(bundle, links, p)
     pd.testing.assert_frame_equal(expected, actual)
+
+
+@pytest.mark.parametrize('field,value', [
+    ('dt_inicio_neg', '2026-10-07'), ('dt_inicio_list', '2026-10-07'),
+    ('dt_fim_neg', '2026-06-30'), ('dt_fim_list', '2026-06-30'),
+])
+def test_equity_class_choice_respects_recorded_fca_intervals(synthetic, field, value):
+    bundle, links, p = synthetic
+    bundle['fca'][1][field] = value  # The more liquid class is outside its interval.
+    panel, _ = build_panel(bundle, links, p)
+    assert not panel.empty
+    assert set(panel['ticker']) == {'TEST3'}
+
+
+def test_latest_fca_closure_cannot_be_resurrected_by_an_older_open_record(synthetic):
+    bundle, links, p = synthetic
+    bundle['fca'].append({**bundle['fca'][1], 'data_refer': '2026-06-30',
+                          'dt_fim_neg': '2026-06-30'})
+    panel, _ = build_panel(bundle, links, p)
+    assert set(panel['ticker']) == {'TEST3'}
+
+
+def test_fca_interval_end_is_inclusive(synthetic):
+    bundle, links, p = synthetic
+    bundle['fca'][1]['dt_fim_neg'] = p['signal_from']
+    panel, _ = build_panel(bundle, links, p)
+    assert set(panel.loc[panel['signal_date'] == p['signal_from'], 'ticker']) == {'TEST4'}
+    assert set(panel.loc[panel['signal_date'] > p['signal_from'], 'ticker']) == {'TEST3'}
+
+
+def test_old_bundle_missing_fca_interval_field_requires_reexport(synthetic):
+    bundle, links, p = synthetic
+    del bundle['fca'][0]['dt_fim_neg']
+    with pytest.raises(ValueError, match='re-export'):
+        build_panel(bundle, links, p)
+
+
+def test_segment_change_retains_all_intervals_in_latest_fca_filing(synthetic):
+    bundle, links, p = synthetic
+    bundle['fca'][1].update(dt_inicio_list='2026-07-02', segment='Novo Mercado')
+    bundle['fca'].append({**bundle['fca'][1], 'dt_inicio_list': '2020-01-01',
+                          'dt_fim_list': '2026-07-01', 'segment': 'Básico'})
+    panel, _ = build_panel(bundle, links, p)
+    assert not panel.empty
+    assert set(panel['ticker']) == {'TEST4'}
 
 
 def test_whole_selected_group_loss_and_global_capture_loss_refuse(synthetic):
