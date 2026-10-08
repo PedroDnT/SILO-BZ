@@ -43,12 +43,8 @@ ALLOWED_KEY_DIFFS = {
 }
 
 # (watchdog step, key) -> reason, for a difference only one pair may have.
-ALLOWED_STEP_DIFFS = {
-    ("Refresh rates and market data (recovery)", "timeout-minutes"): (
-        "the daily run caps it at 30 min inside a 180-min job; the watchdog leaves it "
-        "to its own 120-min job timeout."
-    ),
-}
+# Empty since 2026-10-08: the market step's 30-min cap now matches (owner's call).
+ALLOWED_STEP_DIFFS: dict[tuple[str, str], str] = {}
 
 # Daily `ingest` steps the watchdog does not re-run, each with its reason.
 NOT_RECOVERED = {
