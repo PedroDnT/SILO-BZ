@@ -53,5 +53,7 @@ All 13 approved recovery slices now passed hash, audit and nine-metric checks:
 stop. The expanded pilot has 935 overlapping horizon outcomes, all inconclusive;
 the three-month period cannot satisfy confirmatory floors. Twenty-six original issuers
 are documented; 22 yield outcomes under the existing history requirements. Dated sector robustness is implemented but lacks training history.
+An [unactivated prospective design](../../research_examples/debenture_equity/prospective-design.md)
+records the longer candidate, frozen power grid, snapshot/label rules and completion audit.
 Permanent capture remains off; broader identity review, a longer frozen protocol,
 statistical power and strict PIT acceptance remain open.

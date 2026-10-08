@@ -116,3 +116,12 @@ Focused checks:
 ```sh
 .venv/bin/python -m pytest tests/test_debenture_equity_audit.py tests/test_debenture_equity_experiment.py -q
 ```
+
+## Unactivated prospective design
+
+[prospective-design.md](prospective-design.md) and
+[prospective_protocol.json](prospective_protocol.json) preserve the longer calendar
+candidate, information/label cutoff rules, immutable inputs, development-only
+power grid and completion audit. These are design artifacts, not an implemented
+collector, an input accepted by the pilot CLI, production approval or evidence of
+strict PIT. The original `protocol.json` and its results stay unchanged.

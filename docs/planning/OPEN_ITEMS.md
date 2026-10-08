@@ -546,6 +546,12 @@ dated identity changes, longer protocol, sector coverage and power assessment re
 The documentary candidate target is met, but the primary untouched test still has
 18 issuers/15 dates, below its unchanged acceptance floors.
 
+A [versioned prospective design candidate](../../research_examples/debenture_equity/prospective-design.md)
+now specifies 90/50/100 reference sessions, cutoff and immutable label/input
+requirements, a development-only power grid and the requirement-by-requirement
+completion audit. It is unactivated; collector/evaluator and power assessment
+implementation, owner acceptance and future elapsed history remain.
+
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer
 frozen protocol and power assessment; deeper coverage/PIT, with a new storage
