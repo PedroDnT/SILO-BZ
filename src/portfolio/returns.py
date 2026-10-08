@@ -78,6 +78,10 @@ FUND = "cota_fundo"
 TOTAL_RETURN = "close_total_return"
 CLOSE = "close_sem_proventos"
 FIXED_INCOME_ETF = "last_price_etf_renda_fixa"
+CURVE = "curva_securitizadora"  # engine 2.1 (#766): a CRA or CRI on the securitizer's curve, method A
+CURVE_TOOL = "portfolio_credit_curve"
+CURVE_MAX_CODES = 40  # the function's own limit per call
+CURVE_TIPOS = ("CRA", "CRI")
 # The reader text of a status or a basis is the report's (src/portfolio/report/labels.py, engine 2.0).
 TOOLS = {
     FUND: "fund_nav",
@@ -160,7 +164,25 @@ REASONS = {
     "retorno_total_nulo": "retorno total sem valor no fechamento usado; sem recurso à variação de preço",
     "consulta_falhou": "consulta ao SILO falhou ou foi recusada",
     "resposta_inconsistente": "resposta do SILO inconsistente; a linha não foi avaliada",
+    # engine 2.1 (#766): a month the curve function flagged; the window is not evaluated, never filled in
+    "curva_mes_ausente": "curva da securitizadora: mês sem informe da série na CVM",
+    "curva_mais_de_uma_serie": "curva da securitizadora: mais de uma série com este código no mês: a série não foi escolhida",
+    "curva_valor_nao_informado": "curva da securitizadora: quantidade ou valor dos certificados não informado",
+    "curva_mes_anterior_desconhecido": "curva da securitizadora: o mês anterior não tem valor unitário utilizável",
+    "curva_quantidade_mudou": "curva da securitizadora: a quantidade de certificados mudou no mês",
+    "curva_pagamento_maior_que_pu": "curva da securitizadora: pagamento por certificado maior que o valor unitário anterior: valor e pagamentos em escalas diferentes",
+    "curva_pu_repetido": "curva da securitizadora: valor unitário igual ao do mês anterior, sem pagamento informado",
+    "curva_queda_sem_evento_arquivado": "curva da securitizadora: valor unitário caiu sem pagamento informado no mês",
+    "curva_retorno_mensal_fora_da_faixa": "curva da securitizadora: retorno do mês na curva fora de -3% a +3%: valor e pagamentos não fecham",
+    "retorno_curva_sem_codigo": "CRA ou CRI sem código CETIP no extrato: sem curva da securitizadora",
 }
+NOTE_CURVE = (
+    "Retorno na curva informada pela securitizadora (CVM, cvm_securit_serie): o valor unitário do mês mais os pagamentos "
+    "do mês por certificado, sobre o valor unitário do mês anterior, composto. É o valor na curva, não preço de mercado; "
+    "não mede risco de crédito nem marcação."
+)
+TAXA_NOT_CDI = "taxa_nao_cdi"
+TAXA_NOT_FILED = "taxa_nao_informada"
 # engine 1.13: why a window has no "% do CDI" (fixed Portuguese text in common.REASON_TEXT)
 PCT_CDI_ONLY_FUNDS = "pct_cdi_so_fundos"
 PCT_CDI_NOT_SERVED = "referencia_nao_servida"
@@ -185,6 +207,7 @@ def compute_returns(
     cdi = _Cdi.fetch(client, base_month, position_date, sec)
     fee_by = {f["line_no"]: f for f in fees.get("lines", [])}
     cache: dict[str, tuple[dict[dt.date, dict[str, Any]] | None, Call | None, str | None]] = {}
+    _fetch_curves(lines, client, months, cache, sec)
 
     out = []
     for li in lines:
@@ -394,6 +417,8 @@ def _last_weekday(month: dt.date) -> dt.date:
 def _route(li: LineId) -> tuple[str | None, str | None]:
     """(basis, None) for a line with a series, or (None, reason code) for one without."""
     tipo = li.position.tipo
+    if tipo in CURVE_TIPOS:  # engine 2.1 (#766): method A, by the statement's CETIP code
+        return (CURVE, None) if (li.position.codigo or "").strip() else (None, "retorno_curva_sem_codigo")
     if tipo in NO_SERIES_BY_TIPO:  # by type, identified or not: no series exists for it
         return None, NO_SERIES_BY_TIPO[tipo]
     if li.status != "identified":
@@ -482,6 +507,7 @@ def _line(
         "tipo": p.tipo,
         "cnpj": li.cnpj if basis == FUND else None,
         "ticker": li.ticker if basis in (TOTAL_RETURN, CLOSE, FIXED_INCOME_ETF) else None,
+        "code": None,  # engine 2.1: the CETIP code a curve line was read by
         "name": li.name,
         "valor_brl": brl(p.valor),
         "basis": basis,
@@ -511,6 +537,8 @@ def _line(
     if rec["performance_fee_filed"]:
         rec["notes"].append(NOTE_PERFORMANCE)
 
+    if basis == CURVE:
+        return _curve_line(rec, li, fee, months, cdi, cache)
     points, call, err = _series(li.cnpj, li.ticker, li.line_no, basis, client, months, position_date, cache, sec)
     if call is not None:
         rec["sources"].append(call.src(_last_date(points) or position_date))
@@ -544,6 +572,8 @@ def _no_benchmark(code: str) -> dict[str, Any]:
 
 def _benchmark(basis: str, fee_line: dict[str, Any] | None) -> dict[str, Any]:
     """The filed benchmark the fee block read (catalog v68), classified by the versioned spelling list."""
+    if basis == CURVE:
+        return _no_benchmark(TAXA_NOT_FILED)  # replaced per window by _curve_bench, from the rate the securitizer filed
     if basis != FUND:
         return _no_benchmark(PCT_CDI_ONLY_FUNDS)
     filed = (fee_line or {}).get("benchmark_as_filed")
@@ -567,6 +597,8 @@ def _benchmark(basis: str, fee_line: dict[str, Any] | None) -> dict[str, Any]:
 def _basis_notes(basis: str, tipo: str) -> list[str]:
     if basis == FUND:
         return [NOTE_FUND, NOTE_FUND_DATES]
+    if basis == CURVE:
+        return [NOTE_CURVE]
     if basis == TOTAL_RETURN:
         return [NOTE_SHARE]
     if tipo == "FII":
@@ -576,7 +608,7 @@ def _basis_notes(basis: str, tipo: str) -> list[str]:
 
 def _fee(li: LineId, basis: str, fee_line: dict[str, Any] | None) -> dict[str, Any]:
     """The administration fee the fee block already shows for the line; never fetched or estimated here."""
-    if basis == TOTAL_RETURN:
+    if basis in (TOTAL_RETURN, CURVE):
         return {"status": "nao_se_aplica", "reason_code": "taxa_nao_aplicavel", "rate_pct_year": None, "kind": None,
                 "origin": None, "as_of": None, "sources": []}
     h = (fee_line or {}).get("headline") or {}
@@ -592,6 +624,110 @@ def _fee(li: LineId, basis: str, fee_line: dict[str, Any] | None) -> dict[str, A
     return {"status": "ok", "reason_code": None, "rate_pct_year": ratio(rate, 4), "kind": kind,
             "fee_status": (fee_line or {}).get("fee_status"), "origin": h.get("origin"), "as_of": h.get("as_of"),
             "sources": list(h.get("sources") or [])}
+
+
+# ---------------------------------------------------------------------------
+# Method A: CRA and CRI on the securitizer's curve (engine 2.1, #766)
+# ---------------------------------------------------------------------------
+
+
+def _curve_code(li: LineId) -> str:
+    return (li.position.codigo or "").strip().upper()
+
+
+def _fetch_curves(lines: list[LineId], client: SiloClient, months: list[dt.date], cache: dict, sec: Section) -> None:
+    """One ``portfolio_credit_curve`` call for every CRA and CRI of the statement (split above 40 codes). The rows go
+    to ``cache`` by code as (rows by month, call, error code); the lines read them, nothing is fetched per line."""
+    codes = sorted({_curve_code(li) for li in lines if _route(li)[0] == CURVE})
+    for i in range(0, len(codes), CURVE_MAX_CODES):
+        chunk = codes[i:i + CURVE_MAX_CODES]
+        args = {"p_codes": chunk, "p_from": months[0].isoformat(), "p_to": months[-1].isoformat()}
+        call = call_tool(client, CURVE_TOOL, args, sec.errors)
+        if not call.ok:
+            sec.degrade(f"{CURVE_TOOL} falhou (erro literal em errors).", code="consulta_falhou")
+            for c in chunk:
+                cache[("curve", c)] = (None, call, "consulta_falhou")
+            continue
+        by_code: dict[str, dict[dt.date, dict]] = {c: {} for c in chunk}
+        bad = False
+        for r in call.rows or []:  # by line_no: the function returns the code normalized (CRA- stripped)
+            m = as_date(r.get("month"))
+            k = r.get("line_no")
+            c = chunk[k - 1] if isinstance(k, int) and 1 <= k <= len(chunk) else None
+            if m is None or c is None or m in by_code[c]:
+                bad = True
+                break
+            by_code[c][m] = r
+        for c in chunk:
+            if bad or set(by_code[c]) != set(months):
+                sec.degrade(f"{CURVE_TOOL} devolveu resposta inconsistente para {c}.", code="resposta_inconsistente")
+                cache[("curve", c)] = (None, call, "resposta_inconsistente")
+            else:
+                cache[("curve", c)] = (by_code[c], call, None)
+
+
+def _curve_line(rec: dict, li: LineId, fee: dict, months: list[dt.date], cdi: "_Cdi", cache: dict) -> dict:
+    rows, call, err = cache.get(("curve", _curve_code(li)), (None, None, "consulta_falhou"))
+    rec["code"] = _curve_code(li)
+    if call is not None:
+        rec["sources"].append(call.src(months[-1]))
+    if rows is None:
+        rec.update(reason_code=err, reason=REASONS[err])
+        rec["windows"] = {wid: _empty_window(err, REASONS[err]) for wid, *_ in WINDOWS}
+        return rec
+    rec["month_ends"] = [
+        {"month": iso(m), "date": None, "value": ratio(dec(rows[m].get("pu")), 8) if rows[m].get("pu") is not None else None,
+         "null_reason": rows[m].get("month_flag")}
+        for m in months
+    ]
+    for wid, n, frac, vol_note in WINDOWS:
+        rec["windows"][wid] = _curve_window(months[-(n + 1):], n, frac, vol_note, rows, fee, cdi, call)
+    if any(w["status"] == EVALUATED for w in rec["windows"].values()):
+        rec["status"] = EVALUATED
+    else:
+        first = rec["windows"]["12m"]
+        rec.update(reason_code=first["reason_code"], reason=first["reason"])
+    return rec
+
+
+BASE_MONTH_FLAGS = ("mes_ausente", "mais_de_uma_serie", "valor_nao_informado")
+
+
+def _curve_bench(rows: dict[dt.date, dict], months: list[dt.date], call: Call) -> dict[str, Any]:
+    """CDI-like only when the rate the securitizer filed names the CDI in every month of the window (#766: the text
+    changes between months of one series, so every month is read)."""
+    taxas = [rows[m].get("taxa_juros") for m in months]
+    if any(not (t or "").strip() for t in taxas):
+        b = _no_benchmark(TAXA_NOT_FILED)
+    elif all("CDI" in t.upper() for t in taxas):
+        b = {**_no_benchmark(None), "cdi_like": True}
+    else:
+        b = _no_benchmark(TAXA_NOT_CDI)
+    b["taxa_juros_as_filed"] = taxas[-1]
+    b["sources"] = [call.src(months[-1])]
+    return b
+
+
+def _curve_window(months: list[dt.date], n: int, frac: Decimal, vol_note: str, rows: dict[dt.date, dict],
+                  fee: dict, cdi: "_Cdi", call: Call) -> dict[str, Any]:
+    """The window from the function's factors: the base month needs a pu, every later month a factor. A flagged month
+    makes the window not evaluated with that month's code; nothing is filled in."""
+    base = rows[months[0]]
+    unknown = [(months[0], base.get("month_flag"))] if base.get("month_flag") in BASE_MONTH_FLAGS or base.get("pu") is None else []
+    unknown += [(m, rows[m].get("month_flag") or "mes_ausente") for m in months[1:] if rows[m].get("factor") is None]
+    if unknown:
+        code = "curva_" + unknown[0][1]
+        w = _empty_window(code, REASONS.get(code, REASONS["serie_incompleta"]))
+        w.update(base_month=iso(months[0]), end_month=iso(months[-1]),
+                 unknown_months=[{"month": iso(m), "flag": f} for m, f in unknown])
+        return w
+    index, points = Decimal(1), {months[0]: {"date": None, "value": Decimal(1)}}
+    for m in months[1:]:
+        index *= dec(rows[m]["factor"])
+        points[m] = {"date": None, "value": index}
+    w = _window(months, n, frac, vol_note, points, CURVE, fee, cdi, call, _curve_bench(rows, months, call))
+    w["notes"] = [NOTE_CURVE] + w["notes"]
+    return w
 
 
 # ---------------------------------------------------------------------------
@@ -758,7 +894,7 @@ def _window(
 
     # CDI over the same dates: a fund's are the CDI calendar's month-ends, a ticker's are its sessions.
     cdi_period: Decimal | None = None
-    if basis == FUND:
+    if basis in (FUND, CURVE):
         c_start, c_end = cdi.month_end(months[0]), cdi.month_end(months[-1])
     else:
         c_start, c_end = points[months[0]]["date"], points[months[-1]]["date"]

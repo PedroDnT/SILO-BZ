@@ -363,6 +363,26 @@ def inst(line_no, input_code, code, kind, **kw):
     return base
 
 
+# engine 2.1 (#766): the CRA on the securitizer's curve, 2025-09 to 2026-09 (synthetic). The pu accrues about 1.0% a
+# month and a coupon of 60.00 a unit is paid in 2026-03 with the pu back near its start: every month has a factor.
+def _curve_rows():
+    rows, pu, prev = [], 1000.0, None
+    months = [f"{y}-{m:02d}-01" for y, m in [(2025, 9), (2025, 10), (2025, 11), (2025, 12)] + [(2026, k) for k in range(1, 10)]]
+    for i, month in enumerate(months):
+        paid = 60.0 if month == "2026-03-01" else 0.0
+        if i:
+            pu = round(prev * 1.0105 - paid, 8)
+        factor = None if i == 0 else round((pu + paid) / prev, 10)
+        rows.append(dict(line_no=1, input_code="CRA-0260000X", code="0260000X", month=month, n_series=1, numero_serie=1,
+                         classe="Sênior", versao=1, quantidade=250000, valor_certificados=round(pu * 250000, 2),
+                         rendimentos=round(paid * 250000, 2), amortizacoes=0.0, pu=pu, paid_per_unit=paid, factor=factor,
+                         month_flag=None, taxa_juros="IPCA+ 8,7400% a.a", data_vencimento="2032-04-15", reason=None))
+        prev = pu
+    return rows
+
+
+canned["portfolio_credit_curve"] = [dict(match={"p_codes": ["CRA-0260000X"], "p_from": "2025-09-01", "p_to": "2026-09-01"},
+                                         rows=_curve_rows())]
 canned["portfolio_instruments"] = [dict(match={"p_codes": ["CRA-0260000X", "DEB-EXEM12"]}, rows=[
     inst(1, "CRA-0260000X", "0260000X", "securit_cetip", instrument_type="cra_mensal", cnpj_securit="90000000000500", numero_serie="1",
          classe="Sênior", data_vencimento="2032-04-15", situacao="Adimplente", taxa_juros="IPCA+ 8,7400% a.a", classificacao_risco_atual="brAA (sf)",

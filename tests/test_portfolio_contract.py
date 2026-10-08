@@ -61,12 +61,12 @@ def test_file_is_one_guarded_transaction_after_its_inputs():
         assert ordered.index("31_api_portfolio.sql") > ordered.index(needed)
 
 
-def test_exactly_the_nine_api_functions_are_created():
+def test_exactly_the_ten_api_functions_are_created():
     created = re.findall(r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+api\.(\w+)\(", _strip(SQL31))
     assert created == [
         "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
         "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
-        "class_return_distribution", "portfolio_equivalents",
+        "class_return_distribution", "portfolio_equivalents", "portfolio_credit_curve",
     ]
 
 

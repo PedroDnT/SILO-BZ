@@ -38,7 +38,7 @@ SOURCE_BY_TOOL = {
     "fund_nav": "CVM", "quote_history": "B3", "trade_consolidated_history": "B3", "macro_series": "BCB",
     # engine 1.13: the class distribution is CVM's quotas; the equivalents list is SILO's ETF registry (CVM) with the
     # etfsbrasil PL and fee, listed apart as ETFSBRASIL with the snapshot date (see _provenance_view)
-    "class_return_distribution": "CVM", "portfolio_equivalents": "ETFSBRASIL",
+    "class_return_distribution": "CVM", "portfolio_equivalents": "ETFSBRASIL", "portfolio_credit_curve": "CVM",
 }
 LEVEL_BY_KIND = {
     "mesmo_ativo": "ativo",

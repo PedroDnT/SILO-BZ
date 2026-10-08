@@ -90,7 +90,7 @@ def test_returns_sources_are_named_and_dated(view):
 
 def test_lines_without_a_return_or_a_tax_rule_are_gaps_grouped_by_code(view):
     gaps = {(g["title"], g["text"]): g["line_ids"] for g in view["gaps"]}
-    assert gaps[("Retorno por posição", REASON_TEXT["retorno_credito_sem_serie"].rstrip(". "))] == ["L9", "L10", "L11", "L12"]
+    assert gaps[("Retorno por posição", REASON_TEXT["retorno_credito_sem_serie"].rstrip(". "))] == ["L9", "L10", "L12"]  # L11, a CRA, is on the curve (2.1)
     assert gaps[("Taxa e imposto por posição", REASON_TEXT["imposto_sem_regra"].rstrip(". "))] == ["L1", "L6"]
     assert all(g["value_brl"] is None for g in view["gaps"] if g["title"] in ("Retorno por posição", "Taxa e imposto por posição"))
     # the section-level code is the same lines again, so it is not printed twice

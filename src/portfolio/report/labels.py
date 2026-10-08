@@ -19,6 +19,8 @@ RETURN_BASIS = {
     "close_total_return": "fechamento com dividendos e JCP reinvestidos (close_total_return); JCP bruto de IR",
     "close_sem_proventos": "fechamento sem proventos (close): variação de preço",
     "last_price_etf_renda_fixa": "último preço do arquivo consolidado da B3 (last_price), sem proventos",
+    # engine 2.1 (#766)
+    "curva_securitizadora": "retorno na curva informada pela securitizadora (CVM), com os pagamentos do mês; não é preço de mercado",
 }
 GROSS_LABEL = "estimativa"
 

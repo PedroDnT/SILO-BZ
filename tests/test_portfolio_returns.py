@@ -364,7 +364,7 @@ def test_lines_without_a_series_are_not_evaluated_with_a_fixed_code_and_no_call(
     sec, client = run(lines, {})
     codes = [ln["reason_code"] for ln in sec["lines"]]
     assert codes == ["retorno_tesouro_sem_serie", "retorno_credito_sem_serie", "retorno_credito_sem_serie",
-                     "retorno_credito_sem_serie", "retorno_credito_sem_serie", "retorno_fidc_sem_classe",
+                     "retorno_curva_sem_codigo", "retorno_credito_sem_serie", "retorno_fidc_sem_classe",
                      "retorno_linha_nao_identificada"]
     assert all(ln["status"] == "nao_avaliado" and ln["basis"] is None for ln in sec["lines"])
     assert all(c in REASON_TEXT for c in codes)
@@ -394,9 +394,10 @@ def test_a_failed_series_call_is_recorded_and_the_line_is_not_evaluated():
 def test_demo_return_block():
     doc = json.loads(FIXTURE.read_text(encoding="utf-8"))
     r = doc["returns"]
-    assert doc["schema_version"] == "2.0" and list(doc).index("returns") == list(doc).index("risks") + 1
+    assert doc["schema_version"] == "2.1" and list(doc).index("returns") == list(doc).index("risks") + 1
     by = {ln["line_no"]: ln for ln in r["lines"]}
-    assert {n for n, ln in by.items() if ln["status"] == "avaliado"} == {2, 3, 4, 5, 7, 8}
+    assert {n for n, ln in by.items() if ln["status"] == "avaliado"} == {2, 3, 4, 5, 7, 8, 11}
+    assert by[11]["basis"] == "curva_securitizadora" and by[11]["windows"]["12m"]["pct_of_cdi_reason_code"] == "taxa_nao_cdi"
     assert by[1]["reason_code"] == "retorno_tesouro_sem_serie" and by[6]["reason_code"] == "retorno_fidc_sem_classe"
     assert by[9]["reason_code"] == by[10]["reason_code"] == "retorno_credito_sem_serie"
     # Geração FIA: performance filed, negative 6-month gross shown and excluded

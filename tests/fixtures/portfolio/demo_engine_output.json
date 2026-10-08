@@ -1,5 +1,5 @@
 {
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -17118,6 +17118,7 @@
         "tipo": "tesouro",
         "cnpj": null,
         "ticker": null,
+        "code": null,
         "name": "NTN-B 2035-05-15",
         "valor_brl": 412351.0,
         "basis": null,
@@ -17227,6 +17228,7 @@
         "tipo": "ação",
         "cnpj": null,
         "ticker": "PETR4",
+        "code": null,
         "name": "PETROBRAS",
         "valor_brl": 988000.0,
         "basis": "close_total_return",
@@ -17380,7 +17382,7 @@
             "sources": [
               {
                 "tool": "quote_history",
-                "call_id": 44,
+                "call_id": 45,
                 "args": {
                   "p_ticker": "PETR4",
                   "p_from": "2025-09-01",
@@ -17446,7 +17448,7 @@
             "sources": [
               {
                 "tool": "quote_history",
-                "call_id": 44,
+                "call_id": 45,
                 "args": {
                   "p_ticker": "PETR4",
                   "p_from": "2025-09-01",
@@ -17482,7 +17484,7 @@
           },
           {
             "tool": "quote_history",
-            "call_id": 44,
+            "call_id": 45,
             "args": {
               "p_ticker": "PETR4",
               "p_from": "2025-09-01",
@@ -17502,6 +17504,7 @@
         "tipo": "fundo",
         "cnpj": "08935128000159",
         "ticker": null,
+        "code": null,
         "name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
         "valor_brl": 264615.0,
         "basis": "cota_fundo",
@@ -17692,7 +17695,7 @@
             "sources": [
               {
                 "tool": "fund_nav",
-                "call_id": 45,
+                "call_id": 46,
                 "args": {
                   "p_cnpj": "08935128000159",
                   "p_from": "2025-09-01",
@@ -17770,7 +17773,7 @@
             "sources": [
               {
                 "tool": "fund_nav",
-                "call_id": 45,
+                "call_id": 46,
                 "args": {
                   "p_cnpj": "08935128000159",
                   "p_from": "2025-09-01",
@@ -17818,7 +17821,7 @@
           },
           {
             "tool": "fund_nav",
-            "call_id": 45,
+            "call_id": 46,
             "args": {
               "p_cnpj": "08935128000159",
               "p_from": "2025-09-01",
@@ -17834,6 +17837,7 @@
         "tipo": "fundo",
         "cnpj": "50088190000119",
         "ticker": null,
+        "code": null,
         "name": "XP BANCOS FIC FIF RENDA FIXA",
         "valor_brl": 1387809.9,
         "basis": "cota_fundo",
@@ -18025,7 +18029,7 @@
             "sources": [
               {
                 "tool": "fund_nav",
-                "call_id": 46,
+                "call_id": 47,
                 "args": {
                   "p_cnpj": "50088190000119",
                   "p_from": "2025-09-01",
@@ -18103,7 +18107,7 @@
             "sources": [
               {
                 "tool": "fund_nav",
-                "call_id": 46,
+                "call_id": 47,
                 "args": {
                   "p_cnpj": "50088190000119",
                   "p_from": "2025-09-01",
@@ -18151,7 +18155,7 @@
           },
           {
             "tool": "fund_nav",
-            "call_id": 46,
+            "call_id": 47,
             "args": {
               "p_cnpj": "50088190000119",
               "p_from": "2025-09-01",
@@ -18167,6 +18171,7 @@
         "tipo": "fundo",
         "cnpj": "51488342000133",
         "ticker": null,
+        "code": null,
         "name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
         "valor_brl": 902591.9,
         "basis": "cota_fundo",
@@ -18358,7 +18363,7 @@
             "sources": [
               {
                 "tool": "fund_nav",
-                "call_id": 47,
+                "call_id": 48,
                 "args": {
                   "p_cnpj": "51488342000133",
                   "p_from": "2025-09-01",
@@ -18436,7 +18441,7 @@
             "sources": [
               {
                 "tool": "fund_nav",
-                "call_id": 47,
+                "call_id": 48,
                 "args": {
                   "p_cnpj": "51488342000133",
                   "p_from": "2025-09-01",
@@ -18484,7 +18489,7 @@
           },
           {
             "tool": "fund_nav",
-            "call_id": 47,
+            "call_id": 48,
             "args": {
               "p_cnpj": "51488342000133",
               "p_from": "2025-09-01",
@@ -18500,6 +18505,7 @@
         "tipo": "FIDC",
         "cnpj": null,
         "ticker": null,
+        "code": null,
         "name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
         "valor_brl": 750000.0,
         "basis": null,
@@ -18609,6 +18615,7 @@
         "tipo": "fundo",
         "cnpj": "42592315000115",
         "ticker": null,
+        "code": null,
         "name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
         "valor_brl": 770616.5,
         "basis": "cota_fundo",
@@ -18798,7 +18805,7 @@
             "sources": [
               {
                 "tool": "fund_nav",
-                "call_id": 48,
+                "call_id": 49,
                 "args": {
                   "p_cnpj": "42592315000115",
                   "p_from": "2025-09-01",
@@ -18876,7 +18883,7 @@
             "sources": [
               {
                 "tool": "fund_nav",
-                "call_id": 48,
+                "call_id": 49,
                 "args": {
                   "p_cnpj": "42592315000115",
                   "p_from": "2025-09-01",
@@ -18924,7 +18931,7 @@
           },
           {
             "tool": "fund_nav",
-            "call_id": 48,
+            "call_id": 49,
             "args": {
               "p_cnpj": "42592315000115",
               "p_from": "2025-09-01",
@@ -18940,6 +18947,7 @@
         "tipo": "FII",
         "cnpj": null,
         "ticker": "HGLG11",
+        "code": null,
         "name": "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO",
         "valor_brl": 175440.0,
         "basis": "close_sem_proventos",
@@ -19094,7 +19102,7 @@
             "sources": [
               {
                 "tool": "quote_history",
-                "call_id": 49,
+                "call_id": 50,
                 "args": {
                   "p_ticker": "HGLG11",
                   "p_from": "2025-09-01",
@@ -19159,7 +19167,7 @@
             "sources": [
               {
                 "tool": "quote_history",
-                "call_id": 49,
+                "call_id": 50,
                 "args": {
                   "p_ticker": "HGLG11",
                   "p_from": "2025-09-01",
@@ -19194,7 +19202,7 @@
           },
           {
             "tool": "quote_history",
-            "call_id": 49,
+            "call_id": 50,
             "args": {
               "p_ticker": "HGLG11",
               "p_from": "2025-09-01",
@@ -19213,6 +19221,7 @@
         "tipo": "CDB",
         "cnpj": null,
         "ticker": null,
+        "code": null,
         "name": null,
         "valor_brl": 270000.0,
         "basis": null,
@@ -19322,6 +19331,7 @@
         "tipo": "LCA",
         "cnpj": null,
         "ticker": null,
+        "code": null,
         "name": null,
         "valor_brl": 120000.0,
         "basis": null,
@@ -19431,48 +19441,149 @@
         "tipo": "CRA",
         "cnpj": null,
         "ticker": null,
+        "code": "CRA-0260000X",
         "name": null,
         "valor_brl": 95000.0,
-        "basis": null,
+        "basis": "curva_securitizadora",
         "without_distributions": false,
-        "status": "nao_avaliado",
-        "reason_code": "retorno_credito_sem_serie",
-        "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
-        "fee": null,
-        "benchmark": null,
+        "status": "avaliado",
+        "reason_code": null,
+        "reason": null,
+        "fee": {
+          "status": "nao_se_aplica",
+          "reason_code": "taxa_nao_aplicavel",
+          "rate_pct_year": null,
+          "kind": null,
+          "origin": null,
+          "as_of": null,
+          "sources": []
+        },
+        "benchmark": {
+          "cdi_like": false,
+          "reason_code": "taxa_nao_informada",
+          "extrato": null,
+          "lamina": null,
+          "lamina_n": null,
+          "extrato_as_of": null,
+          "lamina_as_of": null,
+          "matched": [],
+          "rule_version": null,
+          "sources": []
+        },
         "performance_fee_filed": false,
-        "notes": [],
-        "month_ends": [],
+        "notes": [
+          "Retorno na curva informada pela securitizadora (CVM, cvm_securit_serie): o valor unitário do mês mais os pagamentos do mês por certificado, sobre o valor unitário do mês anterior, composto. É o valor na curva, não preço de mercado; não mede risco de crédito nem marcação."
+        ],
+        "month_ends": [
+          {
+            "month": "2025-09-01",
+            "date": null,
+            "value": 1000.0,
+            "null_reason": null
+          },
+          {
+            "month": "2025-10-01",
+            "date": null,
+            "value": 1010.5,
+            "null_reason": null
+          },
+          {
+            "month": "2025-11-01",
+            "date": null,
+            "value": 1021.11025,
+            "null_reason": null
+          },
+          {
+            "month": "2025-12-01",
+            "date": null,
+            "value": 1031.83190762,
+            "null_reason": null
+          },
+          {
+            "month": "2026-01-01",
+            "date": null,
+            "value": 1042.66614265,
+            "null_reason": null
+          },
+          {
+            "month": "2026-02-01",
+            "date": null,
+            "value": 1053.61413715,
+            "null_reason": null
+          },
+          {
+            "month": "2026-03-01",
+            "date": null,
+            "value": 1004.67708559,
+            "null_reason": null
+          },
+          {
+            "month": "2026-04-01",
+            "date": null,
+            "value": 1015.22619499,
+            "null_reason": null
+          },
+          {
+            "month": "2026-05-01",
+            "date": null,
+            "value": 1025.88607004,
+            "null_reason": null
+          },
+          {
+            "month": "2026-06-01",
+            "date": null,
+            "value": 1036.65787378,
+            "null_reason": null
+          },
+          {
+            "month": "2026-07-01",
+            "date": null,
+            "value": 1047.54278145,
+            "null_reason": null
+          },
+          {
+            "month": "2026-08-01",
+            "date": null,
+            "value": 1058.54198066,
+            "null_reason": null
+          },
+          {
+            "month": "2026-09-01",
+            "date": null,
+            "value": 1069.65667146,
+            "null_reason": null
+          }
+        ],
         "windows": {
           "12m": {
-            "status": "nao_avaliado",
-            "reason_code": "retorno_credito_sem_serie",
-            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
-            "base_month": null,
-            "end_month": null,
+            "status": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2025-09-01",
+            "end_month": "2026-09-01",
             "base_date": null,
             "end_date": null,
-            "base_value": null,
-            "end_value": null,
-            "n_observations": null,
-            "net_return_pct": null,
-            "cdi_pct": null,
-            "cdi_base_date": null,
-            "cdi_end_date": null,
-            "cdi_n_rates": null,
+            "base_value": 1.0,
+            "end_value": 1.1335373,
+            "n_observations": 12,
+            "net_return_pct": 13.35373,
+            "cdi_pct": 14.420517,
+            "cdi_base_date": "2025-09-30",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 261,
             "cdi_reason_code": null,
-            "net_minus_cdi_pp": null,
-            "cdi_like": null,
+            "net_minus_cdi_pp": -1.066787,
+            "cdi_like": false,
             "pct_of_cdi": null,
-            "pct_of_cdi_reason_code": null,
-            "volatility_annual_pct": null,
-            "volatility_note": null,
-            "max_drawdown_pct": null,
+            "pct_of_cdi_reason_code": "taxa_nao_cdi",
+            "volatility_annual_pct": 0.0,
+            "volatility_note": "12 observações; estimativa ruidosa",
+            "max_drawdown_pct": 0.0,
             "max_drawdown_peak_month": null,
             "max_drawdown_trough_month": null,
             "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
-            "fee_status": null,
-            "fee_reason_code": null,
+            "fee_status": "nao_se_aplica",
+            "fee_reason_code": "taxa_nao_aplicavel",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
             "fee_per_point": null,
@@ -19480,38 +19591,63 @@
             "fee_per_point_note": null,
             "sharpe_drag": null,
             "sharpe_drag_note": null,
-            "notes": [],
-            "sources": []
+            "notes": [
+              "Retorno na curva informada pela securitizadora (CVM, cvm_securit_serie): o valor unitário do mês mais os pagamentos do mês por certificado, sobre o valor unitário do mês anterior, composto. É o valor na curva, não preço de mercado; não mede risco de crédito nem marcação."
+            ],
+            "sources": [
+              {
+                "tool": "portfolio_credit_curve",
+                "call_id": 44,
+                "args": {
+                  "p_codes": [
+                    "CRA-0260000X"
+                  ],
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-01"
+                },
+                "data_date": "2026-09-01"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
           },
           "6m": {
-            "status": "nao_avaliado",
-            "reason_code": "retorno_credito_sem_serie",
-            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
-            "base_month": null,
-            "end_month": null,
+            "status": "avaliado",
+            "reason_code": null,
+            "reason": null,
+            "base_month": "2026-03-01",
+            "end_month": "2026-09-01",
             "base_date": null,
             "end_date": null,
-            "base_value": null,
-            "end_value": null,
-            "n_observations": null,
-            "net_return_pct": null,
-            "cdi_pct": null,
-            "cdi_base_date": null,
-            "cdi_end_date": null,
-            "cdi_n_rates": null,
+            "base_value": 1.0,
+            "end_value": 1.06467709,
+            "n_observations": 6,
+            "net_return_pct": 6.467709,
+            "cdi_pct": 6.907412,
+            "cdi_base_date": "2026-03-31",
+            "cdi_end_date": "2026-09-30",
+            "cdi_n_rates": 131,
             "cdi_reason_code": null,
-            "net_minus_cdi_pp": null,
-            "cdi_like": null,
+            "net_minus_cdi_pp": -0.439703,
+            "cdi_like": false,
             "pct_of_cdi": null,
-            "pct_of_cdi_reason_code": null,
-            "volatility_annual_pct": null,
-            "volatility_note": null,
-            "max_drawdown_pct": null,
+            "pct_of_cdi_reason_code": "taxa_nao_cdi",
+            "volatility_annual_pct": 0.0,
+            "volatility_note": "6 observações; muito ruidosa",
+            "max_drawdown_pct": 0.0,
             "max_drawdown_peak_month": null,
             "max_drawdown_trough_month": null,
             "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
-            "fee_status": null,
-            "fee_reason_code": null,
+            "fee_status": "nao_se_aplica",
+            "fee_reason_code": "taxa_nao_aplicavel",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
             "fee_per_point": null,
@@ -19519,8 +19655,34 @@
             "fee_per_point_note": null,
             "sharpe_drag": null,
             "sharpe_drag_note": null,
-            "notes": [],
-            "sources": []
+            "notes": [
+              "Retorno na curva informada pela securitizadora (CVM, cvm_securit_serie): o valor unitário do mês mais os pagamentos do mês por certificado, sobre o valor unitário do mês anterior, composto. É o valor na curva, não preço de mercado; não mede risco de crédito nem marcação.",
+              "retorno do período de 6 meses, não anualizado"
+            ],
+            "sources": [
+              {
+                "tool": "portfolio_credit_curve",
+                "call_id": 44,
+                "args": {
+                  "p_codes": [
+                    "CRA-0260000X"
+                  ],
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-01"
+                },
+                "data_date": "2026-09-01"
+              },
+              {
+                "tool": "macro_series",
+                "call_id": 43,
+                "args": {
+                  "p_series": "CDI",
+                  "p_from": "2025-09-01",
+                  "p_to": "2026-09-30"
+                },
+                "data_date": "2026-09-30"
+              }
+            ]
           }
         },
         "sources": [
@@ -19531,6 +19693,18 @@
               "line_no": 11
             },
             "data_date": "2026-09-30"
+          },
+          {
+            "tool": "portfolio_credit_curve",
+            "call_id": 44,
+            "args": {
+              "p_codes": [
+                "CRA-0260000X"
+              ],
+              "p_from": "2025-09-01",
+              "p_to": "2026-09-01"
+            },
+            "data_date": "2026-09-01"
           }
         ]
       },
@@ -19540,6 +19714,7 @@
         "tipo": "debênture",
         "cnpj": null,
         "ticker": null,
+        "code": null,
         "name": null,
         "valor_brl": 60000.0,
         "basis": null,
@@ -19645,18 +19820,18 @@
       }
     ],
     "n_lines": 12,
-    "n_evaluated": 6,
-    "n_not_evaluated": 6,
+    "n_evaluated": 7,
+    "n_not_evaluated": 5,
     "coverage": {
       "12m": {
-        "evaluated_value_brl": 4489073.3,
-        "coverage_portfolio_value_pct": 72.4462,
-        "n_evaluated": 6
+        "evaluated_value_brl": 4584073.3,
+        "coverage_portfolio_value_pct": 73.9793,
+        "n_evaluated": 7
       },
       "6m": {
-        "evaluated_value_brl": 4489073.3,
-        "coverage_portfolio_value_pct": 72.4462,
-        "n_evaluated": 6
+        "evaluated_value_brl": 4584073.3,
+        "coverage_portfolio_value_pct": 73.9793,
+        "n_evaluated": 7
       }
     },
     "contribution": {
@@ -19666,11 +19841,11 @@
         "12m": {
           "status": "avaliado",
           "reason_code": null,
-          "covered_return_pct": 14.499,
-          "start_value_brl": 3920621.7,
-          "end_value_brl": 4489073.3,
-          "n_lines": 6,
-          "coverage_portfolio_value_pct": 72.4462,
+          "covered_return_pct": 14.475,
+          "start_value_brl": 4004430.14,
+          "end_value_brl": 4584073.3,
+          "n_lines": 7,
+          "coverage_portfolio_value_pct": 73.9793,
           "lines": [
             {
               "line_no": 2,
@@ -19678,8 +19853,8 @@
               "valor_brl": 988000.0,
               "net_return_pct": 26.002017,
               "start_value_brl": 784114.43,
-              "start_weight_pct": 19.9997,
-              "contribution_pp": 5.2003
+              "start_weight_pct": 19.5812,
+              "contribution_pp": 5.0915
             },
             {
               "line_no": 3,
@@ -19687,8 +19862,8 @@
               "valor_brl": 264615.0,
               "net_return_pct": 7.782715,
               "start_value_brl": 245507.83,
-              "start_weight_pct": 6.262,
-              "contribution_pp": 0.4874
+              "start_weight_pct": 6.1309,
+              "contribution_pp": 0.4772
             },
             {
               "line_no": 4,
@@ -19696,8 +19871,8 @@
               "valor_brl": 1387809.9,
               "net_return_pct": 13.994772,
               "start_value_brl": 1217432.94,
-              "start_weight_pct": 31.052,
-              "contribution_pp": 4.3457
+              "start_weight_pct": 30.4022,
+              "contribution_pp": 4.2547
             },
             {
               "line_no": 5,
@@ -19705,8 +19880,8 @@
               "valor_brl": 902591.9,
               "net_return_pct": 13.724449,
               "start_value_brl": 793665.66,
-              "start_weight_pct": 20.2434,
-              "contribution_pp": 2.7783
+              "start_weight_pct": 19.8197,
+              "contribution_pp": 2.7201
             },
             {
               "line_no": 7,
@@ -19714,8 +19889,8 @@
               "valor_brl": 770616.5,
               "net_return_pct": 10.976314,
               "start_value_brl": 694397.27,
-              "start_weight_pct": 17.7114,
-              "contribution_pp": 1.9441
+              "start_weight_pct": 17.3407,
+              "contribution_pp": 1.9034
             },
             {
               "line_no": 8,
@@ -19723,19 +19898,28 @@
               "valor_brl": 175440.0,
               "net_return_pct": -5.425,
               "start_value_brl": 185503.57,
-              "start_weight_pct": 4.7315,
-              "contribution_pp": -0.2567
+              "start_weight_pct": 4.6325,
+              "contribution_pp": -0.2513
+            },
+            {
+              "line_no": 11,
+              "linha_extrato": "CRA AGRO EXEMPLO",
+              "valor_brl": 95000.0,
+              "net_return_pct": 13.35373,
+              "start_value_brl": 83808.45,
+              "start_weight_pct": 2.0929,
+              "contribution_pp": 0.2795
             }
           ]
         },
         "6m": {
           "status": "avaliado",
           "reason_code": null,
-          "covered_return_pct": 6.3594,
-          "start_value_brl": 4220663.07,
-          "end_value_brl": 4489073.3,
-          "n_lines": 6,
-          "coverage_portfolio_value_pct": 72.4462,
+          "covered_return_pct": 6.3617,
+          "start_value_brl": 4309892.01,
+          "end_value_brl": 4584073.3,
+          "n_lines": 7,
+          "coverage_portfolio_value_pct": 73.9793,
           "lines": [
             {
               "line_no": 2,
@@ -19743,8 +19927,8 @@
               "valor_brl": 988000.0,
               "net_return_pct": 12.266715,
               "start_value_brl": 880047.13,
-              "start_weight_pct": 20.8509,
-              "contribution_pp": 2.5577
+              "start_weight_pct": 20.4192,
+              "contribution_pp": 2.5048
             },
             {
               "line_no": 3,
@@ -19752,8 +19936,8 @@
               "valor_brl": 264615.0,
               "net_return_pct": -6.926556,
               "start_value_brl": 284307.73,
-              "start_weight_pct": 6.7361,
-              "contribution_pp": -0.4666
+              "start_weight_pct": 6.5966,
+              "contribution_pp": -0.4569
             },
             {
               "line_no": 4,
@@ -19761,8 +19945,8 @@
               "valor_brl": 1387809.9,
               "net_return_pct": 6.784179,
               "start_value_brl": 1299640.0,
-              "start_weight_pct": 30.7923,
-              "contribution_pp": 2.089
+              "start_weight_pct": 30.1548,
+              "contribution_pp": 2.0458
             },
             {
               "line_no": 5,
@@ -19770,8 +19954,8 @@
               "valor_brl": 902591.9,
               "net_return_pct": 6.657495,
               "start_value_brl": 846252.67,
-              "start_weight_pct": 20.0502,
-              "contribution_pp": 1.3348
+              "start_weight_pct": 19.6351,
+              "contribution_pp": 1.3072
             },
             {
               "line_no": 7,
@@ -19779,8 +19963,8 @@
               "valor_brl": 770616.5,
               "net_return_pct": 5.366188,
               "start_value_brl": 731369.82,
-              "start_weight_pct": 17.3283,
-              "contribution_pp": 0.9299
+              "start_weight_pct": 16.9696,
+              "contribution_pp": 0.9106
             },
             {
               "line_no": 8,
@@ -19788,8 +19972,17 @@
               "valor_brl": 175440.0,
               "net_return_pct": -2.013857,
               "start_value_brl": 179045.72,
-              "start_weight_pct": 4.2421,
-              "contribution_pp": -0.0854
+              "start_weight_pct": 4.1543,
+              "contribution_pp": -0.0837
+            },
+            {
+              "line_no": 11,
+              "linha_extrato": "CRA AGRO EXEMPLO",
+              "valor_brl": 95000.0,
+              "net_return_pct": 6.467709,
+              "start_value_brl": 89228.93,
+              "start_weight_pct": 2.0703,
+              "contribution_pp": 0.1339
             }
           ]
         }
@@ -22058,7 +22251,7 @@
           },
           {
             "tool": "portfolio_equivalents",
-            "call_id": 50,
+            "call_id": 51,
             "args": {
               "p_classes": [
                 "Ações Livre",
@@ -22139,7 +22332,7 @@
           "sources": [
             {
               "tool": "portfolio_equivalents",
-              "call_id": 50,
+              "call_id": 51,
               "args": {
                 "p_classes": [
                   "Ações Livre",
@@ -22185,7 +22378,7 @@
             "sources": [
               {
                 "tool": "trade_consolidated_history",
-                "call_id": 51,
+                "call_id": 52,
                 "args": {
                   "p_ticker": "EXLF11",
                   "p_from": "2025-09-01",
@@ -22195,7 +22388,7 @@
               },
               {
                 "tool": "class_return_distribution",
-                "call_id": 52,
+                "call_id": 53,
                 "args": {
                   "p_classe_anbima": "RENDA FIXA SIMPLES",
                   "p_fundo_cotas": "S",
@@ -22238,7 +22431,7 @@
             "sources": [
               {
                 "tool": "trade_consolidated_history",
-                "call_id": 51,
+                "call_id": 52,
                 "args": {
                   "p_ticker": "EXLF11",
                   "p_from": "2025-09-01",
@@ -22248,7 +22441,7 @@
               },
               {
                 "tool": "class_return_distribution",
-                "call_id": 52,
+                "call_id": 53,
                 "args": {
                   "p_classe_anbima": "RENDA FIXA SIMPLES",
                   "p_fundo_cotas": "S",
@@ -22278,7 +22471,7 @@
           },
           {
             "tool": "portfolio_equivalents",
-            "call_id": 50,
+            "call_id": 51,
             "args": {
               "p_classes": [
                 "Ações Livre",
@@ -23156,6 +23349,21 @@
     },
     {
       "call_id": 44,
+      "tool": "portfolio_credit_curve",
+      "args": {
+        "p_codes": [
+          "CRA-0260000X"
+        ],
+        "p_from": "2025-09-01",
+        "p_to": "2026-09-01"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 13,
+      "error": null,
+      "id": "p44"
+    },
+    {
+      "call_id": 45,
       "tool": "quote_history",
       "args": {
         "p_ticker": "PETR4",
@@ -23169,26 +23377,13 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 283,
       "error": null,
-      "id": "p44"
-    },
-    {
-      "call_id": 45,
-      "tool": "fund_nav",
-      "args": {
-        "p_cnpj": "08935128000159",
-        "p_from": "2025-09-01",
-        "p_entity_type": "fi"
-      },
-      "requested_at_utc": "2026-10-03T15:00:00Z",
-      "row_count": 13,
-      "error": null,
       "id": "p45"
     },
     {
       "call_id": 46,
       "tool": "fund_nav",
       "args": {
-        "p_cnpj": "50088190000119",
+        "p_cnpj": "08935128000159",
         "p_from": "2025-09-01",
         "p_entity_type": "fi"
       },
@@ -23201,7 +23396,7 @@
       "call_id": 47,
       "tool": "fund_nav",
       "args": {
-        "p_cnpj": "51488342000133",
+        "p_cnpj": "50088190000119",
         "p_from": "2025-09-01",
         "p_entity_type": "fi"
       },
@@ -23214,7 +23409,7 @@
       "call_id": 48,
       "tool": "fund_nav",
       "args": {
-        "p_cnpj": "42592315000115",
+        "p_cnpj": "51488342000133",
         "p_from": "2025-09-01",
         "p_entity_type": "fi"
       },
@@ -23225,6 +23420,19 @@
     },
     {
       "call_id": 49,
+      "tool": "fund_nav",
+      "args": {
+        "p_cnpj": "42592315000115",
+        "p_from": "2025-09-01",
+        "p_entity_type": "fi"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 13,
+      "error": null,
+      "id": "p49"
+    },
+    {
+      "call_id": 50,
       "tool": "quote_history",
       "args": {
         "p_ticker": "HGLG11",
@@ -23237,10 +23445,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 283,
       "error": null,
-      "id": "p49"
+      "id": "p50"
     },
     {
-      "call_id": 50,
+      "call_id": 51,
       "tool": "portfolio_equivalents",
       "args": {
         "p_classes": [
@@ -23252,10 +23460,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 3,
       "error": null,
-      "id": "p50"
+      "id": "p51"
     },
     {
-      "call_id": 51,
+      "call_id": 52,
       "tool": "trade_consolidated_history",
       "args": {
         "p_ticker": "EXLF11",
@@ -23265,10 +23473,10 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 283,
       "error": null,
-      "id": "p51"
+      "id": "p52"
     },
     {
-      "call_id": 52,
+      "call_id": 53,
       "tool": "class_return_distribution",
       "args": {
         "p_classe_anbima": "RENDA FIXA SIMPLES",
@@ -23278,7 +23486,7 @@
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 2,
       "error": null,
-      "id": "p52"
+      "id": "p53"
     }
   ],
   "client_fit": {
