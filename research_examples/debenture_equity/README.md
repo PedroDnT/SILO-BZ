@@ -8,6 +8,10 @@ entry point: public fetch-only by default; explicit production execution require
 specific owner approval and the exact frozen plan hash. It reuses the existing
 ingestor and never enables recurring capture. Credit-ingestion success does not
 certify complete research archive/PIT readiness.
+The [source-backed collector](collector.md) now derives current FCA identity
+inventory from retained full ZIP evidence, prepares the bounded warehouse SELECT,
+and assembles/replays seven source/feature components locally. It neither connects
+to nor writes production; source/financial acceptance and a real cutoff remain open.
 
 From the repository root:
 

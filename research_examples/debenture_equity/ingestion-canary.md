@@ -85,6 +85,14 @@ existing ticker rows or substitute insertion time for actual source observation.
 Obtaining/retaining missing source evidence and its acceptance remains open;
 this continuation adds no new warehouse dataset or mapper.
 
+Subsequent local preparation now supplies a [source-backed FCA/collector adapter](collector.md)
+from the full existing FCA ZIP, with index/general/securities reconciliation and
+raw-byte replay. It derived 26 current company filings/32 equity rows from a real
+retained copy. This resolves that local adapter gap; warehouse rows alone still
+cannot establish it. The read-only 08/10 export has no credit capture, and no real
+seven-component cutoff archive, source/financial acceptance or production execution
+is claimed. The canary request/date/limits/hash and approval boundary are unchanged.
+
 Credit ingestion can be evaluated independently. Its report always keeps
 `research_snapshot_complete=false` and `strict_pit_certified=false`; a successful
 credit canary is not an accepted development input or a model prediction. Before

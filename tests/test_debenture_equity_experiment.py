@@ -377,6 +377,30 @@ def test_prospective_replay_refuses_changed_fact_even_when_census_matches(prospe
         compute_features(payloads, candidate, day, cutoff)
 
 
+@pytest.mark.parametrize('reverse', [False, True])
+def test_prospective_refuses_simultaneous_distinct_credit_captures(prospective_inputs, reverse):
+    from copy import deepcopy
+    import hashlib
+    from datetime import date
+    from src.parsers import b3_credit as parser
+    from research_examples.debenture_equity.prospective import compute_features
+    payloads, candidate, day, cutoff = prospective_inputs
+    credit = payloads['credit_full_capture_and_audit_census']
+    second = deepcopy(credit['captures'][0])
+    second['capture_id'] = 'synthetic-simultaneous-revision'
+    second['raw_csv'] = second['raw_csv'].replace(';1000;', ';2000;')
+    second['payload_sha256'] = hashlib.sha256(second['raw_csv'].encode()).hexdigest()
+    parsed = parser.parse(second['raw_csv'], date.fromisoformat(day), date.fromisoformat(day))
+    credit['captures'].append(second)
+    credit['credit'].extend(json.loads(json.dumps(parser.facts(parsed, second['capture_id']), default=str)))
+    credit['credit_census'].append({**credit['credit_census'][0], 'capture_id': second['capture_id']})
+    credit['audits'].append({**credit['audits'][0], 'capture_id': second['capture_id']})
+    if reverse:
+        credit['captures'].reverse()
+    with pytest.raises(ValueError, match='Equal-time captures'):
+        compute_features(payloads, candidate, day, cutoff)
+
+
 def test_prospective_latest_full_filing_does_not_resurrect_removed_stock(prospective_inputs):
     from research_examples.debenture_equity.prospective import compute_features
     payloads, candidate, day, cutoff = prospective_inputs
@@ -387,6 +411,156 @@ def test_prospective_latest_full_filing_does_not_resurrect_removed_stock(prospec
     identity['filing_census'].append(latest)
     features, excluded = compute_features(payloads, candidate, day, cutoff)
     assert features.empty and excluded['no_past_liquid_equity'] == 1
+
+
+def fca_source_archive(empty_latest=False, missing_latest_content=False):
+    """Synthetic published ZIP with an independent index and current content."""
+    import base64
+    import csv
+    import hashlib
+    import io
+    import zipfile
+    from src.parsers.field_maps.cia_fca_valor_mobiliario import FIELD_MAP
+    company = '12.345.678/0001-90'
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, 'w') as z:
+        def put(name, fields, rows):
+            text = io.StringIO()
+            writer = csv.DictWriter(text, fieldnames=fields, delimiter=';')
+            writer.writeheader()
+            writer.writerows(rows)
+            z.writestr(name, text.getvalue().encode('latin1'))
+        index = [dict(CNPJ_CIA=company, DT_REFER='2026-01-01', VERSAO='1', ID_DOC='old',
+                      CATEG_DOC='FCA', DT_RECEB='2026-01-10')]
+        if empty_latest or missing_latest_content:
+            index.append({**index[0], 'VERSAO': '2', 'ID_DOC': 'new', 'DT_RECEB': '2026-07-01'})
+        put('fca_cia_aberta_2026.csv', list(index[0]), index)
+        key = dict(CNPJ_Companhia=company, Data_Referencia='2026-01-01',
+                   Versao='2' if empty_latest else '1', ID_Documento='new' if empty_latest else 'old')
+        put('fca_cia_aberta_geral_2026.csv', list(key), [key])
+        fields = [aliases[0] for aliases, _ in FIELD_MAP.values()]
+        sec = {**dict.fromkeys(fields, ''), **key, 'Valor_Mobiliario': 'Ações Ordinárias',
+               'Codigo_Negociacao': 'TEST4', 'Mercado': 'Bolsa', 'Data_Inicio_Negociacao': '2020-01-01',
+               'Data_Inicio_Listagem': '2020-01-01'}
+        put('fca_cia_aberta_valor_mobiliario_2026.csv', fields, [] if empty_latest else [sec])
+    raw = out.getvalue()
+    return {'year': 2026, 'zip_base64': base64.b64encode(raw).decode(),
+            'sha256': hashlib.sha256(raw).hexdigest(),
+            'source_url': 'https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/FCA/DADOS/fca_cia_aberta_2026.zip',
+            'read_started_at': '2026-07-02T09:00:00-03:00',
+            'read_finished_at': '2026-07-02T09:05:00-03:00',
+            'source_observed_at': '2026-07-02T09:05:00-03:00'}
+
+
+def test_retained_fca_index_establishes_latest_zero_equity_filing(prospective_inputs):
+    from research_examples.debenture_equity.fca_sources import derive_identity
+    payloads, _, day, _ = prospective_inputs
+    links = payloads['complete_relevant_fca_vintages_and_identity_evidence']['links']
+    links = [{**links[0], 'cnpj': '12345678000190'}]
+    identity = derive_identity([fca_source_archive(empty_latest=True)], links, day)
+    assert identity['fca'] == []
+    assert identity['filing_census'][0]['document_id'] == 'new'
+    assert identity['filing_census'][0]['equity_rows'] == 0
+    assert identity['filing_census'][0]['equity_rows_sha256'] == fingerprint([])
+
+
+@pytest.mark.parametrize('damage', ['hash', 'missing_company', 'future_receipt'])
+def test_raw_fca_cannot_supply_unobserved_or_unmatched_identity(prospective_inputs, damage):
+    from research_examples.debenture_equity.fca_sources import derive_identity
+    payloads, _, day, _ = prospective_inputs
+    links = [{**payloads['complete_relevant_fca_vintages_and_identity_evidence']['links'][0],
+              'cnpj': '12345678000190'}]
+    source = fca_source_archive()
+    if damage == 'hash':
+        source['sha256'] = '0'*64
+    elif damage == 'missing_company':
+        links[0]['cnpj'] = '12345678000191'
+    else:
+        source['read_finished_at'] = '2026-01-01T09:05:00-03:00'
+    with pytest.raises(ValueError):
+        derive_identity([source], links, day)
+
+
+def test_fca_missing_latest_content_is_not_invented_as_empty(prospective_inputs):
+    from research_examples.debenture_equity.fca_sources import derive_identity
+    payloads, _, day, _ = prospective_inputs
+    links = [{**payloads['complete_relevant_fca_vintages_and_identity_evidence']['links'][0],
+              'cnpj': '12345678000190'}]
+    with pytest.raises(ValueError, match='latest indexed filing'):
+        derive_identity([fca_source_archive(missing_latest_content=True)], links, day)
+
+
+def test_prospective_replays_raw_fca_before_accepting_projected_census(prospective_inputs):
+    from research_examples.debenture_equity.fca_sources import derive_identity
+    from research_examples.debenture_equity.prospective import compute_features
+    payloads, candidate, day, cutoff = prospective_inputs
+    links = [{**payloads['complete_relevant_fca_vintages_and_identity_evidence']['links'][0],
+              'cnpj': '12345678000190'}]
+    identity = derive_identity([fca_source_archive()], links, day)
+    payloads['complete_relevant_fca_vintages_and_identity_evidence'] = identity
+    features, _ = compute_features(payloads, candidate, day, cutoff)
+    assert len(features) == 1
+    identity['fca'][0]['ticker'] = 'OTHER3'
+    identity['filing_census'][0]['equity_rows_sha256'] = fingerprint(identity['fca'])
+    with pytest.raises(ValueError, match='retained FCA source'):
+        compute_features(payloads, candidate, day, cutoff)
+
+
+def test_collector_seals_and_replays_all_seven_components(prospective_inputs, tmp_path, monkeypatch):
+    import hashlib
+    from datetime import datetime
+    from research_examples.debenture_equity import collector, snapshots
+    from research_examples.debenture_equity.fca_sources import derive_identity
+    payloads, candidate, day, cutoff = prospective_inputs
+    links = [{**payloads['complete_relevant_fca_vintages_and_identity_evidence']['links'][0],
+              'cnpj': '12345678000190'}]
+    payloads['complete_relevant_fca_vintages_and_identity_evidence'] = derive_identity(
+        [fca_source_archive()], links, day)
+    now = datetime.fromisoformat('2026-07-02T09:59:00-03:00')
+    monkeypatch.setattr(collector, '_now', lambda: now)
+    monkeypatch.setattr(snapshots, '_now', lambda: now)
+    monkeypatch.setattr(snapshots, '_publication_time', lambda path: now)
+    request = {'signal_date': day, 'cutoff_at': cutoff,
+               'protocol_sha256': fingerprint(candidate), 'links_sha256': fingerprint(links),
+               'components': {}}
+    for name in snapshots.COMPONENTS[:-1]:
+        path = tmp_path/(name+'.json')
+        path.write_text(json.dumps(payloads[name]))
+        request['components'][name] = {'path': str(path),
+            'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+            'source_observed_at': '2026-07-02T09:30:00-03:00',
+            'read_started_at': '2026-07-02T09:40:00-03:00',
+            'read_finished_at': '2026-07-02T09:50:00-03:00'}
+    features, report = collector.collect(request, tmp_path/'collected', candidate)
+    assert len(features) == 1
+    assert report['seven_components_archived'] is True
+    assert report['source_backed_fca'] is True
+    assert report['strict_pit_certified'] is False
+    assert report['production_ingestion_executed'] is False
+    assert (tmp_path/'collected'/'READY.json').exists()
+    # Source bytes changed after the receipt must be refused before creating an archive.
+    path.write_text(path.read_text()+' ')
+    with pytest.raises(ValueError, match='Source bytes differ'):
+        collector.collect(request, tmp_path/'corrupt', candidate)
+    assert not (tmp_path/'corrupt').exists()
+
+
+def test_collector_export_uses_full_capture_and_exact_decimal_values(prospective_inputs):
+    from research_examples.debenture_equity.collector import export_query
+    from research_examples.debenture_equity.fca_sources import derive_identity
+    payloads, _, day, cutoff = prospective_inputs
+    links = [{**payloads['complete_relevant_fca_vintages_and_identity_evidence']['links'][0],
+              'cnpj': '12345678000190'}]
+    identity = derive_identity([fca_source_archive()], links, day)
+    query = export_query(day, '2026-01-01', cutoff, identity)
+    assert 'f.value::text' in query
+    assert 'SELECT * FROM public.b3_credit_capture' in query
+    assert 'ORDER BY observed_at DESC FETCH FIRST 1 ROWS WITH TIES' in query
+    assert 'observed_at DESC,capture_id' not in query
+    assert "requested_to='2026-07-01'" in query
+    assert 'a.run_id=c.capture_id' in query
+    with pytest.raises(ValueError, match='1000-row'):
+        export_query(day, '2020-01-01', cutoff, identity)
 
 
 @pytest.mark.parametrize('component,field', [

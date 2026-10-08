@@ -75,9 +75,16 @@ with explicit limits and a default no-DB fetch-only runner. It reuses the existi
 ingestor and checks persisted raw, exact facts, capture census and audit identity.
 It has not executed in production. Milestone 1 remains partial: the warehouse
 does not establish complete FCA filing inventory (including zero-equity filings)
-or observation times for later changed ticker contents. The runbook records the
-source-evidence adapter needed for the full archive; no completeness receipt is
-fabricated and no production activation follows from the local implementation.
+or historical observation times for later changed ticker contents. The local
+[source-backed collector](../../../research_examples/debenture_equity/collector.md)
+now retains/rederives current FCA ZIP evidence and assembles seven components.
+The actual current ZIP covers all 26 reviewed CNPJs with 32 equity/unit rows;
+this certifies neither historical PIT nor independent source completeness.
+The bounded SELECT ran with 5,790 equity, 192 IBOV and 43 sector rows, but zero
+qualifying credit captures. No real seven-component archive exists yet. Links
+reviewed only through 06/10 must be reviewed for 08/10 before eligible mapped
+observations can be claimed; an empty rehearsal panel is not scientific readiness.
+No production activation follows from this local implementation.
 
 ### Work parked until its dependency exists
 

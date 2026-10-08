@@ -67,6 +67,14 @@ def _credit(payload, links, available_by):
 
 def _latest_fca(payload, signal_date, available_by):
     """Latest complete company filing, including a filing with zero equity rows."""
+    if 'source_archives' in payload:
+        from research_examples.debenture_equity.fca_sources import derive_identity
+        for archive in payload['source_archives']:
+            _available(archive['source_observed_at'], available_by)
+            _available(archive['read_finished_at'], available_by)
+        derived = derive_identity(payload['source_archives'], payload['links'], signal_date)
+        if derived != payload:
+            raise ValueError('FCA projected inventory differs from retained FCA source')
     rows, census = payload['fca'], payload['filing_census']
     filings, latest = {}, {}
     for c in census:

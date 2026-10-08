@@ -614,9 +614,11 @@ The [credit ingestion canary package](../../research_examples/debenture_equity/i
 is implemented locally with a hash-pinned 08/10 single-session request, expiry
 09/10 at 10:00 UTC-3, explicit size/storage thresholds, private retained response
 and exact persisted fact/audit verification. No production execution occurred.
-Full seven-component readiness remains blocked by absent complete FCA filing
-inventory/updated-content observation evidence; current ticker rows cannot
-establish zero-equity filings. Keep credit-ingestion acceptance separate from
+The local source-backed FCA adapter and seven-component collector are implemented:
+current retained ZIP evidence covers 26 reviewed CNPJs and 32 equity/unit rows.
+The bounded SELECT ran, but returned zero qualifying credit captures; no real
+seven-component archive exists. Links reviewed through 06/10 require dated
+review for 08/10 eligibility. Historical PIT and independent completeness remain open. Keep credit-ingestion acceptance separate from
 full research snapshot/PIT acceptance. Specific canary approval remains required.
 Then: accepted prospective development contract
 with dated identity/source/convention and storage/retention gates; real development

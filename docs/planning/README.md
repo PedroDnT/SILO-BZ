@@ -69,5 +69,8 @@ cost. Export/replay alone does not complete engineering; the permanent gate stay
 off until production activation is specifically approved.
 The [one-session credit ingestion package](../../research_examples/debenture_equity/ingestion-canary.md)
 is now locally implemented/testable; its 08/10 request expires 09/10 at 10:00
-UTC-3 and is unexecuted. Full FCA filing inventory and changed-content observation
-evidence still prevent claiming complete research snapshot/PIT readiness.
+UTC-3 and is unexecuted. The local source-backed FCA adapter and
+[collector](../../research_examples/debenture_equity/collector.md) now retain/rederive
+current ZIP evidence and assemble seven components. Zero qualifying credit captures
+in the bounded SELECT prevent a real archive; dated link review, independent
+completeness and historical PIT remain open.
