@@ -146,3 +146,41 @@ Turning the variable off stops subsequent credit branch executions; it does not
 cancel in-flight writes, undo captures, certify retention or delete evidence.
 No automatic cleanup, new schedule, schema change or production variable change
 is authorized or performed here.
+
+## Owner-authorized retrospective operational canary: 07/10
+
+On 08/10 the owner replaced the pending next-day canary with an immediate
+operational capture of 07/10, retaining the same source/fact/storage limits and
+no-schema/no-permanent-activation scope. The prior scheduled heartbeat is paused.
+The new request is `ingestion-canary-2026-10-07-operational.json`; its canonical
+schema-2 purpose is `retrospective_operational`. It preserves the original
+research cutoff of 08/10 at 10:00 UTC-3, and records actual preparation plus a
+separate operational deadline of 08/10 at 19:29 UTC-3. Operational requests must
+use a completed prior day and expire within one hour of preparation. The original
+08/10 research request is unchanged and is not used for this execution.
+
+This change cannot admit the late capture as a timely research observation.
+The result retains actual source/database observation times, purpose and original
+research cutoff, with research snapshot/PIT/permanent flags false. The same
+hash, full fact/audit reconciliation, private evidence and no-retry rules apply.
+
+### Actual operational attempt and stop
+
+Executed once on 08/10 at 18:44:00–18:44:25 UTC-3. The public export returned
+32,893,413 decoded UTF-8 bytes (SHA-256
+`45ed5677adeee5b3a5fe109a628f6e5ba9f07620e67a196501600f39afbda212`), exceeding
+the approved 30,000,000-byte pre-write limit. The runner exited 1 in phase
+`fetch` after 24.279 seconds, before raw retention, parsing or fact writes.
+The hash/byte count in the private report cannot replace retained raw evidence.
+There is no COMPLETE receipt, complete capture or successful ingestion claim.
+
+Read-only verification at 18:44:46 UTC-3 found one error audit
+`3fc8711a-f86f-4cba-998c-52dfdc6deaec`, zero upserted rows and no new capture for
+07/10. Credit relation allocation remained 451,207,168 bytes, unchanged from
+preflight. The local exclusive evidence directory is
+`.context/debenture-ingestion-canary-2026-10-07-operational/` (plan/report only).
+No retry, schema apply, cleanup, recurring activation or second-day execution
+occurred. The superseded heartbeat remains paused. A larger source-byte allowance
+requires a new explicit approval and newly frozen operational request; unchanged
+30,000-fact and storage gates may still refuse a later response. This operational
+failure does not alter the research cutoff or establish PIT availability.

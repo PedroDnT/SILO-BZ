@@ -86,6 +86,14 @@ reviewed only through 06/10 must be reviewed for 08/10 before eligible mapped
 observations can be claimed; an empty rehearsal panel is not scientific readiness.
 No production activation follows from this local implementation.
 
+The owner subsequently approved an immediate 07/10 retrospective operational
+attempt, replacing the next-day schedule. On 08/10 at 18:44 UTC-3, the B3 response
+was 32,893,413 bytes, above the approved 30 MB pre-write gate. The executor
+stopped with one error audit, zero facts, no capture and unchanged credit relation
+allocation. The separate operational request preserves the expired research
+cutoff; no PIT or live-rehearsal success is inferred. The heartbeat is paused,
+and no retry or limit increase is authorized by this failure.
+
 ### Work parked until its dependency exists
 
 Do not add more power simulators, model variants or general orchestration before

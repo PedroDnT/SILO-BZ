@@ -235,3 +235,24 @@ async def test_slow_report_publication_cannot_return_success(tmp_path, monkeypat
         await C.run(plan(), tmp_path/'canary', fetcher=fetcher)
     assert (tmp_path/'canary'/'LATE.json').exists()
     assert not (tmp_path/'canary'/'COMPLETE.json').exists()
+
+
+def test_operational_request_preserves_expired_research_cutoff_and_new_deadline():
+    limits = {k: plan()[k] for k in ('max_raw_bytes', 'max_facts',
+        'max_relation_growth_bytes', 'max_database_bytes', 'timeout_seconds')}
+    request = C.prepare_operational('2026-10-05', CALENDAR,
+        prepared_at='2026-10-06T18:00:00-03:00',
+        deadline_at='2026-10-06T18:30:00-03:00', **limits)
+    assert request['research_cutoff_at'] == '2026-10-06T10:00:00-03:00'
+    assert request['purpose'] == 'retrospective_operational'
+    C.validate(request, now=datetime.fromisoformat('2026-10-06T18:01:00-03:00'))
+    with pytest.raises(ValueError, match='expired'):
+        C.validate(request, now=datetime.fromisoformat('2026-10-06T18:30:00-03:00'))
+    with pytest.raises(ValueError, match='one hour'):
+        C.prepare_operational('2026-10-05', CALENDAR,
+            prepared_at='2026-10-06T18:00:00-03:00',
+            deadline_at='2026-10-06T20:00:00-03:00', **limits)
+    with pytest.raises(ValueError, match='completed prior day'):
+        C.prepare_operational('2026-10-06', CALENDAR,
+            prepared_at='2026-10-06T18:00:00-03:00',
+            deadline_at='2026-10-06T18:30:00-03:00', **limits)

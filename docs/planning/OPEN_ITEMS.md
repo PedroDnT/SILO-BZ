@@ -613,7 +613,11 @@ acceptance. Reuse existing equity/FCA/benchmark/sector ingestion.
 The [credit ingestion canary package](../../research_examples/debenture_equity/ingestion-canary.md)
 is implemented locally with a hash-pinned 08/10 single-session request, expiry
 09/10 at 10:00 UTC-3, explicit size/storage thresholds, private retained response
-and exact persisted fact/audit verification. No production execution occurred.
+and exact persisted fact/audit verification. Owner then authorized an immediate
+07/10 retrospective operational attempt: on 08/10 at 18:44 UTC-3 the 32,893,413-byte
+export exceeded the approved 30 MB gate; one error audit recorded zero facts,
+no capture landed and credit allocation was unchanged. The superseded 09/10
+heartbeat is paused; no retry/activation followed. See the canary runbook for evidence.
 The local source-backed FCA adapter and seven-component collector are implemented:
 current retained ZIP evidence covers 26 reviewed CNPJs and 32 equity/unit rows.
 The bounded SELECT ran, but returned zero qualifying credit captures; no real

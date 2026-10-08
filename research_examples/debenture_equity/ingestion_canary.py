@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timezone, timedelta
 from decimal import Decimal
 import hashlib
 import json
@@ -55,17 +55,38 @@ def prepare(signal_date, calendar, *, max_raw_bytes, max_facts,
     return {**plan, 'plan_sha256': fingerprint(plan)}
 
 
+def prepare_operational(signal_date, calendar, *, prepared_at, deadline_at, **limits):
+    """New retrospective operational request; never extend a research cutoff."""
+    prepared, deadline = timestamp(prepared_at), timestamp(deadline_at)
+    if not prepared < deadline <= prepared + timedelta(hours=1):
+        raise ValueError('Operational deadline must be within one hour of preparation')
+    if date.fromisoformat(signal_date) >= prepared.astimezone(SAO_PAULO).date():
+        raise ValueError('Operational canary requires a completed prior day')
+    base = prepare(signal_date, calendar, **limits)
+    body = {k: v for k, v in base.items() if k != 'plan_sha256'}
+    body.update(schema_version=2, purpose='retrospective_operational',
+                prepared_at=prepared.isoformat(), research_cutoff_at=base['cutoff_at'],
+                cutoff_at=deadline.isoformat())
+    return {**body, 'plan_sha256': fingerprint(body)}
+
+
 def validate(plan, *, now=None):
     digest = plan['plan_sha256']
     body = {k: v for k, v in plan.items() if k != 'plan_sha256'}
     if fingerprint(body) != digest:
         raise ValueError('Canary plan hash differs from frozen request')
-    canonical = prepare(plan['signal_date'], plan['calendar'], **{
-        k: plan[k] for k in ('max_raw_bytes', 'max_facts', 'max_relation_growth_bytes',
-                            'max_database_bytes', 'timeout_seconds')})
+    limits = {k: plan[k] for k in ('max_raw_bytes', 'max_facts',
+        'max_relation_growth_bytes', 'max_database_bytes', 'timeout_seconds')}
+    if plan.get('purpose') == 'retrospective_operational':
+        canonical = prepare_operational(plan['signal_date'], plan['calendar'],
+            prepared_at=plan['prepared_at'], deadline_at=plan['cutoff_at'], **limits)
+    else:
+        canonical = prepare(plan['signal_date'], plan['calendar'], **limits)
     if canonical != plan:
         raise ValueError('Canary plan differs from canonical single-session request')
     now = _now() if now is None else now
+    if plan.get('prepared_at') and timestamp(plan['prepared_at']) > now:
+        raise ValueError('Operational preparation is from the future')
     if timestamp(plan['calendar']['observed_at']) > now:
         raise ValueError('Calendar evidence is from the future')
     if now >= timestamp(plan['cutoff_at']):
@@ -231,6 +252,8 @@ async def run(plan, destination, *, execute=False, approved_plan_sha256=None,
               'status': 'running', 'phase': 'preflight', 'production_ingestion_verified': False,
               'research_snapshot_complete': False, 'strict_pit_certified': False,
               'permanent_enablement': False,
+              'purpose': plan.get('purpose', 'cutoff_canary'),
+              'research_cutoff_at': plan.get('research_cutoff_at', plan['cutoff_at']),
               'limitations': ['Calendar provenance is operator supplied, not independently authenticated',
                   'Raw limit is checked after download; no hard network-memory, WAL or backup cap',
                   'Deadline/size checks cannot roll back completed writes or cancel in-flight SQL',
