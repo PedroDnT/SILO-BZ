@@ -527,14 +527,12 @@ def test_the_revisor_keeps_new_rows_above_fifty_percent():
     v = adapt.to_view(eng)
     findings = redator._coerce_findings(redator.template_findings(v))
     res = revisor.check(v, findings)
-    kept_ids = {v["risks"]["rows"][int(f.text.split("risks.rows[")[1].split("]")[0])]["id"] for f in res.kept if f.section == "riscos"}
-    assert {"liquidez", "concentracao_gestor"} & kept_ids
-    for f in res.removed:
+    for f in res.removed:  # #765: the template's risk findings go as restating the table, never as an extreme value
         assert f.section != "riscos" or "valor extremo" not in f.reason, f
     i = next(k for k, r in enumerate(v["risks"]["rows"]) if r["id"] == "liquidez")
     j = next(k for k, r in enumerate(v["risks"]["rows"]) if r["id"] == "concentracao_gestor")
-    for k in (i, j):
-        res = revisor.check(v, [redator.Finding("x", "riscos", "Risco", f"{{{{risks.rows[{k}].risk}}}}: {{{{risks.rows[{k}].value_pct}}}}.", ["p1"])])
+    for k in (i, j):  # outside "riscos" a row's value above 50% is not an extreme exposure either
+        res = revisor.check(v, [redator.Finding("x", "achados", "Risco", f"{{{{risks.rows[{k}].risk}}}}: {{{{risks.rows[{k}].value_pct}}}}.", ["p1"])])
         assert res.kept, res.removed
 
 

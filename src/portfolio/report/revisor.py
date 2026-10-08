@@ -272,12 +272,23 @@ def _valid_path(ph: str) -> bool:
         return False
 
 
+# #765: what the risk table already prints for a row. A finding whose every placeholder is one of these says nothing the
+# table does not, so it is removed; a finding in "riscos" keeps one sentence.
+_RISK_ROW_TABLE_KEYS = ("risk", "value_pct", "value_brl", "value_count", "subject", "severity_label", "explanation",
+                        "check_label", "value_brl_detail", "value_brl_detail_label", "status_label")
+_RISK_ROW_PATH_RE = re.compile(r"^risks\.rows\[\d+\]\.(" + "|".join(_RISK_ROW_TABLE_KEYS) + r")$")
+RESTATES_RISK_TABLE = "repete em prosa a tabela de riscos"
+RESTATE_CHECK_SECTIONS = ("riscos", "resumo")  # prompt rules 7 and 8
+ONE_SENTENCE_SECTIONS = ("riscos",)
+
+
 def check_finding(engine: dict, f: Finding) -> tuple[Finding | None, list[Removal]]:
     ids, sources = _provenance(engine)
     removals: list[Removal] = []
 
     def drop(reason: str) -> tuple[None, list[Removal]]:
         return None, removals + [Removal(f.id, f.section, f.title, f.text, reason, True)]
+
 
     if not f.citations:
         return drop("sem citação de proveniência")
@@ -296,6 +307,12 @@ def check_finding(engine: dict, f: Finding) -> tuple[Finding | None, list[Remova
             kept_sentences.append(s)
     if not kept_sentences:
         return None, removals + [Removal(f.id, f.section, f.title, f.text, "nenhuma frase restou", True)]
+    phs = placeholders(f.title or "") + [ph for s in kept_sentences for ph in placeholders(s)]
+    if f.section in RESTATE_CHECK_SECTIONS and phs and all(_RISK_ROW_PATH_RE.match(ph) for ph in phs):
+        return drop(RESTATES_RISK_TABLE)
+    if f.section in ONE_SENTENCE_SECTIONS and len(kept_sentences) > 1:
+        removals += [Removal(f.id, f.section, f.title, s, "mais de uma frase por achado", False) for s in kept_sentences[1:]]
+        kept_sentences = kept_sentences[:1]
     return Finding(f.id, f.section, f.title, " ".join(kept_sentences), list(f.citations)), removals
 
 
@@ -331,7 +348,7 @@ class VerdictsOutput(BaseModel):
 
 SYSTEM_PROMPT = """Você é o Revisor do SILO. Recebe achados em português já verificados mecanicamente contra o JSON do motor e revisa tom e coerência.
 
-Você só pode manter (keep), apagar (delete) ou reescrever (reword) um achado. Nunca acrescente fatos nem números. Os números estão como marcadores {{caminho}}; ao reescrever, use somente marcadores que já estavam no texto original e nunca escreva algarismos. Apague um achado que recomende comprar, vender ou manter, que preveja retorno, que afirme algo sobre grupo econômico, que julgue a materialidade de uma reapresentação, ou que contradiga outro achado ou o JSON. Reescreva para tirar tom alarmista ou ambiguidade. Em reword, "text" é o novo texto; em keep e delete, "text" é vazio. "reason" explica a decisão em uma frase."""
+Você só pode manter (keep), apagar (delete) ou reescrever (reword) um achado. Nunca acrescente fatos nem números. Os números estão como marcadores {{caminho}}; ao reescrever, use somente marcadores que já estavam no texto original e nunca escreva algarismos. Apague um achado que recomende comprar, vender ou manter, que preveja retorno, que afirme algo sobre grupo econômico, que julgue a materialidade de uma reapresentação, ou que contradiga outro achado ou o JSON. Apague um achado que só repete em prosa uma linha da tabela de riscos (o risco, o valor, o semáforo ou a explicação, sem fato novo). Reescreva para que cada ressalva ("a conferir" e afins) apareça uma vez, para tirar tom alarmista, ambiguidade ou negrito em excesso. Em reword, "text" é o novo texto; em keep e delete, "text" é vazio. "reason" explica a decisão em uma frase."""
 
 
 def llm_review(engine: dict, result: RevisorResult, provider: Provider) -> RevisorResult:

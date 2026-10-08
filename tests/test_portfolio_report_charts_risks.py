@@ -406,8 +406,9 @@ def test_the_movement_rows_semaforo_word_stays_in_the_table(view):
 
 
 def test_risk_digits_outside_placeholders_are_removed_and_placeholders_kept(view):
-    ok = F("Maior emissor: {{risks.rows[2].subject}}, {{risks.rows[2].value_pct}} da carteira.")
-    bad = F("Maior emissor com 6,29% da carteira.")
+    # "achados": in "riscos" a sentence of table paths only is removed as restating the table (#765)
+    ok = F("Maior emissor: {{risks.rows[2].subject}}, {{risks.rows[2].value_pct}} da carteira.", section="achados")
+    bad = F("Maior emissor com 6,29% da carteira.", section="achados")
     assert revisor.check(view, [ok]).kept and not revisor.check(view, [bad]).kept
 
 
@@ -420,16 +421,15 @@ def test_fee_coverage_is_a_share_not_an_extreme_fee(view):
 def test_template_findings_on_the_engine_view_all_resolve(view):
     findings = redator._coerce_findings(redator.template_findings(view))
     res = revisor.check(view, findings)
-    kept_risks = [f for f in res.kept if f.section == "riscos"]
-    assert kept_risks and all("{{risks.rows[" in f.text for f in kept_risks)
-    assert not any("movimento_anormal" in json.dumps(view["risks"]["rows"][int(f.text.split("risks.rows[")[1].split("]")[0])]["id"])
-                   for f in kept_risks)
+    # #765: the template's risk findings only restate the table, so the Revisor removes them, and none survives
+    assert not [f for f in res.kept if f.section == "riscos"]
+    assert any(r.section == "riscos" and r.reason == revisor.RESTATES_RISK_TABLE for r in res.removed)
     for f in res.kept:
         assert not revisor._DIGIT_RE.search(revisor.PLACEHOLDER_RE.sub("", f.text)), f.text
 
 
 def test_the_prompt_asks_for_the_top_risks_without_recommendation_or_forecast():
     p = redator.SYSTEM_PROMPT
-    assert "riscos (risks" in p and "atenção primeiro" in p
+    assert "riscos (risks" in p and "Não reescreva uma linha da tabela em prosa" in p
     assert "Nunca recomende" in p and "previsão de mercado" in p
     assert "riscos" in redator.SECTIONS

@@ -57,6 +57,8 @@ table.riscos td:nth-child(3) { width: 16%; }
 table.riscos td:nth-child(5) { width: 14%; white-space: nowrap; }
 
 .brief { break-after: page; }
+/* #765: if page 1 overflows, the contents list and the disclaimer move together, never the disclaimer alone */
+.brief .toc { break-inside: avoid; } .brief .toc + .cit { break-before: avoid; page-break-before: avoid; }
 @media print { details > summary { display: none; } details > * { display: block !important; } .brief { font-size: 10pt; } }
 
 .brief h3 { margin: 8px 0 3px; } .brief p { margin: 4px 0; } .brief .achado { margin-bottom: 4px; }

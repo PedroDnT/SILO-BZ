@@ -49,8 +49,8 @@ DORMANT_CALLS = (
     ("parked_nav_ge_1bn", {"p_min_nav": 1000000000}),
 )
 DORMANT_COVERAGE_NOTE = (
-    "Cobertura do screen de fundos dormentes: todas as cascas vazias (empty_shell) e os fundos parked com "
-    "PL de última competência igual ou acima de R$ 1 bilhão. Um fundo parked abaixo disso NÃO foi avaliado "
+    "Cobertura da tela de fundos dormentes: todas as cascas vazias e os fundos parados (sem atividade) com "
+    "PL de última competência igual ou acima de R$ 1 bilhão. Um fundo parado abaixo disso NÃO foi avaliado "
     "(a chamada sem filtro é recusada pelo SILO por exceder uma página de 1.000 linhas)."
 )
 ABNORMAL_MOVEMENT_NOTE = (
