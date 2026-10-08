@@ -1,3 +1,4 @@
 merge_queue:
+  max_parallel_checks: 3
   queue_controls_comment: true
   status_comments: all
