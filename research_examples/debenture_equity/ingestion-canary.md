@@ -184,3 +184,40 @@ occurred. The superseded heartbeat remains paused. A larger source-byte allowanc
 requires a new explicit approval and newly frozen operational request; unchanged
 30,000-fact and storage gates may still refuse a later response. This operational
 failure does not alter the research cutoff or establish PIT availability.
+
+### Approved 40 MB retry: verified production ingestion
+
+The owner specifically approved one new attempt with 40,000,000 raw bytes;
+all other gates remained unchanged. Frozen request:
+`ingestion-canary-2026-10-07-operational-40mb.json`, SHA-256
+`c9cb952d0395ea87e51b9174aa6afc0446cbdb8a322c824c1ce304b012d508bc`.
+Executed on 08/10 at 18:47:34–18:49:55 UTC-3, exit 0, elapsed 141.195 seconds.
+The response had the same 32,893,413 bytes and payload hash as the stopped
+attempt. Parsing retained 1,534 debenture groups / 13,806 facts, nine metrics
+per group, zero drops and only the requested 07/10 session.
+
+The existing ingestor persisted complete capture
+`50dcc310-fa34-4270-8041-6a6d3d44e354`; observation was 08/10 at
+18:49:47 UTC-3. Every persisted fact/value/provenance field reconciled against
+reparsed raw. One successful audit acknowledged 13,806 facts at 18:49:53 UTC-3.
+An independent bounded Supabase MCP SELECT confirmed status, hash, delivered
+census, zero drops and fact/audit counts. The earlier error audit remains visible.
+
+Credit allocation rose from 451,207,168 to 465,477,632 bytes:
+**14,270,464 bytes**, below the unchanged 100 MB growth stop. Database allocation
+was 87,937,797,267 bytes afterward, below the 135 GB ceiling. Private local
+evidence totals 73,301,099 bytes, including full source CSV, persisted export,
+plan, report and completion receipt, under
+`.context/debenture-ingestion-canary-2026-10-07-operational-40mb/`.
+`COMPLETE.json` matches report SHA-256
+`b646222461ac20addf34dfd3211ccb05eae41b3366ab5b697d3b979b933804f9`;
+there is no LATE marker. The heartbeat remains paused, and schema/permanent
+activation were not touched.
+
+This closes the single-session operational ingestion check. It does not close
+seven-component snapshot, historical PIT, recurring seven-day refresh cost,
+three scheduled sessions or scientific acceptance. The original research cutoff
+was 08/10 at 10:00 UTC-3, before this observation. Neither successful completion
+nor the operational deadline changes that fact. Do not reuse the expired research
+archive path or backdate receipt timestamps. Recurring activation still needs its
+separate production approval and environment wiring described above.

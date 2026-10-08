@@ -77,3 +77,13 @@ paused; no retry or recurring activation occurred. The local source-backed FCA a
 current ZIP evidence and assemble seven components. Zero qualifying credit captures
 in the bounded SELECT prevent a real archive; dated link review, independent
 completeness and historical PIT remain open.
+
+
+The separately approved 40 MB 07/10 operational canary succeeded on 08/10 at
+18:49:55 UTC-3: 13,806 facts / 1,534 nine-metric groups, zero drops/missing dates,
+raw hash and exact persisted facts reconciled, one successful audit, exit 0 and
+valid completion receipt. Credit allocation grew 14,270,464 bytes; elapsed time
+141.195 seconds. Evidence and limitations are in the debenture ingestion-canary
+runbook. The earlier failed audit remains visible. No schema, permanent activation,
+new dataset or PIT certification; the next-day heartbeat stays paused. Recurring
+weekly-window cost and the first three scheduled cash sessions remain unverified.
