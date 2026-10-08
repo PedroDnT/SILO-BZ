@@ -1,0 +1,73 @@
+[
+  {
+    "instrument_code": "ALPA13",
+    "isin": "BRALPADBS051",
+    "cnpj": "61079117000105",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2025-12-19",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-07T21:51:16.216645-03:00",
+    "evidence": [
+      {
+        "url": "https://www.ubs.com/br/pt/ubsbb-investment-bank/closed-offers/offer-closed-2025/_jcr_content/root/contentarea/mainpar/toplevelgrid/col_1/accordion/accordionsplit_19833_81936786/linklistnewlook/link_copy_copy.1994874242.file/PS9jb250ZW50L2RhbS9hc3NldHMvaWIvYnIvZG9jL2FscGFyZ2F0YXMtYW51bmNpby1kZS1lbmNlcnJhbWVudG8zZGViLnBkZg%3D%3D/alpargatas-anuncio-de-encerramento3deb.pdf",
+        "locator": "Anuncio de encerramento, page 1: issuer CNPJ and BRALPADBS051; page 2: issuance 19/12/2025"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=ALPA13&tip_deb=publicas",
+        "locator": "Ativo ALPA13; ISIN BRALPADBS051; emission 003; issuer Alpargatas"
+      },
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513832&numSequencia=1038538&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: issuer CNPJ, ALPA13 and issuance date; SHA256 9e5d4b9bb45c26ee19723dbf4589d082c78154fcc82e5965bede104d8cd4a7e1"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; no original-date knowledge certification."
+  },
+  {
+    "instrument_code": "ALUP18",
+    "isin": "BRALUPDBS0C9",
+    "cnpj": "08364948000138",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2024-10-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-07T21:51:16.216645-03:00",
+    "evidence": [
+      {
+        "url": "https://ofertaspublicas.xpi.com.br/wp-content/uploads/sites/10/2024/10/Debs-12.431-Alupar-Anuncio-de-Encerramento-v.-final.pdf",
+        "locator": "Anuncio de encerramento, page 1: Alupar issuer CNPJ, ISIN BRALUPDBS0C9, 8th issuance 15/10/2024"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=ALUP18&tip_deb=publicas",
+        "locator": "Ativo ALUP18; ISIN BRALUPDBS0C9; emission 008; issuer Alupar"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; no original-date knowledge certification."
+  },
+  {
+    "instrument_code": "ANIM18",
+    "isin": "BRANIMDBS073",
+    "cnpj": "09288252000132",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2025-10-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-07T21:51:16.216645-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1443669&numSequencia=968381&numVersao=1",
+        "locator": "RCA 11/11/2025, page 1: Anima CNPJ and 8th unique-series issuance; document SHA256 75166b5a66991ffe9ead08bf38dc9435b4c53d48324b09561d000e1b9caea571"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=ANIM18&tip_deb=publicas",
+        "locator": "Ativo ANIM18; ISIN BRANIMDBS073; emission 008; CVM 2025/823 registered 11/11/2025; issuer Anima; emission date 15/10/2025"
+      },
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1511154&numSequencia=1035860&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 1: original issuer, 8th unique-series issuance, ANIM18, BRANIMDBS073 and issuance date; SHA256 80700eb822420e7c436b17cce58bc67b49619eb4a446788407bffbf8f5804cb1"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; no original-date knowledge certification."
+  }
+]

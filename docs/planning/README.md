@@ -48,3 +48,6 @@ current status; earlier [window/storage validation](../reference/research/debent
 and [schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md) remain
 historical measurements. The [executable readiness audit and experiment gates](../reference/research/debenture-equity-experiment.md)
 separate name candidates from confirmed links and retrieval time from historical PIT.
+The offline experiment and 64-session recovery proposal are prepared; live results
+remain inconclusive, and the three-month pilot cannot satisfy confirmatory floors.
+New production capture still requires specific approval and verified storage headroom.

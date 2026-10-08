@@ -1,11 +1,12 @@
 # Debenture signals and subsequent issuer equity residual returns
 
 Owner-authorized implementation sequence, 2026-10-07 (UTC-3). This records the
-plan agreed in the conversation and the first executable audit gate. It does
-not claim the full experiment is implemented or that predictability is proven.
+plan agreed in the conversation, the executable audit and the offline experiment.
+Historical capture, broad identity acceptance and confirmatory evaluation remain
+open. Predictability has not been demonstrated.
 [ADR 0004](../../adr/0004-debenture-market-data-sources.md) remains authoritative.
 
-## 1. Identity and coverage gate: implemented, links still unverified
+## 1. Identity and coverage gate: implemented candidate census
 
 [Runner and instructions](../../../research_examples/debenture_equity/README.md)
 provide a read-only, single-capture SQL audit and an offline JSON-to-table report.
@@ -54,7 +55,7 @@ rate/spread and outstanding are absent from this captured source. Turnover can
 only be volume or quantity activity without an outstanding denominator. Holdings
 marks are not market trades. Yield cannot be derived from PU alone under V1.
 
-## 2. Dated evidence and PIT gate: pending
+## 2. Dated evidence and PIT gate: implemented checks, partial evidence
 
 Review each selected bond's issuer using issuance code/ISIN and a documentary
 CNPJ reference. Record citation, validity dates and when SILO knew the evidence.
@@ -69,6 +70,29 @@ retrospective observation-date evidence; strict historical PIT cannot be recover
 by relabeling their trade date. Separate that study from prospective knowledge-time
 validation. FCA reference dates and latest aliases do not establish publication times.
 
+The local [reviewed links](../../../research_examples/debenture_equity/reviewed_links.json)
+cite official issuance documents and SND records for three **original issuers**:
+
+| Bond / ISIN | Original issuer full CNPJ | Existing FCA equities |
+| --- | --- | --- |
+| ALPA13 / BRALPADBS051 | 61079117000105, Alpargatas | ALPA3, ALPA4 |
+| ALUP18 / BRALUPDBS0C9 | 08364948000138, Alupar | ALUP11 |
+| ANIM18 / BRANIMDBS073 | 09288252000132, Ânima | ANIM3 |
+
+Each link records citation/page, original issuance date, review cutoff and actual
+knowledge timestamp. Retrospective use assumes no intervening issuer transfer;
+the cited original documents are not a comprehensive review of every amendment.
+This pilot does not verify all 82 candidate issuers. AURE12 is excluded pending
+dated reorganization review; a parent's ticker is never substituted for Aura Almas.
+
+The export reconciles full-capture fact/group counts against capture metadata and
+selected-bond export counts independently. The runner rejects missing whole groups,
+incomplete nine-metric groups, duplicate facts, equal-time revision ambiguity,
+mixed equity revisions/ISINs and incompatible return bases. It chooses a whole
+complete, hash-verified snapshot before joining bonds. Source classification
+comparison ignores case; original values remain unchanged. Missing observations
+and unpublished metrics are excluded, never filled with zero or forward-filled.
+
 ## 3. Bounded historical preparation gate: pending approval of a concrete load
 
 Reuse the current ingestor after checking actual missing coverage. Start with a
@@ -79,7 +103,55 @@ backfill, or enable permanent credit capture. The existing five-session producti
 load was separately approved; authorization is not extended to another window.
 REUNE rates follow ADR 0004; this continuation adds no REUNE dataset or collection.
 
-## 4. Experiment contract: pending implementation after data gates
+Read-only export on 2026-10-07 at **22:01:24 UTC-3** found 191 existing cash/IBOV
+sessions from January, 764 equity rows for the four tickers above, and 171 credit
+metric rows across the two captures. Both capture censuses reconciled: 13,203 facts /
+1,467 groups and 59,670 facts / 6,630 groups. Existing equity and IBOV total-return
+series are used directly, with revision and missing-value checks.
+
+Between 01/07 and 06/10 there are 69 known cash sessions, five already captured in
+credit and **64 missing sessions**. The proposal covers only 01/07–29/09:
+
+| Sequential slice | Start | End | Known sessions |
+| --- | --- | --- | ---: |
+| 1 | 2026-07-01 | 2026-07-07 | 5 |
+| 2 | 2026-07-08 | 2026-07-14 | 5 |
+| 3 | 2026-07-15 | 2026-07-21 | 5 |
+| 4 | 2026-07-22 | 2026-07-28 | 5 |
+| 5 | 2026-07-29 | 2026-08-04 | 5 |
+| 6 | 2026-08-05 | 2026-08-11 | 5 |
+| 7 | 2026-08-12 | 2026-08-18 | 5 |
+| 8 | 2026-08-19 | 2026-08-25 | 5 |
+| 9 | 2026-08-26 | 2026-09-01 | 5 |
+| 10 | 2026-09-02 | 2026-09-09 | 5 |
+| 11 | 2026-09-10 | 2026-09-16 | 5 |
+| 12 | 2026-09-17 | 2026-09-23 | 5 |
+| 13 | 2026-09-24 | 2026-09-29 | 4 |
+
+If the approved five-session sample repeated, arithmetic implies 644,979,098 bytes
+of additional allocated relations (~0.65 GB) and 1,051,268,992 raw UTF-8 bytes
+(~1.05 GB). These are scenarios, not forecasts or caps; allocation differs from raw
+size and excludes WAL/backups. Actual project quota/headroom remains unverified.
+Execution should stop between slices once newly allocated credit relations reach
+1 GB; the last slice can overshoot that threshold. Approval must cover that
+behavior and adequate headroom must be verified first.
+
+After specific approval, reuse the existing command for each listed slice, starting
+with slice 1 only, then inspect its audit, hash, delivery and storage increase:
+
+```sh
+.venv/bin/python -m src.pipeline.b3_credit_pipeline --start 2026-07-01 --end 2026-07-07
+```
+
+No new ingestor, schema apply, daily enablement or COTAHIST recovery is needed.
+The existing ingestor stores all published DEB groups, not just these three bonds.
+Before every subsequent slice, recheck coverage to avoid duplicate recovery;
+stop on errors, incompleteness, drops, lost headroom or the allocation threshold.
+After completion, regenerate the bounded research export and repeat the audit.
+Source latency and split retries determine runtime; no throughput was measured
+for this proposed window. Source history availability is not yet validated.
+
+## 4. Experiment contract: offline implementation, pilot only
 
 Primary target: issuer equity residual return over five trading sessions after
 signal availability. Secondary horizons: one and twenty sessions. Select the
@@ -96,7 +168,24 @@ to liquidity signals. Add rate/spread signals only after conventions and observe
 rates exist. Aggregate to one issuer/date observation without treating repeated
 last/reference PU or multiple bonds as independent issuer outcomes.
 
-## 5. Evaluation and decision gate: pending
+[protocol.json](../../../research_examples/debenture_equity/protocol.json) freezes
+January equity warm-up, July–October signals, 14/08 training and 04/09 validation
+cutoffs, next-session close entry, 126-session beta (100 valid pairs minimum),
+20-session prior liquidity (10 observations minimum), and ridge penalties tuned
+only on validation. Baseline features are equity momentum, volatility and volume;
+credit additions are extragroup volume, trade count and distinct active bonds.
+The target subtracts trailing alpha and beta times IBOV log total return.
+Labels crossing the next split are purged; test targets never tune or refit models.
+
+**This protocol is a plumbing-only pilot.** Even assuming complete coverage and
+daily issuer trading, its primary horizon permits at most **27 training, nine
+validation and 15 test dates** after purges and future-label availability, below
+the declared 30/10/60 floors. Three reviewed issuers also cannot meet the 20-issuer
+test floor. Recovering the 64 sessions cannot make this protocol confirmatory.
+Do not lower floors after seeing outcomes. A separate longer protocol, broader
+documentary sample and sample/power assessment must precede confirmatory scoring.
+
+## 5. Evaluation and decision gate: implemented method, no usable primary sample
 
 Freeze chronological development, validation and untouched-test intervals. Account
 for overlapping horizons and dependence across issuers/dates; predeclare multiple
@@ -106,7 +195,30 @@ Costs and capacity are required before a tradability claim. Distinguish incremen
 out-of-sample evidence, unsupported hypothesis and insufficient evidence. No five-day
 capture can settle the research question.
 
+The runner implements paired out-of-sample MSE gain, crossed issuer/calendar-block
+bootstrap, Bonferroni adjustment for the three horizons, within-date issuer credit
+vector shuffles, two-session delayed entry, and refits excluding dominant issuers
+or activity dates. These are methodological checks, not a validated power analysis.
+Sector robustness remains unavailable without accepted dated classifications;
+favorable statistical checks alone cannot produce a final favorable verdict.
+
+Real-data execution produced **four issuer/date outcomes, all horizon one**;
+zero five- or twenty-session outcomes fit the stored capture and fixed outcome end.
+The 64 missing credit sessions were reported separately. All horizons are
+**inconclusive**, and no p-value or predictive effect was estimated. Strict PIT
+mode yielded zero rows: all historical credit was retrieved later, and equity/index
+endpoints expose current revisions rather than original-date vintages.
+
+Reproducibility identifiers (SHA-256; source payloads/results remain ignored locally):
+
+```text
+protocol c26a949418ebc10f5d948f27cfcd16460c0d79512b648d2b898d7d6b657c5122
+bundle   d243b0ccc99afc4d45eb303b63bda0004e7288a4bb5ef91efae381146697dbfa
+links    3ccc7afbfadb73bad95548c4856a923ade783f02f50c59c9310c71aaefdae7c3
+```
+
 Execution estimates after gate clearance: documentary review initially 2–4 hours;
 coverage audit about one day; historical preparation 1–3 days subject to source
 latency and approval; model/evaluation 2–4 days. Prospective validation requires
-elapsed market history. No remaining stage is represented as completed by this audit.
+elapsed market history. The full research plan remains open; offline implementation
+and a prepared capture proposal do not complete its empirical acceptance gates.

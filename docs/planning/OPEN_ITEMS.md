@@ -527,6 +527,15 @@ window, representing 82 candidate CNPJs. These are not verified issuance links.
 The [read-only runner](../../research_examples/debenture_equity/README.md) never
 loads data or certifies strict historical PIT from retrieval dates.
 
+Offline experiment/preparation now implemented with three documented original-issuer
+links (ALPA13, ALUP18, ANIM18), current total-return equity/IBOV exports, trailing
+beta, past-liquidity equity selection, chronological purges and dependence checks.
+Live run: four one-session outcomes, no primary five-session outcomes; inconclusive.
+Prepared recovery: 64 missing known sessions, 13 sequential slices for 01/07–29/09,
+pending specific production approval and storage headroom. The three-month pilot
+cannot meet fixed training/validation/test floors even with complete recovery;
+broader identities, longer protocol, sector robustness and power assessment remain.
+
 Open acceptance, in order: documentary dated identity evidence (#660); deeper
 coverage/PIT and storage allowance; separately approved bounded history; adjusted
 returns/benchmark acceptance; past-only residual-return experiment. REUNE traded
@@ -549,4 +558,3 @@ CODBDI/TPMERC/INDOPC references without inventing unknown descriptions.
 Production analytical apply, MCP redeployment and live acceptance remain pending.
 No new collection or source-vintage archive is part of this change.
 [Audit and field map](../reference/research/cotahist-storage-serving-map.md).
-
