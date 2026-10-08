@@ -81,7 +81,7 @@ date fields require a fresh export. These checks improve retrospective identity
 selection without certifying original-date publication knowledge.
 
 The local [reviewed links](../../../research_examples/debenture_equity/reviewed_links.json)
-cite issuance documents, fiduciary reports and instrument records for nine
+cite issuance documents, fiduciary reports and instrument records for fourteen
 **original issuers**:
 
 | Bond / ISIN | Original issuer full CNPJ | Existing FCA equities |
@@ -95,6 +95,11 @@ cite issuance documents, fiduciary reports and instrument records for nine
 | CAMLB1 / BRCAMLDBS070 | 64904295000103, Camil Alimentos | CAML3 |
 | CSED12 / BRCSEDDBS001 | 62984091000102, Cruzeiro do Sul Educacional | CSED3 |
 | ARML13 / BRARMLDBS029 | 00242184000104, Armac Locação, Logística e Serviços | ARML3 |
+| CSAN18 / BRCSANDBS0D4 | 50746577000115, Cosan | CSAN3 |
+| CCROA5 / BRCCRODBS0L5 | 02846056000197, Motiva (formerly CCR) | MOTV3 |
+| CTEE18 / BRISAEDBS0E7 | 02998611000104, ISA Energia Brasil (formerly CTEEP) | ISAE3, ISAE4 |
+| CGASA1 / BRCGASDBS0E1 | 61856571000117, Comgás | CGAS3, CGAS5 |
+| ENEV13 / BRENEVDBS034 | 04423567000121, Eneva | ENEV3 |
 
 Each link records citation/page, original issuance date, review cutoff and actual
 knowledge timestamp. Retrospective use assumes no intervening issuer transfer;
@@ -438,6 +443,45 @@ the **third** Auren Energia issuance to CESP, subject to conditions. Neither
 alone establishes a transfer of AURE12, the second issuance. AURE12 remains
 outside the reviewed link file pending a complete relevant amendment review;
 group reorganization alone is not a reason to substitute its issuer CNPJ.
+
+The next documentary pass added **CSAN18, CCROA5, CTEE18, CGASA1 and ENEV13**,
+using the full CNPJ/code/date on each 2025 fiduciary report's PDF page 2 and
+SND's exact code/ISIN/issuance characteristics. Complete PDFs were fingerprinted
+and the cited pages visually checked. ENEV13 was chosen from an available
+primary report, without selecting on model performance; CESE32 was not inferred
+from Eneva's name. Motiva's report page 3 records the 23/04/2025 change from CCR;
+ISA's cover identifies its previous CTEEP name. These names do not change the
+full-CNPJ key or justify substituting any related company's stock.
+
+The bounded `public.cia_company` lookup retains published commercial names:
+Motiva = MOTIVA INFRAESTRUTURA DE MOBILIDADE S.A.; ISA = CTEEP;
+Cosan = COSAN SA INDUSTRIA E COMERCIO; Eneva = ENEVA SA;
+Comgás = COMPANHIA DE GÁS DE SÃO PAULO - COMGÁS. These are current register
+aliases, not evidence of when an alias became historically public. Each source
+row was selected by its complete CNPJ; no external brand was invented.
+
+The **10:44:33 UTC-3** export contains 8,325 credit metric rows, 3,279 equity
+rows, 142 FCA rows and 336 sector/index rows. The unchanged pilot yields
+**602 overlapping outcomes** (230/217/155 at 1/5/20 sessions), all inconclusive
+before model scoring. Only **13 of the 14 reviewed issuers** produce panel rows:
+ENEV3 fails the existing trailing-beta requirement (37 excluded signal rows).
+Exact-date sectors retain 64 outcomes; strict PIT remains zero, with all 69
+historical credit sessions unavailable at knowledge cutoffs. No confirmatory
+floor, protocol date or missing-history rule was relaxed.
+
+```text
+fourteen-issuer bundle 1aff1b5ad5a397d8a3e5d3a6e5d6c9c827e4a171718b3aedee03d3ba7ca89304
+fourteen-issuer links  ba12125a91462fd4fb5c768e36b0d8ed14366cb5d3bd43e3fa4f2164f19f529f
+```
+
+The nine-issuer and six-issuer results above remain historical checkpoints.
+Annual quantities in circulation and coupon/amortization payments found in these
+reports are useful dated documentary evidence; they have not been turned into
+continuous outstanding, a complete cash-flow archive or observed market yields.
+C&A's CEAB13 review also remains open: its report prints an invalid header
+issuance date and no ISIN, while SND identifies a unique series and the report
+labels a first series. A board approval proves C&A's full CNPJ but does not by
+itself resolve those issuance fields. No link was admitted by ignoring them.
 
 The remaining implementation sequence is conditional, not a new production approval:
 

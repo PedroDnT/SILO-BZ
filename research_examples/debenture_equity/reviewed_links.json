@@ -187,5 +187,110 @@
       }
     ],
     "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; issuance deed/report chain does not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "CSAN18",
+    "isin": "BRCSANDBS0D4",
+    "cnpj": "50746577000115",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2023-11-21",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:44:25.441910-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513152&numSequencia=1037858&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: Cosan, 8th unique-series original issuer full CNPJ, CSAN18 and issuance date; SHA256 f5b0645e46ddc2e826c3fd913440e315e20d857bfd001ea4e890a3075631686d"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=CSAN18&tip_deb=publicas",
+        "locator": "Instrument characteristics: CSAN18, BRCSANDBS0D4, issuer, emission/series and 2023-11-21 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "CCROA5",
+    "isin": "BRCCRODBS0L5",
+    "cnpj": "02846056000197",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2021-05-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:44:25.441910-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1512548&numSequencia=1037254&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: Motiva (formerly CCR), 15th unique-series original issuer full CNPJ, CCROA5 and issuance date; SHA256 602307b62207bf7b6d6add0320139179b703df06ff136f59bce2fd37089bc4f2"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=CCROA5&tip_deb=publicas",
+        "locator": "Instrument characteristics: CCROA5, BRCCRODBS0L5, issuer, emission/series and 2021-05-15 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "CTEE18",
+    "isin": "BRISAEDBS0E7",
+    "cnpj": "02998611000104",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2019-12-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:44:25.441910-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1512735&numSequencia=1037441&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: ISA Energia Brasil (formerly CTEEP), 8th unique-series original issuer full CNPJ, CTEE18 and issuance date; SHA256 5cdf47aa8a1a70bd697a73678d24063278469ee3421c6d9846c17860fb6e4cba"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=CTEE18&tip_deb=publicas",
+        "locator": "Instrument characteristics: CTEE18, BRISAEDBS0E7, issuer, emission/series and 2019-12-15 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "CGASA1",
+    "isin": "BRCGASDBS0E1",
+    "cnpj": "61856571000117",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2024-07-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:44:25.441910-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513987&numSequencia=1038693&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: Comgas, 11th issuance first-series original issuer full CNPJ, CGASA1 and issuance date; SHA256 143ead207d77d1acbe5da4d616c2c3b8995bc58ea4430817b2301b7af62833cc"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=CGASA1&tip_deb=publicas",
+        "locator": "Instrument characteristics: CGASA1, BRCGASDBS0E1, issuer, emission/series and 2024-07-15 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "ENEV13",
+    "isin": "BRENEVDBS034",
+    "cnpj": "04423567000121",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2019-12-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:44:25.441910-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513949&numSequencia=1038655&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: Eneva, 3rd unique-series original issuer full CNPJ, ENEV13 and issuance date; SHA256 35ceec9f0c6285266fc8a6439b7ac8a0bad7bf2a5cd55eaccda0f8705cf27bfa"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=ENEV13&tip_deb=publicas",
+        "locator": "Instrument characteristics: ENEV13, BRENEVDBS034, issuer, emission/series and 2019-12-15 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
   }
 ]
