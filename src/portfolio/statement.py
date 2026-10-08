@@ -148,6 +148,8 @@ class Position:
     # engine 1.11: the application (purchase) date exactly as the statement prints it, from the spreadsheet's
     # optional column 'data_aplicacao'. None when not printed: the tax block never assumes one.
     data_aplicacao: dt.date | None = None
+    # #766: the BTG performance report's 'Data inicial' (detail table) as printed; read by the contracted return only.
+    data_inicial: dt.date | None = None
 
 
 @dataclass(frozen=True)

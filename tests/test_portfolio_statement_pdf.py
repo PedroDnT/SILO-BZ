@@ -114,6 +114,9 @@ def test_detail_enrichment_rate_maturity_quota_as_printed():
     assert by["DEB-CUTI11*"].taxa_texto == "11,87% a.a."
     assert by["CRI-24I1980390*"].taxa_texto == "CDI + 1,80%"
     assert by["BACEN-BANCO CENTRAL DO BRASIL - RJ - NTNB"].taxa_texto == "IPCA + 6,20%"
+    # schema 2.1 (#766): the 'Data inicial' as printed, read by the contracted return only
+    assert by["BANCO EXEMPLO S.A. - CDB-CDB421A6V20"].data_inicial == dt.date(2024, 1, 10)
+    assert by["CRI-24I1980390*"].data_inicial == dt.date(2024, 3, 3)
     fund = by["FUNDO ALFA RF CRED PRIV FIC FIRF"]
     assert fund.quantidade == D("175000.000000") and fund.preco_implicito is True
     assert fund.preco_unitario == D("2.00000000")  # 350.000,00 / 175.000
@@ -540,6 +543,7 @@ def test_layout_2026_08_detail_blocks_join_every_position():
     assert (cdb.vencimento, cdb.taxa_texto, cdb.quantidade) == (dt.date(2026, 11, 9), "IPCA + 6,20%", D("95.00"))
     deb = by["OUTRA EMISSORA - DEB-ABCD11*"]
     assert (deb.vencimento, deb.taxa_texto, deb.quantidade) == (dt.date(2031, 12, 15), "105,00% do CDI", D("20.00"))
+    assert (cdb.data_inicial, deb.data_inicial) == (dt.date(2021, 11, 9), dt.date(2022, 3, 25))  # schema 2.1
     gama = by["FUNDO GAMA CRED AGRO FIDC RESP LIMITADA*"]
     assert gama.quantidade == D("650.00") and gama.preco_implicito and gama.vencimento is None
     assert by["FUNDO DELTA FIM"].quantidade == D("400.00")

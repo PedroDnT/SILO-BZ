@@ -235,6 +235,7 @@ class DetailRow:
     taxa: str | None
     preco: Decimal | None
     used: bool = False
+    data_inicial: dt.date | None = None  # #766: the 'Data inicial' column as printed
 
 
 @dataclass
@@ -841,6 +842,7 @@ def _detail_rows(lines, diag: Diagnostics) -> list[DetailRow]:
             qtd = _opt_number(row.get("quantidade"))
             preco = parse_br_number(row["preco"]) if "preco" in row and is_money(row["preco"]) else None
             venc = _opt_date(row.get("vencimento"))
+            inicial = _opt_date(row.get("datainicial"))
         except (ValueError, InvalidOperation):
             diag.detail_lines_unread += 1
             frags = []
@@ -850,7 +852,8 @@ def _detail_rows(lines, diag: Diagnostics) -> list[DetailRow]:
             taxa = None
         name = join_fragments(frags + [row.get("ativo", "")])
         frags = []
-        out.append(DetailRow(name=name, strategy_key=strat, saldo_bruto=saldo, quantidade=qtd, vencimento=venc, taxa=taxa, preco=preco))
+        out.append(DetailRow(name=name, strategy_key=strat, saldo_bruto=saldo, quantidade=qtd, vencimento=venc, taxa=taxa, preco=preco,
+                             data_inicial=inicial))
     diag.detail_rows = len(out)
     return out
 
@@ -934,9 +937,10 @@ def _block_row(block: list[str], header: list[str], taxa_lo: int | None, strat: 
         return None
     before = toks[: r_at[0]]
     dates = [i for i, (_, t) in enumerate(before) if _DATE_TOKEN.match(t)]
-    venc = qtd = None
+    venc = qtd = inicial = None
     if "datainicial" in header and dates:
         name_end = dates[0]
+        inicial = _opt_date(before[dates[0]][1])
         nxt = before[dates[0] + 1][1] if dates[0] + 1 < len(before) else None
         qtd = parse_br_number(nxt) if nxt is not None and is_money(nxt) else None
         if "vencimento" in header and len(dates) > 1:
@@ -967,6 +971,7 @@ def _block_row(block: list[str], header: list[str], taxa_lo: int | None, strat: 
         vencimento=venc,
         taxa=" ".join(taxa_parts) or None,
         preco=preco,
+        data_inicial=inicial,
     )
 
 
@@ -1003,12 +1008,12 @@ def _type_row(name: str, classe: str | None) -> tuple[str, str | None]:
 def _position_from_row(row: Row, period_end: dt.date, line_no: int, detail: list[DetailRow], diag: Diagnostics) -> Position:
     tipo, codigo = _type_row(row.name, row.classe)
     d = _join_detail(row, detail)
-    vencimento = taxa = None
+    vencimento = taxa = inicial = None
     qtd = preco = None
     implicit = False
     if d is not None:
         diag.detail_joined += 1
-        vencimento, taxa, qtd = d.vencimento, d.taxa, d.quantidade
+        vencimento, taxa, qtd, inicial = d.vencimento, d.taxa, d.quantidade, d.data_inicial
         if tipo == "fundo" and qtd:
             preco, implicit = (row.valor / qtd).quantize(Decimal("0.00000001")), True
         elif d.preco is not None:
@@ -1030,6 +1035,7 @@ def _position_from_row(row: Row, period_end: dt.date, line_no: int, detail: list
         estrategia_corretora=row.estrategia,
         classe_corretora=row.classe,
         preco_implicito=implicit,
+        data_inicial=inicial,
     )
 
 

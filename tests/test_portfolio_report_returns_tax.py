@@ -90,7 +90,9 @@ def test_returns_sources_are_named_and_dated(view):
 
 def test_lines_without_a_return_or_a_tax_rule_are_gaps_grouped_by_code(view):
     gaps = {(g["title"], g["text"]): g["line_ids"] for g in view["gaps"]}
-    assert gaps[("Retorno por posição", REASON_TEXT["retorno_credito_sem_serie"].rstrip(". "))] == ["L9", "L10", "L11", "L12"]
+    # schema 2.1: the CDB and LCA point to the contracted return in the annex; the CRA is evaluated on the curve
+    assert gaps[("Retorno por posição", REASON_TEXT["retorno_contratado_anexo"].rstrip(". "))] == ["L9", "L10"]
+    assert gaps[("Retorno por posição", REASON_TEXT["retorno_debenture_metodo_pendente"].rstrip(". "))] == ["L12"]
     assert gaps[("Taxa e imposto por posição", REASON_TEXT["imposto_sem_regra"].rstrip(". "))] == ["L1", "L6"]
     assert all(g["value_brl"] is None for g in view["gaps"] if g["title"] in ("Retorno por posição", "Taxa e imposto por posição"))
     # the section-level code is the same lines again, so it is not printed twice
@@ -552,7 +554,8 @@ def test_the_body_return_table_shows_pct_of_cdi_or_the_engine_reason_never_zero_
         if w["pct_of_cdi"] is not None:
             assert values.format_value(w, "pct_of_cdi") in pct and "do CDI" in pct
             seen_value = True
-        else:  # #765: "n/a" in the cell, the engine's reason once in the footnote (also for a share)
+        else:  # #765: "n/a" in the cell, the engine's reason once in the footnote (also for a share and, schema 2.1,
+            # for direct credit on IPCA or prefixado)
             assert pct.strip() == "n/a"
             reason = render.e(REASON_TEXT[w["pct_of_cdi_reason_code"]])
             assert reason not in rows[0] and sec.count(reason) == 1

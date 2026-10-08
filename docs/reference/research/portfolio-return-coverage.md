@@ -47,12 +47,13 @@ and B3's Caderno de Fórmulas (section 1). The demo portfolio is synthetic.
    whose return is CDI-like (fixed income, CDI-referenced), "retorno − CDI" for
    the rest. Section 6 has the computation.
 
-6. **Direct credit (#766, 2026-10-08): stopped at the test case.** Method A
-   (the securitizer's curve) gives 109.9% to 110.1% of the CDI for MRV's CRI
-   24I1980390 on every window with complete filings, but 53.0% on the window of
-   the 08/10 report, because the 2026-04 coupon was never filed. Guarded, A
+6. **Direct credit (#766, 2026-10-08).** Method A (the securitizer's curve)
+   gives 109.9% to 110.1% of the CDI for MRV's CRI 24I1980390 on every window
+   with complete filings, but 53.0% on the window of the 08/10 report, because
+   the 2026-04 coupon was never filed. With the guards the owner accepted, A
    evaluates 1 of the 6 CRA/CRI and method B (median fund mark) 0 of 2
-   debentures: coverage would go from 8.06% to about 10.6%, not 30%. Section 8.
+   debentures: measured coverage goes from 8.06% to 10.65%, not about 30%. The
+   contracted return (method C) covers another 18.43%, apart. Section 8.
 
 ## 1. External facts
 
@@ -311,10 +312,12 @@ answer), against production. The portfolio is the real BTG statement of
 credit 47.97%, return coverage 8.06%: DEBB11 and GOLD11). Its CDI over
 2025-08-29 to 2026-08-31 is 14.63% in the report and 14.635% here.
 
-**The stop.** The brief made MRV's CRI (24I1980390, 110% of the CDI) the
-acceptance test of method A and said to stop if it failed. It failed on the
-report's window, so no SQL function, engine change, catalog or MCP change was
-made.
+**The stop, then the owner's decision.** The brief made MRV's CRI
+(24I1980390, 110% of the CDI) the acceptance test of method A and said to stop
+if it failed. It failed on the report's window, and the session stopped. The
+owner then accepted guards (a) and (b) below (2026-10-08), and A and C were
+built: `api.portfolio_credit_returns` (catalog v71) and engine schema 2.1.
+Method B waits for the owner's threshold.
 
 ### Method A: the securitizer's curve (`cvm_securit_serie`)
 
@@ -334,14 +337,37 @@ made.
 - **A coupon month reads a little low even when filed** (96% to 107% of the
   CDI): the coupon is added at face value, not reinvested to the month-end.
   Over 12 months this is a few hundredths of a point (Marfrig: 99.4%).
-- **Proposed guards, not built:** (a) a PU that falls with no payment filed is
-  an unknown month (`queda_sem_evento_arquivado`); no threshold is needed,
-  because a PU on the curve does not fall without an event; (b) a PU equal to
-  the previous month's is an unknown month (`pu_repetido`); plus the brief's
-  `quantidade_mudou` and `mes_ausente`. Guard (b) catches CRA02500001 only in
-  2 of its months: its PU is 0.0026 (a `valor_certificados` near R$1,000 for
-  380,074 certificates) and moves in the fifth decimal, so a third guard is
-  needed (a payment larger than the PU, or a PU below a floor).
+- **Guards, built:** (a) a PU that falls with no payment filed is an unknown
+  month (`queda_sem_evento_arquivado`); no threshold is needed, because a PU
+  on the curve does not fall without an event; (b) a PU equal to the previous
+  month's is an unknown month (`pu_repetido`). The owner accepted both on
+  2026-10-08. Also built: the brief's `quantidade_mudou` and `mes_ausente`,
+  `serie_ambigua`, `valor_invalido`, and `pagamento_acima_do_pu` (a payment
+  above the previous PU while the paper still has a value). Guard (b) alone
+  catches CRA02500001 only in 2 of its months: its PU is 0.0026 (a
+  `valor_certificados` near R$1,000 for 380,074 certificates) and moves in the
+  fifth decimal; `pagamento_acima_do_pu` catches the other ten.
+- **A payment that is not the coupon (`pagamento_incompativel`, a proposal for
+  the owner).** The first real run published CRA02400AYL's 6-month window
+  (2026-02 to 2026-08) at 23.86%, 340.7% of the CDI on a 105%-of-CDI paper: in
+  2026-05 it filed 238.01 a unit paid for a PU fall of about 60, so the month
+  read +16.65%. No guard above catches it without a tolerance. Measured over
+  `cvm_securit_serie` since 2024 (2026-10-08, read-only): 7,788 payment months
+  of 1,457 series that also have at least 6 months with no payment and a rising
+  PU. The payment month's return over the series' median month with no payment:
+
+  | p01 | p05 | p25 | p50 | p75 | p95 | within 0.5..1.5 | within 0..2 | above 3 | below 0 |
+  | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | −7.61 | 0.263 | 0.885 | 1.079 | 33.7 | 1.15e6 | 4,538 (58%) | 5,006 (64%) | 2,297 (29%) | 286 |
+
+  A filed coupon of a clean series sits near 1 (Marfrig: about 0.96 and 0.92 of
+  the month's CDI; MRV 2025-04 and 2025-10: 1.07 and 1.06). The tail above 3
+  is a payment filed in another month than the PU's fall (CRA0240066G filed its
+  2025-06 coupon one month before the fall) or a value that is not the coupon.
+  Proposed and built: a payment month is unknown when its return is outside 0.5
+  to 1.5 times the median of the line's months with no payment in the 13, or
+  when fewer than 3 such months exist. The owner decides the band (decision 4).
+  With it, Marfrig stays evaluated and CRA02400AYL's 6-month window is not.
 - **`taxa_juros` is free text that changes between months of one series.**
   MRV: "110.000 % do CDI", "Não definido + 1.100", "110.0000% CDI",
   "110,0000% CDI". Boa Safra files "100% CDI + 15,4102% a.a." where the
@@ -371,17 +397,48 @@ made.
 
 ### Method C: contracted return
 
-The BTG reader prints a rate on every credit line of this statement (OMNI CDB
-"IPCA + 6,20%", CDCA "11,87% a.a.", the CRA/CRI and debentures too), so C
-passed the brief's gate. Not built, because of the stop. Two facts for the
-owner: `DetailRow` reads no "data inicial", so the engine cannot tell whether
-a paper existed for the whole window, and a 12-month accrual on a younger
-paper would be invented; and the rates of lines 1 to 4 in the report
-(CDB "IPCA + 6,20%", NTN-B "IPCA + 7,00%") match the reader's test fixture
-pattern for the NTN-B and a CRA, so the CDB's rate should be checked against
-the PDF before C relies on it.
+The BTG reader prints a rate on every credit line of this statement, so C
+passed the brief's gate. The reader now also keeps the detail table's
+`Data inicial`, so C is computed only for a paper that existed for the whole
+window. Read from the statement PDF with this branch (2026-10-08): OMNI CDB
+"IPCA + 6,20%", from 2021-11-09 to 2026-11-09; the CDCA "11,87% a.a.", from
+2024-08-13 to 2031-07-15. The rate of the CDB is the one the PDF prints; an
+earlier note in this section that it might be shifted one row was wrong.
+Built as a separate `contracted` block, shown in the annex only, never in the
+measured table, coverage or contribution (the owner decides whether it may sit
+beside A and B).
 
-### The eight papers, window 2025-08 to 2026-08
+### Engine run on the real statement (schema 2.1, 2026-10-08)
+
+The engine run on the 2026-08-31 statement PDF: production over PostgREST
+(read-only, anon key) for every call except `portfolio_credit_returns`, which is
+not deployed yet. That call was answered by a scratch local Postgres holding the
+production rows of the six CRA/CRI codes and this branch's function. CDI over
+2025-08-29 to 2026-08-31 by B3's convention: 14.63461% over 252 rates.
+
+| Paper       | Method                  | 12-month return | % of CDI          | Months / flags                                              |
+| ----------- | ----------------------- | --------------: | ----------------- | ----------------------------------------------------------- |
+| CRA02500001 | A                       |               — | —                 | `pagamento_acima_do_pu` 10 months, `pu_repetido` 2026-01, 2026-05 |
+| CRA0240066G | A                       |               — | —                 | `queda_sem_evento_arquivado` 2026-06; 2026-07, 2026-08 `mes_ausente` |
+| CRA0260025T | A                       |               — | —                 | 2025-08 to 2026-05 `mes_ausente` (first informe 2026-05)    |
+| CRA0250018H | A                       |       14.54413% | 99.3817%          | 13 month-ends, no flag; printed rate "CDI"                  |
+| CRA02400AYL | A                       |               — | —                 | `pu_repetido` 2025-10, 2025-11; `queda_sem_evento_arquivado` 2025-12 |
+| 24I1980390  | A                       |               — | —                 | `queda_sem_evento_arquivado` 2026-04                        |
+| CUTI11      | B (not built)           |               — | —                 | `retorno_debenture_metodo_pendente`                         |
+| ENAT11      | B (not built)           |               — | —                 | `retorno_debenture_metodo_pendente`                         |
+| CDB OMNI    | C, contracted (annex)   |      10.685307% | n/a (IPCA, −3.95 p.p.) | IPCA of 2025-09..2026-08 4.223453%, 252 business days |
+| CDCA        | C, contracted (annex)   |          11.87% | n/a (prefixado, −2.76 p.p.) | 252 business days                                |
+
+The 6-month windows give the same coverage (10.6523%): Marfrig 6.968346%,
+99.508% of the CDI; every other CRA/CRI window has a flag.
+
+**Coverage of the 12-month return**, of R$1,056,638.06: before 8.06% (DEBB11,
+GOLD11); after 10.6523% measured (R$112,556.44: + Marfrig), and 18.4279%
+contracted apart (R$194,716.68: CDB and CDCA). The planning estimate (about
+30% with A and B, 15% more with C) assumed complete filings and a debenture
+method; measured, A adds 2.59 points, B none, and C 18.43 points.
+
+### The eight papers by ad hoc SQL, window 2025-08 to 2026-08 (before the build)
 
 | Paper       | Value (R$) | Method | Month-ends | 12-month return | % of CDI | Why not evaluated                                         | Unguarded |
 | ----------- | ---------: | ------ | ---------: | --------------: | -------: | --------------------------------------------------------- | --------: |
@@ -399,9 +456,8 @@ is below the digits shown). "Unguarded" is the formula with no guard, to show
 what the guards stop; it is not a return.
 
 **Coverage.** Before: 8.06% of R$1,056,638.06. With guarded A and B:
-+R$27,339.32 (Marfrig), 10.65%. The planning estimate of about 30% assumed
-complete filings; with every CRA/CRI and debenture evaluated it would be
-29.5% (R$312,172.20). C would add the CDB (15.45%) and the CDCA (2.98%).
++R$27,339.32 (Marfrig), 10.65%, confirmed by the engine run above. With every
+CRA/CRI and debenture evaluated it would be 29.5% (R$312,172.20).
 
 ```sql
 -- Window 2025-08 -> 2026-08 (13 month-ends), the 08/10 report's position month (statement of 2026-08-31).

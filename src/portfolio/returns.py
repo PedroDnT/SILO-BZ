@@ -17,8 +17,13 @@ Series, routed by the line's type and identity (never a fallback from one source
 * a fixed-income ETF (identified through SILO's ETF registry, not on the cash tape): ``last_price`` of
   ``trade_consolidated_history``. When that tool is unknown or refuses, the line is "não avaliado"; ``ref_price``
   is never read as a close;
-* everything else (Tesouro, CDB, LCI, LCA, CRA, CRI, debênture, a FIDC with no known tranche, a FIP, cash, an
-  unidentified line): "não avaliado" with a fixed reason code.
+* a CRA or CRI identified in the CVM register (schema 2.1, #766, method A): the securitizer's value on the curve,
+  ``portfolio_credit_returns``, one call for every such line: month factor (PU + paid) / previous PU, a month with a
+  flag (not filed, repeated value, a fall with no payment filed, quantity changed...) makes the window "não avaliado";
+* a CDB, LCI, LCA or CDCA (schema 2.1, method C): no measured return; the rate the statement prints, applied to the
+  CDI or IPCA of the window, is the "retorno contratado" in ``contracted``, apart from every measured figure and total;
+* everything else (Tesouro, debênture, a FIDC with no known tranche, a FIP, cash, an unidentified line): "não
+  avaliado" with a fixed reason code.
 
 Windows end at the month of the position date when that date is the month's last calendar day, else at the month
 before (``movement.default_movement_month``). The month-end value is a fund's month quota, or a ticker's last
@@ -39,10 +44,11 @@ maximum drawdown on month-end values; and, when the fee block has a single discl
 from __future__ import annotations
 
 import datetime as dt
+import re
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Any
 
-from src.portfolio import benchmark
+from src.portfolio import benchmark, contracted
 from src.portfolio.client import SiloClient
 from src.portfolio.common import (
     STATUS_NOT_APPLICABLE,
@@ -78,12 +84,17 @@ FUND = "cota_fundo"
 TOTAL_RETURN = "close_total_return"
 CLOSE = "close_sem_proventos"
 FIXED_INCOME_ETF = "last_price_etf_renda_fixa"
+CURVE = "curva_securitizadora"  # schema 2.1 (#766), method A
+CONTRACTED = "retorno_contratado"  # schema 2.1 (#766), method C: never a line's basis, only its ``contracted`` block
+# A month-end value whose day is not served: the CDI dates are the CDI calendar's month-ends.
+MONTH_BASES = (FUND, CURVE)
 # The reader text of a status or a basis is the report's (src/portfolio/report/labels.py, engine 2.0).
 TOOLS = {
     FUND: "fund_nav",
     TOTAL_RETURN: "quote_history",
     CLOSE: "quote_history",
     FIXED_INCOME_ETF: "trade_consolidated_history",
+    CURVE: "portfolio_credit_returns",
 }
 VALUE_FIELD = {TOTAL_RETURN: "close_total_return", CLOSE: "close", FIXED_INCOME_ETF: "last_price"}
 
@@ -136,12 +147,10 @@ DEFINITION = (
 # A line that no series covers: the fixed code, by type.
 NO_SERIES_BY_TIPO = {
     "tesouro": "retorno_tesouro_sem_serie",
-    "CDB": "retorno_credito_sem_serie",
-    "LCI": "retorno_credito_sem_serie",
-    "LCA": "retorno_credito_sem_serie",
-    "CRA": "retorno_credito_sem_serie",
-    "CRI": "retorno_credito_sem_serie",
-    "debênture": "retorno_credito_sem_serie",
+    "CDB": "retorno_contratado_anexo",
+    "LCI": "retorno_contratado_anexo",
+    "LCA": "retorno_contratado_anexo",
+    "debênture": "retorno_debenture_metodo_pendente",
     "caixa": "retorno_caixa",
     "FIDC": "retorno_fidc_sem_classe",
     "FIP": "retorno_fip_sem_serie",
@@ -160,6 +169,21 @@ REASONS = {
     "retorno_total_nulo": "retorno total sem valor no fechamento usado; sem recurso à variação de preço",
     "consulta_falhou": "consulta ao SILO falhou ou foi recusada",
     "resposta_inconsistente": "resposta do SILO inconsistente; a linha não foi avaliada",
+    "retorno_contratado_anexo": "crédito bancário sem série de preços: o retorno contratado está no anexo",
+    "retorno_debenture_metodo_pendente": "debênture: método pendente (meses de cupom na marcação dos fundos)",
+}
+# schema 2.1 (#766): the month flags of portfolio_credit_returns, as a window's reason code ('mes_ausente' is the
+# existing 'serie_incompleta')
+CURVE_FLAGS = ("serie_ambigua", "mes_ausente", "valor_invalido", "quantidade_mudou", "pu_repetido",
+               "queda_sem_evento_arquivado", "pagamento_acima_do_pu", "pagamento_incompativel")
+CURVE_REASONS = {
+    "serie_ambigua": "mais de uma série ou classe para o código e nenhuma indicada",
+    "valor_invalido": "quantidade ou valor não positivo no informe",
+    "quantidade_mudou": "a quantidade de certificados mudou na janela",
+    "pu_repetido": "o informe repete o valor do mês anterior",
+    "queda_sem_evento_arquivado": "o valor na curva cai sem pagamento arquivado",
+    "pagamento_acima_do_pu": "pagamento arquivado acima do valor do certificado",
+    "pagamento_incompativel": "o retorno do mês de pagamento não é compatível com os meses sem evento",
 }
 # engine 1.13: why a window has no "% do CDI" (fixed Portuguese text in common.REASON_TEXT)
 PCT_CDI_ONLY_FUNDS = "pct_cdi_so_fundos"
@@ -168,6 +192,22 @@ PCT_CDI_NOT_POSITIVE = "cdi_nao_positivo"
 NOTE_PCT_OF_CDI = (
     "% do CDI = retorno líquido dividido pelo CDI das mesmas datas, vezes 100; só para fundo cujo índice de referência "
     "arquivado (Extrato ou lâmina) é CDI ou DI, e só com CDI do período acima de zero"
+)
+# schema 2.1 (#766): direct credit
+PCT_CDI_CREDIT_NOT_CDI = "credito_nao_cdi"
+PCT_CDI_CREDIT_NO_RATE = "taxa_nao_informada"
+NOTE_PCT_OF_CDI_CREDIT = (
+    "Crédito direto: '% do CDI' só quando a taxa impressa no extrato contém CDI; para papel atrelado a IPCA ou "
+    "prefixado, n/a, e a comparação é a diferença para o CDI em pontos percentuais"
+)
+NOTE_CURVE = (
+    "Valor na curva informado pela securitizadora no informe mensal à CVM (cvm_securit_serie): PU = valor dos "
+    "certificados / quantidade; juros e amortização pagos no mês somados ao PU do mês. Não é preço de mercado e não "
+    "mostra evento de crédito que o informe não traga; bruto de IR."
+)
+NOTE_CURVE_COUPON = (
+    "No mês do pagamento, o valor pago entra pelo valor de face, sem reinvestimento até o fim do mês: o retorno daquele "
+    "mês fica um pouco abaixo do contratado."
 )
 
 
@@ -185,10 +225,14 @@ def compute_returns(
     cdi = _Cdi.fetch(client, base_month, position_date, sec)
     fee_by = {f["line_no"]: f for f in fees.get("lines", [])}
     cache: dict[str, tuple[dict[dt.date, dict[str, Any]] | None, Call | None, str | None]] = {}
+    _curve_fetch(lines, client, end_month, cache, sec)  # schema 2.1: one call for every CRA / CRI line
+    ipca = contracted.Ipca.fetch(lines, client, months, sec)  # schema 2.1: only when a contracted rate is on IPCA
 
     out = []
     for li in lines:
-        out.append(_line(li, fee_by.get(li.line_no), client, months, position_date, cdi, cache, sec))
+        rec = _line(li, fee_by.get(li.line_no), client, months, position_date, cdi, cache, sec)
+        rec["contracted"] = contracted.compute(li, months, cdi, ipca)  # schema 2.1, method C; None when not eligible
+        out.append(rec)
 
     routed = [ln for ln in out if ln["basis"] is not None]
     failed = [ln for ln in routed if ln["reason_code"] == "consulta_falhou"]
@@ -207,10 +251,16 @@ def compute_returns(
         covered = sum(
             (Decimal(str(ln["valor_brl"])) for ln in out if ln["windows"][wid]["status"] == EVALUATED), Decimal("0")
         )
+        # schema 2.1: the contracted return is never a measured return; its share is counted apart
+        contr = [ln for ln in out if ln["contracted"] and ln["contracted"]["windows"][wid]["status"] == EVALUATED]
+        contr_value = sum((Decimal(str(ln["valor_brl"])) for ln in contr), Decimal("0"))
         coverage[wid] = {
             "evaluated_value_brl": brl(covered),
             "coverage_portfolio_value_pct": pct(covered, portfolio_total),
             "n_evaluated": sum(ln["windows"][wid]["status"] == EVALUATED for ln in out),
+            "contracted_value_brl": brl(contr_value),
+            "contracted_coverage_portfolio_value_pct": pct(contr_value, portfolio_total),
+            "n_contracted": len(contr),
         }
     return {
         **sec.head(),
@@ -235,6 +285,8 @@ def compute_returns(
         "drawdown_note": NOTE_DRAWDOWN,
         "performance_note": NOTE_PERFORMANCE,
         "pct_of_cdi_note": NOTE_PCT_OF_CDI,  # engine 1.13
+        "pct_of_cdi_credit_note": NOTE_PCT_OF_CDI_CREDIT,  # schema 2.1
+        "contracted_note": contracted.NOTE,  # schema 2.1
         "note": NOT_A_RECOMMENDATION,
         "cdi": cdi.as_dict(),
         "lines": out,
@@ -242,7 +294,7 @@ def compute_returns(
         "n_evaluated": sum(ln["status"] == EVALUATED for ln in out),
         "n_not_evaluated": sum(ln["status"] == NOT_EVALUATED for ln in out),
         "coverage": coverage,
-        "contribution": _contribution(out, coverage),  # engine 1.15
+        "contribution": _contribution(out, coverage, portfolio_total),  # engine 1.15
     }
 
 
@@ -251,15 +303,20 @@ def compute_returns(
 # ---------------------------------------------------------------------------
 
 CONTRIBUTION_LABEL = "contribuição retroativa"
+# schema 2.1 (owner's rule, #766: never mix methods in a total): the securitizer's value on the curve is not a market
+# value, so a CRA / CRI line is listed in excluded_lines and stays out of the sum
+CONTRIBUTION_EXCLUDED = (CURVE,)
 NOTE_CONTRIBUTION = (
     "Contribuição retroativa: o extrato dá as posições em uma data e nenhum fluxo. O valor no início da janela de cada "
     "linha é o valor atual dividido por 1 mais o retorno líquido da janela; o peso é esse valor sobre a soma dos valores "
     "iniciais das linhas avaliadas; a contribuição é o peso vezes o retorno. Supõe que não houve aporte nem resgate. A "
-    "soma é o retorno só da parte avaliada, nunca da carteira inteira."
+    "soma é o retorno só da parte avaliada, nunca da carteira inteira. CRA e CRI avaliados pelo valor na curva da "
+    "securitizadora ficam fora da soma: não é valor de mercado, e métodos diferentes não se somam."
 )
 
 
-def _contribution(lines: list[dict[str, Any]], coverage: dict[str, Any]) -> dict[str, Any]:
+def _contribution(lines: list[dict[str, Any]], coverage: dict[str, Any],
+                  portfolio_total: Decimal | None = None) -> dict[str, Any]:
     """Per window: each evaluated line's share of the return of the evaluated part, back-cast from today's values.
 
     start value = value / (1 + r); weight = start value / sum of the start values; contribution = weight x r. The sum of
@@ -268,17 +325,22 @@ def _contribution(lines: list[dict[str, Any]], coverage: dict[str, Any]) -> dict
     out: dict[str, Any] = {}
     for wid, _n, _f, _note in WINDOWS:
         rows = []
+        excluded = []
         for ln in lines:
             w = ln["windows"][wid]
             r, value = dec(w.get("net_return_pct")), dec(ln.get("valor_brl"))
             if w["status"] != EVALUATED or r is None or value is None or r <= Decimal(-100):
+                continue
+            if ln.get("basis") in CONTRIBUTION_EXCLUDED:  # schema 2.1: a value on the curve never enters a market total
+                excluded.append({"line_no": ln["line_no"], "basis": ln.get("basis"), "reason_code": "metodo_fora_do_total"})
                 continue
             rows.append((ln, value, r, value / (1 + r / 100)))
         start_total = sum((s for *_x, s in rows), Decimal("0"))
         end_total = sum((v for _l, v, _r, _s in rows), Decimal("0"))
         if not rows or start_total <= 0:
             out[wid] = {"status": NOT_EVALUATED, "reason_code": "linhas_sem_retorno", "covered_return_pct": None,
-                        "n_lines": 0, "lines": [], **_cov(coverage, wid)}
+                        "n_lines": 0, "lines": [], "excluded_lines": excluded,
+                        **_cov(coverage, wid, excluded, end_total, portfolio_total)}
             continue
         out[wid] = {
             "status": EVALUATED,
@@ -287,7 +349,8 @@ def _contribution(lines: list[dict[str, Any]], coverage: dict[str, Any]) -> dict
             "start_value_brl": brl(start_total),
             "end_value_brl": brl(end_total),
             "n_lines": len(rows),
-            **_cov(coverage, wid),
+            "excluded_lines": excluded,  # schema 2.1
+            **_cov(coverage, wid, excluded, end_total, portfolio_total),
             "lines": [
                 {
                     "line_no": ln["line_no"],
@@ -304,7 +367,12 @@ def _contribution(lines: list[dict[str, Any]], coverage: dict[str, Any]) -> dict
     return {"label": CONTRIBUTION_LABEL, "note": NOTE_CONTRIBUTION, "windows": out}
 
 
-def _cov(coverage: dict[str, Any], wid: str) -> dict[str, Any]:
+def _cov(coverage: dict[str, Any], wid: str, excluded: list | None = None, summed: Decimal | None = None,
+         portfolio_total: Decimal | None = None) -> dict[str, Any]:
+    """The share of the portfolio the contribution covers: the block's coverage, or, when a line is left out of the
+    sum (schema 2.1), only the value of the lines summed."""
+    if excluded and portfolio_total:
+        return {"coverage_portfolio_value_pct": pct(summed or Decimal("0"), portfolio_total)}
     return {"coverage_portfolio_value_pct": coverage[wid]["coverage_portfolio_value_pct"]}
 
 
@@ -394,6 +462,11 @@ def _last_weekday(month: dt.date) -> dt.date:
 def _route(li: LineId) -> tuple[str | None, str | None]:
     """(basis, None) for a line with a series, or (None, reason code) for one without."""
     tipo = li.position.tipo
+    if tipo in ("CRA", "CRI"):  # schema 2.1 (#766), method A: the CVM register's series the identification matched
+        credit = li.credit or {}
+        if li.status != "identified" or credit.get("match_kind") != "securit_cetip" or not credit.get("code"):
+            return None, "retorno_linha_nao_identificada"
+        return CURVE, None
     if tipo in NO_SERIES_BY_TIPO:  # by type, identified or not: no series exists for it
         return None, NO_SERIES_BY_TIPO[tipo]
     if li.status != "identified":
@@ -418,6 +491,8 @@ def _route(li: LineId) -> tuple[str | None, str | None]:
             return None, "retorno_sem_regra"
         return FUND, None
     if tipo == "outro":
+        if contracted.is_bank_credit(li.position):  # a CDCA the statement prints as such (schema 2.1)
+            return None, "retorno_contratado_anexo"
         return None, "retorno_credito_sem_serie" if li.kind == "credito" else "retorno_sem_regra"
     return None, "retorno_sem_regra"
 
@@ -482,6 +557,7 @@ def _line(
         "tipo": p.tipo,
         "cnpj": li.cnpj if basis == FUND else None,
         "ticker": li.ticker if basis in (TOTAL_RETURN, CLOSE, FIXED_INCOME_ETF) else None,
+        "credit_code": (li.credit or {}).get("code") if basis == CURVE else None,  # schema 2.1: the CETIP code read
         "name": li.name,
         "valor_brl": brl(p.valor),
         "basis": basis,
@@ -505,12 +581,14 @@ def _line(
     rec["notes"] = _basis_notes(basis, p.tipo)
     fee = _fee(li, basis, fee_line)
     rec["fee"] = fee
-    bench = _benchmark(basis, fee_line)
+    bench = _credit_benchmark(p.taxa_texto) if basis == CURVE else _benchmark(basis, fee_line)
     rec["benchmark"] = bench
     rec["performance_fee_filed"] = bool(fee_line and _perf_filed(fee_line))
     if rec["performance_fee_filed"]:
         rec["notes"].append(NOTE_PERFORMANCE)
 
+    if basis == CURVE:
+        return _curve_line(rec, li, months, cdi, cache, fee, bench)
     points, call, err = _series(li.cnpj, li.ticker, li.line_no, basis, client, months, position_date, cache, sec)
     if call is not None:
         rec["sources"].append(call.src(_last_date(points) or position_date))
@@ -565,6 +643,8 @@ def _benchmark(basis: str, fee_line: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _basis_notes(basis: str, tipo: str) -> list[str]:
+    if basis == CURVE:
+        return [NOTE_CURVE, NOTE_CURVE_COUPON]
     if basis == FUND:
         return [NOTE_FUND, NOTE_FUND_DATES]
     if basis == TOTAL_RETURN:
@@ -579,6 +659,9 @@ def _fee(li: LineId, basis: str, fee_line: dict[str, Any] | None) -> dict[str, A
     if basis == TOTAL_RETURN:
         return {"status": "nao_se_aplica", "reason_code": "taxa_nao_aplicavel", "rate_pct_year": None, "kind": None,
                 "origin": None, "as_of": None, "sources": []}
+    if basis == CURVE:  # schema 2.1: a CRA / CRI has no administration fee; its spread is not published
+        return {"status": "nao_se_aplica", "reason_code": "taxa_credito_sem_taxa_adm", "rate_pct_year": None,
+                "kind": None, "origin": None, "as_of": None, "sources": []}
     h = (fee_line or {}).get("headline") or {}
     kind = h.get("kind")
     rate = dec(h.get("rate_pct_year"))
@@ -699,6 +782,141 @@ def _last_date(points: dict[dt.date, dict[str, Any]] | None) -> dt.date | None:
 
 
 # ---------------------------------------------------------------------------
+# Method A: CRA / CRI on the securitizer's curve (schema 2.1, #766)
+# ---------------------------------------------------------------------------
+
+_CDI_IN_RATE = re.compile(r"(?<![A-Z])CDI(?![A-Z])")
+
+
+def _credit_benchmark(taxa_texto: str | None) -> dict[str, Any]:
+    """"% do CDI" for direct credit: only when the rate the statement prints contains CDI (owner, #766). The CVM
+    register's free-text rate is never read for it: it changes spelling between months of one series."""
+    if not taxa_texto or not str(taxa_texto).strip():
+        code, like = PCT_CDI_CREDIT_NO_RATE, False
+    else:
+        like = bool(_CDI_IN_RATE.search(str(taxa_texto).upper()))
+        code = None if like else PCT_CDI_CREDIT_NOT_CDI
+    return {"cdi_like": like, "reason_code": code, "taxa_texto": taxa_texto, "source": "taxa impressa no extrato",
+            "extrato": None, "lamina": None, "lamina_n": None, "extrato_as_of": None, "lamina_as_of": None,
+            "matched": [], "rule_version": None, "sources": []}
+
+
+def _curve_args(group: list[LineId], end_month: dt.date) -> dict[str, Any]:
+    return {
+        "p_codes": [str(li.credit["code"]) for li in group],
+        "p_end_month": end_month.isoformat(),
+        "p_series": [_int_or_none(li.credit.get("numero_serie")) for li in group],
+        "p_classes": [li.credit.get("classe") for li in group],
+    }
+
+
+def _int_or_none(v: Any) -> int | None:
+    try:
+        return int(str(v).strip()) if v is not None and str(v).strip() else None
+    except ValueError:
+        return None
+
+
+def _curve_fetch(lines: list[LineId], client: SiloClient, end_month: dt.date, cache: dict, sec: Section) -> None:
+    """One ``portfolio_credit_returns`` call for every CRA / CRI line (at most 70 per call: one page)."""
+    group = [li for li in lines if _route(li)[0] == CURVE]
+    for i in range(0, len(group), 70):
+        part = group[i:i + 70]
+        args = _curve_args(part, end_month)
+        call = call_tool(client, TOOLS[CURVE], args, sec.errors)
+        if not call.ok:
+            sec.degrade(f"{TOOLS[CURVE]} falhou para as linhas de CRA e CRI (erro literal em errors).", code="consulta_falhou")
+        by_line: dict[int, list[dict]] = {}
+        bad = not call.ok
+        for r in call.rows or []:
+            k = r.get("line_no")
+            if not isinstance(k, int) or not 1 <= k <= len(part):
+                bad = True
+                break
+            by_line.setdefault(k, []).append(r)
+        if call.ok and bad:
+            sec.degrade(f"{TOOLS[CURVE]} devolveu resposta inconsistente.", code="resposta_inconsistente")
+        for k, li in enumerate(part, start=1):
+            err = "consulta_falhou" if not call.ok else ("resposta_inconsistente" if bad else None)
+            cache[("curve", li.line_no)] = (by_line.get(k, []), call, err)
+
+
+def _curve_line(rec: dict[str, Any], li: LineId, months: list[dt.date], cdi: _Cdi, cache: dict,
+                fee: dict[str, Any], bench: dict[str, Any]) -> dict[str, Any]:
+    rows, call, err = cache.get(("curve", li.line_no), ([], None, "consulta_falhou"))
+    if call is not None:
+        rec["sources"].append(call.src(months[-1]))
+    by_month: dict[dt.date, dict] = {}
+    for r in rows:
+        m = as_date(r.get("month"))
+        if err is None and (m is None or m in by_month or m not in months
+                            or str(r.get("code") or "").upper() != str(li.credit.get("code") or "").upper()):
+            err = "resposta_inconsistente"
+        if m is not None:
+            by_month[m] = r
+    if err is None and set(by_month) != set(months):
+        err = "resposta_inconsistente"
+    if err is not None:
+        rec.update(reason_code=err, reason=REASONS[err])
+        rec["windows"] = {wid: _empty_window(err, REASONS[err]) for wid, *_ in WINDOWS}
+        return rec
+    rec["month_ends"] = [
+        {"month": iso(m), "date": None, "value": ratio(dec(by_month[m].get("pu")), 8) if dec(by_month[m].get("pu")) else None,
+         "null_reason": None, "data_referencia": by_month[m].get("data_referencia"),
+         "paid_per_unit": ratio(dec(by_month[m].get("paid_per_unit")), 8) if dec(by_month[m].get("paid_per_unit")) is not None else None,
+         "factor": ratio(dec(by_month[m].get("factor")), 12) if dec(by_month[m].get("factor")) is not None else None,
+         "month_flag": by_month[m].get("month_flag"), "taxa_juros": by_month[m].get("taxa_juros")}
+        for m in months
+    ]
+    rec["series"] = {"numero_serie": by_month[months[-1]].get("numero_serie"), "classe": by_month[months[-1]].get("classe"),
+                     "reason": by_month[months[-1]].get("reason")}
+    for wid, n, frac, vol_note in WINDOWS:
+        wm = months[-(n + 1):]
+        flags = _curve_flags(wm, by_month)
+        if flags:
+            code = "serie_incompleta" if flags[0]["flag"] == "mes_ausente" else flags[0]["flag"]
+            w = _empty_window(code, CURVE_REASONS.get(code) or REASONS["serie_incompleta"])
+            w.update(base_month=iso(wm[0]), end_month=iso(wm[-1]), month_flags=flags,
+                     missing_months=[f["month"] for f in flags if f["flag"] == "mes_ausente"])
+            rec["windows"][wid] = w
+            continue
+        # the index of the window: 1 at its base month, times each month's factor
+        points: dict[dt.date, dict[str, Any]] = {}
+        idx = Decimal(1)
+        for i, m in enumerate(wm):
+            if i:
+                idx *= dec(by_month[m]["factor"])
+            points[m] = {"date": None, "value": idx}
+        w = _window(wm, n, frac, vol_note, points, CURVE, fee, cdi, call, bench)
+        w["month_flags"] = []
+        rec["windows"][wid] = w
+    if any(w["status"] == EVALUATED for w in rec["windows"].values()):
+        rec["status"] = EVALUATED
+    else:
+        first = rec["windows"]["12m"]
+        rec.update(reason_code=first["reason_code"], reason=first["reason"])
+    return rec
+
+
+def _curve_flags(wm: list[dt.date], by_month: dict[dt.date, dict]) -> list[dict[str, Any]]:
+    """The months that make a window unknown: the base month only by its own value; every later month by its flag
+    (the SQL compares it with the month before) or a missing factor."""
+    out = []
+    base = by_month[wm[0]]
+    base_flag = base.get("month_flag")
+    if base_flag in ("serie_ambigua", "mes_ausente", "valor_invalido") or dec(base.get("pu")) is None:
+        out.append({"month": iso(wm[0]), "flag": base_flag or "valor_invalido"})
+    for m in wm[1:]:
+        r = by_month[m]
+        flag = r.get("month_flag")
+        if flag is None and dec(r.get("factor")) is None:
+            flag = "valor_invalido"
+        if flag is not None:
+            out.append({"month": iso(m), "flag": flag if flag in CURVE_FLAGS else "valor_invalido"})
+    return out
+
+
+# ---------------------------------------------------------------------------
 # One window
 # ---------------------------------------------------------------------------
 
@@ -758,7 +976,7 @@ def _window(
 
     # CDI over the same dates: a fund's are the CDI calendar's month-ends, a ticker's are its sessions.
     cdi_period: Decimal | None = None
-    if basis == FUND:
+    if basis in MONTH_BASES:
         c_start, c_end = cdi.month_end(months[0]), cdi.month_end(months[-1])
     else:
         c_start, c_end = points[months[0]]["date"], points[months[-1]]["date"]
