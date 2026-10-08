@@ -510,7 +510,7 @@ Implemented on `demo/brief-client-fit`: brief, expandable appendix, HTML upload 
 
 ## 18. Debenture secondary-market capture (#662)
 
-**Bounded production capture validated; experiment partially ready (2026-10-07,
+**Approved recovery validated; experiment still inconclusive (2026-10-08,
 UTC-3).** PR #734 merged as `2c1ef8c38989820f5678bd4df193e420d24156ac`.
 Following specific owner approvals, migration 74 and captures for 06/10 and
 30/09–06/10 landed in production. Read-only recheck: both snapshots complete,
@@ -531,20 +531,24 @@ Offline experiment/preparation now implemented with three documented original-is
 links (ALPA13, ALUP18, ANIM18), current total-return equity/IBOV exports, trailing
 beta, past-liquidity equity selection, chronological purges and dependence checks.
 Initial live run: four one-session outcomes, no primary five-session outcomes.
-Owner approved all 13 recovery slices for 01/07–29/09. The first, 01/07–07/07,
-landed 60,642 facts / 1,222 bonds, zero drops and verified hash; +22,290,432 allocated
-bytes. Slice 2's weekly export and its first daily fallback (08/07) each failed
-after two transport attempts; sequence stopped, no later slices started. Fifty-nine
-known sessions remain missing. Fresh offline run: 19 overlapping horizon rows
-(9/5/5 at 1/5/20 sessions), all inconclusive; strict PIT still zero. The three-month pilot
+Owner approved all 13 recovery slices for 01/07–29/09. After an initial transport
+failure, all 13 are now complete: 770,562 facts, zero drops, valid hashes, audits
+`ok` and nine distinct metrics per source group. Credit allocation grew by
+386,850,816 bytes, below the 1 GB stop. All 69 known study sessions are delivered;
+no recovery windows remain. Fresh offline run: 172 overlapping horizon rows
+(63/59/50 at 1/5/20 sessions), all inconclusive; strict PIT still zero. FCA recorded
+listing intervals are enforced and exact-date sector robustness is implemented;
+available B3 sector history starts 16/09 and cannot cover training. The three-month pilot
 cannot meet fixed training/validation/test floors even with complete recovery;
 broader identities, longer protocol, sector robustness and power assessment remain.
 
-Open acceptance, in order: documentary dated identity evidence (#660); deeper
-coverage/PIT and storage allowance; separately approved bounded history; adjusted
-returns/benchmark acceptance; past-only residual-return experiment. REUNE traded
+The approved three-month recovery and its storage checks are complete. Open
+acceptance, in order: broader documentary dated identity evidence (#660); a longer
+frozen protocol and power assessment; deeper coverage/PIT, with a new storage
+allowance and specific approval for any expanded production window; adjusted
+returns/benchmark acceptance; confirmatory residual-return experiment. REUNE traded
 rates/access and benchmark conventions (#661) remain separate dependencies under
-ADR 0004. Neither #662 nor #628 is closed by a five-session capture.
+ADR 0004. Neither #662 nor #628 is closed by this pilot recovery.
 
 Historical [local capture/storage measurements](../reference/research/debenture-secondary-market-validation.md)
 and [schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md)

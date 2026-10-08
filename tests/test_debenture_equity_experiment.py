@@ -11,6 +11,7 @@ from research_examples.debenture_equity.prepare import export_query, fingerprint
 from research_examples.debenture_equity.experiment import (
     build_panel, clustered_interval, credit_snapshot, day_cutoff, evaluate_panel,
     model_pair, run, timestamp,
+    attach_sectors, sector_features,
 )
 
 
@@ -299,6 +300,80 @@ def test_small_test_sample_is_explicitly_inconclusive():
     result = evaluate_panel(frame, p)['5']
     assert result['status'] == 'inconclusive'
     assert 'bonferroni_p' not in result
+
+
+def test_dated_sectors_are_not_backfilled_or_used_before_observation():
+    frame = pd.DataFrame([{'ticker': 'TEST3', 'signal_date': d}
+                          for d in ['2026-07-01', '2026-09-16', '2026-09-17']])
+    bundle = {'exported_at': '2026-10-08T12:00:00-03:00', 'sectors': [
+        {'ticker': 'TEST3', 'reference_date': '2026-09-16', 'sector': 'Industry',
+         'fetched_at': '2026-09-16T18:00:00-03:00'},
+        {'ticker': 'TEST3', 'reference_date': '2026-09-17', 'sector': 'Industry',
+         'fetched_at': '2026-09-18T03:00:00-03:00'}]}
+    selected, coverage = attach_sectors(frame, bundle)
+    assert selected['signal_date'].tolist() == ['2026-09-16']
+    assert coverage == {'input_rows': 3, 'retained_rows': 1, 'missing_sector_rows': 2}
+
+
+def test_conflicting_dated_sector_labels_are_not_chosen_arbitrarily():
+    frame = pd.DataFrame([{'ticker': 'TEST3', 'signal_date': '2026-09-16'}])
+    row = {'ticker': 'TEST3', 'reference_date': '2026-09-16', 'sector': 'Industry',
+           'fetched_at': '2026-09-16T18:00:00-03:00'}
+    bundle = {'exported_at': '2026-10-08T12:00:00-03:00',
+              'sectors': [row, {**row, 'sector': 'Utilities'}]}
+    with pytest.raises(ValueError, match='Conflicting dated sector'):
+        attach_sectors(frame, bundle)
+
+
+def test_sector_encoding_uses_only_purged_training_categories():
+    frame, p = model_data()
+    frame['sector'] = frame['cnpj'].map({'0': 'Industry', '1': 'Industry',
+                                        '2': 'Utilities', '3': 'Utilities'})
+    encoded, adjusted, coverage = sector_features(frame, p)
+    future = frame.copy()
+    future.loc[future['signal_date'] > p['validation_end'], 'sector'] = 'Future sector'
+    changed, changed_p, changed_coverage = sector_features(future, p)
+    assert adjusted == changed_p
+    assert coverage['training_sectors'] == changed_coverage['training_sectors'] == ['Industry', 'Utilities']
+    cols = adjusted['equity_features']
+    pd.testing.assert_frame_equal(encoded.loc[encoded['signal_date'] <= p['train_end'], cols],
+                                  changed.loc[changed['signal_date'] <= p['train_end'], cols])
+    assert changed_coverage['unseen_sector_rows'] > 0
+    assert not changed.loc[changed['signal_date'] > p['validation_end']].shape[0]
+
+
+def test_sector_placebo_never_crosses_date_or_sector(monkeypatch):
+    import research_examples.debenture_equity.experiment as experiment
+    frame, p = model_data()
+    frame['sector'] = frame['cnpj'].map({'0': 'Industry', '1': 'Industry',
+                                        '2': 'Utilities', '3': 'Utilities'})
+    original = experiment.model_pair
+    checked = []
+    def check_pair(candidate, protocol):
+        if len(candidate) == len(frame):
+            for key, group in candidate.groupby(['signal_date', 'sector']):
+                expected = frame[(frame['signal_date'] == key[0]) & (frame['sector'] == key[1])]
+                assert sorted(group['credit']) == sorted(expected['credit'])
+            checked.append(True)
+        return original(candidate, protocol)
+    monkeypatch.setattr(experiment, 'model_pair', check_pair)
+    result = evaluate_panel(frame, p, sector_controls=True)['5']
+    assert len(checked) == 1+p['placebo_repetitions']
+    assert result['sector_coverage']['training_sectors'] == ['Industry', 'Utilities']
+
+
+def test_missing_sector_history_cannot_produce_favorable_overall_verdict(synthetic, monkeypatch):
+    import research_examples.debenture_equity.experiment as experiment
+    bundle, links, p = synthetic
+    original = experiment.evaluate_panel
+    def favorable_uncontrolled_only(panel, protocol, sector_controls=False):
+        if sector_controls:
+            return original(panel, protocol, sector_controls=True)
+        return {str(h): {'status': 'incremental_evidence'} for h in p['horizons']}
+    monkeypatch.setattr(experiment, 'evaluate_panel', favorable_uncontrolled_only)
+    result, _ = run(bundle, links, p)
+    assert result['decision'] == 'inconclusive'
+    assert result['sector_robustness']['horizons']['5']['status'] == 'inconclusive'
 
 
 def test_clustered_uncertainty_and_placebo_are_reproducible():

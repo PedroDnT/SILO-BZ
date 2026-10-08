@@ -98,6 +98,16 @@ One issuer/date/horizon is one outcome; absent trades are never imputed as zero.
 PU changes and rates remain excluded. Missing history, sample floors or sector
 robustness prevent a favorable overall research verdict. No tradability is certified.
 
+Sector robustness reads existing `b3_index_portfolio` classifications for the exact
+ticker/signal date, observed by that date's end in Brasília and before export.
+There is no historical fill or inference from today's company sector. Conflicting
+index labels refuse evaluation. Categories come only from purged training rows;
+unknown validation/test sectors are excluded and counted. The same sector controls
+enter both models; placebos shuffle whole credit vectors within date and sector.
+The original and delayed studies must both pass sector robustness as well as the
+uncontrolled checks before an incremental-evidence verdict. Missing history or fewer
+than two training sectors gives an inconclusive result, with coverage reported.
+
 Focused checks:
 
 ```sh

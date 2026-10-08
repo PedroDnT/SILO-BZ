@@ -41,15 +41,17 @@ Brief and client constraints (#607, #614): [contract](../reference/portfolio/bri
 
 Current closure sequence: [open issue resolution](OPEN_ISSUE_RESOLUTION.md), #658 smoke fix → #607 → #517 real-file evidence → #510 readiness; #628 research separately.
 
-Debenture capture #662 has an opt-in implementation and three approved, complete
+Debenture capture #662 has an opt-in implementation and fifteen approved, complete
 production snapshots. Permanent capture remains off. COTAHIST 06/10 was recovered.
 [OPEN_ITEMS item 18](OPEN_ITEMS.md#18-debenture-secondary-market-capture-662) tracks
 current status; earlier [window/storage validation](../reference/research/debenture-secondary-market-validation.md)
 and [schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md) remain
 historical measurements. The [executable readiness audit and experiment gates](../reference/research/debenture-equity-experiment.md)
 separate name candidates from confirmed links and retrieval time from historical PIT.
-The owner approved 13 recovery slices; 01/07–07/07 landed successfully. The second
-slice and its daily fallback failed in export transport, stopping the sequence with
-59 sessions missing. Refreshed live results remain inconclusive, and the three-month
-pilot cannot satisfy confirmatory floors. Source transport is the immediate blocker;
-permanent capture remains off.
+All 13 approved recovery slices now passed hash, audit and nine-metric checks:
+69/69 study sessions are covered, with allocation growth below the approved 1 GB
+stop. The fresh pilot has 172 overlapping horizon outcomes, all inconclusive;
+the three-month period and three reviewed issuers cannot satisfy confirmatory
+floors. Dated sector robustness is implemented but lacks training history.
+Permanent capture remains off; broader identity review, a longer frozen protocol,
+statistical power and strict PIT acceptance remain open.

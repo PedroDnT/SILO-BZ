@@ -127,6 +127,11 @@ SELECT jsonb_build_object(
  'credit',coalesce((SELECT jsonb_agg(to_jsonb(f)) FROM credit f),'[]'::jsonb),
  'equities',coalesce((SELECT jsonb_agg(q) FROM equities),'[]'::jsonb),
  'benchmark',coalesce((SELECT jsonb_agg(to_jsonb(b)) FROM api.index_history('IBOV','{eq_start}','{end}') b),'[]'::jsonb),
+ 'sectors',coalesce((SELECT jsonb_agg(jsonb_build_object('ticker',codneg,
+   'reference_date',reference_date,'sector',b3_sector,'index_code',index_code,
+   'source',source,'fetched_at',fetched_at)) FROM public.b3_index_portfolio
+   WHERE codneg IN (SELECT ticker FROM (VALUES {ticker_values}) t(ticker))
+   AND reference_date BETWEEN '{start}'::date AND '{end}'::date),'[]'::jsonb),
  'fca',coalesce((SELECT jsonb_agg(jsonb_build_object('cnpj',cnpj_cia,'ticker',codneg,
    'data_refer',data_refer,'fetched_at',fetched_at,'version',versao,'document_id',id_documento,
    'market',mercado,'segment',segmento,'security_type',valor_mobiliario,'share_class',sigla_classe,

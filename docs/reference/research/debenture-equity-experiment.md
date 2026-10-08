@@ -103,7 +103,7 @@ complete, hash-verified snapshot before joining bonds. Source classification
 comparison ignores case; original values remain unchanged. Missing observations
 and unpublished metrics are excluded, never filled with zero or forward-filled.
 
-## 3. Bounded historical preparation gate: approved, partial execution
+## 3. Bounded historical preparation gate: approved recovery verified
 
 Reuse the current ingestor after checking actual missing coverage. Start with a
 three-month pilot only after an explicit window and storage allowance are approved;
@@ -162,7 +162,7 @@ After completion, regenerate the bounded research export and repeat the audit.
 Source latency and split retries determine runtime; no throughput was measured
 for this proposed window. Source history availability is not yet validated.
 
-### Approved execution, 2026-10-07 (UTC-3)
+### Initial approved execution checkpoint, 2026-10-07 (UTC-3)
 
 The owner explicitly approved all 13 slices in the conversation. Preflight found
 87,420,218,515 database bytes against the health workflow's recorded purchased
@@ -187,7 +187,8 @@ The weekly failure ran 22:09:27–22:13:32; the existing daily fallback ran
 22:13:32–22:17:37. Both logged `B3BdiFetchError`. The logs do not preserve the
 underlying transport exception type/message, so its exact network cause is unknown.
 Do not reinterpret this as empty trading data or unavailable historical publication.
-The terminal process exited 1; no recovery process or current audit remains running.
+At this initial checkpoint the terminal process exited 1, with no recovery process
+or current audit running. The later successful recovery is recorded below.
 
 Allocated credit relations ended at **86,646,784 bytes**, an increase of
 **22,290,432 bytes**. The 1 GB stop threshold was not reached. Ten of the 69 known
@@ -195,8 +196,58 @@ signal-window sessions now have complete captures; **59 remain missing**. The ne
 unrecovered approved interval is 08/07–14/07. Resume only after diagnosing/rechecking
 the export failure, rechecking coverage and preserving the already captured dates.
 The existing approval is recorded; source transport, not owner permission, is now
-the immediate blocker. No schema apply, annual backfill, COTAHIST recovery or
+the immediate blocker at this checkpoint. No schema apply, annual backfill, COTAHIST recovery or
 permanent enablement occurred.
+
+### Full approved recovery verified, 2026-10-08 (UTC-3)
+
+A fresh read-only export at **10:16:12 UTC-3** confirmed all 13 approved July–September
+slices complete. The first slice was reused; later slices landed through the existing
+ingestor. Their audit rows are `ok`, with `rows_upserted = 9 × debenture_rows`;
+all full-capture groups have nine distinct metrics, no drops or missing sessions,
+and every persisted payload hash recomputes correctly. The final slice's audit
+finished on 07/10 at **22:35:23 UTC-3**. The earlier failures remain preserved;
+this successful retry does not establish their original network cause.
+
+| Approved interval | Complete capture / audit UUID | Facts |
+| --- | --- | --- |
+| 2026-07-01–2026-07-07 | `290b974f-246c-4fdb-98f1-e8682755eadb` | 60642 |
+| 2026-07-08–2026-07-14 | `659eea99-ed0f-4dfa-b795-7897db852f0e` | 57942 |
+| 2026-07-15–2026-07-21 | `bc92619f-d30c-4d8c-9bb7-0ed14b35c551` | 59094 |
+| 2026-07-22–2026-07-28 | `f7aedc74-c761-4ba8-8a99-a905c3c4581d` | 54243 |
+| 2026-07-29–2026-08-04 | `cd53c851-af20-4a9f-9a3c-4f554743d46d` | 57690 |
+| 2026-08-05–2026-08-11 | `1ccf4111-67e8-4d0e-97c0-2f0e758bef87` | 56511 |
+| 2026-08-12–2026-08-18 | `c4d9fc1e-3928-44f9-9709-22835a6c5905` | 59202 |
+| 2026-08-19–2026-08-25 | `edc9b530-5c36-421e-95ce-29ef3de296eb` | 64458 |
+| 2026-08-26–2026-09-01 | `c5a3592f-cf8a-444d-85ec-dfbe93742ee1` | 63711 |
+| 2026-09-02–2026-09-09 | `58b674ab-0ba9-4231-b9b5-f0230b42bce3` | 63576 |
+| 2026-09-10–2026-09-16 | `fb5fbae1-dacd-4b47-88f5-4dbf30283aae` | 62352 |
+| 2026-09-17–2026-09-23 | `134c22cf-9582-494e-89b0-a4c8a53cfbc2` | 61254 |
+| 2026-09-24–2026-09-29 | `68f9aeba-673f-43e8-b256-f7484b1bc442` | 49887 |
+
+These 13 captures contain **770,562 facts / 85,618 source groups**, covering all
+64 originally missing sessions. Including the separately approved September/October
+captures, the study now has **69/69 known cash sessions**, with no recovery window
+remaining. This proves captured-session coverage, not that every bond traded daily.
+Total allocated credit relations are **451,207,168 bytes**, a **386,850,816-byte**
+increase from the original 64,356,352-byte baseline, below the approved 1 GB stop.
+The contemporaneous database size was **87,923,518,611 bytes**, below the recorded
+135 GB operational allowance. No additional recovery or permanent enablement is
+needed for this approved window.
+
+The new research bundle carries **1,746 selected credit metric rows**, 764 equity
+rows, 191 benchmark/cash sessions, 36 FCA rows with listing intervals, and 84 B3
+sector records across indices. Its SHA-256 is
+`acbf077a7cea4494956911ee53f22747a7a24768ee608997298243a6731b1329`;
+protocol and identity hashes remain unchanged. Raw bundles stay local and ignored.
+
+The retrospective runner produced **172 overlapping outcomes**: 63 at one session,
+59 at five and 50 at twenty. Delayed entry produced 170. All horizons are
+**inconclusive**, with no estimated predictive effect or p-value: fixed chronological
+floors still fail. Sector observations retain only 13 horizon rows and none from
+training; sector acceptance is inconclusive. Strict PIT still yields zero historical
+rows because captures were observed in October. The completed recovery does not
+complete the broader identity, statistical-power, PIT or tradability gates.
 
 ## 4. Experiment contract: offline implementation, pilot only
 
@@ -246,10 +297,24 @@ The runner implements paired out-of-sample MSE gain, crossed issuer/calendar-blo
 bootstrap, Bonferroni adjustment for the three horizons, within-date issuer credit
 vector shuffles, two-session delayed entry, and refits excluding dominant issuers
 or activity dates. These are methodological checks, not a validated power analysis.
-Sector robustness remains unavailable without accepted dated classifications;
-favorable statistical checks alone cannot produce a final favorable verdict.
+Sector robustness uses existing dated `b3_index_portfolio` labels, joining the
+exact ticker/signal date only when observed by signal-day end in Brasília and
+before export. It never fills earlier sessions. Conflicting labels across indices
+refuse evaluation. Both models receive the same training-only sector indicators;
+validation/test categories absent from purged training are excluded and counted.
+The sector placebo shuffles whole credit vectors within date and sector. Both
+original and delayed sector studies must pass their sample and inference gates
+alongside the uncontrolled studies before an incremental-evidence verdict.
 
-Real-data execution produced **four issuer/date outcomes, all horizon one**;
+A bounded live check on 08/10 confirmed 14 dated sessions from 16/09 through
+06/10 for ALPA4, ALUP11 and ANIM3; ALPA3 has no sector observations in this window.
+This is no sector history for the pilot's July/August training period, so sector
+acceptance remains inconclusive despite completed credit recovery. No missing
+classification is inferred from a current label.
+
+### Historical checkpoints before full recovery
+
+The initial real-data execution produced **four issuer/date outcomes, all horizon one**;
 zero five- or twenty-session outcomes fit the stored capture and fixed outcome end.
 The 64 missing credit sessions were reported separately. All horizons are
 **inconclusive**, and no p-value or predictive effect was estimated. Strict PIT
@@ -273,7 +338,9 @@ all horizons remain inconclusive and strict PIT still yields zero rows.
 The new bundle SHA-256 is
 `30a28ffe602694235c9f7bb8cf2383ef6cd075389fe1c3f6ccb2c4b0c8506826`;
 protocol and identity hashes are unchanged. The earlier four-row run above is
-retained as evidence before recovery, not current coverage.
+retained as evidence before recovery, not current coverage. Both this 19-row run
+and the initial four-row run are historical checkpoints. The current full-recovery
+result is the 172-row run and `acbf077a…` bundle recorded in section 3 above.
 
 Execution estimates after gate clearance: documentary review initially 2–4 hours;
 coverage audit about one day; historical preparation 1–3 days subject to source

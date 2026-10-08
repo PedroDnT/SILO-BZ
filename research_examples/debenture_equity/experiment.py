@@ -373,20 +373,74 @@ def clustered_interval(test, protocol, rng):
             'draws': len(draws), 'block_sessions': block}
 
 
-def evaluate_panel(panel, protocol):
+def attach_sectors(panel, bundle):
+    """Exact dated B3 classification, observed by signal-day end; never backfill."""
+    labels = {}
+    exported = timestamp(bundle['exported_at'])
+    for row in bundle.get('sectors', []):
+        label = row['sector']
+        if (not label or not label.strip()
+                or timestamp(row['fetched_at']) > min(exported, day_cutoff(row['reference_date']))):
+            continue
+        key = row['ticker'], row['reference_date']
+        if key in labels and labels[key] != label:
+            raise ValueError('Conflicting dated sector labels require source review')
+        labels[key] = label
+    selected = panel.copy()
+    if not selected.empty:
+        selected['sector'] = [labels.get((r.ticker, r.signal_date))
+                              for r in selected.itertuples()]
+        selected = selected[selected['sector'].notna()].copy()
+    return selected, {'input_rows': len(panel), 'retained_rows': len(selected),
+                      'missing_sector_rows': len(panel)-len(selected)}
+
+
+def sector_features(frame, protocol):
+    """Freeze category encoding on purged training rows; exclude unseen sectors."""
+    valid = frame[(frame['signal_date'] > protocol['train_end']) &
+                  (frame['signal_date'] <= protocol['validation_end'])]
+    train = frame[frame['signal_date'] <= protocol['train_end']]
+    if not valid.empty:
+        train = train[train['exit_date'] < valid['signal_date'].min()]
+    categories = sorted(train['sector'].dropna().unique())
+    encoded = frame[frame['sector'].isin(categories)].copy()
+    features = []
+    # Intercept carries the first category; no redundant full dummy set.
+    for i, label in enumerate(categories[1:], start=1):
+        feature = f'sector_control_{i}'
+        encoded[feature] = (encoded['sector'] == label).astype(float)
+        features.append(feature)
+    adjusted = {**protocol, 'equity_features': protocol['equity_features']+features}
+    return encoded, adjusted, {'training_sectors': categories,
+                               'unseen_sector_rows': len(frame)-len(encoded)}
+
+
+def evaluate_panel(panel, protocol, sector_controls=False):
     results = {}
     for h in protocol['horizons']:
         subset = panel[panel['horizon'] == h] if not panel.empty else panel
         if subset.empty:
             results[str(h)] = {'status': 'inconclusive', 'reason': 'No eligible issuer/date outcomes'}
             continue
-        pair, reason = model_pair(subset, protocol)
+        active_protocol = protocol
+        sector_coverage = {}
+        if sector_controls:
+            subset, active_protocol, sector_coverage = sector_features(subset, protocol)
+            if len(sector_coverage['training_sectors']) < 2:
+                results[str(h)] = {'status': 'inconclusive',
+                                  'reason': 'Fewer than two sectors in purged training sample',
+                                  'sector_coverage': sector_coverage}
+                continue
+        pair, reason = model_pair(subset, active_protocol)
         if pair is None:
-            results[str(h)] = {'status': 'inconclusive', 'reason': reason, 'rows': len(subset)}
+            results[str(h)] = {'status': 'inconclusive', 'reason': reason, 'rows': len(subset),
+                              **({'sector_coverage': sector_coverage} if sector_controls else {})}
             continue
         test = pair.pop('test')
         result = {**pair, 'test_dates': int(test['signal_date'].nunique()),
                   'test_issuers': int(test['cnpj'].nunique()), 'test_rows': len(test)}
+        if sector_controls:
+            result['sector_coverage'] = sector_coverage
         if result['test_dates'] < protocol['min_test_dates'] or result['test_issuers'] < protocol['min_test_issuers']:
             results[str(h)] = {**result, 'status': 'inconclusive',
                                'reason': 'Insufficient independent date/issuer coverage for inference'}
@@ -398,9 +452,10 @@ def evaluate_panel(panel, protocol):
             shuffled = subset.copy()
             # Shuffle the entire credit vector within each date, never targets or future dates.
             cols = protocol['credit_features']
-            for _, group in shuffled.groupby('signal_date'):
+            shuffle_keys = ['signal_date', 'sector'] if sector_controls else ['signal_date']
+            for _, group in shuffled.groupby(shuffle_keys):
                 shuffled.loc[group.index, cols] = group[cols].to_numpy()[rng.permutation(len(group))]
-            placebo, _ = model_pair(shuffled, protocol)
+            placebo, _ = model_pair(shuffled, active_protocol)
             if placebo is not None:
                 placebo_gains.append(float(placebo['test']['loss_gain'].mean()))
         result['issuer_shuffle_p'] = float((1+sum(g >= result['mean_mse_gain'] for g in placebo_gains))/(1+len(placebo_gains)))
@@ -409,10 +464,10 @@ def evaluate_panel(panel, protocol):
         dominant_dates = list(test.groupby('signal_date')['credit_volume_brl'].sum().nlargest(3).index)
         sensitivities = {}
         for issuer in dominant_issuers:
-            reduced, _ = model_pair(subset[subset['cnpj'] != issuer], protocol)
+            reduced, _ = model_pair(subset[subset['cnpj'] != issuer], active_protocol)
             sensitivities['without_issuer_'+issuer] = (float(reduced['test']['loss_gain'].mean())
                                                         if reduced is not None else None)
-        reduced, _ = model_pair(subset[~subset['signal_date'].isin(dominant_dates)], protocol)
+        reduced, _ = model_pair(subset[~subset['signal_date'].isin(dominant_dates)], active_protocol)
         sensitivities['without_top_three_activity_dates'] = (float(reduced['test']['loss_gain'].mean())
                                                              if reduced is not None else None)
         result['dominance_sensitivities'] = sensitivities
@@ -430,17 +485,24 @@ def run(bundle, links, protocol, mode='retrospective'):
                                               protocol['robustness_delay_sessions'])
     evaluated = evaluate_panel(panel, protocol)
     delayed_evaluation = evaluate_panel(delayed, protocol)
-    primary = evaluated[str(protocol['primary_horizon'])]['status']
-    delayed_primary = delayed_evaluation[str(protocol['primary_horizon'])]['status']
-    decision = ('inconclusive_pending_sector_robustness' if primary == delayed_primary == 'incremental_evidence'
-                else 'inconclusive' if 'inconclusive' in (primary, delayed_primary)
+    sector_panel, sector_coverage = attach_sectors(panel, bundle)
+    sector_delayed, sector_delayed_coverage = attach_sectors(delayed, bundle)
+    sector_evaluation = evaluate_panel(sector_panel, protocol, sector_controls=True)
+    sector_delayed_evaluation = evaluate_panel(sector_delayed, protocol, sector_controls=True)
+    statuses = [evaluation[str(protocol['primary_horizon'])]['status']
+                for evaluation in (evaluated, delayed_evaluation,
+                                   sector_evaluation, sector_delayed_evaluation)]
+    decision = ('inconclusive' if 'inconclusive' in statuses else
+                'incremental_evidence' if all(s == 'incremental_evidence' for s in statuses)
                 else 'hypothesis_not_supported')
     return {'decision': decision, 'mode': mode, 'protocol_sha256': fingerprint(protocol),
             'bundle_sha256': fingerprint(bundle), 'links_sha256': fingerprint(links),
             'panel_rows': len(panel), 'exclusions': exclusions, 'horizons': evaluated,
             'delay_robustness': {'sessions': protocol['robustness_delay_sessions'],
                                  'exclusions': delayed_exclusions, 'horizons': delayed_evaluation},
-            'sector_robustness': 'Unavailable: existing company sectors are current, not dated classifications; no sector-adjusted claim',
+            'sector_robustness': {'coverage': sector_coverage, 'horizons': sector_evaluation,
+                                  'delayed_coverage': sector_delayed_coverage,
+                                  'delayed_horizons': sector_delayed_evaluation},
             'limitations': ['Retrospective data revisions and identity review are not original-date knowledge vintages',
                            'Liquidity-only first experiment; PU/cash-flow, REUNE rate and outstanding gaps remain',
                            'Operational sample floors do not establish statistical power',
