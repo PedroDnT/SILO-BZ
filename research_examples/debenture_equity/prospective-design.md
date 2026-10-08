@@ -124,6 +124,16 @@ and the independent financial convention gates remain incomplete. The existing
 IBOV response has no revision identifier; its retained response/partition evidence
 must establish the label benchmark vintage rather than an assumed revision field.
 
+The local `outcomes.py` replay now binds one explicit on-time outcome archive to
+the exact verified input manifest/protocol, preserves its features and checks the
+entry/exit calendar. Realized response collection and publication must occur on
+the first post-exit cash session before 10:00 Brasília; price dates alone cannot
+establish availability. Actual publication time controls eligibility at the
+requested fit cutoff. Output retains input/label/response hashes and the separate
+equity revision. This is not first-version selection: a frozen original-label
+registry, late/revision sensitivity, availability-aware fitting and frozen
+predictions remain unimplemented. The independent source/convention gates remain.
+
 ## Development power assessment
 
 Predeclare relative-MSE gain grid 0%, 1%, 2.5%, 5%, 10%, 20%, target power 80%,
@@ -182,7 +192,7 @@ storage allowance and production retention policy.
 | Original issuer mapping | 26 cited original issuers, exact full CNPJ/ISIN, FCA equity candidates and source aliases | Dated changes and at least 21 eligible untouched-test issuers after attrition |
 | Retrospective experiment | Offline runner, purges, fixed floors, sector/delay/placebo/dominance methods; 935 overlapping rows | Current test/sector coverage fails; no predictive conclusion |
 | Longer protocol | Version 2 candidate and explicit date ceilings | Owner acceptance, real session calendar and development power gate before activation |
-| Prospective PIT | Cutoff, immutable-input/label design above | Local retention helper implemented; collector/evaluator implementation/review, exact canary approval, successful cutoff evidence and elapsed history |
+| Prospective PIT | Local retention and frozen-input/single-outcome replay, with real publication-time checks | First-version registry, availability-aware fitting/frozen predictions, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
 | Adjusted returns/benchmark | Existing total-return exports with coherent revision checks | Independent convention/event acceptance and frozen prospective vintages |
 | Power | Predeclared development grid, dependence and failure rules | Implemented/calibrated assessment on sufficient development-only OOS losses |
 | Confirmatory result | None; every current study is inconclusive | Adequate untouched history, frozen scoring and all inference/robustness gates |

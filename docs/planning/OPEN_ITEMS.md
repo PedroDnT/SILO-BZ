@@ -558,6 +558,10 @@ Archive/input integration now reparses raw credit, validates availability and
 calendar coverage, and selects complete company FCA filings without resurrecting
 removed tickers. Independent completeness/source acceptance, prediction/label
 availability and power assessment remain open.
+An offline realized-outcome replay now links one on-time label archive to its
+frozen input, verifies post-exit collection/publication and checks actual
+availability at a fit cutoff. Original-version selection, availability-aware
+fitting, frozen predictions and independent source/convention acceptance remain.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer

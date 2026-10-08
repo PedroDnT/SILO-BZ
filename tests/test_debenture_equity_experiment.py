@@ -436,6 +436,141 @@ def test_prospective_archive_roundtrip_and_frozen_feature_mismatch(prospective_i
         replay_archive(tmp_path/'wrong-features')
 
 
+@pytest.fixture
+def prospective_outcome_archives(prospective_inputs, synthetic, tmp_path, monkeypatch):
+    import hashlib
+    from datetime import datetime
+    from research_examples.debenture_equity import snapshots
+    from research_examples.debenture_equity.prospective import compute_features
+    payloads, candidate, day, cutoff = prospective_inputs
+    features, _ = compute_features(payloads, candidate, day, cutoff)
+    payloads['frozen_model_and_feature_manifest']['features'] = features.to_dict('records')
+    publications = {}
+    monkeypatch.setattr(snapshots, '_publication_time', lambda path: publications[path.parent.name])
+
+    def seal(name, data, request, now):
+        publications[name] = datetime.fromisoformat(now)
+        monkeypatch.setattr(snapshots, '_now', lambda: publications[name])
+        request = {**request, 'components': {}}
+        receipt_day = now[:10]
+        for component, value in data.items():
+            path = tmp_path/(name+'-'+component+'.json')
+            path.write_text(json.dumps(value))
+            request['components'][component] = {
+                'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                'source_observed_at': receipt_day+'T09:30:00-03:00',
+                'read_started_at': receipt_day+'T09:00:00-03:00',
+                'read_finished_at': receipt_day+'T09:31:00-03:00'}
+        report = snapshots.archive(request, tmp_path/name)
+        return tmp_path/name, report
+
+    request = {'signal_date': day, 'cutoff_at': cutoff, 'protocol_sha256': fingerprint(candidate),
+               'links_sha256': fingerprint(payloads['complete_relevant_fca_vintages_and_identity_evidence']['links'])}
+    input_path, report = seal('inputs', payloads, request, '2026-07-02T09:59:00-03:00')
+    bundle, _, _ = synthetic
+    sessions = bundle['cash_sessions']
+    i = sessions.index(day)
+    exit_, next_ = sessions[i+2], sessions[i+3]
+    seen = next_+'T09:05:00-03:00'
+    label_payloads = {
+        'verified_cash_calendar': {'sessions': [s for s in sessions if s <= next_],
+                                  'source_url': 'https://example.invalid/test-only-calendar', 'observed_at': seen},
+        'realized_return_response': {'equities': [{**r, 'data_revision': seen} for r in bundle['equities']
+                                                 if day <= r['trade_date'] <= exit_],
+                                    'benchmark': [r for r in bundle['benchmark'] if day <= r['trade_date'] <= exit_],
+                                    'return_basis': 'total_return', 'benchmark_code': 'IBOV', 'exported_at': seen},
+        'frozen_feature_reference': {'input_manifest_sha256': report['manifest_sha256']}}
+    label_request = {**request, 'kind': 'outcome', 'cutoff_at': next_+'T10:00:00-03:00',
+                     'outcome': {'horizon': 1, 'entry_delay_sessions': 1,
+                                 'input_manifest_sha256': report['manifest_sha256']}}
+    return input_path, label_payloads, label_request, seal, features
+
+
+def test_prospective_outcome_preserves_features_and_actual_availability(prospective_outcome_archives):
+    from research_examples.debenture_equity.outcomes import replay_outcome
+    input_path, data, request, seal, features = prospective_outcome_archives
+    now = request['cutoff_at'].replace('10:00:00', '09:59:00')
+    outcome_path, retained = seal('outcome', data, request, now)
+    panel, report = replay_outcome(input_path, outcome_path, as_of=request['cutoff_at'])
+    assert len(panel) == 1 and not report['exclusions']
+    for column in features.columns:
+        assert panel.iloc[0][column] == features.iloc[0][column]
+    assert panel.iloc[0]['label_available_at'] == retained['archived_at']
+    assert report['strict_pit_certified'] is False
+    assert panel.iloc[0]['label_equity_revision'] != panel.iloc[0]['equity_revision']
+    row = panel.iloc[0]
+    prices = {r['trade_date']: r['close_total_return'] for r in data['realized_return_response']['equities']
+              if r['ticker'] == row['ticker']}
+    benchmark = {r['trade_date']: r['level'] for r in data['realized_return_response']['benchmark']}
+    expected = (np.log(prices[row['exit_date']]/prices[row['entry_date']])-row['alpha']
+                - row['beta']*np.log(benchmark[row['exit_date']]/benchmark[row['entry_date']]))
+    assert row['residual_return'] == pytest.approx(expected)
+    with pytest.raises(ValueError, match='not archived'):
+        replay_outcome(input_path, outcome_path, as_of=now.replace('09:59:00', '09:58:59'))
+
+
+@pytest.mark.parametrize('mutation,reason', [('isin', 'label_equity_identity_changed'),
+                                           ('price_gap', 'future_outcome_gap_1')])
+def test_prospective_outcome_counts_missing_or_changed_equity(prospective_outcome_archives, mutation, reason):
+    from research_examples.debenture_equity.outcomes import replay_outcome
+    input_path, data, request, seal, _ = prospective_outcome_archives
+    for r in data['realized_return_response']['equities']:
+        if r['ticker'] == 'TEST4':
+            if mutation == 'isin':
+                r['isin'] = 'BROTHERACPR0'
+            else:
+                r['close_total_return'] = None
+    path, _ = seal('outcome', data, request, request['cutoff_at'].replace('10:00:00', '09:59:00'))
+    panel, report = replay_outcome(input_path, path, as_of=request['cutoff_at'])
+    assert panel.empty and report['exclusions'] == {reason: 1}
+
+
+def test_prospective_outcome_cannot_be_archived_before_exit_closes(prospective_outcome_archives):
+    from research_examples.debenture_equity.outcomes import replay_outcome
+    input_path, data, request, seal, _ = prospective_outcome_archives
+    # All supplied prices include the exit, but the actual clock is still before
+    # that exit's close. A future deadline cannot legitimize future-dated prices.
+    early = '2026-07-03T09:05:00-03:00'
+    data['realized_return_response']['exported_at'] = early
+    data['verified_cash_calendar']['observed_at'] = early
+    for row in data['realized_return_response']['equities']:
+        row['data_revision'] = early
+    path, _ = seal('early-outcome', data, request, '2026-07-03T09:59:00-03:00')
+    with pytest.raises(ValueError, match='first cash session after exit'):
+        replay_outcome(input_path, path, as_of='2026-07-03T10:00:00-03:00')
+
+
+@pytest.mark.parametrize('mutation,match', [
+    ('parent_hash', 'reference the frozen'), ('reference', 'feature reference'),
+    ('mixed_revision', 'revisions changed'), ('late_revision', 'availability cutoff'),
+    ('benchmark_gap', 'exactly signal through exit'), ('calendar', 'frozen feature calendar'),
+    ('cutoff', 'first cash session after exit'), ('horizon', 'externally pinned design')])
+def test_prospective_outcome_rejects_changed_or_unavailable_inputs(prospective_outcome_archives, mutation, match):
+    from research_examples.debenture_equity.outcomes import replay_outcome
+    input_path, data, request, seal, _ = prospective_outcome_archives
+    now = request['cutoff_at'].replace('10:00:00', '09:59:00')
+    if mutation == 'parent_hash':
+        request['outcome']['input_manifest_sha256'] = '0'*64
+    elif mutation == 'reference':
+        data['frozen_feature_reference']['input_manifest_sha256'] = '0'*64
+    elif mutation == 'mixed_revision':
+        data['realized_return_response']['equities'][0]['data_revision'] = now[:10]+'T09:04:00-03:00'
+    elif mutation == 'late_revision':
+        for r in data['realized_return_response']['equities']:
+            r['data_revision'] = now[:10]+'T10:01:00-03:00'
+    elif mutation == 'benchmark_gap':
+        data['realized_return_response']['benchmark'].pop()
+    elif mutation == 'calendar':
+        data['verified_cash_calendar']['sessions'].pop(0)
+    elif mutation == 'cutoff':
+        request['cutoff_at'] = '2026-07-07T10:00:00-03:00'
+    elif mutation == 'horizon':
+        request['outcome']['horizon'] = 3
+    outcome_path, _ = seal('outcome', data, request, now)
+    with pytest.raises(ValueError, match=match):
+        replay_outcome(input_path, outcome_path, as_of=request['cutoff_at'])
+
+
 @pytest.mark.parametrize('mutation,match', [
     ('raw_hash', 'raw hash'), ('audit_time', 'availability cutoff'),
     ('fca_rows', 'full-filing row census'), ('benchmark_gap', 'verified feature calendar'),

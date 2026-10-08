@@ -167,6 +167,13 @@ def compute_features(payloads, candidate, signal_date, cutoff_at, available_by=N
 
 def replay_archive(path, candidate=None):
     manifest, raw, retention = read_archive(path)
+    return _replay_input(manifest, raw, retention, candidate)
+
+
+def _replay_input(manifest, raw, retention, candidate=None):
+    """Replay the exact verified bytes; callers must obtain them with read_archive."""
+    if manifest.get('kind', 'input') != 'input':
+        raise ValueError('Expected a frozen input archive')
     payloads = {name: json.loads(data, parse_float=Decimal) if name == 'credit_full_capture_and_audit_census'
                 else json.loads(data) for name, data in raw.items()}
     frozen = payloads['frozen_model_and_feature_manifest']

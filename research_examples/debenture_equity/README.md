@@ -243,3 +243,47 @@ prediction/label availability and durable retention remain outstanding. The
 current historical export lacks raw CSV and full-filing censuses and is **not**
 this input format. Do not repackage October retrieval as July knowledge. This
 module supplies no predictive result and no new production authorization.
+
+## Archived realized-outcome replay
+
+`outcomes.py` links one explicit outcome archive to the exact verified input
+manifest and external protocol. It uses frozen features, stock class/ISIN,
+alpha and beta. The outcome archive uses the same private, exclusive-creation
+retention helper, with schema 2, `kind="outcome"`, the original `signal_date`,
+protocol/link hashes and `outcome={horizon, entry_delay_sessions,
+input_manifest_sha256}`. Its three components are:
+
+| Component | Payload contract |
+| --- | --- |
+| `verified_cash_calendar` | Same dated/source contract as inputs; preserves the entire frozen calendar prefix and establishes entry, exit and first session after exit |
+| `realized_return_response` | `equities`, `benchmark`, `return_basis`, `benchmark_code`, `exported_at`; one coherent equity revision per ticker, one retained benchmark response, exactly signal-through-exit dates |
+| `frozen_feature_reference` | Exactly `{input_manifest_sha256}` referencing the verified original input manifest |
+
+Supply these already fetched files to `snapshots --request ... --out-dir ...`.
+All source/read receipts and actual publication must meet the next-after-exit
+10:00 Brasília deadline. Collection of the realized response and publication
+must also occur **on that first post-exit cash session**; future-dated price rows
+cannot authorize early labeling. A verified exchange-close schedule is not
+assumed. Late archives fail this on-time path and cannot replace the original.
+
+```sh
+.venv/bin/python -m research_examples.debenture_equity.outcomes \
+  --input-archive .context/new-snapshot \
+  --outcome-archive .context/new-outcome \
+  --as-of '2026-10-15T10:00:00-03:00'
+```
+
+The timestamp above is syntax only, not an approved capture date. `--as-of` is
+the requested fit's information cutoff. Replay refuses labels published after
+it, retains the actual original-filesystem publication as `label_available_at`,
+and adds input/label manifest and realized-response hashes. Missing prices or
+changed equity ISIN are counted as exclusions. A wrong calendar, mixed equity
+revisions or mismatched parent archive fails. The exact input bytes are read
+once, verified, and reused for feature replay and label linkage.
+
+This verifies one caller-selected archive, **not which archive was first**.
+A frozen first-version registry, late-label/revision sensitivity selection,
+training/validation availability integration and actual frozen predictions are
+still required. Source completeness, benchmark vintage and financial conventions
+also remain independent acceptance gates. No network, production write,
+schedule, predictive conclusion or strict-PIT certification is added.

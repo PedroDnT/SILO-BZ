@@ -17,6 +17,7 @@ COMPONENTS = (
     'complete_relevant_fca_vintages_and_identity_evidence', 'dated_sector_input',
     'frozen_model_and_feature_manifest',
 )
+OUTCOME_COMPONENTS = ('verified_cash_calendar', 'realized_return_response', 'frozen_feature_reference')
 DEFAULT_MAX_BYTES = 100_000_000
 
 
@@ -58,9 +59,25 @@ def _cutoff(request):
         raise ValueError('Cutoff must be 10:00 Brasilia after the signal date')
     for key in ('protocol_sha256', 'links_sha256'):
         _validate_digest(request[key])
-    if set(request['components']) != set(COMPONENTS):
-        raise ValueError('Exactly the seven required snapshot components must be supplied')
+    if set(request['components']) != set(_components(request)):
+        raise ValueError('Exactly the required snapshot components must be supplied')
     return cutoff
+
+
+def _components(request):
+    kind = request.get('kind', 'input')
+    if kind == 'input':
+        return COMPONENTS
+    if kind == 'outcome':
+        context = request['outcome']
+        if set(context) != {'horizon', 'entry_delay_sessions', 'input_manifest_sha256'}:
+            raise ValueError('Invalid outcome archive context')
+        if (type(context['horizon']) is not int or context['horizon'] < 1
+                or type(context['entry_delay_sessions']) is not int or context['entry_delay_sessions'] < 1):
+            raise ValueError('Outcome horizon and entry delay must be positive integers')
+        _validate_digest(context['input_manifest_sha256'])
+        return OUTCOME_COMPONENTS
+    raise ValueError('Unsupported snapshot kind')
 
 
 def _write_new(path, data):
@@ -81,7 +98,7 @@ def archive(request, destination, max_bytes=DEFAULT_MAX_BYTES):
     if not isinstance(max_bytes, int) or max_bytes < 1:
         raise ValueError('Local byte budget must be positive')
     contents, total = {}, 0
-    for name in COMPONENTS:
+    for name in _components(request):
         component = request['components'][name]
         _timing(component, started)
         _validate_digest(component['sha256'])
@@ -104,15 +121,18 @@ def archive(request, destination, max_bytes=DEFAULT_MAX_BYTES):
     if not started <= sealed <= cutoff:
         raise ValueError('Clock moved backwards or archive crossed cutoff; partial evidence retained')
     manifest = {
-        'schema_version': 1, 'signal_date': request['signal_date'],
+        'schema_version': 2 if request.get('kind') == 'outcome' else 1,
+        'signal_date': request['signal_date'],
         'cutoff_at': request['cutoff_at'], 'started_at': started.isoformat(),
         'sealed_at': sealed.isoformat(), 'protocol_sha256': request['protocol_sha256'],
         'links_sha256': request['links_sha256'], 'max_bytes': max_bytes,
         'components': {name: {k: v for k, v in request['components'][name].items() if k != 'path'}
-                       | {'file': name+'.bin', 'bytes': len(contents[name])} for name in COMPONENTS},
+                       | {'file': name+'.bin', 'bytes': len(contents[name])} for name in _components(request)},
         'limitation': 'Local clock and caller receipts; source semantics, next cash session, '
                       'protocol acceptance and historical knowledge are not independently certified',
     }
+    if request.get('kind') == 'outcome':
+        manifest.update(kind='outcome', outcome=request['outcome'])
     data = _json_bytes(manifest)
     _write_new(dest/'manifest.json', data)
     committed = _now()
@@ -153,7 +173,7 @@ def read_archive(destination):
     if _digest(raw) != ready['manifest_sha256']:
         raise ValueError('Archive manifest hash mismatch')
     manifest = json.loads(raw)
-    if manifest['schema_version'] != 1:
+    if (manifest['schema_version'], manifest.get('kind', 'input')) not in {(1, 'input'), (2, 'outcome')}:
         raise ValueError('Unsupported snapshot manifest')
     cutoff = _cutoff(manifest)
     started, sealed, committed = map(timestamp, (manifest['started_at'], manifest['sealed_at'], ready['committed_at']))
@@ -164,7 +184,7 @@ def read_archive(destination):
     if not isinstance(budget, int) or budget < 1:
         raise ValueError('Invalid stored byte budget')
     total, contents = 0, {}
-    for name in COMPONENTS:
+    for name in _components(manifest):
         component = manifest['components'][name]
         _timing(component, started)
         if component['file'] != name+'.bin':
@@ -177,6 +197,7 @@ def read_archive(destination):
     report = {'retention_verified': True, 'strict_pit_certified': False,
             'manifest_sha256': ready['manifest_sha256'], 'component_bytes': total,
             'signal_date': manifest['signal_date'], 'cutoff_at': manifest['cutoff_at'],
+            'archived_at': published.isoformat(),
             'limitations': [manifest['limitation'], 'Local files are not durable production storage']}
     return manifest, contents, report
 

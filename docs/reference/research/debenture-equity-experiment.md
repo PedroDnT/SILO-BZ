@@ -674,3 +674,11 @@ The remaining implementation sequence is conditional, not a new production appro
 Prospective acceptance also requires elapsed trading history; no amount of present
 backfill reconstructs the original knowledge vintages now missing. Historical
 research may remain explicitly retrospective, with its limitations retained.
+
+The local [outcome replay](../../../research_examples/debenture_equity/outcomes.py)
+now connects one on-time realized-return archive to frozen input features, with
+calendar/revision checks and actual publication-time eligibility at a requested
+fit cutoff. It rejects collection/publication before the first post-exit cash
+session. It does not select the first label version or fit/freeze predictions;
+those integrations, independent financial/PIT acceptance and future elapsed
+history remain required. No additional production execution is authorized.
