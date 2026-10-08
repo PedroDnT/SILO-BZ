@@ -610,6 +610,14 @@ specifically approved recurring daily/watchdog ingestion, verifying the first
 three scheduled cash sessions, cutoff archives and cumulative cost. Permanent
 capture stays off until that approval; ingestion need not wait for model/power
 acceptance. Reuse existing equity/FCA/benchmark/sector ingestion.
+The [credit ingestion canary package](../../research_examples/debenture_equity/ingestion-canary.md)
+is implemented locally with a hash-pinned 08/10 single-session request, expiry
+09/10 at 10:00 UTC-3, explicit size/storage thresholds, private retained response
+and exact persisted fact/audit verification. No production execution occurred.
+Full seven-component readiness remains blocked by absent complete FCA filing
+inventory/updated-content observation evidence; current ticker rows cannot
+establish zero-equity filings. Keep credit-ingestion acceptance separate from
+full research snapshot/PIT acceptance. Specific canary approval remains required.
 Then: accepted prospective development contract
 with dated identity/source/convention and storage/retention gates; real development
 calibration; frozen untouched-test evaluation. No further statistical helpers or

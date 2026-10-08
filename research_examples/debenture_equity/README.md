@@ -1,8 +1,13 @@
 # Debenture → issuer → equity: audit and offline experiment
 
 This is the first executable gate of the [experiment plan](../../docs/reference/research/debenture-equity-experiment.md).
-It reads existing data only. There is no ingest, database connection, migration,
-API, daily enablement, paid service, or automatic mapping acceptance here.
+The audit and experiment runners read existing data only. They do not ingest,
+connect to the database, migrate schema, enable daily capture or accept mappings.
+The separate [one-session ingestion canary](ingestion-canary.md) is an operator
+entry point: public fetch-only by default; explicit production execution requires
+specific owner approval and the exact frozen plan hash. It reuses the existing
+ingestor and never enables recurring capture. Credit-ingestion success does not
+certify complete research archive/PIT readiness.
 
 From the repository root:
 

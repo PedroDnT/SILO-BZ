@@ -69,6 +69,16 @@ soon as the canary measures cost and coverage; do not wait for statistical power
 or a fitted model to start preserving approved future observations. Until the
 activation is approved, the permanent gate remains off.
 
+The [one-session ingestion package](../../../research_examples/debenture_equity/ingestion-canary.md)
+now prepares credit ingestion for 08/10, execution on 09/10 before 10:00 UTC-3,
+with explicit limits and a default no-DB fetch-only runner. It reuses the existing
+ingestor and checks persisted raw, exact facts, capture census and audit identity.
+It has not executed in production. Milestone 1 remains partial: the warehouse
+does not establish complete FCA filing inventory (including zero-equity filings)
+or observation times for later changed ticker contents. The runbook records the
+source-evidence adapter needed for the full archive; no completeness receipt is
+fabricated and no production activation follows from the local implementation.
+
 ### Work parked until its dependency exists
 
 Do not add more power simulators, model variants or general orchestration before
