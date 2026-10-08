@@ -50,9 +50,16 @@ Record actual prediction completion separately; it must precede the entry close.
 Prepare immutable, private, ignored local files for the initial operational
 canary. Production retention/backup location remains an owner decision; a local
 file is not durable production storage. No R2/Supabase architecture change is
-implied. A collector would use exclusive file creation, SHA-256 and an atomic
-manifest publication, refuse overwrites and retain rejected/late snapshots as
+implied. A collector would use exclusive file creation, SHA-256 and a staged/fsynced
+readiness receipt published atomically without replacing an existing file, refuse overwrites and retain rejected/late snapshots as
 diagnostic evidence. Do not implement or schedule that collector under this file.
+
+The local [retention helper](snapshots.py) now implements private, exclusive file
+archival, hash/budget/clock checks and atomic readiness-marker publication for already
+fetched inputs. Verification checks original-filesystem publication time even
+if a crash prevents a later error marker; restored copies require separate
+provenance. It makes no network or database calls and never certifies strict
+PIT. Collector integration, source semantics and evaluator implementation remain.
 
 The per-cutoff manifest must retain:
 
@@ -162,7 +169,7 @@ storage allowance and production retention policy.
 | Original issuer mapping | 26 cited original issuers, exact full CNPJ/ISIN, FCA equity candidates and source aliases | Dated changes and at least 21 eligible untouched-test issuers after attrition |
 | Retrospective experiment | Offline runner, purges, fixed floors, sector/delay/placebo/dominance methods; 935 overlapping rows | Current test/sector coverage fails; no predictive conclusion |
 | Longer protocol | Version 2 candidate and explicit date ceilings | Owner acceptance, real session calendar and development power gate before activation |
-| Prospective PIT | Cutoff, immutable-input/label design above | Collector/evaluator implementation/review, exact canary approval, successful cutoff evidence and elapsed history |
+| Prospective PIT | Cutoff, immutable-input/label design above | Local retention helper implemented; collector/evaluator implementation/review, exact canary approval, successful cutoff evidence and elapsed history |
 | Adjusted returns/benchmark | Existing total-return exports with coherent revision checks | Independent convention/event acceptance and frozen prospective vintages |
 | Power | Predeclared development grid, dependence and failure rules | Implemented/calibrated assessment on sufficient development-only OOS losses |
 | Confirmatory result | None; every current study is inconclusive | Adequate untouched history, frozen scoring and all inference/robustness gates |

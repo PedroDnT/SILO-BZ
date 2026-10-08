@@ -549,8 +549,9 @@ The documentary candidate target is met, but the primary untouched test still ha
 A [versioned prospective design candidate](../../research_examples/debenture_equity/prospective-design.md)
 now specifies 90/50/100 reference sessions, cutoff and immutable label/input
 requirements, a development-only power grid and the requirement-by-requirement
-completion audit. It is unactivated; collector/evaluator and power assessment
-implementation, owner acceptance and future elapsed history remain.
+completion audit. It is unactivated. A local retention helper now verifies hashes, byte budgets and
+actual-clock cutoffs without fetching or certifying PIT; collector/evaluator and
+power assessment implementation, owner acceptance and future elapsed history remain.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer

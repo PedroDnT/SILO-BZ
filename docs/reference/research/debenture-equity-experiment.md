@@ -612,6 +612,13 @@ It is not activated or accepted by the pilot runner. Collector/evaluator and
 power-calibration implementation remain local work; a future production canary
 needs an exact date, budget and specific approval before execution.
 
+The [local retention helper](../../../research_examples/debenture_equity/snapshots.py)
+now archives already fetched files with private permissions, byte/hash checks,
+actual-clock cutoff enforcement and no overwrite. Interrupted/late archives are
+diagnostic evidence only; verification refuses changed manifests/components. It
+does not fetch, validate source semantics or certify strict PIT. Collector and
+prospective evaluator integration remain outstanding.
+
 The remaining implementation sequence is conditional, not a new production approval:
 
 1. Review at least 21 independent full-CNPJ issuers and their dated changes using

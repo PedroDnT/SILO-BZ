@@ -125,3 +125,44 @@ candidate, information/label cutoff rules, immutable inputs, development-only
 power grid and completion audit. These are design artifacts, not an implemented
 collector, an input accepted by the pilot CLI, production approval or evidence of
 strict PIT. The original `protocol.json` and its results stay unchanged.
+
+## Private local retention helper
+
+`snapshots.py` archives **already fetched** input files, without network, credentials
+or database access. Supply a request JSON with `signal_date`, `cutoff_at`,
+`protocol_sha256`, `links_sha256` and exactly the seven component names listed in
+`prospective_protocol.json`. Each component receipt contains `path`, byte-level
+`sha256`, `source_observed_at`, `read_started_at` and `read_finished_at`. All
+timestamps need a timezone. These receipts must come from actual collection; the
+helper cannot independently authenticate their source or content semantics.
+
+```sh
+.venv/bin/python -m research_examples.debenture_equity.snapshots \
+  --request .context/snapshot-request.json --out-dir .context/new-snapshot
+.venv/bin/python -m research_examples.debenture_equity.snapshots \
+  --verify .context/new-snapshot
+```
+
+The destination must be new and its parent must exist. The helper checks hashes,
+receipt ordering and the actual local clock, then writes private files with a
+100,000,000-byte component budget by default. Manifest overhead is additional.
+It fsyncs components, manifest and a staged readiness receipt, then atomically
+publishes the receipt with an exclusive hard link. Verification also checks the
+original filesystem inode-change time of that publication; crossing
+the cutoff leaves partial diagnostic files and refuses readiness. It never
+overwrites or automatically deletes them. Verification rejects changed manifests
+or components, component symlinks and late/incomplete archives. It does not use
+filesystem modification time to invent an earlier observation.
+
+A successful report says `retention_verified=true`, **strict_pit_certified=false**.
+Local clocks/caller receipts are attestations, not trusted external timestamps.
+Kernel inode-change time must be consistent with the archive clock/cutoff; an
+unsupported or inconsistent filesystem refuses verification. Copying/restoring
+the readiness receipt after cutoff changes that evidence and cannot establish
+timely original publication; such copies need separate provenance, not this
+helper's certification. Keep the original archive unchanged.
+The helper does not validate the next cash session, full source coverage, identity
+changes, return conventions, financial payloads or predictive models. The
+collector and prospective evaluator remain required, and a local archive is not
+a durable production-retention policy. Do not create a retrospective manifest
+that labels October retrieval as July knowledge. No canary has been run.

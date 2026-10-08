@@ -74,6 +74,164 @@ def test_known_beta_residual_and_disjoint_trade_classification(synthetic):
     assert (panel['entry_date'] > panel['signal_date']).all()
 
 
+@pytest.fixture
+def snapshot_request(tmp_path, monkeypatch):
+    import hashlib
+    from datetime import datetime
+    from research_examples.debenture_equity import snapshots
+    source = tmp_path / 'input.json'
+    source.write_text('{"test_only":true}')
+    now = datetime.fromisoformat('2026-10-09T09:59:00-03:00')
+    monkeypatch.setattr(snapshots, '_now', lambda: now)
+    monkeypatch.setattr(snapshots, '_publication_time', lambda path: now)
+    request = {'signal_date': '2026-10-08', 'cutoff_at': '2026-10-09T10:00:00-03:00',
+               'protocol_sha256': 'a'*64, 'links_sha256': 'b'*64,
+               'components': {name: {'path': str(source),
+                   'sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+                   'source_observed_at': '2026-10-09T09:00:00-03:00',
+                   'read_started_at': '2026-10-09T09:30:00-03:00',
+                   'read_finished_at': '2026-10-09T09:31:00-03:00'}
+                   for name in snapshots.COMPONENTS}}
+    return snapshots, request, tmp_path / 'archive'
+
+
+def test_snapshot_archive_roundtrip_and_no_overwrite(snapshot_request):
+    snapshots, request, dest = snapshot_request
+    result = snapshots.archive(request, dest)
+    assert result['retention_verified'] is True
+    assert result['strict_pit_certified'] is False  # Retention is not source/forecast acceptance.
+    assert snapshots.verify(dest)['manifest_sha256'] == result['manifest_sha256']
+    with pytest.raises(FileExistsError):
+        snapshots.archive(request, dest)
+
+
+@pytest.mark.parametrize('field', ['source_observed_at', 'read_finished_at'])
+def test_snapshot_rejects_late_component_before_writing(snapshot_request, field):
+    snapshots, request, dest = snapshot_request
+    request['components'][snapshots.COMPONENTS[0]][field] = '2026-10-09T10:01:00-03:00'
+    with pytest.raises(ValueError, match='timing'):
+        snapshots.archive(request, dest)
+    assert not dest.exists()
+
+
+def test_snapshot_does_not_backdate_current_archive(snapshot_request, monkeypatch):
+    from datetime import datetime
+    snapshots, request, dest = snapshot_request
+    monkeypatch.setattr(snapshots, '_now', lambda: datetime.fromisoformat('2026-10-09T10:01:00-03:00'))
+    with pytest.raises(ValueError, match='cutoff'):
+        snapshots.archive(request, dest)
+    assert not dest.exists()
+
+
+def test_snapshot_refuses_wrong_source_hash_and_missing_component(snapshot_request):
+    snapshots, request, dest = snapshot_request
+    request['components'][snapshots.COMPONENTS[0]]['sha256'] = '0'*64
+    with pytest.raises(ValueError, match='hash'):
+        snapshots.archive(request, dest)
+    assert not dest.exists()
+    del request['components'][snapshots.COMPONENTS[0]]
+    with pytest.raises(ValueError, match='components'):
+        snapshots.archive(request, dest)
+
+
+def test_snapshot_detects_changed_input_and_manifest(snapshot_request):
+    snapshots, request, dest = snapshot_request
+    snapshots.archive(request, dest)
+    first = dest / (snapshots.COMPONENTS[0]+'.bin')
+    first.write_bytes(b'changed')
+    with pytest.raises(ValueError, match='hash'):
+        snapshots.verify(dest)
+    first.write_bytes(Path(request['components'][snapshots.COMPONENTS[0]]['path']).read_bytes())
+    manifest = json.loads((dest/'manifest.json').read_text())
+    manifest['cutoff_at'] = '2026-10-12T10:00:00-03:00'
+    (dest/'manifest.json').write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match='manifest hash'):
+        snapshots.verify(dest)
+
+
+def test_snapshot_crossing_deadline_keeps_diagnostics_without_ready_marker(snapshot_request, monkeypatch):
+    from datetime import datetime
+    snapshots, request, dest = snapshot_request
+    before = datetime.fromisoformat('2026-10-09T09:59:00-03:00')
+    after = datetime.fromisoformat('2026-10-09T10:01:00-03:00')
+    clock = iter([before, after])
+    monkeypatch.setattr(snapshots, '_now', lambda: next(clock))
+    with pytest.raises(ValueError, match='cutoff'):
+        snapshots.archive(request, dest)
+    assert dest.is_dir()  # No automatic deletion of partial evidence.
+    assert not (dest/'READY.json').exists()
+    with pytest.raises(ValueError, match='not ready'):
+        snapshots.verify(dest)
+
+
+def test_snapshot_refuses_archive_larger_than_local_budget(snapshot_request):
+    snapshots, request, dest = snapshot_request
+    with pytest.raises(ValueError, match='budget'):
+        snapshots.archive(request, dest, max_bytes=1)
+    assert not dest.exists()
+
+
+@pytest.mark.parametrize('late_call', [2, 3, 4])
+def test_snapshot_deadline_during_manifest_or_ready_publication(snapshot_request, monkeypatch, late_call):
+    from datetime import datetime
+    snapshots, request, dest = snapshot_request
+    before = datetime.fromisoformat('2026-10-09T09:59:00-03:00')
+    after = datetime.fromisoformat('2026-10-09T10:01:00-03:00')
+    times = iter([before]*late_call+[after])
+    monkeypatch.setattr(snapshots, '_now', lambda: next(times))
+    with pytest.raises(ValueError, match='cutoff'):
+        snapshots.archive(request, dest)
+    with pytest.raises(ValueError, match='not ready'):
+        snapshots.verify(dest)
+
+
+def test_snapshot_crash_after_late_atomic_publication_is_rejected_without_late_marker(snapshot_request, monkeypatch):
+    from datetime import datetime
+    snapshots, request, dest = snapshot_request
+    original_link = snapshots.os.link
+    def publish_then_interrupt(source, target):
+        original_link(source, target)
+        monkeypatch.setattr(snapshots, '_publication_time',
+                            lambda path: datetime.fromisoformat('2026-10-09T10:01:00-03:00'))
+        raise KeyboardInterrupt('test-only termination after late publication')
+    monkeypatch.setattr(snapshots.os, 'link', publish_then_interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        snapshots.archive(request, dest)
+    assert (dest/'READY.json').exists()
+    assert not (dest/'LATE.json').exists()
+    with pytest.raises(ValueError, match='timing'):
+        snapshots.verify(dest)
+
+
+def test_snapshot_uses_real_filesystem_publication_time(snapshot_request, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    snapshots, request, dest = snapshot_request
+    monkeypatch.undo()  # Exercise actual clock and kernel ctime, not mocked receipts.
+    now = datetime.now(timezone.utc)
+    local = now.astimezone(snapshots.SAO_PAULO)
+    request['signal_date'] = local.date().isoformat()
+    request['cutoff_at'] = (local+timedelta(days=1)).replace(
+        hour=10, minute=0, second=0, microsecond=0).isoformat()
+    for component in request['components'].values():
+        for key in ('source_observed_at', 'read_started_at', 'read_finished_at'):
+            component[key] = now.isoformat()
+    assert snapshots.archive(request, dest)['retention_verified']
+    assert snapshots.verify(dest)['strict_pit_certified'] is False
+
+
+def test_snapshot_refuses_component_symlink_and_timezone_naive_receipt(snapshot_request):
+    snapshots, request, dest = snapshot_request
+    snapshots.archive(request, dest)
+    component = dest/(snapshots.COMPONENTS[0]+'.bin')
+    component.unlink()
+    component.symlink_to(request['components'][snapshots.COMPONENTS[0]]['path'])
+    with pytest.raises(ValueError, match='linked'):
+        snapshots.verify(dest)
+    request['components'][snapshots.COMPONENTS[0]]['read_started_at'] = '2026-10-09T09:30:00'
+    with pytest.raises(ValueError, match='timezone'):
+        snapshots.archive(request, dest.parent/'other-archive')
+
+
 def test_source_classification_spelling_does_not_remove_valid_trades(synthetic):
     bundle, links, p = synthetic
     expected, _ = build_panel(bundle, links, p)
