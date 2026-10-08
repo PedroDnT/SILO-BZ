@@ -481,3 +481,72 @@ def test_layout_2026_08_names_are_respaced_when_raw_words_are_given():
     st, _ = parse_pdf_pages(pages, words=frozenset({"Fundo", "Delta", "Multimercado"}))
     assert "Fundo Delta Multimercado" in {p.linha_extrato for p in st.positions}
     assert st.sum_of_lines == st.stated_total
+
+
+# ---------------------------------------------------------------------------
+# The 2026-08 detail tables (#751): blocks between blank lines, names and rates wrapped around the values
+# ---------------------------------------------------------------------------
+
+
+def _at(*cells: tuple[int, str]) -> str:
+    line = ""
+    for col, text in cells:
+        line = line.ljust(col) + text
+    return line
+
+
+def layout_2026_08_with_detail() -> list[str]:
+    detail = [
+        "Relatório de Performance",
+        "Detalhamento dos Ativos",
+        _at((0, "Inflação"), (100, "Em cart eira 60,00%"), (125, "R$ 120.000,00")),
+        "",
+        _at((98, "Pr eço"), (125, "Valor")),
+        _at((1, "At ivo"), (20, "Dat a Inicial"), (38, "Quant idade"), (55, "Venciment o"), (72, "Taxa"),
+            (84, "Saldo br ut o"), (98, "Pr eço"), (110, "Saldo líquido"), (125, "Def")),
+        _at((98, "médio"), (125, "aplicado")),
+        "",
+        _at((1, "EMISSORA EXEMPLO")),
+        _at((1, "CREDITO"), (72, "IPCA")),
+        _at((1, "FINANCIAMENTO -"), (20, "09/11/2021"), (40, "95,00"), (55, "09/11/2026"), (73, "+"),
+            (84, "R$ 100.000,00"), (100, "-"), (110, "R$ 98.000,00")),
+        _at((1, "CDB-CDB999X"), (71, "6,20%")),
+        "",
+        _at((1, "OUTRA EMISSORA - DEB-"), (71, "105,00%")),
+        _at((20, "25/03/2022"), (40, "20,00"), (55, "15/12/2031"), (84, "R$ 20.000,00"), (100, "-"), (110, "R$ 20.000,00")),
+        _at((1, "ABCD11*"), (71, "do CDI")),
+        "",
+        _at((1, "TOTAL"), (84, "R$ 120.000,00")),
+        _at((0, "Alt ernat ivo"), (100, "Em cart eira 40,00%"), (125, "R$ 80.000,00")),
+        _at((1, "At ivo"), (30, "Dat a Inicial"), (46, "Quant idade"), (60, "Resgat e"), (72, "Saldo br ut o"), (90, "Saldo líquido")),
+        "",
+        _at((1, "FUNDO GAMA CRED")),
+        _at((30, "30/01/2025"), (48, "650,00"), (60, "D+366"), (72, "R$ 50.000,00"), (90, "R$ 49.000,00")),
+        _at((1, "AGRO FIDC RESP LIMITADA*")),
+        "",
+        _at((1, "FUNDO DELTA FIM"), (30, "24/06/2026"), (48, "400,00"), (60, "D+366"), (72, "R$ 30.000,00"), (90, "R$ 29.000,00")),
+        "",
+        _at((1, "TOTAL"), (72, "R$ 80.000,00")),
+        "A rentabilidade completa",
+        "Página 5 de 5",
+    ]
+    return layout_2026_08_pages() + ["\n".join(detail)]
+
+
+def test_layout_2026_08_detail_blocks_join_every_position():
+    st, diag = parse_pdf_pages(layout_2026_08_with_detail())
+    by = {p.linha_extrato: p for p in st.positions}
+    cdb = by["EMISSORA EXEMPLO CREDITO FINANCIAMENTO - CDB-CDB999X"]
+    assert (cdb.vencimento, cdb.taxa_texto, cdb.quantidade) == (dt.date(2026, 11, 9), "IPCA + 6,20%", D("95.00"))
+    deb = by["OUTRA EMISSORA - DEB-ABCD11*"]
+    assert (deb.vencimento, deb.taxa_texto, deb.quantidade) == (dt.date(2031, 12, 15), "105,00% do CDI", D("20.00"))
+    gama = by["FUNDO GAMA CRED AGRO FIDC RESP LIMITADA*"]
+    assert gama.quantidade == D("650.00") and gama.preco_implicito and gama.vencimento is None
+    assert by["FUNDO DELTA FIM"].quantidade == D("400.00")
+    assert (diag.detail_rows, diag.detail_joined, diag.detail_lines_unread) == (4, 4, 0)
+    assert st.sum_of_lines == st.stated_total
+
+
+def test_detail_header_accepts_a_last_column_cut_at_the_page_edge():
+    assert sp._detail_header("At ivo  Dat a Inicial  Saldo br ut o  Def") == ["ativo", "datainicial", "saldobruto"]
+    assert sp._detail_header("At ivo  Dat a Inicial  Saldo br ut o  Xy") is None
