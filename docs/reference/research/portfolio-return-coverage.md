@@ -47,6 +47,13 @@ and B3's Caderno de Fórmulas (section 1). The demo portfolio is synthetic.
    whose return is CDI-like (fixed income, CDI-referenced), "retorno − CDI" for
    the rest. Section 6 has the computation.
 
+6. **Direct credit (#766, 2026-10-08): stopped at the test case.** Method A
+   (the securitizer's curve) gives 109.9% to 110.1% of the CDI for MRV's CRI
+   24I1980390 on every window with complete filings, but 53.0% on the window of
+   the 08/10 report, because the 2026-04 coupon was never filed. Guarded, A
+   evaluates 1 of the 6 CRA/CRI and method B (median fund mark) 0 of 2
+   debentures: coverage would go from 8.06% to about 10.6%, not 30%. Section 8.
+
 ## 1. External facts
 
 | Claim                                                                                                                                                                                                                                                                                                                                            | Source                                                                                                                                                                                                                    | Accessed                                                                          |
@@ -294,3 +301,155 @@ suggested):
 - MN I FIDC's tranche quota repeats unchanged for up to three months and its
   subordinated quota is −169,212.51; a filing-quality flag for the FIDC block,
   not a return, is where it belongs.
+
+## 8. Direct credit: CRA, CRI and debentures (#766)
+
+Measured 2026-10-08 from 18:00 to 18:50 UTC-3 (21:00 to 21:50 UTC), read-only
+(`psql` with `default_transaction_read_only=on`; the Supabase MCP did not
+answer), against production. The portfolio is the real BTG statement of
+2026-08-31 behind the report of 2026-10-08 (R$1,056,638.06, 21 lines, direct
+credit 47.97%, return coverage 8.06%: DEBB11 and GOLD11). Its CDI over
+2025-08-29 to 2026-08-31 is 14.63% in the report and 14.635% here.
+
+**The stop.** The brief made MRV's CRI (24I1980390, 110% of the CDI) the
+acceptance test of method A and said to stop if it failed. It failed on the
+report's window, so no SQL function, engine change, catalog or MCP change was
+made.
+
+### Method A: the securitizer's curve (`cvm_securit_serie`)
+
+`PU_t = valor_certificados / quantidade_certificados`; month return
+`(PU_t + (rendimentos_t + amortizacoes_t) / quantidade_t) / PU_(t-1) - 1`.
+
+- **The formula is right when the filing is complete.** MRV's monthly return
+  is 109.6% to 110.1% of the CDI in every month without an event, so
+  `data_referencia` (first of the month) holds the month-end value. Its
+  12-month windows ending 2025-10, 2025-11, 2025-12, 2026-01 and 2026-03 give
+  109.9%, 109.9%, 110.0%, 110.0% and 110.1%.
+- **Two filing gaps break it.** 2025-02 repeats January's PU (0% that month,
+  223.7% in March), so the window ending 2026-02 shows 118.7%. 2026-04 has the
+  PU falling from 1,071.49 to 1,005.99 with `rendimentos` 0, while the coupons
+  of 2025-04 (61.89 a unit) and 2025-10 (79.27) were filed: the month reads
+  −6.11%, and every window that contains it gives 53.0% to 53.6%.
+- **A coupon month reads a little low even when filed** (96% to 107% of the
+  CDI): the coupon is added at face value, not reinvested to the month-end.
+  Over 12 months this is a few hundredths of a point (Marfrig: 99.4%).
+- **Proposed guards, not built:** (a) a PU that falls with no payment filed is
+  an unknown month (`queda_sem_evento_arquivado`); no threshold is needed,
+  because a PU on the curve does not fall without an event; (b) a PU equal to
+  the previous month's is an unknown month (`pu_repetido`); plus the brief's
+  `quantidade_mudou` and `mes_ausente`. Guard (b) catches CRA02500001 only in
+  2 of its months: its PU is 0.0026 (a `valor_certificados` near R$1,000 for
+  380,074 certificates) and moves in the fifth decimal, so a third guard is
+  needed (a payment larger than the PU, or a PU below a floor).
+- **`taxa_juros` is free text that changes between months of one series.**
+  MRV: "110.000 % do CDI", "Não definido + 1.100", "110.0000% CDI",
+  "110,0000% CDI". Boa Safra files "100% CDI + 15,4102% a.a." where the
+  statement prints "15,41% a.a.". "The rate contains CDI" needs a named source
+  (statement or CVM) before "% do CDI" is shown.
+
+### Method B: median fund mark (`cvm_fi_cda_acoes`, block 4)
+
+- **It evaluates nothing, whatever the threshold.** Both debentures pay
+  semiannually (June and December), so every 12-month window has two coupon
+  months. CUTI11: −8.46% (2025-12) and −11.02% (2026-06, coupon and
+  amortization). ENAT11: −3.57% and −16.09%. A threshold below the coupon
+  drop makes both windows unknown; one above it counts the coupon as a loss
+  (ENAT11's 2025-06 coupon shows only −1.91%).
+- **Coupon drops and market drops overlap.** CUTI11 2019-09 to 2026-09: drops
+  in June or December from −2.54% to −11.02% (2020-06, 2021-06, 2021-12,
+  2022-06, 2022-12, 2023-06, 2023-12, 2024-06, 2024-12, 2025-06, 2025-12,
+  2026-06); drops in other months −8.66% (2020-03, no event: COVID), −3.72%
+  (2019-11), −2.73% (2019-12), −2.30% (2021-10), −1.83% (2021-02), −1.56%
+  (2022-11), −1.35% (2024-04). ENAT11 2023-01 to 2026-09: June/December
+  −1.91% to −16.09%; other months at most −0.69%. This table is the data for
+  the owner's threshold decision; no threshold is proposed as final.
+- **Fund count.** CUTI11 in 60 to 70 funds a month to 2026-06, then 18, 20 and
+  4 (2026-07 to 2026-09, CDA still filling); ENAT11 52 to 166. The median is
+  stable (min = median in most months), but single funds mark far off after an
+  amortization (CUTI11 2026-06 minimum 194.99 against a median of 784.82).
+
+### Method C: contracted return
+
+The BTG reader prints a rate on every credit line of this statement (OMNI CDB
+"IPCA + 6,20%", CDCA "11,87% a.a.", the CRA/CRI and debentures too), so C
+passed the brief's gate. Not built, because of the stop. Two facts for the
+owner: `DetailRow` reads no "data inicial", so the engine cannot tell whether
+a paper existed for the whole window, and a 12-month accrual on a younger
+paper would be invented; and the rates of lines 1 to 4 in the report
+(CDB "IPCA + 6,20%", NTN-B "IPCA + 7,00%") match the reader's test fixture
+pattern for the NTN-B and a CRA, so the CDB's rate should be checked against
+the PDF before C relies on it.
+
+### The eight papers, window 2025-08 to 2026-08
+
+| Paper       | Value (R$) | Method | Month-ends | 12-month return | % of CDI | Why not evaluated                                         | Unguarded |
+| ----------- | ---------: | ------ | ---------: | --------------: | -------: | --------------------------------------------------------- | --------: |
+| CRA02500001 |  65,370.73 | A      |         13 |               — |        — | PU 0.0026, `pu_repetido` 2026-01 and 2026-05               |    absurd |
+| CRA0240066G |  25,672.17 | A      |         12 |               — |        — | 2026-06 fall with no payment filed; 2026-07 not filed      |     5.37% |
+| CRA0260025T |  36,714.53 | A      |          4 |               — |        — | first filing 2026-05                                      |     3.95% |
+| CRA0250018H |  27,339.32 | A      |         13 |          14.54% |    99.4% | evaluated (the report flags its maturity as different from the CVM register) |    14.54% |
+| CRA02400AYL |  26,057.96 | A      |         13 |               — |        — | `pu_repetido` 2025-10 and 2025-11; 2025-12 fall with no payment (paid 258.62 a unit in 2025-11) |    55.83% |
+| 24I1980390  |  46,190.41 | A      |         13 |               — |        — | 2026-04 coupon not filed                                  |     7.76% |
+| CUTI11      |  57,690.67 | B      |         13 |               — |        — | coupon months 2025-12 (−8.46%) and 2026-06 (−11.02%)       |    −8.99% |
+| ENAT11      |  27,136.41 | B      |         13 |               — |        — | coupon months 2025-12 (−3.57%) and 2026-06 (−16.09%)       |   −10.21% |
+
+CDI 14.635% (floating-point compounding, not B3's truncation; the difference
+is below the digits shown). "Unguarded" is the formula with no guard, to show
+what the guards stop; it is not a return.
+
+**Coverage.** Before: 8.06% of R$1,056,638.06. With guarded A and B:
++R$27,339.32 (Marfrig), 10.65%. The planning estimate of about 30% assumed
+complete filings; with every CRA/CRI and debenture evaluated it would be
+29.5% (R$312,172.20). C would add the CDB (15.45%) and the CDCA (2.98%).
+
+```sql
+-- Window 2025-08 -> 2026-08 (13 month-ends), the 08/10 report's position month (statement of 2026-08-31).
+WITH cdi AS (SELECT reference_date d, value v FROM api.macro_series('CDI', '2025-07-01', '2026-09-30')),
+me AS (SELECT date_trunc('month', d)::date m, max(d) d FROM cdi GROUP BY 1),
+cdi12 AS (SELECT exp(sum(ln(1 + v/100))) - 1 c FROM cdi, me a, me b
+          WHERE a.m = '2025-08-01' AND b.m = '2026-08-01' AND cdi.d >= a.d AND cdi.d < b.d),
+months AS (SELECT generate_series('2025-08-01'::date, '2026-08-01', '1 month')::date m),
+-- Method A: CRA/CRI, PU on the curve as filed by the securitizer
+a_raw AS (SELECT codigo_cetip k, data_referencia m, quantidade_certificados q,
+            valor_certificados / nullif(quantidade_certificados, 0) pu,
+            (coalesce(rendimentos, 0) + coalesce(amortizacoes, 0)) / nullif(quantidade_certificados, 0) paid
+          FROM cvm_securit_serie
+          WHERE codigo_cetip IN ('CRA02500001','CRA0240066G','CRA0260025T','CRA0250018H','CRA02400AYL','24I1980390')
+            AND data_referencia BETWEEN '2025-08-01' AND '2026-08-01'),
+a_m AS (SELECT k, months.m, r.q, r.pu, r.paid,
+          lag(r.pu) OVER w pu0, lag(r.q) OVER w q0
+        FROM (SELECT DISTINCT k FROM a_raw) ks CROSS JOIN months LEFT JOIN a_raw r USING (k, m)
+        WINDOW w AS (PARTITION BY k ORDER BY months.m)),
+a_flag AS (SELECT k, m, pu, paid, pu0,
+             CASE WHEN m = '2025-08-01' THEN CASE WHEN pu IS NULL THEN 'mes_ausente' END
+                  WHEN pu IS NULL OR pu0 IS NULL THEN 'mes_ausente'
+                  WHEN q <> q0 THEN 'quantidade_mudou'
+                  WHEN pu = pu0 THEN 'pu_repetido'
+                  WHEN pu < pu0 AND paid = 0 THEN 'queda_sem_evento_arquivado' END bad,
+             (pu + paid) / pu0 g
+           FROM a_m),
+a AS (SELECT k, 'A curva securitizadora' method,
+        count(*) FILTER (WHERE pu IS NOT NULL) n_months,
+        string_agg(to_char(m, 'YYYY-MM') || ':' || bad, ', ' ORDER BY m) FILTER (WHERE bad IS NOT NULL) why,
+        exp(sum(ln(g)) FILTER (WHERE m > '2025-08-01')) - 1 ret
+      FROM a_flag GROUP BY k),
+-- Method B: debentures, median fund mark (CDA block 4), >= 3 funds a month
+b_m AS (SELECT cd_ativo k, period m, count(DISTINCT cnpj) nf,
+          percentile_cont(0.5) WITHIN GROUP (ORDER BY vl_merc_pos_final / qt_pos_final)::numeric pu
+        FROM cvm_fi_cda_acoes
+        WHERE cd_ativo IN ('CUTI11','ENAT11') AND period BETWEEN '2025-08-01' AND '2026-08-01'
+          AND qt_pos_final > 0 AND vl_merc_pos_final > 0 GROUP BY 1, 2),
+b_f AS (SELECT k, m, nf, pu, pu / lag(pu) OVER (PARTITION BY k ORDER BY m) g FROM b_m WHERE nf >= 3),
+b AS (SELECT k, 'B marcacao mediana dos fundos' method, count(*) n_months,
+        string_agg(to_char(m, 'YYYY-MM') || ':' || round((g - 1) * 100, 2) || '%', ', ' ORDER BY m) FILTER (WHERE g < 0.98) why,
+        exp(sum(ln(g))) - 1 ret
+      FROM b_f GROUP BY k)
+SELECT k AS papel, method, n_months,
+  CASE WHEN why IS NULL AND n_months = 13 THEN round(ret * 100, 2) END ret12_pct,
+  round((SELECT c FROM cdi12) * 100, 3) cdi12_pct,
+  CASE WHEN why IS NULL AND n_months = 13 THEN round(ret / (SELECT c FROM cdi12) * 100, 1) END pct_cdi,
+  round(ret * 100, 2) ret12_unguarded_pct,
+  coalesce(why, CASE WHEN n_months < 13 THEN 'menos de 13 fechamentos' END) motivo
+FROM (SELECT * FROM a UNION ALL SELECT * FROM b) x ORDER BY method, k;
+```
