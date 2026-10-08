@@ -16,7 +16,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from src.fetchers.b3_bdi_fetcher import B3BdiEmpty, B3BdiFetcher
+from src.fetchers.b3_bdi_fetcher import B3BdiEmpty, B3BdiFetchError, B3BdiFetcher
 from src.parsers import b3_credit as P
 from src.parsers.b3_bdi import reconcile_span
 from src.pipeline import ingest_log
@@ -132,9 +132,39 @@ class B3CreditIngestor:
             upsert=upsert_rows, run_id=capture_id,
         )
 
+    async def ingest_resilient(self, start: date, end: date) -> int:
+        """On export failure, retry smaller spans without hiding the failed audit.
+
+        Each child contains one known cash session. Unknown edge dates and
+        weekends stay attached to a child, so calendar lag never silently
+        removes part of the requested span. Parse/completeness/DB failures do
+        not trigger more network requests.
+        """
+        try:
+            return await self.ingest(start, end)
+        except B3BdiFetchError:
+            sessions = await asyncio.to_thread(known_sessions, self.conn, start, end)
+            if len(sessions) < 2:
+                raise
+            logger.warning("Credit export %s..%s failed; retrying %d smaller slices",
+                           start, end, len(sessions), exc_info=True)
+        total = 0
+        for i, session in enumerate(sessions):
+            first = start if i == 0 else session
+            last = sessions[i + 1] - timedelta(days=1) if i + 1 < len(sessions) else end
+            try:
+                total += await self.ingest(first, last)
+            except Exception as exc:
+                landed = total + getattr(exc, "rows", 0)
+                raise ingest_log.PartialIngestError(
+                    f"Credit recovery failed for {first}..{last}: {ingest_log.describe(exc)}",
+                    rows=landed,
+                ) from exc
+        return total
+
     async def daily_update(self) -> dict[str, int]:
         end = yesterday()
-        return {FACT_TABLE: await self.ingest(end - timedelta(days=6), end)}
+        return {FACT_TABLE: await self.ingest_resilient(end - timedelta(days=6), end)}
 
     async def backfill(self, start: date, end: date) -> dict[str, int]:
         if end < start or end > yesterday():
@@ -144,7 +174,7 @@ class B3CreditIngestor:
         total = 0
         while start <= end:
             stop = min(start + timedelta(days=6), end)
-            total += await self.ingest(start, stop)
+            total += await self.ingest_resilient(start, stop)
             start = stop + timedelta(days=1)
         return {FACT_TABLE: total}
 
@@ -167,7 +197,7 @@ async def main(args: argparse.Namespace) -> None:
         if parsed.dropped_rows:
             raise RuntimeError("Dry run dropped source rows")
     else:
-        await B3CreditIngestor().ingest(start, end)
+        await B3CreditIngestor().ingest_resilient(start, end)
 
 
 if __name__ == "__main__":

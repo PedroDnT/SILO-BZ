@@ -42,6 +42,9 @@ jobs:
     timeout-minutes: 120
     env:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      # Optional: enables the etfsbrasil ETF scrape in run_daily, as in
+      # daily_ingest.yml. Unset, it is empty and the scrape self-skips (#689).
+      APIFY_TOKEN: "${{ secrets.APIFY_TOKEN }}"
       CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
       # Optional repository variable: re-points the BACEN SGS host (issue #537). Empty means the default.
       BACEN_SGS_BASE_URL: "${{ vars.BACEN_SGS_BASE_URL }}"
@@ -54,10 +57,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip

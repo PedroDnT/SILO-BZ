@@ -256,3 +256,89 @@ def test_guard_noop_ddl_is_idempotent_on_schema():
     src = SCHEMA.read_text(encoding="utf-8")
     once = guard_noop_ddl(src)
     assert guard_noop_ddl(once) == once
+
+
+def test_simple_index_rebuild_is_guarded_and_original_ddl_retained():
+    sql = ('DROP INDEX IF EXISTS uq_t;\n'
+           'CREATE UNIQUE INDEX IF NOT EXISTS uq_t ON t (a, b) NULLS NOT DISTINCT;')
+    out = guard_noop_ddl(sql)
+    assert '$silo_guard_index$' in out
+    assert 'x.indisvalid' in out and 'x.indnullsnotdistinct' in out
+    assert "ARRAY['a', 'b']" in out
+    assert sql in out
+    assert guard_noop_ddl(out) == out
+
+
+@pytest.mark.parametrize('tail', [
+    'CREATE UNIQUE INDEX IF NOT EXISTS another ON t (a) NULLS NOT DISTINCT;',
+    'CREATE UNIQUE INDEX IF NOT EXISTS uq_t ON t (lower(a)) NULLS NOT DISTINCT;',
+    'CREATE UNIQUE INDEX IF NOT EXISTS uq_t ON t (a) NULLS NOT DISTINCT WHERE a IS NOT NULL;',
+    'CREATE UNIQUE INDEX IF NOT EXISTS uq_t ON t (a DESC) NULLS NOT DISTINCT;',
+])
+def test_unsupported_or_different_index_pair_is_unchanged(tail):
+    sql = 'DROP INDEX IF EXISTS uq_t;\n' + tail
+    assert guard_noop_ddl(sql) == sql
+
+
+def test_cda_schema_and_historical_widening_migration_both_guard_rebuild():
+    for path in [SCHEMA, MIGRATIONS / '33_cda_holdings_key_widening.sql']:
+        out = guard_noop_ddl(path.read_text())
+        assert '$silo_guard_index$' in out
+        assert "to_regclass('uq_fi_cda_acoes')" in out
+
+
+def test_matching_index_replay_succeeds_under_a_concurrent_reader(monkeypatch):
+    """Optional disposable Postgres regression of the production lock failure."""
+    import os
+    import uuid
+    from urllib.parse import urlparse
+    from src.store.pg_client import get_pg_client
+
+    url = os.getenv('SILO_TEST_CREDIT_DATABASE_URL')
+    if not url:
+        pytest.skip('requires disposable loopback Postgres')
+    target = urlparse(url)
+    assert target.hostname in {'localhost', '127.0.0.1', '::1'}
+    assert target.path.endswith('_test')
+    monkeypatch.setenv('POSTGRES_URL', url)
+    monkeypatch.setenv('CVM_DB_POOL_SIZE', '2')
+    client = get_pg_client()
+    name = 'guard_lock_' + uuid.uuid4().hex
+    try:
+        with client.cursor() as cur:
+            cur.execute(f'CREATE SCHEMA {name}')
+            cur.execute(f'CREATE TABLE {name}.rows (a text, b text)')
+            cur.execute(f'CREATE UNIQUE INDEX uq_rows ON {name}.rows (a, b) NULLS NOT DISTINCT')
+            cur.execute(f"SELECT '{name}.uq_rows'::regclass::oid")
+            original_oid = cur.fetchone()[0]
+        pair = ('DROP INDEX IF EXISTS uq_rows;\n'
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_rows '
+                f'ON {name}.rows (a, b) NULLS NOT DISTINCT;')
+        with client.cursor() as reader:
+            reader.execute('BEGIN')
+            reader.execute(f'SELECT * FROM {name}.rows')
+            try:
+                with client.cursor() as writer:
+                    writer.execute("SET lock_timeout='250ms'")
+                    writer.execute(f'SET search_path={name},public')
+                    writer.execute(guard_noop_ddl(pair))
+                    writer.execute(guard_noop_ddl(
+                        f'ALTER TABLE {name}.rows DROP CONSTRAINT IF EXISTS absent_constraint;'))
+                    writer.execute(f"SELECT '{name}.uq_rows'::regclass::oid")
+                    assert writer.fetchone()[0] == original_oid
+            finally:
+                reader.execute('ROLLBACK')
+    finally:
+        with client.cursor() as cur:
+            cur.execute(f'DROP SCHEMA IF EXISTS {name} CASCADE')
+        client.closeall()
+
+
+def test_absent_constraint_drop_is_guarded_without_changing_real_drop():
+    sql = 'ALTER TABLE public.t DROP CONSTRAINT IF EXISTS old_key;'
+    out = guard_noop_ddl(sql)
+    assert 'FROM pg_constraint' in out and "conname = 'old_key'" in out
+    assert sql in out
+    assert guard_noop_ddl(out) == out
+    other = 'ALTER TABLE public.t DROP COLUMN IF EXISTS old_key;'
+    assert guard_noop_ddl(other) == other

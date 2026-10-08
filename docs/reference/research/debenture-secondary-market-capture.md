@@ -166,6 +166,19 @@ eighteen-month request: a one-day export already timed out, so a large request
 would be unmeasured in duration and storage. Earlier/absent sessions are never
 silently relabeled as covered.
 
+If an export fails after the fetcher's two attempts, persisted daily/backfill
+runs retry the window as smaller slices, each containing one known COTAHIST
+session. Weekend and not-yet-known edge dates remain attached to adjacent
+slices; the recovery never silently shortens the requested range. The original
+failure remains in its audit row and each child has its own audit identity.
+Completed children remain stored if a later child fails; the error reports the
+acknowledged fact count. A window with fewer than two known sessions cannot be
+split and fails normally. Parse, coverage and database failures do not initiate
+this network recovery. The no-DB dry run still makes one export attempt.
+
+Measured continuity/storage and the remaining calendar/latency limits are in
+the [validation report](debenture-secondary-market-validation.md).
+
 `B3_CREDIT_ENABLED=1 python -m src.pipeline.run_b3_events` opts the daily B3 step
 into the trailing seven completed calendar days, before the corporate-event
 sweep. The same code path is used by watchdog recovery. The switch is off by
