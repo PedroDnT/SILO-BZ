@@ -1093,6 +1093,20 @@ def _threshold_text(th: dict) -> str:
     return "<br>".join(parts) or "—"
 
 
+CAVEAT_SEP = "; a conferir: "
+
+
+def _risk_explanation(view: dict, q: str, r: dict) -> str:
+    """The row's fixed explanation, with its "a conferir" clause left out only when the row's ``check_label`` (printed
+    beside the level) already carries that clause word for word, so each caveat is printed once per row. A clause the
+    label does not carry (e.g. ``credito_sem_fgc``'s conglomerado) stays. The engine's text is not changed."""
+    expl, label = r.get("explanation") or "", r.get("check_label") or ""
+    head, sep, clause = expl.partition(CAVEAT_SEP)
+    if sep and label and clause.strip().rstrip(".") in label:
+        return e(head)
+    return v(view, f"{q}.explanation")
+
+
 def _risks_section(view: dict, compact: bool = False) -> str:
     """Engine 1.8: "Principais riscos", one row per risk, the semáforo from fixed thresholds; every value a path.
 
@@ -1134,7 +1148,8 @@ def _risks_section(view: dict, compact: bool = False) -> str:
         else:
             value = "—"
             sev = f'<span class="tag unk">{v(view, f"{q}.status_label")}</span><br><span class=cit>{v(view, f"{q}.reason")}</span>'
-        row = [v(view, f"{q}.risk"), value, sev, v(view, f"{q}.explanation")]
+        row = [v(view, f"{q}.risk"), value, sev,
+               _risk_explanation(view, q, r) if r.get("status") == "avaliado" else v(view, f"{q}.explanation")]
         rows.append(row if compact else row + [_threshold_text(r.get("thresholds") or {})])
     if compact:
         if not rows:

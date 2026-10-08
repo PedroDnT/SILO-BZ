@@ -3,6 +3,19 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-07 · claude/risk-table-fgc-caveat-once (#754)
+
+**Done.** Follow-up to #749, item 3c, `src/portfolio/report/render.py` only. The risk table row `fgc_acima_limite`
+printed "a conferir: limite por CPF e instituição" twice: in its `explanation` (`risks.py:92`) and in its `check_label`
+(`concentration.fgc.label`). The renderer now leaves the explanation's "a conferir" clause out when the row's
+`check_label` already carries it word for word. Demo: "a conferir" 67 to 65 in the HTML (the compact and the full risk
+table).
+
+**Decisions.** Fixed in the renderer, not in `risks.py`, because the task forbids engine changes. A clause the label does
+not carry stays: `credito_sem_fgc` keeps its conglomerado caveat.
+
+**Outside scope.** None.
+
 ## 2026-10-07 · claude/report-presentation-fixes (#749)
 
 **Done.** Three presentation fixes in the diagnosis report, `src/portfolio/report/` only.
