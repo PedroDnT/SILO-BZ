@@ -40,7 +40,15 @@
       "Bash(git ls-tree *)",
       "Bash(pg_lsclusters *)",
       "Bash(getent *)",
-      "mcp__claude-code-remote__list_events"
+      "mcp__claude-code-remote__list_events",
+      "Bash(gh run watch *)",
+      "Bash(brew list *)",
+      "mcp__ccd_pr__get_status",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "mcp__claude-in-chrome__find",
+      "mcp__claude-in-chrome__get_page_text",
+      "mcp__ccd_session_mgmt__search_session_transcripts",
+      "mcp__claude_ai_Supabase__query_logs"
     ]
   },
   "hooks": {
