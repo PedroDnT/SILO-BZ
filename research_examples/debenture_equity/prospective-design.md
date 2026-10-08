@@ -131,8 +131,8 @@ the first post-exit cash session before 10:00 Brasília; price dates alone canno
 establish availability. Actual publication time controls eligibility at the
 requested fit cutoff. Output retains input/label/response hashes and the separate
 equity revision. This replay alone does not select the first version; the scoped
-selector below handles that boundary. Late/revision sensitivity and timely
-frozen prediction publication/reuse remain unimplemented. The
+selector below handles that boundary. The later publication layer handles local
+forecast receipts; late/revision sensitivity remains unimplemented. The
 independent source/convention gates remain.
 
 `originals.py` now supplies exclusive original selection inside an externally
@@ -151,9 +151,21 @@ only available development labels enter train/validation tuning and final refit,
 with exit and actual-availability purges. Models retain their penalties, scaling,
 coefficients and separate training/validation/final-fit lineage. Missing/omitted
 originals are reported and existing invalid slots fail. Offline preparation is
-not timely publication: model/prediction sealing, later-signal reuse without test
-refitting, complete development inventory, power, sector robustness and independent
+not timely publication; the publication layer below supplies that local mechanism.
+Accepted development inventory, power, sector robustness and independent
 acceptance remain. This does not activate the test or certify PIT.
+
+`predictions.py` now publishes private local model/prediction receipts before the
+input's 10:00 cutoff, with actual computation/publication clocks, canonical
+exclusive slots and full original fitting replay. Subsequent signals use the
+stored initial parameters, preserve the first calendar prefix and stay within
+the fixed test interval; no test-label refit occurs. Both initial and reused
+predictions have exact input/registry/model hashes and availability verification.
+This does not activate the candidate design or prove the exchange entry-close
+schedule. Accepted scope/inventory, power, sector robustness, missing/late/revision
+handling, independent financial/PIT acceptance, collector/retention integration
+and elapsed history remain. Staging duplicates computed payload bytes, outside
+the archive-component budget; no production storage allowance is implied.
 
 ## Development power assessment
 
@@ -213,7 +225,7 @@ storage allowance and production retention policy.
 | Original issuer mapping | 26 cited original issuers, exact full CNPJ/ISIN, FCA equity candidates and source aliases | Dated changes and at least 21 eligible untouched-test issuers after attrition |
 | Retrospective experiment | Offline runner, purges, fixed floors, sector/delay/placebo/dominance methods; 935 overlapping rows | Current test/sector coverage fails; no predictive conclusion |
 | Longer protocol | Version 2 candidate and explicit date ceilings | Owner acceptance, real session calendar and development power gate before activation |
-| Prospective PIT | Local retention, frozen-input/outcome replay, canonical original slots and availability-aware first-test fitting preparation | Accepted pre-outcome root pin/inventory, timely frozen prediction publication/reuse, late/missing/revision handling, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
+| Prospective PIT | Local retention, input/outcome replay, canonical original slots, availability-aware first fit and deadline-bound prediction publication/reuse | Accepted pre-outcome root pin/inventory, verified exchange entry-close, late/missing/revision handling, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
 | Adjusted returns/benchmark | Existing total-return exports with coherent revision checks | Independent convention/event acceptance and frozen prospective vintages |
 | Power | Predeclared development grid, dependence and failure rules | Implemented/calibrated assessment on sufficient development-only OOS losses |
 | Confirmatory result | None; every current study is inconclusive | Adequate untouched history, frozen scoring and all inference/robustness gates |

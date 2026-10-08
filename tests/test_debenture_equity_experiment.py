@@ -1117,7 +1117,8 @@ def test_available_fitting_floors_use_only_available_purged_dates(available_fitt
     assert result is None and 'Insufficient available' in reason
 
 
-def test_fitting_integrates_real_archive_interfaces_with_test_only_short_design(
+@pytest.fixture
+def fitted_archive_scenario(
         prospective_inputs, prospective_outcome_archives, synthetic, monkeypatch):
     from datetime import date, datetime
     from decimal import Decimal
@@ -1139,7 +1140,7 @@ def test_fitting_integrates_real_archive_interfaces_with_test_only_short_design(
     publications = {}
     monkeypatch.setattr(snapshots, '_publication_time', lambda path: publications[path.parent.name])
     inputs, reports = [], []
-    for i in range(9):
+    for i in range(10):
         d, next_ = dates[origin+i:origin+i+2]
         seen, now = next_+'T09:05:00-03:00', next_+'T09:59:00-03:00'
         data = deepcopy(prototype)
@@ -1193,6 +1194,12 @@ def test_fitting_integrates_real_archive_interfaces_with_test_only_short_design(
         request['components'] = {k: {**v, 'path': str(source/v['file'])} for k, v in saved['components'].items()}
         publications[_slot(root, d, 1, 1).name] = datetime.fromisoformat(now)
         archive_original(root, inputs[i], request, registry_sha256=pin, candidate=candidate)
+    return root, pin, inputs, candidate, publications
+
+
+def test_fitting_integrates_real_archive_interfaces_with_test_only_short_design(fitted_archive_scenario):
+    from research_examples.debenture_equity.fitting import fit_originals
+    root, pin, inputs, candidate, _ = fitted_archive_scenario
     result, report = fit_originals(root, inputs[8], inputs[:8], registry_sha256=pin,
                                    horizon=1, delay=1, candidate=candidate)
     assert report['reason'] is None and report['exclusions'] == {'missing_original_slot': 2}
@@ -1200,3 +1207,44 @@ def test_fitting_integrates_real_archive_interfaces_with_test_only_short_design(
     assert len(result['predictions']) == 1 and report['strict_pit_certified'] is False
     with pytest.raises(ValueError, match='fixed first test signal'):
         fit_originals(root, inputs[7], inputs[:7], registry_sha256=pin, horizon=1, delay=1, candidate=candidate)
+
+
+def test_prediction_publication_and_reuse_keep_the_initial_model(fitted_archive_scenario, monkeypatch):
+    from datetime import datetime
+    from research_examples.debenture_equity import snapshots
+    from research_examples.debenture_equity.predictions import publish_first, verify_first, publish_reuse, verify_reuse
+    root, pin, inputs, candidate, publications = fitted_archive_scenario
+    now = [datetime.fromisoformat('2026-07-14T09:59:30-03:00')]
+    monkeypatch.setattr(snapshots, '_now', lambda: now[0])
+    monkeypatch.setattr(snapshots, '_publication_time', lambda path: publications.get(path.parent.name, now[0]))
+    args = {'registry_sha256': pin, 'horizon': 1, 'delay': 1, 'candidate': candidate}
+    first = publish_first(root, inputs[8], inputs[:8], **args)
+    publications[first['prediction_slot']] = now[0]
+    original, _ = verify_first(root, inputs[8], inputs[:8], as_of=now[0].isoformat(), **args)
+    assert first['prediction_rows'] == 1 and first['strict_pit_certified'] is False
+    with pytest.raises(ValueError, match='unavailable'):
+        verify_first(root, inputs[8], inputs[:8], as_of='2026-07-14T09:59:00-03:00', **args)
+    with pytest.raises(FileExistsError):
+        publish_first(root, inputs[8], inputs[:8], **args)
+    with pytest.raises(ValueError, match='original development replay'):
+        verify_first(root, inputs[8], inputs[:7], as_of=now[0].isoformat(), **args)
+    now[0] = datetime.fromisoformat('2026-07-15T09:59:30-03:00')
+    reused = publish_reuse(root, inputs[9], inputs[8], inputs[:8], **args)
+    publications[reused['prediction_slot']] = now[0]
+    later, _ = verify_reuse(root, inputs[9], inputs[8], inputs[:8], as_of=now[0].isoformat(), **args)
+    assert later['models'] == original['models']
+    assert reused['model_manifest_sha256'] == first['model_manifest_sha256']
+    assert later['predictions'][0]['signal_date'] != original['predictions'][0]['signal_date']
+
+
+@pytest.mark.parametrize('cross_during_fit', [False, True])
+def test_prediction_publication_refuses_actual_late_clock(fitted_archive_scenario, monkeypatch, cross_during_fit):
+    from datetime import datetime
+    from research_examples.debenture_equity import snapshots
+    from research_examples.debenture_equity.predictions import publish_first
+    root, pin, inputs, candidate, _ = fitted_archive_scenario
+    late = datetime.fromisoformat('2026-07-14T10:00:01-03:00')
+    times = iter([datetime.fromisoformat('2026-07-14T09:59:30-03:00'), late])
+    monkeypatch.setattr(snapshots, '_now', (lambda: next(times)) if cross_during_fit else (lambda: late))
+    with pytest.raises(ValueError, match='early, late'):
+        publish_first(root, inputs[8], inputs[:8], registry_sha256=pin, horizon=1, delay=1, candidate=candidate)

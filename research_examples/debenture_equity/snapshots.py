@@ -18,6 +18,7 @@ COMPONENTS = (
     'frozen_model_and_feature_manifest',
 )
 OUTCOME_COMPONENTS = ('verified_cash_calendar', 'realized_return_response', 'frozen_feature_reference')
+PREDICTION_COMPONENTS = ('frozen_feature_reference', 'frozen_model_prediction')
 DEFAULT_MAX_BYTES = 100_000_000
 
 
@@ -77,6 +78,18 @@ def _components(request):
             raise ValueError('Outcome horizon and entry delay must be positive integers')
         _validate_digest(context['input_manifest_sha256'])
         return OUTCOME_COMPONENTS
+    if kind == 'prediction':
+        context = request['prediction']
+        if set(context) != {'horizon', 'entry_delay_sessions', 'input_manifest_sha256',
+                            'original_registry_sha256', 'model_manifest_sha256'}:
+            raise ValueError('Invalid prediction archive context')
+        for name in ('input_manifest_sha256', 'original_registry_sha256'):
+            _validate_digest(context[name])
+        if context['model_manifest_sha256'] is not None:
+            _validate_digest(context['model_manifest_sha256'])
+        if any(type(context[k]) is not int or context[k] < 1 for k in ('horizon', 'entry_delay_sessions')):
+            raise ValueError('Prediction horizon/delay must be positive integers')
+        return PREDICTION_COMPONENTS
     raise ValueError('Unsupported snapshot kind')
 
 
@@ -121,7 +134,7 @@ def archive(request, destination, max_bytes=DEFAULT_MAX_BYTES):
     if not started <= sealed <= cutoff:
         raise ValueError('Clock moved backwards or archive crossed cutoff; partial evidence retained')
     manifest = {
-        'schema_version': 2 if request.get('kind') == 'outcome' else 1,
+        'schema_version': {'input': 1, 'outcome': 2, 'prediction': 3}[request.get('kind', 'input')],
         'signal_date': request['signal_date'],
         'cutoff_at': request['cutoff_at'], 'started_at': started.isoformat(),
         'sealed_at': sealed.isoformat(), 'protocol_sha256': request['protocol_sha256'],
@@ -133,6 +146,8 @@ def archive(request, destination, max_bytes=DEFAULT_MAX_BYTES):
     }
     if request.get('kind') == 'outcome':
         manifest.update(kind='outcome', outcome=request['outcome'])
+    if request.get('kind') == 'prediction':
+        manifest.update(kind='prediction', prediction=request['prediction'])
     data = _json_bytes(manifest)
     _write_new(dest/'manifest.json', data)
     committed = _now()
@@ -173,7 +188,7 @@ def read_archive(destination):
     if _digest(raw) != ready['manifest_sha256']:
         raise ValueError('Archive manifest hash mismatch')
     manifest = json.loads(raw)
-    if (manifest['schema_version'], manifest.get('kind', 'input')) not in {(1, 'input'), (2, 'outcome')}:
+    if (manifest['schema_version'], manifest.get('kind', 'input')) not in {(1, 'input'), (2, 'outcome'), (3, 'prediction')}:
         raise ValueError('Unsupported snapshot manifest')
     cutoff = _cutoff(manifest)
     started, sealed, committed = map(timestamp, (manifest['started_at'], manifest['sealed_at'], ready['committed_at']))

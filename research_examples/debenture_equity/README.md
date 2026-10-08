@@ -372,3 +372,49 @@ completeness, sector robustness, power and independent source/financial/PIT gate
 remain required. Tests use a clearly separate short synthetic design for archive
 integration; the real 90/50/100 design and inference floors are unchanged. There
 is no new empirical result or production authorization.
+
+## Local prediction publication and fixed-model reuse
+
+`predictions.py` adds private, deadline-bound publication using the existing
+retention helper. This is **local candidate evidence, not experiment activation**.
+All functions require the externally pinned root hash, horizon/delay and accepted
+input archives; no network, database, collector or schedule is added.
+
+- `publish_first(root, input_path, development_inputs, registry_sha256=...,
+  horizon=..., delay=..., candidate=None)` computes the original fit internally
+  and publishes its models, exact predictions, training/validation/final-fit
+  lineage and fit report. It cannot publish an arbitrarily supplied model.
+- `verify_first(..., as_of=...)` verifies actual availability and reproduces the
+  entire original payload from the same ordered development inventory. Changed
+  models, predictions, lineage or inventory are refused.
+- `publish_reuse(root, input_path, initial_input, development_inputs, ...)`
+  audits that first fit, then uses the **stored original** centers/scales and
+  coefficients for a later signal. No test outcome is used for fitting.
+- `verify_reuse(..., as_of=...)` reproduces the later predictions and checks the
+  exact original model hash, input binding, calendar interval and availability.
+
+Predictions use schema 3, `kind="prediction"`, with two hashed components:
+`frozen_feature_reference` and `frozen_model_prediction`. The context records the
+input/registry hashes, horizon/delay and initial-model manifest hash (null only
+for the first model's own receipt). The first model is itself the canonical
+first-test prediction receipt. Later signals must preserve its calendar prefix
+and remain inside the fixed untouched-test reference interval. Original fitting
+replay is a bounded audit of development originals, not a new fit on test data.
+
+Computation must begin after the input was published and finish before its
+10:00 Brasília cutoff. Both computation crossing that deadline and starting late
+fail. Initial-model publication must precede reuse computation. Actual receipt
+publication uses the existing staged/fsynced readiness mechanism and is checked
+against requested `as_of`. Each signal/horizon/delay has an exclusive canonical
+prediction directory and private staging sibling; neither is overwritten. Failed
+staging remains diagnostic evidence. The byte budget covers archive components;
+staging retains another copy and filesystem/manifest overhead, so this is not a
+total production storage allowance.
+
+The report retains `strict_pit_certified=false`. Actual exchange entry-close
+evidence, accepted pre-outcome scope/inventory and power gate, sector robustness,
+missing/late/revision sensitivity, source/financial conventions, collector
+integration and durable production retention remain required. The mechanism
+never backdates a publication and cannot turn a later historical replay into an
+on-time forecast. Exact replay also requires a compatible frozen implementation
+and numerical runtime. No empirical predictability or trading claim follows.

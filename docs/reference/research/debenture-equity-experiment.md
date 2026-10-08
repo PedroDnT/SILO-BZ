@@ -697,3 +697,11 @@ with separate training/validation availability and exit purges. Model parameters
 scaling and exact data lineage are retained. Offline preparation does not prove
 timely prediction publication or later-signal reuse; those integrations, power,
 sector robustness, inventory completeness and independent acceptance remain open.
+
+The local [prediction publication helper](../../../research_examples/debenture_equity/predictions.py)
+now enforces actual-clock cutoff publication and exact original model/lineage
+replay. Later signals reuse the stored original parameters within the fixed
+test interval, with exact input/model hashes and no test-label fitting. This is
+private candidate evidence, not activation, entry-close verification or empirical
+acceptance. Power, sector robustness, missing/late/revisions, scope/inventory and
+independent financial/PIT acceptance remain open; production is unchanged.

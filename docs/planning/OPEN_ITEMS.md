@@ -570,6 +570,10 @@ First-test fitting preparation now uses canonical available development labels,
 fixed 90/50 calendar cuts, purged train/validation tuning and final-refit lineage.
 It is offline preparation, not proof of publication before entry; inventory
 acceptance, frozen prediction publication/reuse, power and financial/PIT gates remain.
+Local prediction publication/reuse now enforces actual-clock cutoffs, exact
+original-fit replay and unchanged initial parameters on later test signals.
+It does not activate the design or establish the exchange entry-close; accepted
+scope/inventory, power, sector robustness, collector/retention and source/PIT gates remain.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer
