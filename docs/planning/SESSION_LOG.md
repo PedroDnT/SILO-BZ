@@ -3,6 +3,25 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-08 · claude/credit-direct-return-cdi (#766)
+
+**Done.** Measurement only, read-only against production; no code, migration, catalog or MCP change. The brief's
+acceptance test for method A (MRV's CRI 24I1980390 near 110% of the CDI) failed on the report's window
+(2025-08 to 2026-08): 53.0%, because the securitizer did not file the 2026-04 coupon. The brief says to stop there, so
+the session stopped and wrote the case in `docs/reference/research/portfolio-return-coverage.md`, section 8: the
+formula gives 109.9% to 110.1% on every complete window; guarded A evaluates 1 of 6 CRA/CRI (Marfrig, 99.4%);
+B evaluates 0 of 2 debentures at any threshold (two coupon months in every 12-month window); coverage 8.06% to
+about 10.65%, not 30%.
+
+**Decisions.** None taken for the owner. Proposed, not built: guards `queda_sem_evento_arquivado`, `pu_repetido`,
+`quantidade_mudou`, `mes_ausente`, and a third one for an implausible PU (CRA02500001).
+
+**Assumptions.** The 08/10 report's position date is 2026-08-31 (its CDI, 14.63%, matches that window). The
+paper values come from the report PDF on the owner's machine; no client data is in the repo.
+
+**Outside scope.** Seen, not fixed: the report's rates for lines 1 and 2 (CDB "IPCA + 6,20%", NTN-B "IPCA + 7,00%")
+may be shifted by one row; check against the PDF. The Supabase MCP did not answer in this session.
+
 ## 2026-10-07 · claude/risk-table-fgc-caveat-once (#754)
 
 **Done.** Follow-up to #749, item 3c, `src/portfolio/report/render.py` only. The risk table row `fgc_acima_limite`
