@@ -263,7 +263,7 @@ def read_any_pdf_bytes(data: bytes):
     if is_extrato(pages):
         stmt, diag = parse_extrato_pages(pages, extractor)
         return stmt, diag, "extrato"
-    stmt, diag = sp.parse_pdf_pages(pages, extractor)
+    stmt, diag = sp.parse_pdf_pages(pages, extractor, sp.raw_words(data) if extractor == "poppler" else frozenset())
     return stmt, diag, "performance"
 
 

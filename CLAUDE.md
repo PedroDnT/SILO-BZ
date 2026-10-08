@@ -34,6 +34,9 @@ The hooks in `.claude/settings.json`:
 - **PreToolUse on Bash** (`.claude/hooks/npm-cwd-guard.sh`) refuses
   `npm install|i|ci` aimed at `$HOME` or at a directory with no `package.json`
   (`-g` is allowed).
+- **SessionStart** (`.claude/hooks/session-start.sh`) fetches `origin/main` and
+  prints its last 5 commits and the open PRs (REST), so a session sees parallel
+  work before it starts. It never blocks; a failed step prints `(unavailable)`.
 
 Project skills are in `.claude/skills/` and the scheduled agents' prompts in
 `.claude/agents/`. Root `skills-lock.json` pins the vendored skills that the

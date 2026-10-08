@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The pre-push hook's dropped-row check (.claude/hooks/pre-push-docs.sh),
       # for the merges it never sees. On 2026-09-26 an update of #322's branch
@@ -76,13 +76,13 @@ jobs:
           exit 1
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Cache pytest
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .pytest_cache
           key: pytest-${{ runner.os }}-${{ hashFiles('requirements.txt', 'requirements-dev.txt', 'tests/**', 'serve/**', 'src/**') }}
@@ -128,7 +128,7 @@ jobs:
     env:
       POSTGRES_URL: postgresql://postgres:ci@localhost:5432/silo_ci
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Supabase provides anon/authenticated; a vanilla postgres:15 does not.
       # silo_api is created by 12_grants_and_rls.sql itself (guarded).
@@ -689,6 +689,9 @@ jobs:
       - name: trade_consolidated_history behaves (executed, not just compiled)
         run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/trade_consolidated_history_behaviour.sql
 
+      - name: COTAHIST preserved fields behave
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/cotahist_preserved_fields_behaviour.sql
+
       # Credit retrieval vintages: as-of reads keep revisions and removals,
       # incomplete captures refuse, and raw observations stay private.
       - name: credit capture vintages behave (executed, not just compiled)
@@ -703,7 +706,7 @@ jobs:
       # PEP 668 externally-managed, so a bare `pip install` there is one image
       # bump away from failing.
       - name: Set up Python 3.12
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 

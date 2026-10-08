@@ -24,7 +24,7 @@ import psycopg2
 import psycopg2.errors
 from flask import Flask, jsonify, request
 
-from serve.catalog import METRICS, catalog_payload, tool_specs
+from serve.catalog import METRICS, QUOTE_HISTORY_FIELDS, catalog_payload, tool_specs
 from serve.pool import ServePool
 
 logger = logging.getLogger(__name__)
@@ -47,11 +47,16 @@ _MAX_PANEL = 100_000
 _MAX_IDS = 50
 _PANEL_METRICS = tuple(METRICS)
 
-# Compact chart payload. Extra warehouse columns stay on the latest-point route.
+# Compact default chart payload; additional raw fields are opt-in.
 _QUOTE_SERIES_FIELDS = ("open", "high", "low", "close", "volume", "trades")
-# What _quote_series asks api.quote_history for (p_fields): the raw series
-# fields plus the envelope's source, currency and board.
-_QUOTE_SERIES_SQL_FIELDS = (*_QUOTE_SERIES_FIELDS, "source", "currency", "board")
+_QUOTE_SERIES_ALLOWED_FIELDS = tuple(
+    field for field in QUOTE_HISTORY_FIELDS
+    if field not in {
+        "ticker", "trade_date", "close_adj", "close_total_return",
+        "close_total_return_null_reason", "coverage_start", "coverage_end",
+        "prior_no_trade_sessions", "events_proven_at", "data_revision",
+    }
+)
 _NAV_SERIES_FIELDS = (
     "nav",
     "quota",
@@ -283,7 +288,8 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
                     # names the raw fields explicitly.
                     cur.execute(
                         "SELECT q FROM api.quote_history(%s, %s::date, %s::date, %s, %s, %s) AS q",
-                        (code, p_from, p_to, board, after, list(_QUOTE_SERIES_SQL_FIELDS)),
+                        (code, p_from, p_to, board, after,
+                         list(dict.fromkeys((*fields, "source", "currency", "board")))),
                     )
                     page_rows = [
                         {k: _jsonable(v) for k, v in (r[0] or {}).items()}
@@ -395,7 +401,8 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
         try:
             code = normalize_ticker(ticker)
             window = parse_window(request.args)
-            fields = _pick_fields(request.args.get("fields"), _QUOTE_SERIES_FIELDS)
+            fields = (_pick_fields(request.args["fields"], _QUOTE_SERIES_ALLOWED_FIELDS)
+                      if request.args.get("fields") else _QUOTE_SERIES_FIELDS)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         fmt = (request.args.get("format") or "rows").strip().lower()
@@ -426,7 +433,8 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
                 request.args,
                 default_from=(date.today() - timedelta(days=365)).isoformat(),
             )
-            fields = _pick_fields(request.args.get("fields"), _QUOTE_SERIES_FIELDS)
+            fields = (_pick_fields(request.args["fields"], _QUOTE_SERIES_ALLOWED_FIELDS)
+                      if request.args.get("fields") else _QUOTE_SERIES_FIELDS)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         assert window is not None
