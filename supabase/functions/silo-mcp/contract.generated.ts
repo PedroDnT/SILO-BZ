@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "68";
+export const CONTRACT_VERSION = "70";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -116,7 +116,20 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "volume",
       "isin",
       "source",
-      "fetched_at"
+      "fetched_at",
+      "market",
+      "term_days",
+      "currency",
+      "average",
+      "bid",
+      "ask",
+      "contract_price",
+      "contract_expiry",
+      "quotation_factor",
+      "contract_correction",
+      "contract_points",
+      "contract_points_raw",
+      "distribution_number"
     ],
     "inputSchema": {
       "type": "object",
@@ -182,6 +195,58 @@ export const CONTRACT: Record<string, ContractEntry> = {
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             },
             "fetched_at": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "market": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "term_days": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "average": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "bid": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "ask": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_price": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_expiry": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "quotation_factor": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_correction": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points_raw": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "distribution_number": {
               "type": "string",
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             }
@@ -216,7 +281,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "bdrs": {
     "kind": "view",
     "path": "/bdrs",
-    "description": "Unadjusted B3 cash quotes for bdr: Brazilian Depositary Receipts (ESPECI DR*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
+    "description": "Unadjusted B3 cash quotes for bdr: Brazilian Depositary Receipts (ESPECI DR*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
     "columns": [
       "ticker",
       "trade_date",
@@ -241,7 +306,14 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "adjusted",
       "source",
       "fetched_at",
-      "close_unit"
+      "close_unit",
+      "market",
+      "contract_price",
+      "contract_expiry",
+      "contract_correction",
+      "contract_points",
+      "contract_points_raw",
+      "distribution_number"
     ],
     "inputSchema": {
       "type": "object",
@@ -343,6 +415,34 @@ export const CONTRACT: Record<string, ContractEntry> = {
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             },
             "close_unit": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "market": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_price": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_expiry": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_correction": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points_raw": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "distribution_number": {
               "type": "string",
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             }
@@ -377,7 +477,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "cash_securities": {
     "kind": "view",
     "path": "/cash_securities",
-    "description": "Unadjusted B3 cash quotes for cash_security: everything else on the cash board — subscription rights, receipts, and other non-share paper. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
+    "description": "Unadjusted B3 cash quotes for cash_security: everything else on the cash board — subscription rights, receipts, and other non-share paper. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
     "columns": [
       "ticker",
       "trade_date",
@@ -402,7 +502,14 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "adjusted",
       "source",
       "fetched_at",
-      "close_unit"
+      "close_unit",
+      "market",
+      "contract_price",
+      "contract_expiry",
+      "contract_correction",
+      "contract_points",
+      "contract_points_raw",
+      "distribution_number"
     ],
     "inputSchema": {
       "type": "object",
@@ -506,6 +613,34 @@ export const CONTRACT: Record<string, ContractEntry> = {
             "close_unit": {
               "type": "string",
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "market": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_price": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_expiry": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_correction": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points_raw": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "distribution_number": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             }
           },
           "additionalProperties": false
@@ -538,7 +673,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "equities": {
     "kind": "view",
     "path": "/equities",
-    "description": "Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. share_class (ON|PN|PNA|PNB|PNC|PND) and governance_segment (NM|N1|N2|MA|M2|MB) are parsed from published ESPECI, never from the ticker suffix. Classified from published TPMERC/ESPECI; never inferred.",
+    "description": "Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. share_class (ON|PN|PNA|PNB|PNC|PND) and governance_segment (NM|N1|N2|MA|M2|MB) are parsed from published ESPECI, never from the ticker suffix. Classified from published TPMERC/ESPECI; never inferred.",
     "columns": [
       "ticker",
       "trade_date",
@@ -565,7 +700,14 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "fetched_at",
       "share_class",
       "governance_segment",
-      "close_unit"
+      "close_unit",
+      "market",
+      "contract_price",
+      "contract_expiry",
+      "contract_correction",
+      "contract_points",
+      "contract_points_raw",
+      "distribution_number"
     ],
     "inputSchema": {
       "type": "object",
@@ -677,6 +819,34 @@ export const CONTRACT: Record<string, ContractEntry> = {
             "close_unit": {
               "type": "string",
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "market": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_price": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_expiry": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_correction": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points_raw": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "distribution_number": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             }
           },
           "additionalProperties": false
@@ -709,7 +879,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "fund_quotas": {
     "kind": "view",
     "path": "/fund_quotas",
-    "description": "Unadjusted B3 cash quotes for fund_quota: listed fund quotas (CI*/FIDC* paper). fund_type splits the family from B3's published CODBDI board code: etf | fii | fidc | fiagro, NULL when the board carries no signal (odd lot) — filter fund_type=eq.etf for ETFs only. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/CODBDI/ESPECI; never inferred.",
+    "description": "Unadjusted B3 cash quotes for fund_quota: listed fund quotas (CI*/FIDC* paper). fund_type splits the family from B3's published CODBDI board code: etf | fii | fidc | fiagro, NULL when the board carries no signal (odd lot) — filter fund_type=eq.etf for ETFs only. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/CODBDI/ESPECI; never inferred.",
     "columns": [
       "ticker",
       "trade_date",
@@ -735,7 +905,14 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "source",
       "fetched_at",
       "fund_type",
-      "close_unit"
+      "close_unit",
+      "market",
+      "contract_price",
+      "contract_expiry",
+      "contract_correction",
+      "contract_points",
+      "contract_points_raw",
+      "distribution_number"
     ],
     "inputSchema": {
       "type": "object",
@@ -841,6 +1018,34 @@ export const CONTRACT: Record<string, ContractEntry> = {
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             },
             "close_unit": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "market": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_price": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_expiry": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_correction": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points_raw": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "distribution_number": {
               "type": "string",
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             }
@@ -1249,7 +1454,14 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "source",
       "fetched_at",
       "asset_class",
-      "close_unit"
+      "close_unit",
+      "market",
+      "contract_price",
+      "contract_expiry",
+      "contract_correction",
+      "contract_points",
+      "contract_points_raw",
+      "distribution_number"
     ],
     "inputSchema": {
       "type": "object",
@@ -1351,6 +1563,34 @@ export const CONTRACT: Record<string, ContractEntry> = {
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             },
             "close_unit": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "market": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_price": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_expiry": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_correction": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points_raw": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "distribution_number": {
               "type": "string",
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             }
@@ -2995,7 +3235,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "option_chain": {
     "kind": "rpc",
     "path": "/rpc/option_chain",
-    "description": "One session's option chain for a REQUIRED codneg prefix (>= 3 chars; else it raises). side = call/put from tpmerc 070/080. p_trade_date NULL = latest option-segment session. underlying_ticker resolves the option row's ISIN (published: CODISI carries the underlying's ISIN) to the same session's cash codneg; NULL when the underlying had no cash print that day. Rows clamped to 1..2000.",
+    "description": "One session's option chain for a REQUIRED codneg prefix (>= 3 chars; else it raises). side = call/put from tpmerc 070/080. p_trade_date NULL = latest option-segment session. underlying_ticker resolves the option row's ISIN (published: CODISI carries the underlying's ISIN) to the same session's cash codneg; NULL when the underlying had no cash print that day. Rows clamped to 1..2000. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3041,7 +3281,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "option_exercises": {
     "kind": "rpc",
     "path": "/rpc/option_exercises",
-    "description": "Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Rows clamped to 1..500 anonymous, 1..5000 signed in.",
+    "description": "Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Rows clamped to 1..500 anonymous, 1..5000 signed in. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3086,7 +3326,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "option_history": {
     "kind": "rpc",
     "path": "/rpc/option_history",
-    "description": "Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history's shape plus side/strike/expiry and underlying_ticker (resolved per session from the published ISIN mapping; NULL when the underlying had no cash print that day). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to. No cursor — an option series is short-lived, so a window over a page is a mistake, not a walk.",
+    "description": "Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history's shape plus side/strike/expiry and underlying_ticker (resolved per session from the published ISIN mapping; NULL when the underlying had no cash print that day). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to. No cursor — an option series is short-lived, so a window over a page is a mistake, not a walk. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3651,7 +3891,16 @@ export const CONTRACT: Record<string, ContractEntry> = {
               "events_proven_at",
               "data_revision",
               "close_total_return",
-              "close_total_return_null_reason"
+              "close_total_return_null_reason",
+              "market",
+              "term_days",
+              "contract_price",
+              "contract_expiry",
+              "contract_correction",
+              "contract_points",
+              "contract_points_raw",
+              "distribution_number",
+              "fetched_at"
             ]
           },
           "description": "Fields to return; null or omitted = ticker, trade_date, close_adj. ticker and trade_date are in every row.",
@@ -4172,7 +4421,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "termo_history": {
     "kind": "rpc",
     "path": "/rpc/termo_history",
-    "description": "Daily unadjusted series for one termo codneg (tpmerc 030), including term_days (prazot). Grain is (codneg, trade_date, term_days). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to.",
+    "description": "Daily unadjusted series for one termo codneg (tpmerc 030), including term_days (prazot). Grain is (codneg, trade_date, market, board, term_days). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to. Original market, board, term and remaining quote/contract fields are preserved; contract_points_raw retains PTOEXE before six-decimal decoding. fetched_at is warehouse time, not a source-publication vintage.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4454,7 +4703,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "units": {
     "kind": "view",
     "path": "/units",
-    "description": "Unadjusted B3 cash quotes for unit: units — bundled share packages (ESPECI UNT*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
+    "description": "Unadjusted B3 cash quotes for unit: units — bundled share packages (ESPECI UNT*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020) or block (021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.",
     "columns": [
       "ticker",
       "trade_date",
@@ -4479,7 +4728,14 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "adjusted",
       "source",
       "fetched_at",
-      "close_unit"
+      "close_unit",
+      "market",
+      "contract_price",
+      "contract_expiry",
+      "contract_correction",
+      "contract_points",
+      "contract_points_raw",
+      "distribution_number"
     ],
     "inputSchema": {
       "type": "object",
@@ -4581,6 +4837,34 @@ export const CONTRACT: Record<string, ContractEntry> = {
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             },
             "close_unit": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "market": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_price": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_expiry": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_correction": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contract_points_raw": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "distribution_number": {
               "type": "string",
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             }
