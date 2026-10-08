@@ -81,7 +81,7 @@ date fields require a fresh export. These checks improve retrospective identity
 selection without certifying original-date publication knowledge.
 
 The local [reviewed links](../../../research_examples/debenture_equity/reviewed_links.json)
-cite issuance documents, fiduciary reports and instrument records for eighteen
+cite issuance documents, fiduciary reports and instrument records for twenty-two
 **original issuers**:
 
 | Bond / ISIN | Original issuer full CNPJ | Existing FCA equities |
@@ -104,6 +104,10 @@ cite issuance documents, fiduciary reports and instrument records for eighteen
 | EGIE27 / BREGIEDBS043 | 02474103000119, Engie Brasil Energia | EGIE3 |
 | BRST15 / BRBRSTDBS043 | 04601397000128, Brisanet Serviços de Telecomunicações | BRST3 |
 | DESK17 / BRDESKDBS053 | 08170849000115, Desktop | DESK3 |
+| HYPEA8 / BRHYPEDBS0N4 | 02932074000191, Hypera | HYPE3 |
+| IOCHA3 / BRMYPKDBS0C2 | 61156113000175, Iochpe-Maxion | MYPK3 |
+| IRBR12 / BRIRBRDBS022 | 33376989000191, IRB Brasil Resseguros | IRBR3 |
+| ITSA17 / BRITSADBS093 | 61532644000115, Itaúsa | ITSA3, ITSA4 |
 
 Each link records citation/page, original issuance date, review cutoff and actual
 knowledge timestamp. Retrospective use assumes no intervening issuer transfer;
@@ -524,6 +528,32 @@ corrected. BCBF16 also remains outside the original-issuer sample: Hapvida's
 identifies BCBF Participações for that issuance, requiring dated legal succession
 evidence before a Hapvida stock linkage can be accepted. Current name agreement
 cannot certify its original issuer or date a transfer.
+
+Documentary review then added **HYPEA8, IOCHA3, IRBR12 and ITSA17**. The
+2025 reports identify full CNPJ/code/issuance date on PDF pages 6/2/2/2,
+respectively; SND supplies each exact ISIN. Complete PDF hashes and page locators
+are retained in the link file; relevant pages were visually checked. Hypera's
+PDF begins with other-emission disclosures before its own report, so its issuer
+page is page 6, not page 2. Current company-register commercial names are
+HYPERA PHARMA S/A, IOCHPE-MAXION and ITAÚSA; IRB's is null and remains null.
+
+The **10:52:06 UTC-3** export contains 12,123 credit metric rows, 4,998 equity
+rows, 209 FCA rows and 546 sector/index rows. The unchanged pilot produces
+**894 overlapping outcomes** (340/322/232 at 1/5/20 sessions) from **20 of the
+22 documented issuers**, all inconclusive before fitting/scoring. ENEV3 and
+BRST3 remain excluded by trailing-beta history; 108 outcomes have eligible
+exact-date sectors. Strict PIT remains zero (69 unavailable historical credit
+sessions). Twenty issuers anywhere in the panel are not proof of the required
+21 eligible issuers in the untouched test after exclusions and dominance refits.
+For signal dates after 04/09, the one-session panel has 17 issuers/19 dates and
+the primary five-session panel has 17 issuers/15 dates; the twenty-session panel
+has no such outcomes. This is below both issuer and date acceptance floors.
+The prior eighteen-issuer run remains a historical checkpoint.
+
+```text
+twenty-two-issuer bundle d460a425a8b6561de6393339465890b7bab219e57526873be39275b1c1bc8d0f
+twenty-two-issuer links  8d5c6fe22e4a263b569ae5f0bd0c24a66190ebb44066d211a9926f42f2b579a7
+```
 
 The remaining implementation sequence is conditional, not a new production approval:
 

@@ -368,5 +368,89 @@
       }
     ],
     "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; cited original documents/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "HYPEA8",
+    "isin": "BRHYPEDBS0N4",
+    "cnpj": "02932074000191",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2024-05-03",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:51:58.954923-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513838&numSequencia=1038544&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 6: Hypera, 18th unique-series original issuer full CNPJ, HYPEA8 and issuance date; SHA256 f53e7f3abea20806003daf46b681e0b77ea604e89dc26b501587c502f9436981"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=HYPEA8&tip_deb=publicas",
+        "locator": "Instrument characteristics: HYPEA8, BRHYPEDBS0N4, issuer, emission/series and 2024-05-03 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "IOCHA3",
+    "isin": "BRMYPKDBS0C2",
+    "cnpj": "61156113000175",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2024-04-02",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:51:58.954923-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513717&numSequencia=1038423&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: Iochpe-Maxion, 13th unique-series original issuer full CNPJ, IOCHA3 and issuance date; SHA256 fa327b510f34d3455ce872e0c3bd9a7a9c948b1aa86312b9ac8652bb3b7543dc"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=IOCHA3&tip_deb=publicas",
+        "locator": "Instrument characteristics: IOCHA3, BRMYPKDBS0C2, issuer, emission/series and 2024-04-02 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "IRBR12",
+    "isin": "BRIRBRDBS022",
+    "cnpj": "33376989000191",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2020-12-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:51:58.954923-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513108&numSequencia=1037814&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: IRB Brasil Resseguros, 2nd unique-series original issuer full CNPJ, IRBR12 and issuance date; SHA256 5a9da5e590237cf8f75a4ab0e19166be8add1453b9905820fcfdf3fc93c5368a"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=IRBR12&tip_deb=publicas",
+        "locator": "Instrument characteristics: IRBR12, BRIRBRDBS022, issuer, emission/series and 2020-12-15 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "ITSA17",
+    "isin": "BRITSADBS093",
+    "cnpj": "61532644000115",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2024-07-25",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:51:58.954923-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1514260&numSequencia=1038966&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: Itausa, 7th unique-series original issuer full CNPJ, ITSA17 and issuance date; SHA256 eabf9332961c5e0c58e9f31b2742b21a12bfe5916bae26d88b2dd0f300bb96b1"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=ITSA17&tip_deb=publicas",
+        "locator": "Instrument characteristics: ITSA17, BRITSADBS093, issuer, emission/series and 2024-07-25 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
   }
 ]
