@@ -506,7 +506,8 @@ BODY_ORDER = ("Resumo para a reunião", "O que pede atenção", "Achados", "Quan
               "Concentração e liquidez", "Retorno passado contra o CDI", "Taxa e imposto por posição",
               "Informes reapresentados e movimento incomum", "O que não foi possível avaliar")
 ANNEX = ("Resumo escrito pelo redator", "Como cada posição foi identificada", "Crédito direto no registro da CVM", "Detalhe da exposição", "Taxa por fundo", "Todos os riscos e seus limites",
-         "Retorno por posição em detalhe", "ETF comparável (não é recomendação)", "Metodologia e limitações")
+         "Retorno por posição em detalhe", "Retorno contratado (não é retorno de mercado)", "ETF comparável (não é recomendação)",
+         "Metodologia e limitações")
 
 
 def test_the_body_answers_in_the_order_a_cio_asks_and_the_evidence_is_in_the_annex(built_demo):

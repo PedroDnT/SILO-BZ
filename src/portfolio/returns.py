@@ -44,6 +44,7 @@ from typing import Any
 
 from src.portfolio import benchmark
 from src.portfolio.client import SiloClient
+from src.portfolio.contracted import compute_contracted
 from src.portfolio.common import (
     STATUS_NOT_APPLICABLE,
     Call,
@@ -266,6 +267,8 @@ def compute_returns(
         "n_not_evaluated": sum(ln["status"] == NOT_EVALUATED for ln in out),
         "coverage": coverage,
         "contribution": _contribution(out, coverage),  # engine 1.15
+        # engine 2.1 (#766, method C): apart from the lines, the coverage and the contribution; the report's annex only
+        "contracted": compute_contracted(lines, cdi, client, [(wid, months[-(n + 1):]) for wid, n, *_ in WINDOWS], sec),
     }
 
 

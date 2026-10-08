@@ -19987,6 +19987,130 @@
           ]
         }
       }
+    },
+    "contracted": {
+      "label": "retorno contratado",
+      "note": "Retorno contratado: a taxa impressa no extrato acumulada sobre o CDI ou o IPCA das mesmas datas, desde a data base da janela. É o que o contrato paga, sem risco de crédito nem marcação; não é retorno de mercado. O IPCA entra pelo mês cheio, sem pró-rata nem defasagem; o prefixado e o spread contam dias úteis do CDI.",
+      "lines": [
+        {
+          "line_no": 9,
+          "linha_extrato": "CDB BANCO EXEMPLO",
+          "tipo": "CDB",
+          "valor_brl": 270000.0,
+          "taxa_texto": "105,00% do CDI",
+          "rate": {
+            "kind": "pct_cdi",
+            "value_pct": 105.0
+          },
+          "data_inicial": null,
+          "vencimento": "2028-03-15",
+          "status": "nao_avaliado",
+          "windows": {
+            "12m": {
+              "status": "nao_avaliado",
+              "reason_code": "contratado_sem_data_inicial",
+              "reason": "o extrato não imprime a data inicial",
+              "base_month": "2025-09-01",
+              "end_month": "2026-09-01",
+              "base_date": null,
+              "end_date": null,
+              "n_business_days": null,
+              "contracted_return_pct": null,
+              "cdi_pct": null,
+              "net_minus_cdi_pp": null,
+              "pct_of_cdi": null,
+              "pct_of_cdi_reason_code": null,
+              "sources": []
+            },
+            "6m": {
+              "status": "nao_avaliado",
+              "reason_code": "contratado_sem_data_inicial",
+              "reason": "o extrato não imprime a data inicial",
+              "base_month": "2026-03-01",
+              "end_month": "2026-09-01",
+              "base_date": null,
+              "end_date": null,
+              "n_business_days": null,
+              "contracted_return_pct": null,
+              "cdi_pct": null,
+              "net_minus_cdi_pp": null,
+              "pct_of_cdi": null,
+              "pct_of_cdi_reason_code": null,
+              "sources": []
+            }
+          },
+          "sources": [
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 9
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        },
+        {
+          "line_no": 10,
+          "linha_extrato": "LCA BANCO EXEMPLO",
+          "tipo": "LCA",
+          "valor_brl": 120000.0,
+          "taxa_texto": "CDI + 0,50%",
+          "rate": {
+            "kind": "cdi_spread",
+            "value_pct": 0.5
+          },
+          "data_inicial": null,
+          "vencimento": "2027-06-15",
+          "status": "nao_avaliado",
+          "windows": {
+            "12m": {
+              "status": "nao_avaliado",
+              "reason_code": "contratado_sem_data_inicial",
+              "reason": "o extrato não imprime a data inicial",
+              "base_month": "2025-09-01",
+              "end_month": "2026-09-01",
+              "base_date": null,
+              "end_date": null,
+              "n_business_days": null,
+              "contracted_return_pct": null,
+              "cdi_pct": null,
+              "net_minus_cdi_pp": null,
+              "pct_of_cdi": null,
+              "pct_of_cdi_reason_code": null,
+              "sources": []
+            },
+            "6m": {
+              "status": "nao_avaliado",
+              "reason_code": "contratado_sem_data_inicial",
+              "reason": "o extrato não imprime a data inicial",
+              "base_month": "2026-03-01",
+              "end_month": "2026-09-01",
+              "base_date": null,
+              "end_date": null,
+              "n_business_days": null,
+              "contracted_return_pct": null,
+              "cdi_pct": null,
+              "net_minus_cdi_pp": null,
+              "pct_of_cdi": null,
+              "pct_of_cdi_reason_code": null,
+              "sources": []
+            }
+          },
+          "sources": [
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 10
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        }
+      ],
+      "n_lines": 2,
+      "n_evaluated": 0
     }
   },
   "tax": {

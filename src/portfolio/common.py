@@ -121,6 +121,13 @@ REASON_TEXT = {
     "retorno_curva_sem_codigo": "CRA ou CRI sem código CETIP no extrato: sem curva da securitizadora",
     "taxa_nao_cdi": "taxa arquivada pela securitizadora não indexada ao CDI: só a diferença para o CDI em p.p.",
     "taxa_nao_informada": "taxa não arquivada pela securitizadora em algum mês da janela: só a diferença para o CDI em p.p.",
+    # engine 2.1 (#766, method C): the contracted return of a CDB, LCI, LCA or CDCA (contracted.py)
+    "contratado_sem_taxa": "retorno contratado: o extrato não imprime a taxa",
+    "contratado_taxa_ilegivel": "retorno contratado: taxa impressa fora das formas lidas (p% do CDI, CDI, CDI + s%, IPCA + s%, r% a.a.)",
+    "contratado_sem_data_inicial": "retorno contratado: o extrato não imprime a data inicial",
+    "contratado_papel_mais_novo": "retorno contratado: o papel começou depois da data base da janela",
+    "contratado_vencido": "retorno contratado: o papel venceu antes do fim da janela",
+    "contratado_ipca_indisponivel": "retorno contratado: IPCA de algum mês da janela indisponível no SILO",
     "cdi_nao_positivo": "CDI do período não positivo: '% do CDI' não calculado",
     # engine 1.13: the market equivalent (#609, market_equivalent.py)
     "equivalente_fora_escopo": "fundo não identificado ou fora da família FI: sem classe ANBIMA para ligar a um índice",

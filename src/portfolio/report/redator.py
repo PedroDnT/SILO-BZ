@@ -65,7 +65,9 @@ def _walk(doc: Any, path: str = "") -> Any:
 REDATOR_DROP_KEYS = frozenset({"reason", "error", "errors", "params", "args", "endpoint", "failed", "not_run", "gaps",
                                "table_only", "tree", "exposure_origin",
                                # #765: the page-1 cost coverage over the portfolio is the renderer's, not prose
-                               "coverage_fixed_portfolio_pct", "coverage_range_portfolio_pct"})
+                               "coverage_fixed_portfolio_pct", "coverage_range_portfolio_pct",
+                               # #766: the contracted return is the annex's, never prose (owner, 2026-10-08)
+                               "contracted"})
 
 
 def redator_view(engine: dict) -> dict:
