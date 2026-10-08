@@ -530,9 +530,13 @@ loads data or certifies strict historical PIT from retrieval dates.
 Offline experiment/preparation now implemented with three documented original-issuer
 links (ALPA13, ALUP18, ANIM18), current total-return equity/IBOV exports, trailing
 beta, past-liquidity equity selection, chronological purges and dependence checks.
-Live run: four one-session outcomes, no primary five-session outcomes; inconclusive.
-Prepared recovery: 64 missing known sessions, 13 sequential slices for 01/07–29/09,
-pending specific production approval and storage headroom. The three-month pilot
+Initial live run: four one-session outcomes, no primary five-session outcomes.
+Owner approved all 13 recovery slices for 01/07–29/09. The first, 01/07–07/07,
+landed 60,642 facts / 1,222 bonds, zero drops and verified hash; +22,290,432 allocated
+bytes. Slice 2's weekly export and its first daily fallback (08/07) each failed
+after two transport attempts; sequence stopped, no later slices started. Fifty-nine
+known sessions remain missing. Fresh offline run: 19 overlapping horizon rows
+(9/5/5 at 1/5/20 sessions), all inconclusive; strict PIT still zero. The three-month pilot
 cannot meet fixed training/validation/test floors even with complete recovery;
 broader identities, longer protocol, sector robustness and power assessment remain.
 

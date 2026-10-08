@@ -93,7 +93,7 @@ complete, hash-verified snapshot before joining bonds. Source classification
 comparison ignores case; original values remain unchanged. Missing observations
 and unpublished metrics are excluded, never filled with zero or forward-filled.
 
-## 3. Bounded historical preparation gate: pending approval of a concrete load
+## 3. Bounded historical preparation gate: approved, partial execution
 
 Reuse the current ingestor after checking actual missing coverage. Start with a
 three-month pilot only after an explicit window and storage allowance are approved;
@@ -131,7 +131,8 @@ credit and **64 missing sessions**. The proposal covers only 01/07–29/09:
 If the approved five-session sample repeated, arithmetic implies 644,979,098 bytes
 of additional allocated relations (~0.65 GB) and 1,051,268,992 raw UTF-8 bytes
 (~1.05 GB). These are scenarios, not forecasts or caps; allocation differs from raw
-size and excludes WAL/backups. Actual project quota/headroom remains unverified.
+size and excludes WAL/backups. At preparation time actual quota/headroom was
+unverified; the subsequent execution preflight is recorded below.
 Execution should stop between slices once newly allocated credit relations reach
 1 GB; the last slice can overshoot that threshold. Approval must cover that
 behavior and adequate headroom must be verified first.
@@ -150,6 +151,42 @@ stop on errors, incompleteness, drops, lost headroom or the allocation threshold
 After completion, regenerate the bounded research export and repeat the audit.
 Source latency and split retries determine runtime; no throughput was measured
 for this proposed window. Source history availability is not yet validated.
+
+### Approved execution, 2026-10-07 (UTC-3)
+
+The owner explicitly approved all 13 slices in the conversation. Preflight found
+87,420,218,515 database bytes against the health workflow's recorded purchased
+135 GB allowance; today's DB Health run `37589512910` succeeded. No replication
+slots retained WAL. This checks the repository's operational allowance, not direct
+filesystem free-space telemetry. Credit relations initially totaled 64,356,352 bytes.
+
+| Slice | Outcome | Authoritative evidence |
+| --- | --- | --- |
+| 01/07–07/07 | Complete; five delivered sessions, zero drops | Capture `290b974f-246c-4fdb-98f1-e8682755eadb`, audit `ok` |
+| 08/07–14/07 | Export transport failure after two attempts | Audit `c7c87c2d-2869-42c0-8d93-d2d2eca626b3`, zero facts written |
+| Daily fallback 08/07 | Export transport failure after two attempts | Audit `c096de43-3760-423d-ad75-2732c9ca81f2`, zero facts written |
+| Slices 3–13 | Not started | Sequence stopped on the existing ingestor's terminal error |
+
+Successful capture observed at **22:08:49 UTC-3**, completed at 22:08:56. Its
+175,737 source rows yielded 6,738 DEB groups, 1,222 bond codes and **60,642 facts**.
+All groups had nine distinct metrics. Persisted UTF-8 payload: 23,842,689 bytes;
+SHA-256 `82008ec327218286ef2dc0c8a92a335b30883b0e2a33084997e13c6d5260731f`,
+recomputed successfully. Source dates remain July; knowledge time remains October.
+
+The weekly failure ran 22:09:27–22:13:32; the existing daily fallback ran
+22:13:32–22:17:37. Both logged `B3BdiFetchError`. The logs do not preserve the
+underlying transport exception type/message, so its exact network cause is unknown.
+Do not reinterpret this as empty trading data or unavailable historical publication.
+The terminal process exited 1; no recovery process or current audit remains running.
+
+Allocated credit relations ended at **86,646,784 bytes**, an increase of
+**22,290,432 bytes**. The 1 GB stop threshold was not reached. Ten of the 69 known
+signal-window sessions now have complete captures; **59 remain missing**. The next
+unrecovered approved interval is 08/07–14/07. Resume only after diagnosing/rechecking
+the export failure, rechecking coverage and preserving the already captured dates.
+The existing approval is recorded; source transport, not owner permission, is now
+the immediate blocker. No schema apply, annual backfill, COTAHIST recovery or
+permanent enablement occurred.
 
 ## 4. Experiment contract: offline implementation, pilot only
 
@@ -216,6 +253,17 @@ protocol c26a949418ebc10f5d948f27cfcd16460c0d79512b648d2b898d7d6b657c5122
 bundle   d243b0ccc99afc4d45eb303b63bda0004e7288a4bb5ef91efae381146697dbfa
 links    3ccc7afbfadb73bad95548c4856a923ade783f02f50c59c9310c71aaefdae7c3
 ```
+
+After the approved partial recovery, a fresh bounded export at **22:17:54 UTC-3**
+reconciled all three stored captures and 297 selected metric rows. The runner
+produced **19 rows across horizons: nine at one session, five at five sessions and
+five at twenty sessions**. These are overlapping issuer/date outcomes, not 19
+independent observations. Training/validation/test coverage remains insufficient;
+all horizons remain inconclusive and strict PIT still yields zero rows.
+The new bundle SHA-256 is
+`30a28ffe602694235c9f7bb8cf2383ef6cd075389fe1c3f6ccb2c4b0c8506826`;
+protocol and identity hashes are unchanged. The earlier four-row run above is
+retained as evidence before recovery, not current coverage.
 
 Execution estimates after gate clearance: documentary review initially 2–4 hours;
 coverage audit about one day; historical preparation 1–3 days subject to source
