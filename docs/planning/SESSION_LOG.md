@@ -7,13 +7,15 @@ assumptions, and anything touched outside the asked scope. Newest first.
 
 **Done.** The build that follows #768 (the measurement and the stop at MRV's test case), after the owner accepted the
 two guards: `api.portfolio_credit_returns` (catalog v71, `31_api_portfolio.sql`), engine schema 2.1 (`returns.py`,
-new `contracted.py`), the BTG reader keeps 'Data inicial', the report shows A in the body table ("valor na curva";
+new `contracted.py`), the BTG reader keeps 'Data inicial', the Redator no longer receives the `contracted` block (annex only), the report shows A in the body table ("valor na curva";
 "n/a" with the reason in #765's one footnote) and C in the annex only. On the real 2026-08-31 statement: measured 12-month coverage 8.06%
 to 10.65% (Marfrig CRA, 14.54%, 99.38% of the CDI); contracted return apart, 18.43% (OMNI CDB IPCA + 6,20%: 10.69%;
 CDCA 11,87% a.a.: 11.87%).
 
 **Decisions.** Owner: guards `queda_sem_evento_arquivado` and `pu_repetido` (2026-10-08). Taken here, for the owner to
-check: the third guard `pagamento_acima_do_pu`; C apart from every measured figure (annex only) until the owner decides;
+check: the third guard `pagamento_acima_do_pu`; the band of `pagamento_incompativel` (0.5 to 1.5 times the line's
+month with no payment), proposed from 7,788 payment months after the first real run published CRA02400AYL's 6-month
+window at 340% of the CDI; C apart from every measured figure (annex only) until the owner decides;
 a CRA or CRI on the curve left out of the contribution sum (never mix methods in a total); "% do CDI" for credit from the
 rate the statement prints, never the register's `taxa_juros`.
 

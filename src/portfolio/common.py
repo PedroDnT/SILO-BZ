@@ -91,6 +91,7 @@ REASON_TEXT = {
     "pu_repetido": "o informe da securitizadora repete o valor do mês anterior em um mês da janela; retorno não avaliado",
     "queda_sem_evento_arquivado": "o valor na curva cai em um mês da janela sem pagamento arquivado (cupom ou amortização não informados); retorno não avaliado",
     "pagamento_acima_do_pu": "o pagamento arquivado no mês supera o valor do certificado: informe inconsistente; retorno não avaliado",
+    "pagamento_incompativel": "no mês do pagamento arquivado, o retorno fica fora de 0,5 a 1,5 vez o retorno dos meses sem evento do papel (pagamento em outro mês ou valor que não é o cupom); retorno não avaliado",
     "taxa_credito_sem_taxa_adm": "crédito direto: sem taxa de administração; o spread embutido não é publicado",
     "credito_nao_cdi": "crédito direto atrelado a IPCA ou prefixado (a taxa impressa no extrato não contém CDI): só a diferença para o CDI em p.p.",
     "taxa_nao_informada": "o extrato não imprime a taxa do papel: '% do CDI' não calculado; só a diferença para o CDI em p.p.",

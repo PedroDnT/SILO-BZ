@@ -2821,7 +2821,17 @@ COMMENT ON FUNCTION api.portfolio_equivalents(TEXT[], DATE) IS
 --     (pu below the previous one and nothing paid filed: a PU on the curve does
 --     not fall without an event; no threshold), pagamento_acima_do_pu (paid
 --     above the previous pu while the paper still has a value: the filing is
---     inconsistent). The owner accepted the first two guards on 2026-10-08.
+--     inconsistent), pagamento_incompativel (a month with a payment whose
+--     return, (pu + paid) / previous pu - 1, is outside 0.5 .. 1.5 times the
+--     median return of the line's months with no payment and a rising pu in
+--     the 13, or with fewer than 3 such months to compare: measured 2026-10-08
+--     over 7,788 payment months of 1,457 series since 2024, the ratio has
+--     median 1.08 and p25 0.885, and 29% are above 3 (a payment filed in
+--     another month than the pu's fall, or a value that is not the coupon:
+--     CRA02400AYL filed 238.01 a unit in 2026-05 for a fall of about 60).
+--     The owner accepted queda_sem_evento_arquivado and pu_repetido on
+--     2026-10-08; the band of pagamento_incompativel is a proposal for the
+--     owner (#766, decision 4).
 --   rentabilidade is never read (almost always 0 as filed).
 -- It is the securitizer's value on the curve, not a market price, and it
 -- carries no credit event SILO does not see in the filing.
@@ -2958,6 +2968,14 @@ BEGIN
         FROM v
         WINDOW k AS (PARTITION BY v.line_no ORDER BY v.month)
     ),
+    normal AS (   -- each line's median month return with no payment and a rising pu (pagamento_incompativel)
+        SELECT w.line_no,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY w.u_pu / w.p_pu - 1) AS med,
+               count(*) AS n
+        FROM w
+        WHERE w.k_i > 1 AND w.u_paid = 0 AND w.p_pu > 0 AND w.u_pu > w.p_pu AND w.r_q = w.p_q
+        GROUP BY w.line_no
+    ),
     f AS (
         SELECT w.*,
                CASE
@@ -2969,8 +2987,12 @@ BEGIN
                    WHEN w.u_pu = w.p_pu THEN 'pu_repetido'
                    WHEN w.u_pu < w.p_pu AND w.u_paid = 0 THEN 'queda_sem_evento_arquivado'
                    WHEN w.u_paid > w.p_pu THEN 'pagamento_acima_do_pu'
+                   WHEN w.u_paid > 0 AND (COALESCE(nm.n, 0) < 3 OR nm.med <= 0
+                        OR (w.u_pu + w.u_paid) / w.p_pu - 1 NOT BETWEEN 0.5 * nm.med AND 1.5 * nm.med)
+                        THEN 'pagamento_incompativel'
                END AS flag
         FROM w
+        LEFT JOIN normal nm ON nm.line_no = w.line_no
     ),
     page (line_no, input_code, code, numero_serie, classe, month, data_referencia, versao,
           quantidade_certificados, valor_certificados, rendimentos, amortizacoes, pu, paid_per_unit,
@@ -3010,7 +3032,7 @@ GRANT EXECUTE ON FUNCTION api.portfolio_credit_returns(TEXT[], DATE, INT[], TEXT
 GRANT EXECUTE ON FUNCTION api.portfolio_credit_returns(TEXT[], DATE, INT[], TEXT[]) TO silo_api;
 
 COMMENT ON FUNCTION api.portfolio_credit_returns(TEXT[], DATE, INT[], TEXT[]) IS
-    'The value ON THE CURVE of a CRA or CRI as its securitizer files it (catalog v71, #766): for each CETIP code (trimmed, upper-cased, a leading CRA- or CRI- stripped), the 13 month-ends p_end_month - 12 .. p_end_month from cvm_securit_serie, one row per (line, month), oldest first. The series is the one p_series / p_classes name (from portfolio_instruments) or the code''s only series in the window; two or more with none named is serie_ambigua. A month''s row is its informe (data_referencia = the month, the month-end value) at the highest versao. pu = valor_certificados / quantidade_certificados; paid_per_unit = (rendimentos + amortizacoes) / quantidade, NULL read as 0; factor = (pu + paid) / previous pu, 12 places, NULL on the first month or a flagged one: compound the 12 factors for the 12-month return. month_flag says why a month is unknown: serie_ambigua, mes_ausente, valor_invalido, quantidade_mudou, pu_repetido (the value of the month before carried over), queda_sem_evento_arquivado (the pu falls and nothing paid is filed: an unfiled coupon or amortization, never read as a loss), pagamento_acima_do_pu. A window with any flag has no return. rentabilidade is never read. It is the securitizer''s value on the curve, not a market price. At most 70 codes (13 rows each); otherwise RAISES 22023; one page, never trimmed.';
+    'The value ON THE CURVE of a CRA or CRI as its securitizer files it (catalog v71, #766): for each CETIP code (trimmed, upper-cased, a leading CRA- or CRI- stripped), the 13 month-ends p_end_month - 12 .. p_end_month from cvm_securit_serie, one row per (line, month), oldest first. The series is the one p_series / p_classes name (from portfolio_instruments) or the code''s only series in the window; two or more with none named is serie_ambigua. A month''s row is its informe (data_referencia = the month, the month-end value) at the highest versao. pu = valor_certificados / quantidade_certificados; paid_per_unit = (rendimentos + amortizacoes) / quantidade, NULL read as 0; factor = (pu + paid) / previous pu, 12 places, NULL on the first month or a flagged one: compound the 12 factors for the 12-month return. month_flag says why a month is unknown: serie_ambigua, mes_ausente, valor_invalido, quantidade_mudou, pu_repetido (the value of the month before carried over), queda_sem_evento_arquivado (the pu falls and nothing paid is filed: an unfiled coupon or amortization, never read as a loss), pagamento_acima_do_pu, pagamento_incompativel (a payment month whose return is outside 0.5 .. 1.5 times the median of the line''s months with no payment, or with fewer than 3 of them). A window with any flag has no return. rentabilidade is never read. It is the securitizer''s value on the curve, not a market price. At most 70 codes (13 rows each); otherwise RAISES 22023; one page, never trimmed.';
 
 
 COMMIT;

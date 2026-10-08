@@ -39,6 +39,8 @@ SOURCE_BY_TOOL = {
     # engine 1.13: the class distribution is CVM's quotas; the equivalents list is SILO's ETF registry (CVM) with the
     # etfsbrasil PL and fee, listed apart as ETFSBRASIL with the snapshot date (see _provenance_view)
     "class_return_distribution": "CVM", "portfolio_equivalents": "ETFSBRASIL",
+    # schema 2.1 (#766): the CRA / CRI curve is the securitizer's CVM filing; the IPCA of a contracted rate is BCB's
+    "portfolio_credit_returns": "CVM", "inflation": "BCB",
 }
 LEVEL_BY_KIND = {
     "mesmo_ativo": "ativo",

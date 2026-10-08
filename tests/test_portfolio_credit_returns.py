@@ -151,6 +151,18 @@ def test_a_missing_month_is_the_existing_incomplete_series_code_with_its_months(
     assert ln["windows"]["6m"]["reason_code"] == "serie_incompleta"
 
 
+@pytest.mark.parametrize("flag", ["pu_repetido", "pagamento_acima_do_pu", "pagamento_incompativel", "valor_invalido",
+                                  "serie_ambigua"])
+def test_a_every_month_flag_is_the_windows_reason_with_its_fixed_text(flag):
+    # pagamento_incompativel: CRA02400AYL filed 238.01 a unit in 2026-05 for a fall of about 60 (measured 2026-10-08);
+    # without it the 6-month window read 23.86%, 340% of the CDI
+    rows = curve_rows(1, "CRA02400AYL", FLAT, flags={9: flag})
+    sec, _ = run([credit_line(code="CRA02400AYL")], {"portfolio_credit_returns": [{"match": {}, "rows": rows}]})
+    ln = one(sec)
+    assert ln["windows"]["6m"]["reason_code"] == flag and ln["windows"]["6m"]["net_return_pct"] is None
+    assert flag in REASON_TEXT
+
+
 def test_a_fall_with_no_payment_filed_is_unknown_never_a_loss():
     # MRV's CRI 24I1980390, 2026-04: the pu fell 6.1% and no coupon was filed (measured 2026-10-08)
     rows = curve_rows(1, "24I1980390", FLAT, flags={8: "queda_sem_evento_arquivado"})

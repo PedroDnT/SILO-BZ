@@ -175,7 +175,7 @@ REASONS = {
 # schema 2.1 (#766): the month flags of portfolio_credit_returns, as a window's reason code ('mes_ausente' is the
 # existing 'serie_incompleta')
 CURVE_FLAGS = ("serie_ambigua", "mes_ausente", "valor_invalido", "quantidade_mudou", "pu_repetido",
-               "queda_sem_evento_arquivado", "pagamento_acima_do_pu")
+               "queda_sem_evento_arquivado", "pagamento_acima_do_pu", "pagamento_incompativel")
 CURVE_REASONS = {
     "serie_ambigua": "mais de uma série ou classe para o código e nenhuma indicada",
     "valor_invalido": "quantidade ou valor não positivo no informe",
@@ -183,6 +183,7 @@ CURVE_REASONS = {
     "pu_repetido": "o informe repete o valor do mês anterior",
     "queda_sem_evento_arquivado": "o valor na curva cai sem pagamento arquivado",
     "pagamento_acima_do_pu": "pagamento arquivado acima do valor do certificado",
+    "pagamento_incompativel": "o retorno do mês de pagamento não é compatível com os meses sem evento",
 }
 # engine 1.13: why a window has no "% do CDI" (fixed Portuguese text in common.REASON_TEXT)
 PCT_CDI_ONLY_FUNDS = "pct_cdi_so_fundos"

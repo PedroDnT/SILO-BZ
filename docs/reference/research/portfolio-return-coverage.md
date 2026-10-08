@@ -347,6 +347,27 @@ Method B waits for the owner's threshold.
   catches CRA02500001 only in 2 of its months: its PU is 0.0026 (a
   `valor_certificados` near R$1,000 for 380,074 certificates) and moves in the
   fifth decimal; `pagamento_acima_do_pu` catches the other ten.
+- **A payment that is not the coupon (`pagamento_incompativel`, a proposal for
+  the owner).** The first real run published CRA02400AYL's 6-month window
+  (2026-02 to 2026-08) at 23.86%, 340.7% of the CDI on a 105%-of-CDI paper: in
+  2026-05 it filed 238.01 a unit paid for a PU fall of about 60, so the month
+  read +16.65%. No guard above catches it without a tolerance. Measured over
+  `cvm_securit_serie` since 2024 (2026-10-08, read-only): 7,788 payment months
+  of 1,457 series that also have at least 6 months with no payment and a rising
+  PU. The payment month's return over the series' median month with no payment:
+
+  | p01 | p05 | p25 | p50 | p75 | p95 | within 0.5..1.5 | within 0..2 | above 3 | below 0 |
+  | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | −7.61 | 0.263 | 0.885 | 1.079 | 33.7 | 1.15e6 | 4,538 (58%) | 5,006 (64%) | 2,297 (29%) | 286 |
+
+  A filed coupon of a clean series sits near 1 (Marfrig: about 0.96 and 0.92 of
+  the month's CDI; MRV 2025-04 and 2025-10: 1.07 and 1.06). The tail above 3
+  is a payment filed in another month than the PU's fall (CRA0240066G filed its
+  2025-06 coupon one month before the fall) or a value that is not the coupon.
+  Proposed and built: a payment month is unknown when its return is outside 0.5
+  to 1.5 times the median of the line's months with no payment in the 13, or
+  when fewer than 3 such months exist. The owner decides the band (decision 4).
+  With it, Marfrig stays evaluated and CRA02400AYL's 6-month window is not.
 - **`taxa_juros` is free text that changes between months of one series.**
   MRV: "110.000 % do CDI", "Não definido + 1.100", "110.0000% CDI",
   "110,0000% CDI". Boa Safra files "100% CDI + 15,4102% a.a." where the
@@ -407,6 +428,9 @@ production rows of the six CRA/CRI codes and this branch's function. CDI over
 | ENAT11      | B (not built)           |               — | —                 | `retorno_debenture_metodo_pendente`                         |
 | CDB OMNI    | C, contracted (annex)   |      10.685307% | n/a (IPCA, −3.95 p.p.) | IPCA of 2025-09..2026-08 4.223453%, 252 business days |
 | CDCA        | C, contracted (annex)   |          11.87% | n/a (prefixado, −2.76 p.p.) | 252 business days                                |
+
+The 6-month windows give the same coverage (10.6523%): Marfrig 6.968346%,
+99.508% of the CDI; every other CRA/CRI window has a flag.
 
 **Coverage of the 12-month return**, of R$1,056,638.06: before 8.06% (DEBB11,
 GOLD11); after 10.6523% measured (R$112,556.44: + Marfrig), and 18.4279%

@@ -1568,9 +1568,10 @@ SELECT 'cra_mensal', '87000000000901', 'ZZCRV' || s.k, m::date, 'Sênior', 1, s.
        (CASE WHEN s.k = 'Q' AND m >= DATE '2026-03-01' THEN 900 ELSE 1000 END)
          * (1000 * power(1.01, (extract(year FROM age(m, DATE '2025-08-01')) * 12 + extract(month FROM age(m, DATE '2025-08-01'))))
             - CASE WHEN m >= DATE '2026-02-01' THEN 50 ELSE 0 END),
-       CASE WHEN m = DATE '2026-02-01' AND s.k <> 'U' THEN 50 * 1000 ELSE 0 END,
+       CASE WHEN m = DATE '2026-02-01' AND s.k = 'W' THEN 150 * 1000
+            WHEN m = DATE '2026-02-01' AND s.k <> 'U' THEN 50 * 1000 ELSE 0 END,
        0, 1, 1
-FROM (VALUES ('C', 'ZZCRV00001C'), ('U', 'ZZCRV00001U'), ('Q', 'ZZCRV00001Q'), ('M', 'ZZCRV00001M'))
+FROM (VALUES ('C', 'ZZCRV00001C'), ('U', 'ZZCRV00001U'), ('Q', 'ZZCRV00001Q'), ('M', 'ZZCRV00001M'), ('W', 'ZZCRV00001W'))
      AS s(k, code),
      generate_series(DATE '2025-08-01', DATE '2026-08-01', interval '1 month') m
 WHERE NOT (s.k = 'M' AND m = DATE '2026-03-01');
@@ -1612,6 +1613,14 @@ BEGIN
     IF r.month_flag IS DISTINCT FROM 'queda_sem_evento_arquivado' OR r.factor IS NOT NULL THEN
         RAISE EXCEPTION 'credit returns, unfiled coupon: %', row_to_json(r);
     END IF;
+    -- a payment that is not the coupon (150 filed for a fall of 50): the month's return is far from the others
+    SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001W'], DATE '2026-08-01') WHERE month = DATE '2026-02-01';
+    IF r.month_flag IS DISTINCT FROM 'pagamento_incompativel' OR r.factor IS NOT NULL THEN
+        RAISE EXCEPTION 'credit returns, incompatible payment: %', row_to_json(r);
+    END IF;
+    -- the clean coupon month passes
+    SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001C'], DATE '2026-08-01') WHERE month = DATE '2026-02-01';
+    IF r.month_flag IS NOT NULL OR r.paid_per_unit <> 50 THEN RAISE EXCEPTION 'credit returns, coupon month: %', row_to_json(r); END IF;
     -- quantity changes in 2026-03
     SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001Q'], DATE '2026-08-01') WHERE month = DATE '2026-03-01';
     IF r.month_flag IS DISTINCT FROM 'quantidade_mudou' THEN RAISE EXCEPTION 'credit returns, quantity: %', row_to_json(r); END IF;
