@@ -453,9 +453,14 @@ before changing rule 4.
    504/499 on 10-01, a FORWARD-less 2025-08-13 consolidated file) or the stale
    monthly caption #473 turned into a skip; `investor_participation` stops at
    2026-09-30 by design (T+2, the 10-01 reference needs the 10-05 session).
-2. **Phase 4 of candidate 02: CVM.** `CVMIngestor` still has its own start and
-   finish code. It is the largest writer and overlaps candidate 03, so plan it
-   with 03 before touching code. Not started.
+2. ~~**Phase 4 of candidate 02: CVM.**~~ Done 2026-10-07 (#691,
+   `orchestrator/691-cvm-raises`): all `CVMIngestor` slices go through one
+   helper, `_audited`; the 32 copied blocks are gone. Owner decision of
+   2026-10-06: a failed CVM slice writes its `error` row, then raises, as BACEN
+   does (B3 keeps exit 0, #501). `daily_update` and `backfill` run every other
+   slice first, then raise `CVMRunFailed`; `run_daily` and `run_backfill` still
+   run the other sources and exit 1. `_log_start` / `_log_finish` stay, because
+   they hold the CVM status rules and the failure ledger.
 3. **ETF market is not migrated.** It is a synchronous call from `run_daily`;
    folding it into the async `audited` would change `run_daily` and the event
    loop. It already writes through `ingest_log.start` and `finish`.
@@ -489,8 +494,9 @@ before changing rule 4.
    typed exceptions. A reworded message would turn a skip into an error.
    **Guarded 2026-10-04** (`tests/test_not_published_contract.py`): the fetcher's
    real messages are classified end to end, so a rewording fails CI. The typed
-   exception itself waits for item 2 (it touches every `except` in
-   `cvm_pipeline.py`).
+   exception no longer waits for item 2: since #691 every CVM slice ends in
+   `_audited`, so only `cvm_fetcher.py` and `_classify_finish` change. Not
+   started.
 9. **Smaller findings:** ~~nine `tests/conftest.py` fixtures with no users~~
    (re-checked 2026-10-04: twelve, removed by owner's OK on
    `claude/remove-unused-conftest-fixtures`). ~~No pipeline-level test for
