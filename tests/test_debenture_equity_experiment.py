@@ -540,6 +540,114 @@ def test_prospective_outcome_cannot_be_archived_before_exit_closes(prospective_o
         replay_outcome(input_path, path, as_of='2026-07-03T10:00:00-03:00')
 
 
+@pytest.fixture
+def original_outcome_request(prospective_outcome_archives, tmp_path, monkeypatch):
+    from datetime import datetime
+    import hashlib
+    from research_examples.debenture_equity import snapshots
+    input_path, payloads, request, _, _ = prospective_outcome_archives
+    now = datetime.fromisoformat(request['cutoff_at'].replace('10:00:00', '09:59:00'))
+    monkeypatch.setattr(snapshots, '_now', lambda: now)
+    monkeypatch.setattr(snapshots, '_publication_time', lambda path:
+                        datetime.fromisoformat('2026-07-02T09:59:00-03:00') if path.parent == input_path else now)
+    request['components'] = {}
+    for name, value in payloads.items():
+        path = tmp_path/('original-source-'+name+'.json')
+        path.write_text(json.dumps(value))
+        request['components'][name] = {
+            'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+            'source_observed_at': now.date().isoformat()+'T09:30:00-03:00',
+            'read_started_at': now.date().isoformat()+'T09:00:00-03:00',
+            'read_finished_at': now.date().isoformat()+'T09:31:00-03:00'}
+    pin = snapshots.verify(input_path)['manifest_sha256']
+    return input_path, request, pin, now.isoformat()
+
+
+def test_original_outcome_slot_is_pinned_and_cannot_be_replaced(original_outcome_request):
+    from research_examples.debenture_equity.originals import archive_original, load_original
+    parent, request, pin, now = original_outcome_request
+    panel, report = archive_original(parent, parent, request, registry_sha256=pin)
+    assert len(panel) == 1 and panel.original_registry_sha256.tolist() == [pin]
+    assert report['original_selection'] == 'exclusive_slot_in_pinned_scope'
+    path = parent/report['original_slot']
+    original_bytes = (path/'realized_return_response.bin').read_bytes()
+    with pytest.raises(FileExistsError):
+        archive_original(parent, parent, request, registry_sha256=pin)
+    assert (path/'realized_return_response.bin').read_bytes() == original_bytes
+    replayed, _ = load_original(parent, parent, 1, 1, registry_sha256=pin, as_of=now)
+    pd.testing.assert_frame_equal(panel, replayed)
+    with pytest.raises(ValueError, match='externally pinned'):
+        load_original(parent, parent, 1, 1, registry_sha256='0'*64, as_of=now)
+    with pytest.raises(ValueError, match='not archived'):
+        load_original(parent, parent, 1, 1, registry_sha256=pin, as_of=now.replace('09:59:00', '09:58:00'))
+
+
+def test_original_outcome_invalid_reserved_slot_stays_invalid(original_outcome_request):
+    import hashlib
+    from research_examples.debenture_equity.originals import archive_original, load_original
+    parent, request, pin, now = original_outcome_request
+    component = request['components']['frozen_feature_reference']
+    path = Path(component['path'])
+    path.write_text(json.dumps({'input_manifest_sha256': '0'*64}))
+    component['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match='feature reference'):
+        archive_original(parent, parent, request, registry_sha256=pin)
+    # Fixing the source cannot overwrite the bytes already reserved as original.
+    path.write_text(json.dumps({'input_manifest_sha256': pin}))
+    component['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+    with pytest.raises(FileExistsError):
+        archive_original(parent, parent, request, registry_sha256=pin)
+    with pytest.raises(ValueError, match='feature reference'):
+        load_original(parent, parent, 1, 1, registry_sha256=pin, as_of=now)
+
+
+def test_original_outcome_missing_slot_does_not_search_alternative_archives(original_outcome_request, tmp_path):
+    from research_examples.debenture_equity import snapshots
+    from research_examples.debenture_equity.originals import load_original
+    parent, request, pin, now = original_outcome_request
+    snapshots.archive(request, tmp_path/'later-revision')
+    with pytest.raises(ValueError, match='not ready'):
+        load_original(parent, parent, 1, 1, registry_sha256=pin, as_of=now)
+
+
+def test_original_outcome_scope_rejects_changed_request(original_outcome_request):
+    from research_examples.debenture_equity.originals import archive_original
+    parent, request, pin, _ = original_outcome_request
+    request['links_sha256'] = '0'*64
+    with pytest.raises(ValueError, match='frozen input scope'):
+        archive_original(parent, parent, request, registry_sha256=pin)
+
+
+def test_original_outcome_scope_rejects_replacement_first_input(original_outcome_request,
+                                                              prospective_inputs,
+                                                              prospective_outcome_archives, monkeypatch):
+    from datetime import datetime
+    from research_examples.debenture_equity import snapshots
+    from research_examples.debenture_equity.originals import load_original
+    parent, _, pin, now = original_outcome_request
+    payloads, candidate, day, cutoff = prospective_inputs
+    _, _, _, seal, features = prospective_outcome_archives
+    payloads['frozen_model_and_feature_manifest']['features'] = features.to_dict('records')
+    monkeypatch.setattr(snapshots, '_publication_time', lambda path: datetime.fromisoformat(
+        '2026-07-02T09:59:00-03:00' if path.parent == parent else '2026-07-02T09:59:30-03:00'))
+    alternate, _ = seal('alternate-first-input', payloads,
+                        {'signal_date': day, 'cutoff_at': cutoff, 'protocol_sha256': fingerprint(candidate),
+                         'links_sha256': fingerprint(payloads['complete_relevant_fca_vintages_and_identity_evidence']['links'])},
+                        '2026-07-02T09:59:30-03:00')
+    with pytest.raises(ValueError, match='frozen registry scope'):
+        load_original(parent, alternate, 1, 1, registry_sha256=pin, as_of=now)
+
+
+def test_original_outcome_refuses_slot_moved_to_another_horizon(original_outcome_request):
+    from research_examples.debenture_equity.originals import archive_original, load_original
+    parent, request, pin, now = original_outcome_request
+    _, report = archive_original(parent, parent, request, registry_sha256=pin)
+    wrong_name = 'original-'+fingerprint({'signal_date': request['signal_date'], 'horizon': 5, 'entry_delay_sessions': 1})
+    (parent/report['original_slot']).rename(parent/wrong_name)
+    with pytest.raises(ValueError, match='canonical key'):
+        load_original(parent, parent, 5, 1, registry_sha256=pin, as_of=now)
+
+
 @pytest.mark.parametrize('mutation,match', [
     ('parent_hash', 'reference the frozen'), ('reference', 'feature reference'),
     ('mixed_revision', 'revisions changed'), ('late_revision', 'availability cutoff'),

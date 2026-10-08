@@ -682,3 +682,11 @@ fit cutoff. It rejects collection/publication before the first post-exit cash
 session. It does not select the first label version or fit/freeze predictions;
 those integrations, independent financial/PIT acceptance and future elapsed
 history remain required. No additional production execution is authorized.
+
+The local [original-selection helper](../../../research_examples/debenture_equity/originals.py)
+now reserves one exclusive outcome slot per signal/horizon/delay inside an
+externally pinned first-input archive. Reserved partial/invalid originals cannot
+be replaced; verification never searches alternative revision paths. This is
+scope-local exclusivity, not proof of globally earliest source history. The root
+pin must be accepted before outcomes, and fitting must bind the same input hashes.
+Late/missing/revision sensitivity and actual frozen predictions remain open.

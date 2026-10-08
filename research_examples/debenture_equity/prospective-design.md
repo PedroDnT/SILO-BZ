@@ -130,9 +130,20 @@ entry/exit calendar. Realized response collection and publication must occur on
 the first post-exit cash session before 10:00 Brasília; price dates alone cannot
 establish availability. Actual publication time controls eligibility at the
 requested fit cutoff. Output retains input/label/response hashes and the separate
-equity revision. This is not first-version selection: a frozen original-label
-registry, late/revision sensitivity, availability-aware fitting and frozen
-predictions remain unimplemented. The independent source/convention gates remain.
+equity revision. This replay alone does not select the first version; the scoped
+selector below handles that boundary. Late/revision sensitivity,
+availability-aware fitting and frozen predictions remain unimplemented. The
+independent source/convention gates remain.
+
+`originals.py` now supplies exclusive original selection inside an externally
+pinned first-input archive. The root's manifest hash must be accepted before
+outcomes. One canonical slot per signal/horizon/delay refuses replacement,
+including reserved partial/invalid slots; preflight failure before mkdir does
+not reserve one. Only canonical slots are loaded, with the exact input binding,
+verified context and actual availability. This proves exclusivity within that
+scope, not global absence of earlier archives. Prediction-bound input selection,
+late/missing-label reporting, separately frozen revision sensitivity and
+availability-aware fitting remain required, alongside independent acceptance.
 
 ## Development power assessment
 
@@ -192,7 +203,7 @@ storage allowance and production retention policy.
 | Original issuer mapping | 26 cited original issuers, exact full CNPJ/ISIN, FCA equity candidates and source aliases | Dated changes and at least 21 eligible untouched-test issuers after attrition |
 | Retrospective experiment | Offline runner, purges, fixed floors, sector/delay/placebo/dominance methods; 935 overlapping rows | Current test/sector coverage fails; no predictive conclusion |
 | Longer protocol | Version 2 candidate and explicit date ceilings | Owner acceptance, real session calendar and development power gate before activation |
-| Prospective PIT | Local retention and frozen-input/single-outcome replay, with real publication-time checks | First-version registry, availability-aware fitting/frozen predictions, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
+| Prospective PIT | Local retention, frozen-input/outcome replay and canonical original slots within an externally pinned scope | Accepted pre-outcome root pin, availability-aware fitting/frozen predictions, late/missing/revision handling, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
 | Adjusted returns/benchmark | Existing total-return exports with coherent revision checks | Independent convention/event acceptance and frozen prospective vintages |
 | Power | Predeclared development grid, dependence and failure rules | Implemented/calibrated assessment on sufficient development-only OOS losses |
 | Confirmatory result | None; every current study is inconclusive | Adequate untouched history, frozen scoring and all inference/robustness gates |

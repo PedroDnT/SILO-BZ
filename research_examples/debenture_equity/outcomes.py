@@ -93,6 +93,7 @@ def replay_outcome(input_path, outcome_path, *, as_of, candidate=None):
         panel['label_return_response_sha256'] = hashlib.sha256(raw['realized_return_response']).hexdigest()
         panel['entry_delay_sessions'] = delay
     return panel, {**retention, 'input_manifest_sha256': input_report['manifest_sha256'],
+                   'outcome_context': context,
                    'label_rows': len(panel), 'exclusions': exclusions, 'fit_as_of': as_of,
                    'strict_pit_certified': False, 'limitations': retention['limitations']+[
                        'On-time original outcome arithmetic only; no late/revision substitution or prediction acceptance',

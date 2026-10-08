@@ -282,8 +282,52 @@ revisions or mismatched parent archive fails. The exact input bytes are read
 once, verified, and reused for feature replay and label linkage.
 
 This verifies one caller-selected archive, **not which archive was first**.
-A frozen first-version registry, late-label/revision sensitivity selection,
-training/validation availability integration and actual frozen predictions are
-still required. Source completeness, benchmark vintage and financial conventions
+The canonical selector below supplies scoped first-version exclusivity; accepted
+pre-outcome pinning, late-label/revision sensitivity selection,
+training/validation availability integration and actual frozen predictions remain
+required. Source completeness, benchmark vintage and financial conventions
 also remain independent acceptance gates. No network, production write,
 schedule, predictive conclusion or strict-PIT certification is added.
+
+## Canonical original-outcome selection
+
+`originals.py` makes original selection exclusive inside one externally pinned
+scope. Use the first accepted **input archive itself** as the registry root;
+its immutable manifest/components are preserved and no duplicate input snapshot
+is created. Record its manifest hash in the accepted run design **before any
+outcomes are observed**. That acceptance is not established by the helper.
+
+```sh
+.venv/bin/python -m research_examples.debenture_equity.originals \
+  --registry .context/first-input --registry-sha256 "$REGISTRY_SHA256" \
+  --input-archive .context/first-input archive --request .context/outcome-request.json
+
+.venv/bin/python -m research_examples.debenture_equity.originals \
+  --registry .context/first-input --registry-sha256 "$REGISTRY_SHA256" \
+  --input-archive .context/first-input verify --horizon 5 --delay 1 \
+  --as-of '2026-10-15T10:00:00-03:00'
+```
+
+The dates are syntax examples, not production approval. Subsequent signal inputs
+must share the externally pinned protocol/link universe, have publication no
+earlier than the root and signal dates no earlier than its first signal. Another
+archive for that first signal is refused. A different root hash is refused.
+
+For each `(signal_date, horizon, entry_delay_sessions)` there is one canonical
+child directory. `archive` uses the existing retention helper's exclusive mkdir,
+hash/clock/deadline and byte-budget checks. Once a slot is created, a second
+attempt fails even if the first write was partial or its financial replay failed.
+Preflight failures before mkdir do not reserve a slot. Correcting a source file
+cannot replace reserved original bytes. Inspect failures and report missing
+labels rather than silently switching to a new revision. `verify` loads only
+that canonical slot, checks its exact input binding and context, and preserves
+the actual archive publication as label availability. It does not search other
+directories for a convenient alternative. Output includes the registry hash.
+
+This establishes exclusive original selection **within the pinned scope**, not
+global proof that no earlier source/archive exists. Future prediction/fitting
+integration must use the pinned root and exact prediction-bound input hashes;
+it must not select alternative feature archives after observing outcomes. Late
+outcomes, missing-label reports and separately frozen revision sensitivity are
+still pending. No collector, production retention policy, model acceptance,
+financial convention acceptance or strict-PIT certification is supplied.

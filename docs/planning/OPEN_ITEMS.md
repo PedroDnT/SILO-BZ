@@ -560,8 +560,12 @@ removed tickers. Independent completeness/source acceptance, prediction/label
 availability and power assessment remain open.
 An offline realized-outcome replay now links one on-time label archive to its
 frozen input, verifies post-exit collection/publication and checks actual
-availability at a fit cutoff. Original-version selection, availability-aware
+availability at a fit cutoff. Accepted original-version selection, availability-aware
 fitting, frozen predictions and independent source/convention acceptance remain.
+Canonical original slots now refuse replacement within an externally pinned
+first-input scope and do not search alternative archives. Pre-outcome acceptance
+of that pin, prediction-bound inputs, late/missing/revision handling and
+availability-aware fitting remain required.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer
