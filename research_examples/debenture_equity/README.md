@@ -190,3 +190,56 @@ identity-transfer and source/convention acceptance remain required. Neither
 function establishes a label's knowledge time from its reference date. The current
 IBOV response has no revision identifier; benchmark-vintage coherence still needs
 the exact retained response/partition evidence and independent convention review.
+
+## Archived cutoff-input replay
+
+`prospective.py` now integrates the local archive with one-cutoff financial input
+replay. It reads only the exact bytes returned by archive verification; no
+network, database connection, capture or scheduling occurs.
+
+```sh
+.venv/bin/python -m research_examples.debenture_equity.prospective \
+  --archive .context/new-snapshot
+```
+
+The external `--protocol` defaults to `prospective_protocol.json`; both the
+embedded candidate and manifest must match it. An archive cannot choose a
+different method merely by changing its own hashes. Input component JSON must
+have these contracts, in addition to the real collection receipts:
+
+| Component | Payload contract |
+| --- | --- |
+| Calendar | `sessions` ordered/unique ISO cash dates, including D and its next session; `source_url` and `observed_at` |
+| Credit | `selected_bonds`, `captures`, `credit_census`, `credit`, `audits`; every capture includes full `raw_csv`, UTF-8 hash, requested/delivered/expected dates and parser counts; audit has capture ID, status, acknowledged row count and `finished_at` |
+| Equity | `equities`, `return_basis`, `exported_at`; exact quote response through D with actual timestamp-valued `data_revision` |
+| IBOV | `benchmark`, `benchmark_code`, `return_basis`, `exported_at`; retained exact response covering verified sessions through D |
+| FCA/identity | `fca`, `links`, `filing_census`; each full-company filing census records CNPJ/reference/version/document ID, `fetched_at`, `complete`, `equity_rows`, `equity_rows_sha256` (semantic fingerprint of all its equity/listing records, including inactive records) |
+| Sector | `sectors` with exact ticker/reference date/sector and `fetched_at` |
+| Frozen model/features | `protocol` and the exact `features` records calculated before archival; this replay does not fit or certify a model |
+
+`compute_features` prepares the frozen records from already fetched payloads.
+`replay_archive` checks them again after archival. Both compare every selected
+credit fact against a fresh parse of the retained full CSV, including Decimal
+values, units and source-row hashes. Counts alone cannot clear this check. Preserve
+credit values as decimal strings or exact JSON decimals when exporting; do not
+round-trip source NUMERIC through JavaScript floating-point numbers. The archived
+credit JSON is decoded with Decimal precision.
+
+The replay enforces the verified next-session 10:00 Brasília cutoff, receipt
+availability, no future feature dates/revisions and full benchmark-calendar
+coverage. FCA selection uses the latest complete **company filing**, including a
+new filing with zero equity rows, so a removed ticker cannot survive through its
+older per-ticker record. Full-filing row counts/hashes and tied/orphan filings are
+checked. Those census completeness assertions still require actual full-filing
+source evidence; a name candidate or filtered ticker export cannot supply them.
+Sectors use observations for exactly D, available by the next-session cutoff;
+there is no historical filling. Replayed feature records must match the frozen
+manifest exactly.
+
+A successful report says `input_consistency_checked=true`, while
+`strict_pit_certified=false`. Calendar/FCA completeness and caller receipts remain
+attestations; dated transfers, independent source/convention acceptance, actual
+prediction/label availability and durable retention remain outstanding. The
+current historical export lacks raw CSV and full-filing censuses and is **not**
+this input format. Do not repackage October retrieval as July knowledge. This
+module supplies no predictive result and no new production authorization.

@@ -303,6 +303,161 @@ def test_label_bundle_needs_no_credit_fca_or_volume_and_refuses_mixed_revisions(
         attach_outcomes(features, labels, p)
 
 
+@pytest.fixture
+def prospective_inputs(synthetic):
+    import csv
+    from datetime import date
+    from decimal import Decimal
+    import hashlib
+    import io
+    from src.parsers import b3_credit as parser
+    bundle, links, p = synthetic
+    day, seen, cutoff = p['signal_from'], '2026-07-02T09:05:00-03:00', '2026-07-02T10:00:00-03:00'
+    out = io.StringIO()
+    writer = csv.writer(out, delimiter=';')
+    writer.writerow(parser.FIELDS.values())
+    writer.writerow(['01/07/2026', 'DEB', 'TESTD1', 'BRTESTDBS000', 'SYNTHETIC TEST ISSUER',
+                     '01/07/2026', '10', '99', '100', '101', '100', '100', '2', '1000', 'Extragrupo', '-'])
+    raw = out.getvalue()
+    parsed = parser.parse(raw, date.fromisoformat(day), date.fromisoformat(day))
+    facts = parser.facts(parsed, 'synthetic-cutoff-capture')
+    facts = json.loads(json.dumps(facts, default=lambda x: float(x) if isinstance(x, Decimal) else str(x)))
+    capture = {'capture_id': 'synthetic-cutoff-capture', 'source': parser.SOURCE,
+               'requested_from': day, 'requested_to': day, 'observed_at': seen,
+               'raw_csv': raw, 'payload_sha256': hashlib.sha256(raw.encode()).hexdigest(),
+               'source_rows': 1, 'status': 'complete', 'dropped_rows': 0,
+               'missing_dates': [], 'expected_dates': [day], 'delivered_dates': [day], 'debenture_rows': 1}
+    census = {'capture_id': capture['capture_id'], 'debenture_rows': 1,
+              'group_count': 1, 'fact_count': 9, 'selected_fact_count': 9}
+    fca = [{**r, 'fetched_at': seen, 'version': 1, 'document_id': 'synthetic-filing'} for r in bundle['fca']]
+    links[0]['known_at'] = seen
+    equities = [{**r, 'data_revision': seen} for r in bundle['equities'] if r['trade_date'] <= day]
+    candidate = json.loads(Path('research_examples/debenture_equity/prospective_protocol.json').read_text())
+    payloads = {
+        'verified_cash_calendar': {'sessions': [d for d in bundle['cash_sessions'] if d <= '2026-07-02'],
+                                  'source_url': 'https://example.invalid/test-only-calendar', 'observed_at': seen},
+        'credit_full_capture_and_audit_census': {'captures': [capture], 'credit': facts, 'credit_census': [census],
+             'selected_bonds': ['TESTD1'], 'audits': [{'capture_id': capture['capture_id'], 'status': 'ok',
+                                                   'rows_upserted': 9, 'finished_at': seen}]},
+        'equity_quote_responses_and_adjustment_revision': {'equities': equities, 'return_basis': 'total_return',
+                                                          'exported_at': seen},
+        'ibov_response_and_conventions': {'benchmark': [r for r in bundle['benchmark'] if r['trade_date'] <= day],
+                                          'benchmark_code': 'IBOV', 'return_basis': 'total_return', 'exported_at': seen},
+        'complete_relevant_fca_vintages_and_identity_evidence': {'fca': fca, 'links': links,
+             'filing_census': [{'cnpj': links[0]['cnpj'], 'data_refer': '2026-01-01', 'version': 1,
+                               'document_id': 'synthetic-filing', 'complete': True, 'equity_rows': len(fca),
+                               'equity_rows_sha256': fingerprint(fca), 'fetched_at': seen}]},
+        'dated_sector_input': {'sectors': [{'ticker': 'TEST4', 'reference_date': day,
+                                           'sector': 'test-only-sector', 'fetched_at': seen}]},
+        'frozen_model_and_feature_manifest': {'protocol': candidate, 'features': []},
+    }
+    return payloads, candidate, day, cutoff
+
+
+def test_prospective_input_replay_binds_raw_credit_and_next_session(prospective_inputs):
+    from research_examples.debenture_equity.prospective import compute_features
+    payloads, candidate, day, cutoff = prospective_inputs
+    features, excluded = compute_features(payloads, candidate, day, cutoff)
+    assert len(features) == 1 and not excluded
+    assert features.ticker.tolist() == ['TEST4']
+    assert features.sector.tolist() == ['test-only-sector']
+    assert np.allclose(features.credit_log_volume, np.log1p(1000))
+    with pytest.raises(ValueError, match='next cash session'):
+        compute_features(payloads, candidate, day, '2026-07-03T10:00:00-03:00')
+
+
+@pytest.mark.parametrize('field,value', [('value', 999999), ('issuer_name', 'Changed issuer')])
+def test_prospective_replay_refuses_changed_fact_even_when_census_matches(prospective_inputs, field, value):
+    from research_examples.debenture_equity.prospective import compute_features
+    payloads, candidate, day, cutoff = prospective_inputs
+    for row in payloads['credit_full_capture_and_audit_census']['credit']:
+        if row['metric'] == 'volume_brl':
+            row[field] = value
+    with pytest.raises(ValueError, match='retained raw response'):
+        compute_features(payloads, candidate, day, cutoff)
+
+
+def test_prospective_latest_full_filing_does_not_resurrect_removed_stock(prospective_inputs):
+    from research_examples.debenture_equity.prospective import compute_features
+    payloads, candidate, day, cutoff = prospective_inputs
+    identity = payloads['complete_relevant_fca_vintages_and_identity_evidence']
+    latest = {**identity['filing_census'][0], 'data_refer': day, 'version': 2,
+              'document_id': 'synthetic-new-empty-filing', 'equity_rows': 0,
+              'equity_rows_sha256': fingerprint([])}
+    identity['filing_census'].append(latest)
+    features, excluded = compute_features(payloads, candidate, day, cutoff)
+    assert features.empty and excluded['no_past_liquid_equity'] == 1
+
+
+@pytest.mark.parametrize('component,field', [
+    ('equity_quote_responses_and_adjustment_revision', 'exported_at'),
+    ('ibov_response_and_conventions', 'exported_at'),
+    ('verified_cash_calendar', 'observed_at'),
+])
+def test_prospective_replay_refuses_late_source_metadata(prospective_inputs, component, field):
+    from research_examples.debenture_equity.prospective import compute_features
+    payloads, candidate, day, cutoff = prospective_inputs
+    payloads[component][field] = '2026-07-02T10:01:00-03:00'
+    with pytest.raises(ValueError, match='availability cutoff'):
+        compute_features(payloads, candidate, day, cutoff)
+
+
+def test_prospective_archive_roundtrip_and_frozen_feature_mismatch(prospective_inputs, tmp_path, monkeypatch):
+    import hashlib
+    from datetime import datetime
+    from research_examples.debenture_equity import snapshots
+    from research_examples.debenture_equity.prospective import compute_features, replay_archive
+    payloads, candidate, day, cutoff = prospective_inputs
+    features, _ = compute_features(payloads, candidate, day, cutoff)
+    payloads['frozen_model_and_feature_manifest']['features'] = features.to_dict('records')
+    now = datetime.fromisoformat('2026-07-02T09:59:00-03:00')
+    monkeypatch.setattr(snapshots, '_now', lambda: now)
+    monkeypatch.setattr(snapshots, '_publication_time', lambda path: now)
+    request = {'signal_date': day, 'cutoff_at': cutoff, 'protocol_sha256': fingerprint(candidate),
+               'links_sha256': fingerprint(payloads['complete_relevant_fca_vintages_and_identity_evidence']['links']),
+               'components': {}}
+    for name, payload in payloads.items():
+        path = tmp_path/(name+'.json')
+        path.write_text(json.dumps(payload))
+        request['components'][name] = {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+            'source_observed_at': '2026-07-02T09:30:00-03:00', 'read_started_at': '2026-07-02T09:00:00-03:00',
+            'read_finished_at': '2026-07-02T09:31:00-03:00'}
+    snapshots.archive(request, tmp_path/'archive')
+    replayed, report = replay_archive(tmp_path/'archive')
+    pd.testing.assert_frame_equal(features, replayed)
+    assert report['input_consistency_checked'] is True and report['strict_pit_certified'] is False
+    # The bytes of this second archive are sound, but its frozen feature claim is wrong.
+    model_path = Path(request['components']['frozen_model_and_feature_manifest']['path'])
+    payloads['frozen_model_and_feature_manifest']['features'][0]['beta'] = 999
+    model_path.write_text(json.dumps(payloads['frozen_model_and_feature_manifest']))
+    request['components']['frozen_model_and_feature_manifest']['sha256'] = hashlib.sha256(model_path.read_bytes()).hexdigest()
+    snapshots.archive(request, tmp_path/'wrong-features')
+    with pytest.raises(ValueError, match='frozen feature manifest'):
+        replay_archive(tmp_path/'wrong-features')
+
+
+@pytest.mark.parametrize('mutation,match', [
+    ('raw_hash', 'raw hash'), ('audit_time', 'availability cutoff'),
+    ('fca_rows', 'full-filing row census'), ('benchmark_gap', 'verified feature calendar'),
+    ('equity_revision', 'availability cutoff'),
+])
+def test_prospective_input_source_integrity_and_timing_gates(prospective_inputs, mutation, match):
+    from research_examples.debenture_equity.prospective import compute_features
+    payloads, candidate, day, cutoff = prospective_inputs
+    if mutation == 'raw_hash':
+        payloads['credit_full_capture_and_audit_census']['captures'][0]['raw_csv'] += 'changed'
+    elif mutation == 'audit_time':
+        payloads['credit_full_capture_and_audit_census']['audits'][0]['finished_at'] = '2026-07-02T10:01:00-03:00'
+    elif mutation == 'fca_rows':
+        payloads['complete_relevant_fca_vintages_and_identity_evidence']['fca'].pop()
+    elif mutation == 'benchmark_gap':
+        payloads['ibov_response_and_conventions']['benchmark'].pop(5)
+    else:
+        payloads['equity_quote_responses_and_adjustment_revision']['equities'][0]['data_revision'] = '2026-07-02T10:01:00-03:00'
+    with pytest.raises(ValueError, match=match):
+        compute_features(payloads, candidate, day, cutoff)
+
+
 def test_source_classification_spelling_does_not_remove_valid_trades(synthetic):
     bundle, links, p = synthetic
     expected, _ = build_panel(bundle, links, p)

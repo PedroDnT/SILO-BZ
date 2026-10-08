@@ -143,8 +143,8 @@ def _read_file(path, cap):
     return data
 
 
-def verify(destination):
-    """Check stored bytes/receipts; this does not evaluate source correctness or returns."""
+def read_archive(destination):
+    """Return the exact verified bytes and receipts; never reread unverified payloads."""
     dest = Path(destination)
     if dest.is_symlink() or not (dest/'READY.json').is_file() or (dest/'LATE.json').exists():
         raise ValueError('Archive is not ready')
@@ -163,7 +163,7 @@ def verify(destination):
     budget = manifest['max_bytes']
     if not isinstance(budget, int) or budget < 1:
         raise ValueError('Invalid stored byte budget')
-    total = 0
+    total, contents = 0, {}
     for name in COMPONENTS:
         component = manifest['components'][name]
         _timing(component, started)
@@ -173,10 +173,17 @@ def verify(destination):
         if _digest(data) != component['sha256'] or len(data) != component['bytes']:
             raise ValueError('Archive component hash or size mismatch')
         total += len(data)
-    return {'retention_verified': True, 'strict_pit_certified': False,
+        contents[name] = data
+    report = {'retention_verified': True, 'strict_pit_certified': False,
             'manifest_sha256': ready['manifest_sha256'], 'component_bytes': total,
             'signal_date': manifest['signal_date'], 'cutoff_at': manifest['cutoff_at'],
             'limitations': [manifest['limitation'], 'Local files are not durable production storage']}
+    return manifest, contents, report
+
+
+def verify(destination):
+    """Check stored bytes/receipts; this does not evaluate source correctness or returns."""
+    return read_archive(destination)[2]
 
 
 def main():

@@ -626,6 +626,14 @@ are recorded separately. The original 935-row pilot result and prior columns
 were compared before/after and are unchanged. Archive/source/calendar and actual
 label-availability integration remain open; this is not strict-PIT acceptance.
 
+An [offline cutoff-input replay](../../../research_examples/debenture_equity/prospective.py)
+now reads verified archive bytes, reparses raw credit and compares selected facts,
+checks receipt/revision/calendar availability, and selects the latest complete
+company FCA filing before ticker selection (including zero-equity filings).
+Frozen feature records must replay exactly against the externally pinned candidate.
+Completeness assertions still need source evidence; prediction/label availability,
+independent financial conventions and PIT acceptance remain open.
+
 The remaining implementation sequence is conditional, not a new production approval:
 
 1. Review at least 21 independent full-CNPJ issuers and their dated changes using

@@ -59,7 +59,10 @@ archival, hash/budget/clock checks and atomic readiness-marker publication for a
 fetched inputs. Verification checks original-filesystem publication time even
 if a crash prevents a later error marker; restored copies require separate
 provenance. It makes no network or database calls and never certifies strict
-PIT. Collector integration, source semantics and evaluator implementation remain.
+PIT. The [cutoff-input replay](prospective.py) now integrates verified archive
+bytes with raw-credit reparse, availability/calendar checks, company-level full
+FCA filing selection and exact frozen-feature comparison. Collector integration,
+independent source/convention acceptance and prediction/label evaluation remain.
 
 The per-cutoff manifest must retain:
 
@@ -184,6 +187,12 @@ storage allowance and production retention policy.
 | Power | Predeclared development grid, dependence and failure rules | Implemented/calibrated assessment on sufficient development-only OOS losses |
 | Confirmatory result | None; every current study is inconclusive | Adequate untouched history, frozen scoring and all inference/robustness gates |
 | Price/rate/tradability extensions | Explicitly excluded from liquidity-first claim; ADR 0004 retained | Cash-flow/event and observed-rate conventions plus execution cost/capacity evidence before any such claim |
+
+The offline input replay is implemented and tested, including a new empty FCA
+filing removing an older equity ticker. It does not authenticate completeness
+attestations or clear the independent financial/PIT acceptance gates. The historical
+export lacks the required raw/full-filing evidence and cannot stand in for a new
+cutoff archive.
 
 The full plan is **not complete**. Safe local implementation/preparation remains;
 production approval and future elapsed history are additional dependencies, not

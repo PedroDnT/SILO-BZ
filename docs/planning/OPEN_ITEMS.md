@@ -553,8 +553,11 @@ completion audit. It is unactivated. A local retention helper now verifies hashe
 actual-clock cutoffs without fetching or certifying PIT; collector/evaluator and
 power assessment implementation, owner acceptance and future elapsed history remain.
 The evaluator foundation now separates frozen features from coherent realized
-label vintages, preserving class/ISIN, alpha/beta and prior pilot behavior;
-archive/source/calendar and actual label-availability integration are still open.
+label vintages, preserving class/ISIN, alpha/beta and prior pilot behavior.
+Archive/input integration now reparses raw credit, validates availability and
+calendar coverage, and selects complete company FCA filings without resurrecting
+removed tickers. Independent completeness/source acceptance, prediction/label
+availability and power assessment remain open.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer
