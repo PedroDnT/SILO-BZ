@@ -81,7 +81,7 @@ date fields require a fresh export. These checks improve retrospective identity
 selection without certifying original-date publication knowledge.
 
 The local [reviewed links](../../../research_examples/debenture_equity/reviewed_links.json)
-cite issuance documents, fiduciary reports and instrument records for six
+cite issuance documents, fiduciary reports and instrument records for nine
 **original issuers**:
 
 | Bond / ISIN | Original issuer full CNPJ | Existing FCA equities |
@@ -92,6 +92,9 @@ cite issuance documents, fiduciary reports and instrument records for six
 | ASAI18 / BRASAIDBS069 | 06057223000171, Sendas Distribuidora | ASAI3 |
 | BSA318 / BRB3SADBS081 | 09346601000125, B3 | B3SA3 |
 | BRKMA6 / BRBRKMDBS0A1 | 42150391000170, Braskem | BRKM3, BRKM5, BRKM6 |
+| CAMLB1 / BRCAMLDBS070 | 64904295000103, Camil Alimentos | CAML3 |
+| CSED12 / BRCSEDDBS001 | 62984091000102, Cruzeiro do Sul Educacional | CSED3 |
+| ARML13 / BRARMLDBS029 | 00242184000104, Armac Locação, Logística e Serviços | ARML3 |
 
 Each link records citation/page, original issuance date, review cutoff and actual
 knowledge timestamp. Retrospective use assumes no intervening issuer transfer;
@@ -394,6 +397,47 @@ Earlier three-issuer results and their fingerprints remain historical checkpoint
 The original protocol is unchanged; adding identities cannot repair its date ceiling.
 These six original-issuer links still assume no intervening issuer transfer and
 do not satisfy broad dated identity acceptance or the 20-issuer test floor.
+
+A subsequent documentary pass added **CAMLB1, CSED12 and ARML13**, bringing
+the link file to nine original issuers. Camil's deed identifies the full CNPJ;
+its 11th-issuance report identifies the second-series code/ISIN. Cruzeiro's
+opening announcement identifies the full CNPJ/ISIN; its second-issuance report
+identifies the code and issuance date. Armac's report contains the entire tuple.
+Each cited PDF was downloaded completely, fingerprinted and its relevant page
+visually checked. ARML13 was chosen because primary evidence was available,
+without selecting on predictive outcomes.
+
+A fresh read-only export at **10:40:48 UTC-3** contains 3,672 credit metric rows, 2,078 equity rows, 98 FCA rows and 210 sector/index records. It yields
+**326 overlapping outcomes** (127/116/83 at 1/5/20 sessions) across nine issuers,
+all inconclusive before fitting/scoring. Only 34 outcomes have eligible exact-date
+sectors; strict PIT remains zero (all 69 credit sessions unavailable at historical
+knowledge cutoffs). The 288 outcomes above remain the earlier six-issuer result.
+Fingerprints:
+
+```text
+nine-issuer bundle aa2c69fc54d25cff7dfa7d7fd0a59cbcc84be7e88884b4b3a03e28081d82d67c
+nine-issuer links  0e590a40544e17493ee10995d00112710347f31b5321f8ada79de6dcb3c49fec
+```
+Published company/FCA names support
+Camil Alimentos, Cruzeiro do Sul Educacional and Armac; no extra brand alias was
+inferred. Original quantities and report-date PU remain dated document snapshots,
+not daily outstanding or traded-price observations.
+
+**AALR13 remains excluded.** Its [2025 fiduciary report](https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513198&numSequencia=1037904&numVersao=1),
+PDF page 3, identifies AALR13 / BRAALRDBS057 with **42771949001883**;
+the name-derived FCA equity candidate AALR3 has **42771949000135**. The
+document SHA256 is `ee2454d1281fd6767319f1b5df39f2fe7ce47a32af017b7db876399674c4e33f`.
+The common CNPJ root does not establish the required exact legal-issuer join;
+neither a presumed typo nor a matrix/branch substitution is accepted.
+
+Auren's June documents were also recovered completely. The
+[01/06 notice](https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1529026&numSequencia=1053732&numVersao=1)
+concerns AURP12/AURP13 issuer succession; the
+[24/06 notice](https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1538165&numSequencia=1062871&numVersao=1) proposes moving
+the **third** Auren Energia issuance to CESP, subject to conditions. Neither
+alone establishes a transfer of AURE12, the second issuance. AURE12 remains
+outside the reviewed link file pending a complete relevant amendment review;
+group reorganization alone is not a reason to substitute its issuer CNPJ.
 
 The remaining implementation sequence is conditional, not a new production approval:
 

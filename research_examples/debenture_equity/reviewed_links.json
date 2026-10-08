@@ -128,5 +128,64 @@
       }
     ],
     "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report and current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "CAMLB1",
+    "isin": "BRCAMLDBS070",
+    "cnpj": "64904295000103",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2021-10-30",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:39:47.120294-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=910618&numSequencia=435352&numVersao=1",
+        "locator": "11th issuance deed, PDF page 2: Camil original issuer full CNPJ; SHA256 a1eee09b137c02adfc56dab6d124defba3351e0733ff26d92334d65b2aa9b4ca"
+      },
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1538974&numSequencia=1063680&numVersao=1",
+        "locator": "2025/2026 fiduciary report, PDF page 1: 11th issuance, second series CAMLB1, BRCAMLDBS070 and 30/10/2021 issuance; SHA256 2fb5fcf1f83ff84e9c90d5fdc7f593245e769cdc9e7589cd7c2085131af110b2"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; issuance deed/report chain does not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "CSED12",
+    "isin": "BRCSEDDBS001",
+    "cnpj": "62984091000102",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2025-02-05",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:39:47.120294-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1334739&numSequencia=859465&numVersao=1",
+        "locator": "2nd issuance opening announcement, PDF page 1: Cruzeiro do Sul Educacional original issuer full CNPJ and BRCSEDDBS001; SHA256 12d2c948e9898852154e396959419f3d60f83fe7adb2bf4b2118291e1ef86c22"
+      },
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513458&numSequencia=1038164&numVersao=1",
+        "locator": "2025 fiduciary report, PDF page 1: 2nd unique-series issuance, CSED12, BRCSEDDBS001 and 05/02/2025 issuance; SHA256 30852887a3089374af55347ec3e20721a7ee9ae89e9d862b8ddb5afa2f73d203"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; issuance deed/report chain does not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "ARML13",
+    "isin": "BRARMLDBS029",
+    "cnpj": "00242184000104",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2022-11-04",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:39:47.120294-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1367881&numSequencia=892607&numVersao=1",
+        "locator": "2024 fiduciary report, PDF page 3: Armac original issuer full CNPJ, 3rd unique-series issuance, ARML13, BRARMLDBS029 and 04/11/2022 issuance; SHA256 c2212534b52efaceec97c0f075e0abcd40611572613e49183a65d924f8e345b6"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; issuance deed/report chain does not certify every intervening amendment or original-date knowledge."
   }
 ]

@@ -527,8 +527,9 @@ window, representing 82 candidate CNPJs. These are not verified issuance links.
 The [read-only runner](../../research_examples/debenture_equity/README.md) never
 loads data or certifies strict historical PIT from retrieval dates.
 
-Offline experiment/preparation now implemented with six documented original-issuer
-links (ALPA13, ALUP18, ANIM18, ASAI18, BSA318, BRKMA6), current total-return equity/IBOV exports, trailing
+Offline experiment/preparation now implemented; nine documented original-issuer
+links are available (ALPA13, ALUP18, ANIM18, ASAI18, BSA318, BRKMA6, CAMLB1, CSED12,
+ARML13). The runner uses current total-return equity/IBOV exports, trailing
 beta, past-liquidity equity selection, chronological purges and dependence checks.
 Initial live run: four one-session outcomes, no primary five-session outcomes.
 Owner approved all 13 recovery slices for 01/07–29/09. After an initial transport
@@ -536,8 +537,8 @@ failure, all 13 are now complete: 770,562 facts, zero drops, valid hashes, audit
 `ok` and nine distinct metrics per source group. The execution-time peak credit
 allocation increase was 400,982,016 bytes (later 386,850,816), below the 1 GB stop.
 All 69 known study sessions are delivered;
-no recovery windows remain. Expanded six-issuer offline run: 288 overlapping horizon rows
-(112/102/74 at 1/5/20 sessions), all inconclusive; strict PIT still zero. FCA recorded
+no recovery windows remain. Expanded nine-issuer offline run: 326 overlapping horizon rows
+(127/116/83 at 1/5/20 sessions), all inconclusive; strict PIT still zero. FCA recorded
 listing intervals are enforced and exact-date sector robustness is implemented;
 available B3 sector history starts 16/09 and cannot cover training. The three-month pilot
 cannot meet fixed training/validation/test floors despite completed recovery;
