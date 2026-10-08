@@ -28,7 +28,7 @@ psycopg2-binary==2.9.13
 python-dotenv==1.2.2
 
 # Read API (Flask) — `python -m serve.app` over schema api; not an ingest trigger
-flask>=3.0,<4.0
+flask>=3.1.3,<4.0
 
 # Config parsing at runtime: src/portfolio/ (equivalents, benchmark, tax)
 # loads YAML, so PyYAML stays here and not in requirements-dev.txt.

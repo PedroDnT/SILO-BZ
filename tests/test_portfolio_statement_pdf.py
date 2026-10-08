@@ -249,17 +249,18 @@ def test_engine_output_over_a_pdf_statement_holds_no_original():
 
 
 def test_pdf_bytes_go_to_the_extractor_on_stdin_and_never_to_disk(monkeypatch, tmp_path):
-    calls = {}
+    calls = []
 
     def fake_run(cmd, input=None, capture_output=None, timeout=None, check=None):
-        calls["cmd"], calls["input"] = cmd, input
+        calls.append((cmd, input))
         return subprocess.CompletedProcess(cmd, 0, stdout="\f".join(variant_a_pages()).encode(), stderr=b"")
 
     monkeypatch.setattr(sp.shutil, "which", lambda name: "/usr/bin/pdftotext")
     monkeypatch.setattr(sp.subprocess, "run", fake_run)
     monkeypatch.chdir(tmp_path)
     st, diag = read_pdf_statement_bytes(b"%PDF-fake")
-    assert calls["cmd"] == ["pdftotext", "-layout", "-", "-"] and calls["input"] == b"%PDF-fake"
+    # the layout text, then the raw words that repair split names (#756): both from STDIN
+    assert calls == [(["pdftotext", "-layout", "-", "-"], b"%PDF-fake"), (["pdftotext", "-raw", "-", "-"], b"%PDF-fake")]
     assert list(tmp_path.iterdir()) == [] and diag.extractor == "poppler"
     assert st.sum_of_lines == BRUTO
 
@@ -366,3 +367,186 @@ def test_period_repeated_as_a_page_header_is_still_read():
     assert len(pages) >= 4
     st, _ = parse_pdf_pages(pages)
     assert st.position_date == dt.date(2025, 12, 31)
+
+
+# ---------------------------------------------------------------------------
+# The 2026-08 layout (#747): synthetic text in the shape pdftotext gives for it
+# ---------------------------------------------------------------------------
+
+
+def _two(left: str, right: str = "") -> str:
+    return (left.ljust(66) + right).rstrip()
+
+
+def layout_2026_08_pages() -> list[str]:
+    cover = ["BTG Pactual          Relatório de Performance", f"Nome   {HOLDER_NAME}", f"Conta Investimento   {HOLDER_ACCOUNT}"]
+    p2 = [
+        "Relatório de Performance",
+        "Período de 01/08/2026 a 31/08/2026",
+        "Patrimônio bruto              R$ 205.000,00",
+        "",
+        # the summary table wraps the label around its value line
+        "                                                      Cont a",
+        "                                                                     2,44%      R$ 5.000,00",
+        "                                                      corrent e",
+        "Página 2 de 4",
+    ]
+    p3 = [
+        "Relatório de Performance",
+        "Posição consolidada dos investimentos",
+        "",
+        # the column header, one word per line
+        _two("                Posição", "                Posição"),
+        _two("At ivo                                  % t ot al", "At ivo                                  % t ot al"),
+        _two("                 brut a", "                 brut a"),
+        "",
+        _two("Renda Fixa                120.000,00     60,00", "Fundo de Invest iment o   80.000,00     40,00"),
+        "",
+        _two("  Inflação                120.000,00     60,00", "  Alt ernat ivo           80.000,00     40,00"),
+        "",
+        # a long name in two halves around a line that holds only the two columns' values
+        _two("    EMISSORA EXEMPLO CREDITO", "    FUNDO GAMA CRED"),
+        _two("                          100.000,00     50,00", "                          50.000,00     25,00"),
+        _two("FINANCIAMENTO - CDB-CDB999X", "AGRO FIDC RESP LIMITADA*"),
+        "",
+        _two("    OUTRA EMISSORA - DEB-ABCD11*   20.000,00     10,00", "    FUNDO DELTA FIM          30.000,00     15,00"),
+        "",
+        _two("", "Tot al                    200.000,00    100,00"),
+        "Página 3 de 4",
+    ]
+    # the strategy-return table and the attribution chart follow, with no 'Detalhamento' between
+    p4 = [
+        "Relatório de Performance",
+        "E, quando abrimos a rentabilidade por estratégia, os números são",
+        "                    31,74%      1,23%      1,23%",
+        "Pós-fixado",
+        "               R$ 335.370,18    R$ 3.852,12",
+        "Atribuição de Resultado",
+        " R$ 15,00K",
+        "Página 4 de 4",
+    ]
+    return ["\n".join(p) for p in (cover, p2, p3, p4)]
+
+
+def test_layout_2026_08_reads_and_reconciles():
+    st, diag = parse_pdf_pages(layout_2026_08_pages())
+    got = {(p.estrategia_corretora, p.linha_extrato, p.valor) for p in st.positions}
+    assert got == {
+        ("Inflação", "EMISSORA EXEMPLO CREDITO FINANCIAMENTO - CDB-CDB999X", D("100000.00")),
+        ("Inflação", "OUTRA EMISSORA - DEB-ABCD11*", D("20000.00")),
+        ("Alternativo", "FUNDO GAMA CRED AGRO FIDC RESP LIMITADA*", D("50000.00")),
+        ("Alternativo", "FUNDO DELTA FIM", D("30000.00")),
+        ("Conta corrente", "Conta corrente", D("5000.00")),
+    }
+    assert st.stated_total == st.sum_of_lines == D("205000.00")
+    assert diag.two_column_pages == 1 and diag.wrap_ambiguous == 0
+
+
+def test_layout_2026_08_wrapped_cash_needs_the_exact_three_line_shape():
+    pages = edit(layout_2026_08_pages(), 1, "corrent e", "outra coisa")
+    with pytest.raises(StatementTotalMismatch) as e:
+        parse_pdf_pages(pages)
+    assert "folhas + conta corrente x Patrimônio bruto: gap R$ -5000.00" in str(e.value)
+
+
+def test_layout_2026_08_cut_cash_is_derived_only_when_the_printed_digits_agree():
+    # The report printed the cash with its last digit cut: gross minus the 'Total' must extend it by one digit.
+    st, _ = parse_pdf_pages(edit(layout_2026_08_pages(), 1, "R$ 5.000,00", "R$ 5.000,0"))
+    caixa = next(p for p in st.positions if p.tipo == "caixa")
+    assert caixa.valor == D("5000.00") and st.sum_of_lines == st.stated_total
+    assert any("cortada" in n and "'5.000,0'" in n for n in st.notes)
+    with pytest.raises(StatementTotalMismatch):
+        parse_pdf_pages(edit(layout_2026_08_pages(), 1, "R$ 5.000,00", "R$ 5.001,0"))
+
+
+# ---------------------------------------------------------------------------
+# Stray spaces in names, repaired from the raw text's words (#756)
+# ---------------------------------------------------------------------------
+
+
+def test_respace_joins_only_runs_the_raw_text_prints_whole():
+    words = frozenset({"Marfrig", "Artesanal", "Multimercado", "FICFIM", "Investimento", "o", "Valor", "aplicado", "-"})
+    assert sp.respace_name("Marf rig - CRA-CRA0250018H*", words) == "Marfrig - CRA-CRA0250018H*"
+    assert sp.respace_name("Art esanal Mult imercado FICFIM", words) == "Artesanal Multimercado FICFIM"
+    assert sp.respace_name("Fundo de Invest iment o", words) == "Fundo de Investimento"
+    # two real words stay apart even when they sit next to each other
+    assert sp.respace_name("Valor aplicado", words | {"Valoraplicado"}) == "Valor aplicado"
+    assert sp.respace_name("Marf rig", frozenset()) == "Marf rig"  # no raw text: as printed
+
+
+def test_layout_2026_08_names_are_respaced_when_raw_words_are_given():
+    pages = edit(layout_2026_08_pages(), 2, "FUNDO DELTA FIM", "Fundo Delt a Mult imercado")
+    st, _ = parse_pdf_pages(pages)
+    assert "Fundo Delt a Mult imercado" in {p.linha_extrato for p in st.positions}
+    st, _ = parse_pdf_pages(pages, words=frozenset({"Fundo", "Delta", "Multimercado"}))
+    assert "Fundo Delta Multimercado" in {p.linha_extrato for p in st.positions}
+    assert st.sum_of_lines == st.stated_total
+
+
+# ---------------------------------------------------------------------------
+# The 2026-08 detail tables (#751): blocks between blank lines, names and rates wrapped around the values
+# ---------------------------------------------------------------------------
+
+
+def _at(*cells: tuple[int, str]) -> str:
+    line = ""
+    for col, text in cells:
+        line = line.ljust(col) + text
+    return line
+
+
+def layout_2026_08_with_detail() -> list[str]:
+    detail = [
+        "Relatório de Performance",
+        "Detalhamento dos Ativos",
+        _at((0, "Inflação"), (100, "Em cart eira 60,00%"), (125, "R$ 120.000,00")),
+        "",
+        _at((98, "Pr eço"), (125, "Valor")),
+        _at((1, "At ivo"), (20, "Dat a Inicial"), (38, "Quant idade"), (55, "Venciment o"), (72, "Taxa"),
+            (84, "Saldo br ut o"), (98, "Pr eço"), (110, "Saldo líquido"), (125, "Def")),
+        _at((98, "médio"), (125, "aplicado")),
+        "",
+        _at((1, "EMISSORA EXEMPLO")),
+        _at((1, "CREDITO"), (72, "IPCA")),
+        _at((1, "FINANCIAMENTO -"), (20, "09/11/2021"), (40, "95,00"), (55, "09/11/2026"), (73, "+"),
+            (84, "R$ 100.000,00"), (100, "-"), (110, "R$ 98.000,00")),
+        _at((1, "CDB-CDB999X"), (71, "6,20%")),
+        "",
+        _at((1, "OUTRA EMISSORA - DEB-"), (71, "105,00%")),
+        _at((20, "25/03/2022"), (40, "20,00"), (55, "15/12/2031"), (84, "R$ 20.000,00"), (100, "-"), (110, "R$ 20.000,00")),
+        _at((1, "ABCD11*"), (71, "do CDI")),
+        "",
+        _at((1, "TOTAL"), (84, "R$ 120.000,00")),
+        _at((0, "Alt ernat ivo"), (100, "Em cart eira 40,00%"), (125, "R$ 80.000,00")),
+        _at((1, "At ivo"), (30, "Dat a Inicial"), (46, "Quant idade"), (60, "Resgat e"), (72, "Saldo br ut o"), (90, "Saldo líquido")),
+        "",
+        _at((1, "FUNDO GAMA CRED")),
+        _at((30, "30/01/2025"), (48, "650,00"), (60, "D+366"), (72, "R$ 50.000,00"), (90, "R$ 49.000,00")),
+        _at((1, "AGRO FIDC RESP LIMITADA*")),
+        "",
+        _at((1, "FUNDO DELTA FIM"), (30, "24/06/2026"), (48, "400,00"), (60, "D+366"), (72, "R$ 30.000,00"), (90, "R$ 29.000,00")),
+        "",
+        _at((1, "TOTAL"), (72, "R$ 80.000,00")),
+        "A rentabilidade completa",
+        "Página 5 de 5",
+    ]
+    return layout_2026_08_pages() + ["\n".join(detail)]
+
+
+def test_layout_2026_08_detail_blocks_join_every_position():
+    st, diag = parse_pdf_pages(layout_2026_08_with_detail())
+    by = {p.linha_extrato: p for p in st.positions}
+    cdb = by["EMISSORA EXEMPLO CREDITO FINANCIAMENTO - CDB-CDB999X"]
+    assert (cdb.vencimento, cdb.taxa_texto, cdb.quantidade) == (dt.date(2026, 11, 9), "IPCA + 6,20%", D("95.00"))
+    deb = by["OUTRA EMISSORA - DEB-ABCD11*"]
+    assert (deb.vencimento, deb.taxa_texto, deb.quantidade) == (dt.date(2031, 12, 15), "105,00% do CDI", D("20.00"))
+    gama = by["FUNDO GAMA CRED AGRO FIDC RESP LIMITADA*"]
+    assert gama.quantidade == D("650.00") and gama.preco_implicito and gama.vencimento is None
+    assert by["FUNDO DELTA FIM"].quantidade == D("400.00")
+    assert (diag.detail_rows, diag.detail_joined, diag.detail_lines_unread) == (4, 4, 0)
+    assert st.sum_of_lines == st.stated_total
+
+
+def test_detail_header_accepts_a_last_column_cut_at_the_page_edge():
+    assert sp._detail_header("At ivo  Dat a Inicial  Saldo br ut o  Def") == ["ativo", "datainicial", "saldobruto"]
+    assert sp._detail_header("At ivo  Dat a Inicial  Saldo br ut o  Xy") is None

@@ -46,6 +46,30 @@ either, or with no text layer, the reader raises `StatementFormatError` saying s
 | `Detalhamento dos Ativos`: one table per strategy (`Ativo`, `Data Inicial`, `Quantidade`, `Resgate`, `Vencimento`, `Taxa`, `Saldo bruto`, ...; renda variável `Ativo`, `Quantidade`, `Saldo bruto`, `Preço`, ...)                                                          | Joined to a position by strategy and `Saldo bruto` equal to the position value (name prefix to break ties): gives `quantidade`, `vencimento`, `taxa_texto` and the price. Detail rows that cannot be read or joined are counted, not fatal.                                                                                |
 | Money `1.056.638,06`, percent `1,22%`, a missing value prints `-`                                                                                                                                                                                                          | A `-` where a position value is expected is a row not read. In the detail table it is no value.                                                                                                                                                                                                                            |
 
+The 2026-08 layout (#747, measured on one real report) differs in four ways the reader handles.
+The consolidated position is followed by `E, quando abrimos a rentabilidade por estratégia` and
+`Atribuição de Resultado` (no `Detalhamento` between), which end the section. A long name is
+printed in two halves around a line that can hold only the two columns' values; a line blank in
+a column ends that column's row block, so the lower half stays with its row. The column header is
+wrapped one word per line (`Posição` / `At ivo` / `brut a`). The summary wraps `Cont a` / value /
+`corrent e`, and the PDF itself prints that value with its last digit cut (`R$ 7.841,1`): the cash
+is then the gross total minus the consolidated `Total`, accepted only when it extends the printed
+digits by one, and `Statement.notes` says so. Check 4 below then ties by construction; check 3
+still ties the leaves on their own.
+
+Its `Detalhamento dos Ativos` (#751) opens each table with `<estratégia> ... Em carteira NN% R$ ...`,
+wraps the header over three lines (`Preço`/`Valor` above, `médio`/`aplicado` below, the last column
+cut at the page edge as `Def`), and prints each row as a block between blank lines: the one line
+with `R$` holds the values, the name wraps above and below it at the left, and the rate wraps in the
+`Taxa` column (`IPCA` / `+` / `6,20%`). The reader reads that block shape only when a table opens
+with `Em carteira`; the older layout keeps its line reader. The join to positions is unchanged
+(strategy and value). A row with no `Data Inicial` (a ticker) reads name, then quantity.
+
+Names keep no stray spaces (#756): `-layout` splits words next to `t`, `f` and `r` (`Marf rig`),
+while `pdftotext -raw` on the same bytes (STDIN again) prints them whole. A run of 2 to 4 name
+tokens is joined only when the joined word is in that raw text and one piece is not a word there,
+so `Valor aplicado` stays two words. With pypdf there is no raw text and names stay as printed.
+
 Position typing uses only what the statement prints: a registry code at the end of the name
 (`CRA-`, `CRI-`, `CDB-`, `DEB-`, `LCA-`, `LCI-`; `CDCA-` and the like are `outro`) sets the type and
 the `codigo` (the part after the hyphen); `BACEN-... - NTNB|NTNF|NTNC|NTNI|LTN|LFT` is `tesouro`

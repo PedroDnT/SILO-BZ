@@ -40,7 +40,15 @@
       "Bash(git ls-tree *)",
       "Bash(pg_lsclusters *)",
       "Bash(getent *)",
-      "mcp__claude-code-remote__list_events"
+      "mcp__claude-code-remote__list_events",
+      "Bash(gh run watch *)",
+      "Bash(brew list *)",
+      "mcp__ccd_pr__get_status",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "mcp__claude-in-chrome__find",
+      "mcp__claude-in-chrome__get_page_text",
+      "mcp__ccd_session_mgmt__search_session_transcripts",
+      "mcp__claude_ai_Supabase__query_logs"
     ]
   },
   "hooks": {
@@ -78,6 +86,18 @@
             "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in */docs/planning/CHANGELOG.md|docs/planning/CHANGELOG.md|*/docs/archive/changelog/*|docs/archive/changelog/*|*/docs/planning/changelog.d/*|docs/planning/changelog.d/*) ;; *.md|*.json|*.yaml|*.yml) command -v prettier >/dev/null && prettier --write --log-level silent \"$f\";; esac; } 2>/dev/null || true",
             "timeout": 30,
             "statusMessage": "prettier…"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-start.sh\"",
+            "timeout": 20,
+            "statusMessage": "main + open PRs…"
           }
         ]
       }

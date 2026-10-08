@@ -71,11 +71,24 @@ STRATEGIES = {
     "retornoabsoluto": "Retorno Absoluto",
     "rendavariavel": "Renda Variável",
 }
-SECTION_END_KEYS = ("detalhamentodosativos", "arentabilidadecompleta", "rentabilidadecompleta", "movimentacoesdaconta")
+# "E, quando abrimos a rentabilidade por estratégia" and "Atribuição de Resultado" follow the position in the
+# 2026-08 layout, which has no "Detalhamento dos ativos" between them (#747); key() keeps the comma.
+SECTION_END_KEYS = (
+    "detalhamentodosativos",
+    "arentabilidadecompleta",
+    "rentabilidadecompleta",
+    "movimentacoesdaconta",
+    "e,quandoabrimosarentabilidade",
+    "atribuicaoderesultado",
+)
 FURNITURE = re.compile(r"^(pagina\d+(de\d+)?|relatoriodeperformance)$")
 COLUMN_HEADER_KEYS = ("posicaobruta", "%total")
+# The same header wrapped one word per line (2026-08 layout, #747): matched whole, never as a prefix.
+COLUMN_HEADER_WORDS = {"posicao", "ativo", "bruta"}
 
 _MONEY = re.compile(r"^-?\d{1,3}(?:\.\d{3})*,\d{2}$|^-?\d+,\d{2}$")
+# An amount the report printed with its last digit cut ("7.841,1"): never read as a value (#747).
+_CUT_MONEY = re.compile(r"^\d{1,3}(?:\.\d{3})*,\d$")
 _PCT = re.compile(r"^-?\d+(?:,\d+)?%$")
 _DATE_RANGE = re.compile(r"(\d{2}/\d{2}/\d{4})\s*(?:a|à|até|-|–)\s*(\d{2}/\d{2}/\d{4})")
 _TICKER = re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]{4}\d{1,2}$")  # a root of letters or digits: B3SA3, B5P211, 5PRE11
@@ -155,6 +168,43 @@ def extract_pages(data: bytes) -> tuple[list[str], str]:
     if not any(p.strip() for p in pages):
         raise StatementFormatError("the PDF has no text layer (a scanned image): nothing to read")
     return pages, "pypdf"
+
+
+def raw_words(data: bytes) -> frozenset[str]:
+    """The words of ``pdftotext -raw`` (STDIN, never disk), which prints them whole where the
+    layout mode splits them next to t, f and r ('Marf rig'). Empty without poppler or on failure:
+    names then stay as the layout text printed them (#756)."""
+    if not shutil.which("pdftotext"):
+        return frozenset()
+    proc = subprocess.run(["pdftotext", "-raw", "-", "-"], input=data, capture_output=True, timeout=180, check=False)
+    if proc.returncode != 0:
+        return frozenset()
+    return frozenset(proc.stdout.decode("utf-8", errors="replace").split())
+
+
+def respace_name(name: str, words: frozenset[str]) -> str:
+    """Join a run of 2 to 4 tokens when the joined word is in ``words`` and one piece is not a word there.
+
+    'Marf rig' -> 'Marfrig' and 'Invest iment o' -> 'Investimento'; 'Valor aplicado' stays, because
+    'Valoraplicado' is not a word of the raw text. Nothing outside the raw text is ever produced.
+    """
+    if not words:
+        return name
+    toks = name.split()
+    out: list[str] = []
+    i = 0
+    while i < len(toks):
+        for j in range(min(len(toks), i + 4), i + 1, -1):
+            run = toks[i:j]
+            joined = "".join(run)
+            if joined in words and any(t not in words for t in run):
+                out.append(joined)
+                i = j
+                break
+        else:
+            out.append(toks[i])
+            i += 1
+    return " ".join(out)
 
 
 # ---------------------------------------------------------------------------
@@ -245,12 +295,23 @@ def _flush_frags(st: _Stream, sec: _Section, coord: str, diag: Diagnostics) -> N
     st.frags_anchored = False
 
 
+def _end_block(st: _Stream, sec: _Section, coord: str, diag: Diagnostics) -> None:
+    """A line blank in this column ends the row block: text after a value line is that row's tail.
+
+    The 2026-08 layout prints a long name in two halves around its value line (#747), so the
+    half below must not wait to become the next row's prefix.
+    """
+    if st.frags and st.frags_anchored:
+        _flush_frags(st, sec, coord, diag)
+    st.last_was_row = False
+
+
 def _process_line(line: str, st: _Stream, sec: _Section, coord: str, diag: Diagnostics) -> None:
     label, tail = split_row(line)
     k = key(label)
     if not label and not tail:
         return
-    if FURNITURE.match(k) or any(k.startswith(h) for h in COLUMN_HEADER_KEYS):
+    if FURNITURE.match(k) or k in COLUMN_HEADER_WORDS or any(k.startswith(h) for h in COLUMN_HEADER_KEYS):
         return
     money = _money_or_none(tail)
     if k == "total" and money is not None:
@@ -378,7 +439,7 @@ def _holder_masker(cover: str) -> tuple[Masker, list[str]]:
     return Masker(nome, None, conta), notes
 
 
-def parse_pdf_pages(pages: list[str], extractor: str = "text") -> tuple[Statement, Diagnostics]:
+def parse_pdf_pages(pages: list[str], extractor: str = "text", words: frozenset[str] = frozenset()) -> tuple[Statement, Diagnostics]:
     diag = Diagnostics(extractor=extractor, pages=len(pages))
     if not pages or not any(p.strip() for p in pages):
         raise StatementFormatError("the PDF has no text")
@@ -401,6 +462,7 @@ def parse_pdf_pages(pages: list[str], extractor: str = "text") -> tuple[Statemen
     leaves: list[Position] = []
     unread = list(sec.unread)
     for row in sec.rows:
+        row.name = respace_name(row.name, words)
         pos = _position_from_row(row, period_end, len(leaves) + 1, detail, diag)
         leaves.append(pos)
     for pos in leaves:
@@ -408,6 +470,16 @@ def parse_pdf_pages(pages: list[str], extractor: str = "text") -> tuple[Statemen
         diag.by_strategy[(pos.classe_corretora or "?", pos.estrategia_corretora or "?")] = (cnt + 1, tot + pos.valor)
     diag.detail_unmatched = sum(1 for d in detail if not d.used)
 
+    if caixa_valor is None:
+        cut = _wrapped_conta_corrente(lines)[1]
+        if cut is not None:
+            caixa_valor = _derived_caixa(cut, bruto if bruto is not None else saldo_final, sec.total)
+            if caixa_valor is not None:
+                # The gross tie below then holds by construction; the leaves still tie to the 'Total' on their own.
+                notes.append(
+                    f"Conta corrente impressa cortada no PDF ('{cut}'): R$ {_br_money(caixa_valor)} é o patrimônio bruto "
+                    "menos o 'Total' da posição consolidada, conferido contra os dígitos impressos."
+                )
     caixa: Position | None = None
     if caixa_valor is not None and caixa_valor != 0:
         caixa = Position(
@@ -522,7 +594,49 @@ def _summary_anchors(lines):
                 if moneys:
                     caixa = moneys[0]
                     break
+    if caixa is None:
+        caixa = _wrapped_conta_corrente(lines)[0]
     return bruto, liquido, saldo_final, caixa
+
+
+def _wrapped_conta_corrente(lines) -> tuple[Decimal | None, str | None]:
+    """(amount, cut amount) of a 'Conta corrente' label the summary table wraps around its value line.
+
+    The 2026-08 layout prints 'Cont a', then a line with only the percent and the amount, then
+    'corrent e' (#747). Only that exact three-line shape is read. Its PDF can print the amount
+    with the last digit cut ('7.841,1'); that is returned as text, never as a value.
+    """
+    for i in range(len(lines) - 2):
+        label, tail = split_row(lines[i][2])
+        k = key(label)
+        if k.startswith("movimentacoesdaconta"):
+            return None, None
+        if k != "conta" or tail or key(split_row(lines[i + 2][2])[0]) != "corrente":
+            continue
+        value_line = re.sub(r"R\$\s*", "", lines[i + 1][2]).split()
+        moneys = [parse_br_number(t) for t in value_line if is_money(t)]
+        cut = [t for t in value_line if _CUT_MONEY.match(t)]
+        rest = [t for t in value_line if not (is_money(t) or is_pct(t) or _CUT_MONEY.match(t))]
+        if rest:
+            continue
+        if len(moneys) == 1 and not cut:
+            return moneys[0], None
+        if len(cut) == 1 and not moneys:
+            return None, cut[0]
+    return None, None
+
+
+def _br_money(v: Decimal) -> str:
+    return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _derived_caixa(cut: str, gross: Decimal | None, total: Decimal | None) -> Decimal | None:
+    """Gross minus the consolidated 'Total', accepted only when it is the cut amount plus one digit."""
+    if gross is None or total is None:
+        return None
+    v = gross - total
+    shown = _br_money(v)
+    return v if v > 0 and len(shown) == len(cut) + 1 and shown.startswith(cut) else None
 
 
 def _consolidated_section(lines, diag: Diagnostics) -> _Section:
@@ -567,13 +681,17 @@ def _consolidated_section(lines, diag: Diagnostics) -> _Section:
         if right_start is None:
             parts = [("S", text)]
         else:
-            units = _split_units(text)
+            units = _split_units(text, right_start)
             if len(units) >= 2:
                 parts = [("L", units[0][1]), ("R", " ".join(u for _, u in units[1:]))]
             elif units:
                 parts = [("R" if units[0][0] >= right_start - 6 else "L", units[0][1])]
             else:
                 parts = []
+        present = {sid for sid, part in parts if part.strip()}
+        for sid, st in streams.items():
+            if sid not in present:
+                _end_block(st, sec, coord, diag)
         for sid, part in parts:
             if not part.strip():
                 continue
@@ -589,12 +707,16 @@ def _consolidated_section(lines, diag: Diagnostics) -> _Section:
     return sec
 
 
-def _split_units(line: str) -> list[tuple[int, str]]:
+def _split_units(line: str, right_start: int | None = None) -> list[tuple[int, str]]:
     """The row units of a (possibly two-column) line, as (start column, text).
 
     A unit ends when its run of money and percent tokens ends and text follows, or at a gap of
     three or more spaces between two text tokens. This does not depend on a fixed character
     column, which the text layer rescales from page to page and even from line to line.
+
+    With ``right_start`` (the page's right column, once known), a run of numbers that began in
+    the left column also ends at the first number that starts in the right one: a line can hold
+    only the two columns' values, their names wrapped above and below it (#747).
     """
     units: list[list[tuple[int, str]]] = []
     cur: list[tuple[int, str]] = []
@@ -604,7 +726,10 @@ def _split_units(line: str) -> list[tuple[int, str]]:
         t, start = m.group(), m.start()
         gap = start - prev_end if prev_end is not None else 0
         numeric = is_money(t) or is_pct(t) or (t == "-" and gap >= 3)
-        if cur and ((prev_numeric and not numeric) or (not prev_numeric and not numeric and gap >= 3)):
+        crosses = (
+            right_start is not None and prev_numeric and numeric and cur[0][0] < right_start - 6 <= start
+        )
+        if cur and ((prev_numeric and not numeric) or (not prev_numeric and not numeric and gap >= 3) or crosses):
             units.append(cur)
             cur = []
         cur.append((start, t))
@@ -639,6 +764,9 @@ def _detail_header(text: str) -> list[str] | None:
                 rest = rest[len(c) :]
                 break
         else:
+            # a last column cut at the page edge ('Def' for 'Defasagem', #751): it holds no value we read
+            if len(rest) >= 3 and any(c.startswith(rest) for c in DETAIL_COLUMNS):
+                break
             return None
     return cols if cols and cols[0] == "ativo" and "saldobruto" in cols else None
 
@@ -677,6 +805,8 @@ def _detail_rows(lines, diag: Diagnostics) -> list[DetailRow]:
         if k.startswith("arentabilidadecompleta") or k.startswith("rentabilidadecompleta") or k.startswith("movimentacoesdaconta"):
             end = j
             break
+    if any(_carteira_strategy(t) for _, _, t in lines[start + 1 : end]):
+        return _detail_rows_blocks(lines[start + 1 : end], diag)
     out: list[DetailRow] = []
     header: list[str] | None = None
     strat: str | None = None
@@ -723,6 +853,121 @@ def _detail_rows(lines, diag: Diagnostics) -> list[DetailRow]:
         out.append(DetailRow(name=name, strategy_key=strat, saldo_bruto=saldo, quantidade=qtd, vencimento=venc, taxa=taxa, preco=preco))
     diag.detail_rows = len(out)
     return out
+
+
+# The 2026-08 layout (#751): each detail table opens with '<estratégia> ... Em carteira NN% R$ ...', its header
+# spans three lines ('Preço'/'Valor' above, 'médio'/'aplicado' below), and each row is a block between blank
+# lines: the name and the rate wrap above and below the one line that holds the values.
+_HEADER_WORDS = ("aplicado", "preco", "valor", "medio")
+
+
+def _carteira_strategy(text: str) -> str | None:
+    k = key(split_row(text)[0])
+    return k[: -len("emcarteira")] if k.endswith("emcarteira") and k[: -len("emcarteira")] in STRATEGIES else None
+
+
+def _is_header_context(text: str) -> bool:
+    rest = key(text)
+    while rest:
+        w = next((w for w in _HEADER_WORDS if rest.startswith(w)), None)
+        if w is None:
+            return False
+        rest = rest[len(w) :]
+    return True
+
+
+def _detail_rows_blocks(section, diag: Diagnostics) -> list[DetailRow]:
+    out: list[DetailRow] = []
+    header: list[str] | None = None
+    taxa_lo: int | None = None
+    strat: str | None = None
+    block: list[str] = []
+
+    def flush() -> None:
+        nonlocal block
+        if block and header is not None:
+            row = _block_row(block, header, taxa_lo, strat)
+            if row is None:
+                diag.detail_lines_unread += len(block)
+            else:
+                out.append(row)
+        elif block:
+            diag.detail_lines_unread += len(block)
+        block = []
+
+    for _, _, text in section:
+        if not text.strip():
+            flush()
+            continue
+        s = _carteira_strategy(text)
+        if s is not None:
+            flush()
+            strat, header = s, None
+            continue
+        hdr = _detail_header(text)
+        if hdr is not None:
+            flush()
+            header = hdr
+            m = re.search(r"\bTaxa\b", text)
+            taxa_lo = m.start() - 15 if m and "taxa" in hdr else None
+            continue
+        k = key(split_row(text)[0])
+        if _is_header_context(text) or k.startswith("total") or FURNITURE.match(k) or _DATE_RANGE.search(text):
+            flush()
+            continue
+        block.append(text)
+    flush()
+    diag.detail_rows = len(out)
+    return out
+
+
+def _block_row(block: list[str], header: list[str], taxa_lo: int | None, strat: str | None) -> DetailRow | None:
+    """One detail row from its block of lines; None when the block has not exactly one line of values."""
+    value_at = [i for i, t in enumerate(block) if re.search(r"R\$\s*\S", t)]
+    if len(value_at) != 1:
+        return None
+    vi = value_at[0]
+    toks = [(m.start(), m.group()) for m in re.finditer(r"\S+", block[vi])]
+    r_at = [i for i, (_, t) in enumerate(toks) if t == "R$"]
+    moneys = [toks[i + 1][1] for i in r_at if i + 1 < len(toks) and is_money(toks[i + 1][1])]
+    if not moneys:
+        return None
+    before = toks[: r_at[0]]
+    dates = [i for i, (_, t) in enumerate(before) if _DATE_TOKEN.match(t)]
+    venc = qtd = None
+    if "datainicial" in header and dates:
+        name_end = dates[0]
+        nxt = before[dates[0] + 1][1] if dates[0] + 1 < len(before) else None
+        qtd = parse_br_number(nxt) if nxt is not None and is_money(nxt) else None
+        if "vencimento" in header and len(dates) > 1:
+            venc = _opt_date(before[dates[1]][1])
+    else:
+        name_end = next((i for i, (_, t) in enumerate(before) if is_money(t)), len(before))
+        qtd = parse_br_number(before[name_end][1]) if name_end < len(before) else None
+    used = set(range(name_end)) | set(dates) | ({dates[0] + 1} if dates and qtd is not None else set())
+    # the rate: what stands in the 'Taxa' column, above, on and below the line of values, in reading order
+    taxa_parts: list[str] = []
+    name_parts: list[str] = []
+    for i, line in enumerate(block):
+        if i == vi:
+            name_parts.append(" ".join(t for _, t in before[:name_end]))
+            if taxa_lo is not None:
+                taxa_parts += [t for j, (p, t) in enumerate(before) if j not in used and p >= taxa_lo]
+            continue
+        line_toks = [(m.start(), m.group()) for m in re.finditer(r"\S+", line)]
+        name_parts.append(" ".join(t for p, t in line_toks if taxa_lo is None or p < taxa_lo))
+        if taxa_lo is not None:
+            taxa_parts += [t for p, t in line_toks if p >= taxa_lo]
+    preco = parse_br_number(moneys[1]) if "precomedio" in header and "preco" in header and len(moneys) > 1 else None
+    return DetailRow(
+        name=join_fragments(name_parts),
+        strategy_key=strat,
+        saldo_bruto=parse_br_number(moneys[0]),
+        quantidade=qtd,
+        vencimento=venc,
+        taxa=" ".join(taxa_parts) or None,
+        preco=preco,
+    )
 
 
 def _opt_number(tok: str | None) -> Decimal | None:
@@ -849,7 +1094,7 @@ def _run_checks(diag, sec: _Section, leaves, sum_leaves, sum_all, bruto, saldo_f
 
 def read_pdf_statement_bytes(data: bytes) -> tuple[Statement, Diagnostics]:
     pages, extractor = extract_pages(data)
-    return parse_pdf_pages(pages, extractor)
+    return parse_pdf_pages(pages, extractor, raw_words(data) if extractor == "poppler" else frozenset())
 
 
 def read_pdf_statement(path: str | Path) -> Statement:
