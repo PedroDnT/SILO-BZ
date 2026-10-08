@@ -87,6 +87,8 @@ COLUMN_HEADER_KEYS = ("posicaobruta", "%total")
 COLUMN_HEADER_WORDS = {"posicao", "ativo", "bruta"}
 
 _MONEY = re.compile(r"^-?\d{1,3}(?:\.\d{3})*,\d{2}$|^-?\d+,\d{2}$")
+# An amount the report printed with its last digit cut ("7.841,1"): never read as a value (#747).
+_CUT_MONEY = re.compile(r"^\d{1,3}(?:\.\d{3})*,\d$")
 _PCT = re.compile(r"^-?\d+(?:,\d+)?%$")
 _DATE_RANGE = re.compile(r"(\d{2}/\d{2}/\d{4})\s*(?:a|à|até|-|–)\s*(\d{2}/\d{2}/\d{4})")
 _TICKER = re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]{4}\d{1,2}$")  # a root of letters or digits: B3SA3, B5P211, 5PRE11
@@ -430,6 +432,16 @@ def parse_pdf_pages(pages: list[str], extractor: str = "text") -> tuple[Statemen
         diag.by_strategy[(pos.classe_corretora or "?", pos.estrategia_corretora or "?")] = (cnt + 1, tot + pos.valor)
     diag.detail_unmatched = sum(1 for d in detail if not d.used)
 
+    if caixa_valor is None:
+        cut = _wrapped_conta_corrente(lines)[1]
+        if cut is not None:
+            caixa_valor = _derived_caixa(cut, bruto if bruto is not None else saldo_final, sec.total)
+            if caixa_valor is not None:
+                # The gross tie below then holds by construction; the leaves still tie to the 'Total' on their own.
+                notes.append(
+                    f"Conta corrente impressa cortada no PDF ('{cut}'): R$ {_br_money(caixa_valor)} é o patrimônio bruto "
+                    "menos o 'Total' da posição consolidada, conferido contra os dígitos impressos."
+                )
     caixa: Position | None = None
     if caixa_valor is not None and caixa_valor != 0:
         caixa = Position(
@@ -545,28 +557,48 @@ def _summary_anchors(lines):
                     caixa = moneys[0]
                     break
     if caixa is None:
-        caixa = _wrapped_conta_corrente(lines)
+        caixa = _wrapped_conta_corrente(lines)[0]
     return bruto, liquido, saldo_final, caixa
 
 
-def _wrapped_conta_corrente(lines) -> Decimal | None:
-    """The amount of a 'Conta corrente' label the summary table wraps around its value line.
+def _wrapped_conta_corrente(lines) -> tuple[Decimal | None, str | None]:
+    """(amount, cut amount) of a 'Conta corrente' label the summary table wraps around its value line.
 
     The 2026-08 layout prints 'Cont a', then a line with only the percent and the amount, then
-    'corrent e' (#747). Only that exact three-line shape is read; anything else stays None.
+    'corrent e' (#747). Only that exact three-line shape is read. Its PDF can print the amount
+    with the last digit cut ('7.841,1'); that is returned as text, never as a value.
     """
     for i in range(len(lines) - 2):
         label, tail = split_row(lines[i][2])
         k = key(label)
         if k.startswith("movimentacoesdaconta"):
-            return None
-        if k != "conta" or tail:
+            return None, None
+        if k != "conta" or tail or key(split_row(lines[i + 2][2])[0]) != "corrente":
             continue
-        v_label, v_tail = split_row(lines[i + 1][2])
-        moneys = [parse_br_number(t) for t in v_tail if is_money(t)]
-        if not v_label.strip() and len(moneys) == 1 and key(split_row(lines[i + 2][2])[0]) == "corrente":
-            return moneys[0]
-    return None
+        value_line = re.sub(r"R\$\s*", "", lines[i + 1][2]).split()
+        moneys = [parse_br_number(t) for t in value_line if is_money(t)]
+        cut = [t for t in value_line if _CUT_MONEY.match(t)]
+        rest = [t for t in value_line if not (is_money(t) or is_pct(t) or _CUT_MONEY.match(t))]
+        if rest:
+            continue
+        if len(moneys) == 1 and not cut:
+            return moneys[0], None
+        if len(cut) == 1 and not moneys:
+            return None, cut[0]
+    return None, None
+
+
+def _br_money(v: Decimal) -> str:
+    return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _derived_caixa(cut: str, gross: Decimal | None, total: Decimal | None) -> Decimal | None:
+    """Gross minus the consolidated 'Total', accepted only when it is the cut amount plus one digit."""
+    if gross is None or total is None:
+        return None
+    v = gross - total
+    shown = _br_money(v)
+    return v if v > 0 and len(shown) == len(cut) + 1 and shown.startswith(cut) else None
 
 
 def _consolidated_section(lines, diag: Diagnostics) -> _Section:

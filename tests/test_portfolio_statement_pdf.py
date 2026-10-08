@@ -446,3 +446,13 @@ def test_layout_2026_08_wrapped_cash_needs_the_exact_three_line_shape():
     with pytest.raises(StatementTotalMismatch) as e:
         parse_pdf_pages(pages)
     assert "folhas + conta corrente x Patrimônio bruto: gap R$ -5000.00" in str(e.value)
+
+
+def test_layout_2026_08_cut_cash_is_derived_only_when_the_printed_digits_agree():
+    # The report printed the cash with its last digit cut: gross minus the 'Total' must extend it by one digit.
+    st, _ = parse_pdf_pages(edit(layout_2026_08_pages(), 1, "R$ 5.000,00", "R$ 5.000,0"))
+    caixa = next(p for p in st.positions if p.tipo == "caixa")
+    assert caixa.valor == D("5000.00") and st.sum_of_lines == st.stated_total
+    assert any("cortada" in n and "'5.000,0'" in n for n in st.notes)
+    with pytest.raises(StatementTotalMismatch):
+        parse_pdf_pages(edit(layout_2026_08_pages(), 1, "R$ 5.000,00", "R$ 5.001,0"))
