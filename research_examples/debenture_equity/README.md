@@ -527,3 +527,5 @@ The underlying protocol/default primary comparison and production remain unchang
 Real dated-sector coverage, held-out sector-controlled prediction/scoring,
 dominance/delay/placebos and independent calibration remain required; no acceptance
 is granted by this option. See the [causal sector design](prospective-design.md#causal-sector-controlled-development-comparison).
+
+[Recurring ingestion approval package](recurring-ingestion-approval.md) reuses the already validated seven-day production capture and local repeat-storage benchmark; its workflow patch is unapplied and production activation remains unapproved.

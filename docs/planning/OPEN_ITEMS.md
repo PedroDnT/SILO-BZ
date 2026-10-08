@@ -659,3 +659,6 @@ valid completion receipt. Credit allocation grew 14,270,464 bytes; elapsed time
 runbook. The earlier failed audit remains visible. No schema, permanent activation,
 new dataset or PIT certification; the next-day heartbeat stays paused. Recurring
 weekly-window cost and the first three scheduled cash sessions remain unverified.
+
+
+The [recurring activation package](../../research_examples/debenture_equity/recurring-ingestion-approval.md) revalidates the existing 30/09–06/10 production window (59,670 facts, 82.13 MB raw, 73.103 seconds) instead of repeating it. Local repeat allocation was 38.53 MB, not a production measurement. A two-step environment-wiring patch is prepared but unapplied; activation and first-three-session acceptance remain subject to specific approval.
