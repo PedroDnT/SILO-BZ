@@ -1,0 +1,1 @@
+| 2026-10-08 | claude/watchdog-market-timeout | **Watchdog market step capped at 30 minutes (#763).** The recovery `market_pipeline` step now has `timeout-minutes: 30`, as in `daily_ingest.yml` (owner decision). `tests/test_watchdog_parity.py` no longer lists it as an allowed difference. |
