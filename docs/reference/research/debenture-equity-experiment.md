@@ -705,3 +705,13 @@ test interval, with exact input/model hashes and no test-label fitting. This is
 private candidate evidence, not activation, entry-close verification or empirical
 acceptance. Power, sector robustness, missing/late/revisions, scope/inventory and
 independent financial/PIT acceptance remain open; production is unchanged.
+
+The [development date audit](../../../research_examples/debenture_equity/power.py)
+proves the preserved V2 candidate cannot meet the 60-date nested-OOS power gate
+for horizon 20: its best-case ceilings are 37 primary / 34 delayed dates. A
+separate unactivated [V3 proposal](../../../research_examples/debenture_equity/prospective_protocol_v3.json)
+uses 120/60/100 references plus 22 outcome sessions, allowing at most 74 delayed
+development OOS dates. Floors/methods remain unchanged and V2 stays the default.
+This is a necessary calendar condition only: both candidates still report power
+not estimable, no MDE and no activation. Actual nested losses, calibration,
+issuer/sector coverage, acceptance and future elapsed observations remain required.

@@ -574,6 +574,12 @@ Local prediction publication/reuse now enforces actual-clock cutoffs, exact
 original-fit replay and unchanged initial parameters on later test signals.
 It does not activate the design or establish the exchange entry-close; accepted
 scope/inventory, power, sector robustness, collector/retention and source/PIT gates remain.
+The necessary nested-development date audit now proves V2's horizon-20 ceiling
+is only 37 primary / 34 delayed dates, below the unchanged 60-date power floor.
+A separate unactivated V3 120/60/100 proposal gives 74 delayed dates in perfect
+coverage, not estimated power. V2/defaults and all floors remain intact. Actual
+nested losses/calibration, acceptance and prospective observations remain required;
+the V3 302-session storage scenario grants no additional production authority.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer

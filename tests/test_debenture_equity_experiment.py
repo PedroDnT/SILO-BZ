@@ -1248,3 +1248,56 @@ def test_prediction_publication_refuses_actual_late_clock(fitted_archive_scenari
     monkeypatch.setattr(snapshots, '_now', (lambda: next(times)) if cross_during_fit else (lambda: late))
     with pytest.raises(ValueError, match='early, late'):
         publish_first(root, inputs[8], inputs[:8], registry_sha256=pin, horizon=1, delay=1, candidate=candidate)
+
+
+@pytest.mark.parametrize('filename', ['prospective_protocol.json', 'prospective_protocol_v3.json'])
+def test_power_date_ceiling_matches_independent_ordinal_enumeration(filename):
+    from research_examples.debenture_equity.power import development_date_ceiling
+    p = json.loads((Path('research_examples/debenture_equity')/filename).read_text())
+    report = development_date_ceiling(p)
+    n = report['development_reference_sessions']
+    for scenario in report['scenarios']:
+        g = scenario['horizon']+scenario['entry_delay_sessions']
+        possible = []
+        for fold in range(n):
+            if fold+g >= n:
+                continue
+            for validation_start in range(fold):
+                training = [d for d in range(validation_start) if d+g < validation_start]
+                validation = [d for d in range(validation_start, fold) if d+g < fold]
+                if len(training) >= p['method']['min_train_dates'] and len(validation) >= p['method']['min_validation_dates']:
+                    possible.append(fold)
+                    break
+        assert len(possible) == scenario['best_case_oos_dates']
+        if possible:
+            assert possible[0] == scenario['first_possible_oos_ordinal']
+            assert possible[-1] == scenario['last_possible_oos_ordinal']
+    assert report['power_status'] == 'not_estimable' and report['minimum_detectable_gain'] is None
+    assert report['test_activation_allowed'] is False
+
+
+def test_longer_power_candidate_preserves_v2_and_every_acceptance_floor():
+    from research_examples.debenture_equity.power import development_date_ceiling
+    root = Path('research_examples/debenture_equity')
+    v2 = json.loads((root/'prospective_protocol.json').read_text())
+    v3 = json.loads((root/'prospective_protocol_v3.json').read_text())
+    assert fingerprint(v2) == '83eebc6a7c3ffbd7ead97235dd73767a25535d500bdfa460cf3d33fdbe9d7555'
+    assert v3['parent_design_sha256'] == fingerprint(v2)
+    assert v3['method'] == v2['method'] and v3['power_design'] == v2['power_design']
+    assert v3['identity_gate'] == v2['identity_gate'] and v3['label_policy'] == v2['label_policy']
+    a, b = development_date_ceiling(v2), development_date_ceiling(v3)
+    assert a['structural_date_gate'] == 'fails' and a['additional_reference_sessions_needed_in_best_case'] == 26
+    assert a['minimum_development_reference_sessions_all_scenarios'] == 166
+    assert a['scenarios'][-1]['best_case_oos_dates'] == 34
+    assert b['structural_date_gate'] == 'passes_best_case_only' and b['scenarios'][-1]['best_case_oos_dates'] == 74
+    assert v3['calendar']['signal_sessions'] == 280 and v3['calendar']['total_new_sessions'] == 302
+    assert not v3['production']['authorized'] and not v3['production']['execution_allowed_by_this_file']
+    assert v3['production']['candidate_storage_projection_bytes'] == 302*400982016//64
+
+
+def test_power_date_ceiling_refuses_invalid_reference_length():
+    from research_examples.debenture_equity.power import development_date_ceiling
+    p = json.loads(Path('research_examples/debenture_equity/prospective_protocol.json').read_text())
+    p['calendar']['training_reference_sessions'] = True
+    with pytest.raises(ValueError, match='positive integers'):
+        development_date_ceiling(p)

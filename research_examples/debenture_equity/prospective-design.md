@@ -6,6 +6,12 @@ production authorization or evidence of a successful prospective experiment.
 candidate. The executed [pilot](protocol.json) and its inconclusive findings stay
 unchanged. The existing runner does **not** accept this candidate or certify PIT.
 
+The retained version 2 fails the necessary nested-development date condition
+below. [Version 3](prospective_protocol_v3.json) is a separate **unactivated
+proposal**, not a replacement of accepted inputs or new production approval.
+Version 2 remains the default external replay design; adopting version 3 requires
+explicit acceptance and a new prospective scope before outcomes.
+
 ## Calendar and activation
 
 Use 90 training, 50 validation and 100 untouched-test reference cash sessions,
@@ -194,6 +200,49 @@ If development coverage, null calibration or nested losses are inadequate, retur
 qualifying development loss series, so no power number is reported. The grid is
 frozen preparation; an executable power assessment remains required.
 
+### Structural date audit and longer candidate
+
+`power.py` now computes a necessary **optimistic ceiling**, not statistical power.
+Let `N` be development reference sessions, `T=30`, `V=10`, and
+`g=horizon+entry_delay`. With no training before the first accepted development
+signal, the earliest possible nested OOS signal has ordinal `T+V+2g`: both the
+training and validation labels must exit strictly before their next split.
+The latest OOS signal whose exit precedes untouched test is `N-g-1`. Thus at
+most `max(0, N-T-V-3g)` independent OOS dates can contribute. This assumes
+perfect daily source/issuer/sector coverage and timely labels; real attrition
+can only lower it. Tests independently enumerate feasible split positions.
+
+| Horizon | Entry delay | V2: 140 development dates | V3 proposal: 180 development dates |
+| --- | --- | --- | --- |
+| 1 | 1 | 94 | 134 |
+| 5 | 1 | 82 | 122 |
+| 20 | 1 | 37 | 77 |
+| 1 | 2 | 91 | 131 |
+| 5 | 2 | 79 | 119 |
+| 20 | 2 | 34 | 74 |
+
+Version 2 cannot meet the unchanged 60-OOS-date power gate for horizon 20,
+even with no missing observations. The worst scenario needs at least **166**
+development references, 26 more than V2, merely to reach that date floor.
+The separate V3 proposal uses **120 training / 60 validation / 100 test**
+references plus 22 outcome sessions: 302 new sessions. Its 180 development
+references give a best-case 74-date ceiling, only 14 above the floor; this buffer
+is a planning choice, not a calibrated sample-size assurance. All method,
+identity, power, inferential and label requirements remain unchanged.
+
+V3 hash: `0dca510bd642e0b77eaefb9cddc8b3ea22dc601dbb34712564d6d246c11d2e9f`.
+Parent V2 hash remains
+`83eebc6a7c3ffbd7ead97235dd73767a25535d500bdfa460cf3d33fdbe9d7555`.
+No existing root or historical output is relabeled. The checker always reports
+`power_status=not_estimable`, no MDE and no test activation. The full nested
+loss-generation, null/block calibration and MC assessment still require
+implementation and qualifying prospective development observations.
+
+The V3 storage scenario is **1,892,133,888 bytes**, using the completed
+recovery's peak increment per recovered session, before snapshots, duplicate
+prediction staging, WAL/backups and future source variation. It is not an
+allowance or bound and does not expand the completed 13-lot approval.
+
 ## Production request boundary
 
 No additional production execution is requested by this candidate. The authorized
@@ -224,10 +273,10 @@ storage allowance and production retention policy.
 | Approved recovery | All 13 lots; hash/audit/nine-metric reconciliation; 69/69 study sessions; allocation under stop | Complete; do not repeat |
 | Original issuer mapping | 26 cited original issuers, exact full CNPJ/ISIN, FCA equity candidates and source aliases | Dated changes and at least 21 eligible untouched-test issuers after attrition |
 | Retrospective experiment | Offline runner, purges, fixed floors, sector/delay/placebo/dominance methods; 935 overlapping rows | Current test/sector coverage fails; no predictive conclusion |
-| Longer protocol | Version 2 candidate and explicit date ceilings | Owner acceptance, real session calendar and development power gate before activation |
+| Longer protocol | V2 preserved but structurally insufficient for nested horizon-20 power; separate unactivated V3 120/60/100 candidate and ordinal audit | Owner acceptance, real session calendar, actual attrition and calibrated development power gate before activation |
 | Prospective PIT | Local retention, input/outcome replay, canonical original slots, availability-aware first fit and deadline-bound prediction publication/reuse | Accepted pre-outcome root pin/inventory, verified exchange entry-close, late/missing/revision handling, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
 | Adjusted returns/benchmark | Existing total-return exports with coherent revision checks | Independent convention/event acceptance and frozen prospective vintages |
-| Power | Predeclared development grid, dependence and failure rules | Implemented/calibrated assessment on sufficient development-only OOS losses |
+| Power | Predeclared grid/rules and executable necessary date-ceiling audit; V2 fails, V3 passes only the optimistic date condition | Nested OOS loss generation and calibrated assessment on sufficient development-only losses, including issuer/sector coverage and MC uncertainty |
 | Confirmatory result | None; every current study is inconclusive | Adequate untouched history, frozen scoring and all inference/robustness gates |
 | Price/rate/tradability extensions | Explicitly excluded from liquidity-first claim; ADR 0004 retained | Cash-flow/event and observed-rate conventions plus execution cost/capacity evidence before any such claim |
 

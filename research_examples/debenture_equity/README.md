@@ -418,3 +418,34 @@ integration and durable production retention remain required. The mechanism
 never backdates a publication and cannot turn a later historical replay into an
 on-time forecast. Exact replay also requires a compatible frozen implementation
 and numerical runtime. No empirical predictability or trading claim follows.
+
+## Necessary development-power date audit
+
+```sh
+.venv/bin/python -m research_examples.debenture_equity.power
+.venv/bin/python -m research_examples.debenture_equity.power \
+  --protocol research_examples/debenture_equity/prospective_protocol_v3.json
+```
+
+This checks only the optimistic nested-OOS calendar ceiling. With `N` development
+references, `T`/`V` training/validation date floors and `g=horizon+entry_delay`,
+strict train→validation→OOS→test exit purges leave at most `N-T-V-3g` dates.
+No pre-study credit training signals or missing coverage are assumed. Independent
+tests enumerate all feasible fold/split positions instead of repeating that formula.
+
+V2's 140 development references supply at most **34** delayed horizon-20 dates,
+below the unchanged **60** floor; primary horizon 20 permits only 37. It is a
+structural no-go for this power gate. A minimum of 166 perfect-coverage references
+is necessary across all scenarios. The separate unactivated V3 proposal uses
+120/60 development references (180 total), giving an optimistic worst-case **74**.
+Its method, inference/identity/power floors and labels are unchanged. V2 remains
+intact and the default; no helper silently adopts V3 or relabels existing roots.
+
+The checker returns `power_status=not_estimable`, `minimum_detectable_gain=null`
+and `test_activation_allowed=false` for **both** candidates. Passing a necessary
+date ceiling supplies no loss series, calibration or power estimate. Nested
+development loss generation, issuer/sector coverage, dependence/null calibration,
+Monte Carlo uncertainty and owner acceptance remain required. See the versioned
+[design audit](prospective-design.md#structural-date-audit-and-longer-candidate).
+The V3 302-session storage scenario is about 1.892 GB before snapshots/staging,
+WAL/backups or source variation; it grants no capture or storage authorization.
