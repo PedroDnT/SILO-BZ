@@ -604,7 +604,13 @@ The approved three-month recovery and its storage checks are complete. The
 [execution reset](../reference/research/debenture-equity-experiment.md#execution-reset-reviewed-2026-10-08-utc-3)
 puts one complete collector/archive/replay rehearsal and a concrete one-session
 approval package first (2–4 hours estimated active effort, checkpoint at 2 hours).
-Then: specifically approved canary; accepted prospective development contract
+Ingestion is mandatory: an approved canary must persist raw captures, validated
+facts and one audit per capture through the existing ingestor. Then deliver
+specifically approved recurring daily/watchdog ingestion, verifying the first
+three scheduled cash sessions, cutoff archives and cumulative cost. Permanent
+capture stays off until that approval; ingestion need not wait for model/power
+acceptance. Reuse existing equity/FCA/benchmark/sector ingestion.
+Then: accepted prospective development contract
 with dated identity/source/convention and storage/retention gates; real development
 calibration; frozen untouched-test evaluation. No further statistical helpers or
 cohort expansion precede the collection seam. Protocols/floors and production

@@ -62,3 +62,8 @@ prioritizes one complete input-collection/archive rehearsal and an exact canary
 approval package before additional statistical tooling. Engineering readiness,
 approved production and future confirmatory observations are separate milestones;
 the existing frozen requirements and production boundaries remain intact.
+Ingestion is a required delivery: the approved canary must persist raw/facts/audit,
+followed by separately approved recurring daily/watchdog activation and verification
+of the first three scheduled cash sessions, actual cutoff archives and cumulative
+cost. Export/replay alone does not complete engineering; the permanent gate stays
+off until production activation is specifically approved.
