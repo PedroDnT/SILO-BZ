@@ -57,6 +57,11 @@ is then the gross total minus the consolidated `Total`, accepted only when it ex
 digits by one, and `Statement.notes` says so. Check 4 below then ties by construction; check 3
 still ties the leaves on their own.
 
+Names keep no stray spaces (#756): `-layout` splits words next to `t`, `f` and `r` (`Marf rig`),
+while `pdftotext -raw` on the same bytes (STDIN again) prints them whole. A run of 2 to 4 name
+tokens is joined only when the joined word is in that raw text and one piece is not a word there,
+so `Valor aplicado` stays two words. With pypdf there is no raw text and names stay as printed.
+
 Position typing uses only what the statement prints: a registry code at the end of the name
 (`CRA-`, `CRI-`, `CDB-`, `DEB-`, `LCA-`, `LCI-`; `CDCA-` and the like are `outro`) sets the type and
 the `codigo` (the part after the hyphen); `BACEN-... - NTNB|NTNF|NTNC|NTNI|LTN|LFT` is `tesouro`
