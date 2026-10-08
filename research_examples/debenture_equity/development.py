@@ -21,7 +21,7 @@ from research_examples.debenture_equity.prospective import _replay_input
 from research_examples.debenture_equity.snapshots import read_archive
 
 
-def nested_losses(features, labels, calendar, protocol, *, development_start, horizon, delay):
+def nested_losses(features, labels, calendar, protocol, *, development_start, horizon, delay, sector_controls=False):
     """Expanding fits with a fixed minimum-length rolling validation reference window.
 
     Each OOS signal s uses validation start s-(horizon+delay)-V; training exits
@@ -50,6 +50,10 @@ def nested_losses(features, labels, calendar, protocol, *, development_start, ho
     keys = ['cnpj', 'signal_date']
     fields = method['equity_features']+method['credit_features']
     bound = fields+['input_manifest_sha256', 'original_registry_sha256']
+    if sector_controls and ('sector' in features or 'sector' in labels):
+        if 'sector' not in features or 'sector' not in labels:
+            raise ValueError('Nested sector label differs from its frozen feature')
+        bound.append('sector')
     if {'residual_return', 'entry_date', 'exit_date', 'horizon'} & set(features.columns):
         raise ValueError('Nested prediction features cannot contain future outcomes')
     development_days = set(calendar[start:boundary])
@@ -87,11 +91,14 @@ def nested_losses(features, labels, calendar, protocol, *, development_start, ho
         prior = known[known.signal_date < day].copy() if not known.empty else known.copy()
         result, reason = fit_available_pair(prediction_features, prior, method,
                                             fit_cutoff=fit_cutoff, validation_start=validation_start,
-                                            validation_cutoff=validation_cutoff, test_start=day)
+                                            validation_cutoff=validation_cutoff, test_start=day,
+                                            sector_controls=sector_controls)
         fold = {'signal_date': day, 'fit_cutoff': fit_cutoff, 'validation_start': validation_start,
                 'validation_cutoff': validation_cutoff, 'reason': reason, 'prediction_rows': 0,
                 'scored_rows': 0, 'missing_oos_labels': 0}
         if result is not None:
+            if sector_controls:
+                fold['sector_coverage'] = result['sector_coverage']
             fold.update({k: result[k] for k in ('models', 'training_lineage', 'validation_lineage', 'final_fit_lineage',
                                                'train_dates', 'validation_dates', 'fit_dates')})
             predicted = result['predictions']
@@ -106,6 +113,7 @@ def nested_losses(features, labels, calendar, protocol, *, development_start, ho
                     paired['loss_'+name] = (paired.residual_return-paired['prediction_'+name])**2
                 paired['loss_gain'] = paired.loss_equity_only-paired.loss_equity_plus_credit
                 paired['horizon'], paired['entry_delay_sessions'] = horizon, delay
+                paired['sector_controls'] = sector_controls
                 losses.append(paired)
         folds.append(fold)
     frame = pd.concat(losses, ignore_index=True) if losses else pd.DataFrame()
@@ -113,6 +121,7 @@ def nested_losses(features, labels, calendar, protocol, *, development_start, ho
                    'untouched_test_start': calendar[boundary], 'development_cutoff': cutoff,
                    'oos_reference_sessions': calendar[first:boundary-g],
                    'horizon': horizon, 'entry_delay_sessions': delay,
+                   'sector_controls': sector_controls,
                    'validation_rule': 'rolling_minimum_reference_window_before_oos_exit_purge',
                    'folds': folds, 'oos_dates': int(frame.signal_date.nunique()) if not frame.empty else 0,
                    'oos_issuers': int(frame.cnpj.nunique()) if not frame.empty else 0,
@@ -126,7 +135,7 @@ def nested_losses(features, labels, calendar, protocol, *, development_start, ho
 
 
 def nested_original_losses(registry_path, boundary_input, development_inputs, *, registry_sha256,
-                           horizon, delay, candidate=None):
+                           horizon, delay, candidate=None, sector_controls=False):
     """Read canonical originals only, bound to the pinned first-test input cutoff.
 
     No test label is loaded. This replays causal development predictions after
@@ -184,7 +193,8 @@ def nested_original_losses(registry_path, boundary_input, development_inputs, *,
     features = pd.concat(feature_rows, ignore_index=True) if feature_rows else pd.DataFrame()
     labels = pd.concat(label_rows, ignore_index=True) if label_rows else pd.DataFrame()
     losses, report = nested_losses(features, labels, calendar, protocol,
-                                   development_start=root['signal_date'], horizon=horizon, delay=delay)
+                                   development_start=root['signal_date'], horizon=horizon, delay=delay,
+                                   sector_controls=sector_controls)
     report.update(original_registry_sha256=registry_sha256,
                   boundary_input_manifest_sha256=boundary_report['manifest_sha256'],
                   supplied_development_inputs=len(seen), omitted_development_inputs=n-len(seen),

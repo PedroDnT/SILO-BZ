@@ -739,3 +739,13 @@ short-history block geometry exposed. This is not independent calibration of
 training, source activity or the hybrid inference rule. Actual development
 observations and sector/dominance/delay robustness remain required; every report
 continues to refuse power/MDE acceptance, activation and PIT certification.
+
+The development comparison now optionally adds sector controls to both model
+variants using only categories learned from available, purged training labels.
+Missing/unseen sectors are excluded and unchanged date floors are rechecked;
+frozen feature/label sectors must agree, and controlled/uncontrolled loss scopes
+cannot be mixed. Successful folds retain category and attrition counts; failed
+folds give explicit reasons. This prepares a required robustness diagnostic,
+without changing primary predictions, collecting classifications or establishing
+real coverage. Held-out sector-controlled publication/scoring, dominance/delay/
+placebo checks and independent training/activity calibration remain open.

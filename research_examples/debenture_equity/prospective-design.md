@@ -283,6 +283,41 @@ PIT certification. Sector controls/coverage, minimum issuer coverage, dominant
 issuer/day checks, block/null calibration and MC assessment remain required before
 any loss-test sensitivity or sample-size conclusion.
 
+### Causal sector-controlled development comparison
+
+The local fitting/nested-loss/sensitivity interfaces now accept
+`sector_controls=True`; the CLI exposes `--sector-controls`. The default primary
+comparison remains unchanged. This is the predeclared development robustness
+preparation, not a new protocol, classifier, dataset or historical backfill.
+
+Within each fold, learn sector categories only from training labels that pass
+both exit-before-validation and actual availability at the validation-start
+cutoff. Require at least two nonblank categories. Validation labels, refit-only
+gap labels and OOS features cannot introduce a category. Both model variants use
+the same training-derived dummy variables (the intercept carries the first
+category); scaling/tuning/refit retain the existing causal cuts. Missing or unseen
+sectors are excluded without replacement or forward fill. The unchanged training
+and validation date floors are checked after exclusions; the later diagnostic
+still enforces its unchanged OOS date/issuer floors.
+
+Successful fold reports retain the training category list and input/retained/
+missing/unseen row counts for training, validation, final refit and prediction.
+Failed folds keep their explicit reason, including absent dated inputs, fewer
+than two training sectors or insufficient retained dates. Nested sector labels
+must exactly match the frozen feature archive, not a current classification.
+Loss rows and reports identify the control mode; conditional diagnostics refuse
+mixed controlled/uncontrolled losses. The full possible OOS cash-calendar axis
+is unchanged, including dates lost through sector attrition.
+
+Synthetic checks cover unavailable and refit-only categories, unseen validation/
+prediction sectors, sparse retained rows, frozen-label tampering and a one-sector
+canonical archive that must remain inconclusive. These checks do not establish
+actual historical sector coverage or independent financial/PIT acceptance.
+Sector-controlled **untouched-test prediction publication/scoring**, dominance,
+delay/placebo checks and end-to-end training/activity calibration remain required;
+the primary prediction-publication path is not changed by this option. No MDE,
+test activation or production authority follows from the development comparison.
+
 ### Structural date audit and longer candidate
 
 `power.py` now computes a necessary **optimistic ceiling**, not statistical power.
@@ -360,7 +395,7 @@ storage allowance and production retention policy.
 | Longer protocol | V2 preserved but structurally insufficient for nested horizon-20 power; separate unactivated V3 120/60/100 candidate and ordinal audit | Owner acceptance, real session calendar, actual attrition and calibrated development power gate before activation |
 | Prospective PIT | Local retention, input/outcome replay, canonical original slots, availability-aware first fit and deadline-bound prediction publication/reuse | Accepted pre-outcome root pin/inventory, verified exchange entry-close, late/missing/revision handling, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
 | Adjusted returns/benchmark | Existing total-return exports with coherent revision checks | Independent convention/event acceptance and frozen prospective vintages |
-| Power | Grid/rules, date-ceiling audit, canonical nested OOS losses and conditional crossed/block null/MC simulator; V2 fails, V3 passes only the optimistic date condition | Accepted fold/resampling rule/inventory, sufficient real losses, sector/dominance/delay robustness and independent training/activity calibration before power or MDE acceptance |
+| Power | Grid/rules, date-ceiling audit, canonical nested OOS losses with causal sector-controlled comparison and conditional crossed/block null/MC simulator; V2 fails, V3 passes only the optimistic date condition | Accepted fold/resampling rule/inventory, sufficient real losses, held-out sector/dominance/delay robustness and independent training/activity calibration before power or MDE acceptance |
 | Confirmatory result | None; every current study is inconclusive | Adequate untouched history, frozen scoring and all inference/robustness gates |
 | Price/rate/tradability extensions | Explicitly excluded from liquidity-first claim; ADR 0004 retained | Cash-flow/event and observed-rate conventions plus execution cost/capacity evidence before any such claim |
 

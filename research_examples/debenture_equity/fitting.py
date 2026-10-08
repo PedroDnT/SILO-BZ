@@ -17,14 +17,14 @@ from research_examples.debenture_equity.snapshots import read_archive
 
 
 def fit_available_pair(features, labels, method, *, fit_cutoff, validation_start,
-                       validation_cutoff, test_start):
+                       validation_cutoff, test_start, sector_controls=False):
     """Fit/tune with explicit calendar and actual-availability purges, never test labels."""
     if features.empty:
         return None, 'No eligible prediction features'
     if labels.empty:
         return None, 'No available development labels'
     if set(features['signal_date']) != {test_start}:
-        raise ValueError('Only the first untouched-test signal may initialize fitting')
+        raise ValueError('Prediction features must use the supplied next-split signal')
     if {'residual_return', 'entry_date', 'exit_date', 'horizon'} & set(features.columns):
         raise ValueError('Prediction features cannot contain future outcomes')
     if any(labels[c].nunique() != 1 for c in ('horizon', 'entry_delay_sessions', 'original_registry_sha256')):
@@ -39,16 +39,45 @@ def fit_available_pair(features, labels, method, *, fit_cutoff, validation_start
                     & (matured['exit_date'] < validation_start)
                     & (matured['label_available_at'].map(timestamp) <= timestamp(validation_cutoff))]
     valid = matured[matured['signal_date'] >= validation_start]
+    equity_fields = list(method['equity_features'])
+    sector_coverage = {}
+    if sector_controls:
+        if 'sector' not in features or 'sector' not in labels:
+            return None, 'Missing frozen dated sector inputs'
+        present = lambda values: values.map(lambda v: isinstance(v, str) and bool(v.strip()))
+        categories = sorted(train.loc[present(train['sector']), 'sector'].unique())
+        if len(categories) < 2:
+            return None, 'Fewer than two sectors in available purged training sample'
+        sector_coverage['training_sectors'] = categories
+        retained = {}
+        for name, frame in [('training', train), ('validation', valid),
+                            ('final_fit', matured), ('prediction', features)]:
+            available = present(frame['sector'])
+            seen = frame['sector'].isin(categories)
+            selected = frame[available & seen].copy()
+            sector_coverage[name] = {'input_rows': len(frame), 'retained_rows': len(selected),
+                    'missing_sector_rows': int((~available).sum()),
+                    'unseen_sector_rows': int((available & ~seen).sum())}
+            # The intercept carries the first category. Encoding never learns
+            # a category from validation, refit-only gap labels or OOS features.
+            for i, label in enumerate(categories[1:], start=1):
+                selected[f'sector_control_{i}'] = (selected['sector'] == label).astype(float)
+            retained[name] = selected
+        train, valid, matured, features = (retained[k] for k in ('training', 'validation', 'final_fit', 'prediction'))
+        equity_fields += [f'sector_control_{i}' for i in range(1, len(categories))]
+        if features.empty:
+            return None, 'No prediction rows in available training sectors: '+json.dumps(sector_coverage['prediction'])
     if (train['signal_date'].nunique() < method['min_train_dates']
             or valid['signal_date'].nunique() < method['min_validation_dates']):
-        return None, 'Insufficient available development dates after calendar/availability purges'
-    columns = method['equity_features']+method['credit_features']
+        return None, ('Insufficient available sector-covered dates after calendar/availability purges' if sector_controls
+                      else 'Insufficient available development dates after calendar/availability purges')
+    columns = equity_fields+method['credit_features']
     if not np.isfinite(matured[columns+['residual_return']].to_numpy(dtype=float)).all():
         raise ValueError('Nonfinite eligible model inputs')
     if not np.isfinite(features[columns].to_numpy(dtype=float)).all():
         raise ValueError('Nonfinite prediction features')
     models, predictions = {}, features.copy()
-    for name, fields in [('equity_only', method['equity_features']),
+    for name, fields in [('equity_only', equity_fields),
                           ('equity_plus_credit', columns)]:
         losses = []
         for penalty in method['ridge_grid']:
@@ -67,7 +96,8 @@ def fit_available_pair(features, labels, method, *, fit_cutoff, validation_start
             'fit_dates': int(matured['signal_date'].nunique()),
             'training_lineage': train[lineage_columns].to_dict('records'),
             'validation_lineage': valid[lineage_columns].to_dict('records'),
-            'final_fit_lineage': matured[lineage_columns].to_dict('records')}, None
+            'final_fit_lineage': matured[lineage_columns].to_dict('records'),
+            **({'sector_coverage': sector_coverage} if sector_controls else {})}, None
 
 
 def fit_originals(registry_path, prediction_input, development_inputs, *, registry_sha256,

@@ -1579,3 +1579,88 @@ def test_conditional_archive_adapter_stops_on_actual_small_coverage(fitted_archi
     assert report['archive_exclusions'] == {'missing_original_slot': 2}
     assert report['block_diagnostics'] == [] and report['minimum_detectable_gain'] is None
     assert not report['test_activation_allowed'] and report['power_status'] == 'not_estimable'
+
+
+def test_available_sector_fit_learns_categories_only_from_available_purged_training(available_fitting_inputs):
+    from research_examples.debenture_equity.fitting import fit_available_pair
+    features, labels, method, timing = available_fitting_inputs
+    original_method = deepcopy(method)
+    labels = labels.copy()
+    labels['sector'] = ['A' if i % 2 else 'B' for i in range(len(labels))]
+    labels.loc[(labels.signal_date >= timing['validation_start']) & (labels.index % 3 == 0), 'sector'] = 'UNSEEN'
+    labels.loc[0, ['sector', 'label_available_at']] = ['FUTURE', '2026-09-09T09:59:00-03:00']
+    # This label is mature by final refit, but exits after validation begins.
+    # Its category must not enter the purged-training encoding.
+    labels.loc[labels.signal_date == '2026-06-30', 'sector'] = 'GAP_ONLY'
+    features = features.assign(sector='A')
+    unknown = features.copy().assign(cnpj='00000000000002', sector='UNSEEN')
+    result, reason = fit_available_pair(pd.concat([features, unknown], ignore_index=True), labels,
+                                        method, sector_controls=True, **timing)
+    assert reason is None and result['sector_coverage']['training_sectors'] == ['A', 'B']
+    assert result['sector_coverage']['validation']['unseen_sector_rows'] > 0
+    assert result['sector_coverage']['prediction']['unseen_sector_rows'] == 1
+    assert result['sector_coverage']['final_fit']['unseen_sector_rows'] > 0
+    assert len(result['predictions']) == 1
+    assert 'sector_control_1' in result['models']['equity_only']['features']
+    assert 'sector_control_1' in result['models']['equity_plus_credit']['features']
+    assert result['validation_dates'] >= method['min_validation_dates']
+    changed = labels.copy()
+    changed.loc[0, ['sector', 'residual_return']] = ['ANOTHER_FUTURE', 1e100]
+    replay, _ = fit_available_pair(pd.concat([features, unknown], ignore_index=True), changed,
+                                   method, sector_controls=True, **timing)
+    assert replay['models'] == result['models']
+    assert method == original_method
+
+
+def test_available_sector_fit_does_not_relax_dates_or_sector_coverage(available_fitting_inputs):
+    from research_examples.debenture_equity.fitting import fit_available_pair
+    features, labels, method, timing = available_fitting_inputs
+    features = features.assign(sector='A')
+    labels = labels.assign(sector='A')
+    result, reason = fit_available_pair(features, labels, method, sector_controls=True, **timing)
+    assert result is None and 'two' in reason
+    labels['sector'] = ['A' if i % 2 else 'B' for i in range(len(labels))]
+    labels.loc[labels.signal_date >= timing['validation_start'], 'sector'] = None
+    result, reason = fit_available_pair(features, labels, method, sector_controls=True, **timing)
+    assert result is None and 'sector' in reason and 'dates' in reason
+
+
+def test_nested_sector_controls_bind_frozen_labels_and_keep_sparse_rows(nested_loss_inputs):
+    from research_examples.debenture_equity.development import nested_losses
+    features, labels, days, p = nested_loss_inputs
+    features, labels = features.copy(), labels.copy()
+    for frame in (features, labels):
+        frame['sector'] = frame.cnpj.map({'00000000000001': 'A', '00000000000002': 'B'})
+    losses, report = nested_losses(features, labels, days, p, development_start=days[0],
+                                   horizon=1, delay=1, sector_controls=True)
+    assert report['sector_controls'] is True and report['oos_dates'] == 11
+    assert len(losses) == 22 and losses.sector.notna().all()
+    assert all(f['sector_coverage']['prediction']['missing_sector_rows'] == 1 for f in report['folds'])
+    bad = labels.copy()
+    bad.loc[0, 'sector'] = 'CHANGED'
+    with pytest.raises(ValueError, match='frozen feature'):
+        nested_losses(features, bad, days, p, development_start=days[0], horizon=1, delay=1, sector_controls=True)
+    assert not report['test_activation_allowed'] and report['minimum_detectable_gain'] is None
+
+
+@pytest.mark.parametrize('fitted_archive_scenario', [{'training': 4, 'validation': 6}], indirect=True)
+def test_canonical_sector_diagnostic_cannot_accept_single_sector(fitted_archive_scenario):
+    from research_examples.debenture_equity.sensitivity import diagnostic_originals
+    root, pin, inputs, candidate, _ = fitted_archive_scenario
+    result = diagnostic_originals(root, inputs[10], inputs[:10], registry_sha256=pin,
+                                   horizon=1, delay=1, sector_controls=True, candidate=candidate)
+    assert result['sector_controls'] is True and result['observed_dates'] == 0
+    assert result['block_diagnostics'] == [] and result['minimum_detectable_gain'] is None
+    assert result['power_status'] == 'not_estimable' and not result['test_activation_allowed']
+
+
+def test_conditional_sensitivity_cannot_mix_sector_control_modes(conditional_loss_inputs):
+    from research_examples.debenture_equity.sensitivity import conditional_sensitivity
+    frame, report, p = conditional_loss_inputs
+    frame = frame.assign(sector_controls=False)
+    frame.loc[frame.index[0], 'sector_controls'] = True
+    with pytest.raises(ValueError, match='sector-control model scopes'):
+        conditional_sensitivity(frame, report, p)
+    report = {**report, 'sector_controls': True}
+    with pytest.raises(ValueError, match='sector-control model scopes'):
+        conditional_sensitivity(frame.drop(columns='sector_controls'), report, p)

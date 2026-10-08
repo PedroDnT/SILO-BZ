@@ -592,6 +592,13 @@ frequencies with MC intervals and counts empty/incomplete draws. It is numerical
 preparation, not independent training/activity or hybrid-inference calibration.
 No qualifying prospective history or sector/dominance/delay acceptance is supplied,
 and all reports retain not-estimable/no-MDE/no-activation/PIT-false status.
+The nested development comparison now optionally learns sector controls only
+from available purged training labels, excludes missing/unseen sectors, preserves
+date floors and reports successful-fold category/attrition counts. Frozen sector
+binding and separate controlled/uncontrolled loss scopes are enforced. Actual
+coverage, held-out controlled predictions/scoring, dominance/delay/placebos and
+independent training/activity calibration still need evidence; primary prediction
+publication and production are unchanged.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer

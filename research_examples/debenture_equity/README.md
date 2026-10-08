@@ -506,3 +506,15 @@ delay robustness, training/selection/source-activity calibration and actual
 prospective data remain required. All results keep `not_estimable`, no MDE,
 no activation and no PIT certification. A favorable hypothetical grid point
 cannot clear those gates. See the [numerical design and limits](prospective-design.md#conditional-loss-test-simulation).
+
+Add `--sector-controls` to run the development robustness comparison. Each fold
+learns categories only from available purged training labels, requires at least
+two sectors and adds identical training-derived controls to both models. Missing
+or unseen sectors are excluded; date floors are checked again after filtering.
+Reports retain category lists and missing/unseen row counts on successful folds,
+with explicit reasons for failed folds. Loss rows/reports identify the mode,
+and mixed controlled/uncontrolled losses are refused by the conditional diagnostic.
+The underlying protocol/default primary comparison and production remain unchanged.
+Real dated-sector coverage, held-out sector-controlled prediction/scoring,
+dominance/delay/placebos and independent calibration remain required; no acceptance
+is granted by this option. See the [causal sector design](prospective-design.md#causal-sector-controlled-development-comparison).

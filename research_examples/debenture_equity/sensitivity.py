@@ -85,6 +85,7 @@ def conditional_sensitivity(losses, nested_report, protocol):
     result = {'protocol_sha256': fingerprint(protocol), 'nested_report_sha256': fingerprint(nested_report),
               'loss_table_sha256': fingerprint(losses.to_dict('records')),
               'horizon': nested_report['horizon'], 'entry_delay_sessions': nested_report['entry_delay_sessions'],
+              'sector_controls': nested_report.get('sector_controls', False),
               'calendar_reference_sessions': len(calendar), 'observed_dates': 0, 'observed_issuers': 0,
               'missing_calendar_sessions': len(calendar), 'missing_cells': 0,
               'block_diagnostics': [], 'per_horizon_alpha': alpha,
@@ -98,6 +99,10 @@ def conditional_sensitivity(losses, nested_report, protocol):
                              'Wilson intervals measure Monte Carlo error only; no MDE, test activation or PIT acceptance']}
     if losses.empty:
         return result
+    sector_controls = nested_report.get('sector_controls', False)
+    if (('sector_controls' in losses and set(losses.sector_controls) != {sector_controls})
+            or (sector_controls and 'sector_controls' not in losses)):
+        raise ValueError('Conditional inputs mix sector-control model scopes')
     if (not set(losses.signal_date).issubset(calendar)
             or (losses.exit_date >= nested_report['untouched_test_start']).any()
             or (losses.label_available_at.map(timestamp) > timestamp(nested_report['development_cutoff'])).any()
@@ -186,10 +191,11 @@ def conditional_sensitivity(losses, nested_report, protocol):
 
 
 def diagnostic_originals(registry_path, boundary_input, development_inputs, *, registry_sha256,
-                         horizon, delay, candidate=None):
+                         horizon, delay, candidate=None, sector_controls=False):
     """Replay canonical development losses then simulate; no test label is read."""
     losses, report = nested_original_losses(registry_path, boundary_input, development_inputs,
-                registry_sha256=registry_sha256, horizon=horizon, delay=delay, candidate=candidate)
+                registry_sha256=registry_sha256, horizon=horizon, delay=delay, candidate=candidate,
+                sector_controls=sector_controls)
     _, raw, retention = read_archive(boundary_input)
     if retention['manifest_sha256'] != report['boundary_input_manifest_sha256']:
         raise ValueError('Boundary changed during conditional diagnostic')
@@ -210,10 +216,12 @@ def main():
     parser.add_argument('--horizon', required=True, type=int)
     parser.add_argument('--delay', required=True, type=int)
     parser.add_argument('--protocol', type=Path)
+    parser.add_argument('--sector-controls', action='store_true')
     args = parser.parse_args()
     result = diagnostic_originals(args.registry, args.boundary_input, args.development_input,
               registry_sha256=args.registry_sha256, horizon=args.horizon, delay=args.delay,
-              candidate=json.loads(args.protocol.read_text()) if args.protocol else None)
+              candidate=json.loads(args.protocol.read_text()) if args.protocol else None,
+              sector_controls=args.sector_controls)
     print(json.dumps(result, indent=2))
 
 
