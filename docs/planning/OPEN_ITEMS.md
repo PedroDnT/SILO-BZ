@@ -527,9 +527,9 @@ window, representing 82 candidate CNPJs. These are not verified issuance links.
 The [read-only runner](../../research_examples/debenture_equity/README.md) never
 loads data or certifies strict historical PIT from retrieval dates.
 
-Offline experiment/preparation now implemented; fourteen documented original-issuer
+Offline experiment/preparation now implemented; eighteen documented original-issuer
 links are available (ALPA13, ALUP18, ANIM18, ASAI18, BSA318, BRKMA6, CAMLB1, CSED12,
-ARML13, CSAN18, CCROA5, CTEE18, CGASA1, ENEV13). The runner uses current total-return equity/IBOV exports, trailing
+ARML13, CSAN18, CCROA5, CTEE18, CGASA1, ENEV13, DXCO13, EGIE27, BRST15, DESK17). The runner uses current total-return equity/IBOV exports, trailing
 beta, past-liquidity equity selection, chronological purges and dependence checks.
 Initial live run: four one-session outcomes, no primary five-session outcomes.
 Owner approved all 13 recovery slices for 01/07–29/09. After an initial transport
@@ -537,8 +537,8 @@ failure, all 13 are now complete: 770,562 facts, zero drops, valid hashes, audit
 `ok` and nine distinct metrics per source group. The execution-time peak credit
 allocation increase was 400,982,016 bytes (later 386,850,816), below the 1 GB stop.
 All 69 known study sessions are delivered;
-no recovery windows remain. Expanded fourteen-link offline run: 602 overlapping horizon rows from 13 issuers
-(230/217/155 at 1/5/20 sessions; ENEV3 lacks trailing beta history), all inconclusive; strict PIT still zero. FCA recorded
+no recovery windows remain. Expanded eighteen-link offline run: 752 overlapping horizon rows from 16 issuers
+(286/269/197 at 1/5/20 sessions; ENEV3 and BRST3 lack trailing beta history), all inconclusive; strict PIT still zero. FCA recorded
 listing intervals are enforced and exact-date sector robustness is implemented;
 available B3 sector history starts 16/09 and cannot cover training. The three-month pilot
 cannot meet fixed training/validation/test floors despite completed recovery;

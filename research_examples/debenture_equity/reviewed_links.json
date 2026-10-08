@@ -292,5 +292,81 @@
       }
     ],
     "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "DXCO13",
+    "isin": "BRDXCODBS018",
+    "cnpj": "97837181000147",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2025-10-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:48:42.202186-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513192&numSequencia=1037898&numVersao=1",
+        "locator": "2025 fiduciary report, PDF page 3: Dexco original issuer full CNPJ, DXCO13, BRDXCODBS018, third unique-series issuance and 15/10/2025 issuance; SHA256 8342d3804c0afdf5a9a4962a7746abf87de781853e4a27192facc73e28446756"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; cited original documents/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "EGIE27",
+    "isin": "BREGIEDBS043",
+    "cnpj": "02474103000119",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2018-06-07",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:48:42.202186-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513151&numSequencia=1037857&numVersao=1",
+        "locator": "2025 fiduciary report, PDF page 3: Engie Brasil Energia original issuer full CNPJ; page 4: seventh issuance second series EGIE27, BREGIEDBS043 and 07/06/2018 issuance; SHA256 109d0e9c610a13a61a0d71c15fbb1b9cc0f71da2ea3ebb6b31025cc7c38d3b82"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; cited original documents/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "BRST15",
+    "isin": "BRBRSTDBS043",
+    "cnpj": "04601397000128",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2025-12-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:48:42.202186-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1510857&numSequencia=1035563&numVersao=1",
+        "locator": "2025 fiduciary report, PDF page 3: Brisanet Servicos original issuer full CNPJ, BRST15, fifth unique-series issuance and 15/12/2025 issuance; ISIN is blank, not a conflicting value; SHA256 e5cc6651984c12d82f6d9d3e1c4cc9bd73cb484d11eec7402908b623589bd10d"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=BRST15&tip_deb=publicas",
+        "locator": "Instrument characteristics: BRST15, BRBRSTDBS043, fifth unique-series issuance, Brisanet Servicos and 15/12/2025 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; cited original documents/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "DESK17",
+    "isin": "BRDESKDBS053",
+    "cnpj": "08170849000115",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2024-06-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:48:42.202186-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1256578&numSequencia=781304&numVersao=1",
+        "locator": "Seventh unique-series issuance deed, PDF page 2: Desktop original issuer full CNPJ; SHA256 d6df0b19e0707c442fb8de65bc9c981499940846338730a50eff04ca600d603b"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=DESK17&tip_deb=publicas",
+        "locator": "Instrument characteristics: DESK17, BRDESKDBS053, seventh unique-series issuance, Desktop and 15/06/2024 issuance"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; cited original documents/current characteristics do not certify every intervening amendment or original-date knowledge."
   }
 ]

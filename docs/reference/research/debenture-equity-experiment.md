@@ -81,7 +81,7 @@ date fields require a fresh export. These checks improve retrospective identity
 selection without certifying original-date publication knowledge.
 
 The local [reviewed links](../../../research_examples/debenture_equity/reviewed_links.json)
-cite issuance documents, fiduciary reports and instrument records for fourteen
+cite issuance documents, fiduciary reports and instrument records for eighteen
 **original issuers**:
 
 | Bond / ISIN | Original issuer full CNPJ | Existing FCA equities |
@@ -100,6 +100,10 @@ cite issuance documents, fiduciary reports and instrument records for fourteen
 | CTEE18 / BRISAEDBS0E7 | 02998611000104, ISA Energia Brasil (formerly CTEEP) | ISAE3, ISAE4 |
 | CGASA1 / BRCGASDBS0E1 | 61856571000117, Comgás | CGAS3, CGAS5 |
 | ENEV13 / BRENEVDBS034 | 04423567000121, Eneva | ENEV3 |
+| DXCO13 / BRDXCODBS018 | 97837181000147, Dexco | DXCO3 |
+| EGIE27 / BREGIEDBS043 | 02474103000119, Engie Brasil Energia | EGIE3 |
+| BRST15 / BRBRSTDBS043 | 04601397000128, Brisanet Serviços de Telecomunicações | BRST3 |
+| DESK17 / BRDESKDBS053 | 08170849000115, Desktop | DESK3 |
 
 Each link records citation/page, original issuance date, review cutoff and actual
 knowledge timestamp. Retrospective use assumes no intervening issuer transfer;
@@ -482,6 +486,44 @@ C&A's CEAB13 review also remains open: its report prints an invalid header
 issuance date and no ISIN, while SND identifies a unique series and the report
 labels a first series. A board approval proves C&A's full CNPJ but does not by
 itself resolve those issuance fields. No link was admitted by ignoring them.
+
+A further documentary pass added **DXCO13, EGIE27, BRST15 and DESK17**.
+Dexco's report page 3 contains the full identity tuple. Engie's report page 3
+identifies its full CNPJ, and page 4 identifies the seventh issuance's second
+series EGIE27/ISIN/date. Brisanet's fifth-issuance report page 3 identifies the
+CNPJ/code/date; SND supplies its otherwise blank ISIN. Desktop's seventh-issuance
+deed page 2 identifies the full CNPJ, with exact code/ISIN/date supplied by SND.
+Complete source payloads were fingerprinted and cited PDF pages visually checked.
+Primary evidence availability, not model outcomes, determined these choices.
+Current `cia_company.DENOM_COMERC` reports DEXCO S.A., DESKTOP S.A and
+TRACTEBEL ENERGIA (Engie); Brisanet's commercial name is null and remains null.
+
+The **10:48:47 UTC-3** export contains 10,638 credit metric rows, 4,043 equity
+rows, 165 FCA rows and 420 sector/index rows. It yields **752 overlapping
+outcomes** (286/269/197 at 1/5/20 sessions), all inconclusive before fitting.
+**16 of 18 reviewed issuers** produce panel outcomes: ENEV3 and BRST3 fail the
+trailing-beta floor; 65 signal rows are excluded for that floor in total.
+A missing earlier ticker history is not silently stitched to a later stock code.
+Exact-date sectors retain 77 outcomes; strict PIT still yields zero, with all
+69 credit sessions unavailable at historical knowledge cutoffs. The fourteen-
+and nine-issuer exports above are historical checkpoints, not current totals.
+
+```text
+eighteen-issuer bundle 4b52aad593c253910dcca33f7d35ef561ec6f2a0164ce72ea0739b4719d828f5
+eighteen-issuer links  358909f07ba48f4b665dffef42d5ad616953a042eabe0c28702bac4ed4686f02
+```
+
+**BRIT11 was not substituted for BRST15.** Its [2025 report](https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1510869&numSequencia=1035575&numVersao=1)
+page 3 prints BRBRITDBS002 and a first issuance, whereas the current
+[SND record](https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=BRIT11&tip_deb=publicas)
+and warehouse identify BRBRSTDBS019, with SND calling it a second issuance.
+The report hash is `59ee54fb44978117de0521e44a67a78b4c80a3047451a5b5533d3094debbfd85`.
+This identity/history discrepancy remains unresolved; no value was silently
+corrected. BCBF16 also remains outside the original-issuer sample: Hapvida's
+[official debt page](https://ri.hapvida.com.br/informacoes-financeiras/divida-e-ratings/)
+identifies BCBF Participações for that issuance, requiring dated legal succession
+evidence before a Hapvida stock linkage can be accepted. Current name agreement
+cannot certify its original issuer or date a transfer.
 
 The remaining implementation sequence is conditional, not a new production approval:
 
