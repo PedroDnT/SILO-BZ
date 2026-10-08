@@ -580,6 +580,12 @@ A separate unactivated V3 120/60/100 proposal gives 74 delayed dates in perfect
 coverage, not estimated power. V2/defaults and all floors remain intact. Actual
 nested losses/calibration, acceptance and prospective observations remain required;
 the V3 302-session storage scenario grants no additional production authority.
+Canonical-archive nested development loss generation is now implemented with
+availability/exit purges, expanding training/rolling validation, frozen feature
+binding and sparse OOS loss/parameter lineage. It loads no test labels and makes
+no timely-publication or power claim. Fold-rule acceptance, qualifying real
+prospective observations, sector/issuer robustness, null/block calibration and
+MC uncertainty remain; no test activation or production authority is added.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer

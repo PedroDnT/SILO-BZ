@@ -644,13 +644,14 @@ The remaining implementation sequence is conditional, not a new production appro
    refit still meets the unchanged 20-issuer floor; identity review alone cannot
    guarantee trading, sector or date coverage. Target 25 documentary candidates
    initially to allow attrition, without relaxing the 21-eligible-issuer requirement.
-2. Freeze a separately versioned protocol before confirmatory scoring. A feasible
-   proposed calendar structure is 90 training, 50 validation and 100 untouched-test
-   reference sessions, followed by 22 outcome sessions. With two-session entry delay
-   and a 20-session horizon, strict split purges leave optimistic ceilings of
-   68/28/100 dates, above the unchanged 30/10/60 floors. Require 126 prior equity
-   warm-up sessions. Actual trading and gaps can only reduce these ceilings; they
-   are not a statistical-power calculation or fixed civil-calendar end dates.
+2. Freeze a separately versioned protocol before confirmatory scoring. The preserved
+   V2 90/50/100 draft passes ordinary train/validation/test date ceilings but fails
+   the nested development power-date floor: only 34 delayed horizon-20 OOS dates
+   versus 60 required. A separate unactivated V3 120/60/100 proposal plus 22 outcome
+   sessions allows at most 74 such dates, with 126 prior equity warm-up sessions.
+   Actual activity, availability and sector gaps can only reduce that ceiling.
+   Neither candidate is accepted or calibrated by a date count; the detailed
+   design and completion evidence below retain those gates.
 3. Establish actual decision-time snapshots before claiming prospective PIT.
    Proposed cutoff: 10:00 Brasília on the next cash session, using only data then
    observed for the prior session. Primary entry is that next session's close;
@@ -666,8 +667,9 @@ The remaining implementation sequence is conditional, not a new production appro
    until their cash-flow/convention and execution-cost/capacity gates are evidenced.
 5. Obtain specific production approval for any expanded window or continuing capture,
    including snapshot retention and a measured storage allowance. The executed pilot's
-   peak implies about 6.27 MB per recovered session; 262 new sessions would be about
-   1.64 GB if that layout repeated, before additional input snapshots, WAL or backups.
+   peak implies about 6.27 MB per recovered session; the V3 proposal's 302 new
+   sessions would be about 1.89 GB if that layout repeated, before additional input
+   snapshots, duplicate prediction staging, WAL or backups.
    This is a scenario, not a bound, and exceeds the prior 1 GB allowance. Keep daily
    credit disabled and do not start another recovery under the completed 13-lot approval.
 
@@ -715,3 +717,15 @@ development OOS dates. Floors/methods remain unchanged and V2 stays the default.
 This is a necessary calendar condition only: both candidates still report power
 not estimable, no MDE and no activation. Actual nested losses, calibration,
 issuer/sector coverage, acceptance and future elapsed observations remain required.
+
+The local [nested development loss generator](../../../research_examples/debenture_equity/development.py)
+now replays canonical original development archives at causally purged rolling
+cuts, tunes/refits each model pair using only available earlier labels, and joins
+OOS targets after prediction. It preserves sparse issuer/date activity, hashes,
+parameters and lineage; no test outcome is loaded. Its deterministic expanding
+training/minimum-length rolling validation rule needs pre-outcome acceptance.
+This is development diagnostic replay, not on-time forecast publication. Synthetic
+checks reach the V3 best-case 74 dates with real floors; there are no qualifying
+real prospective archives. Sector/issuer robustness, calibrated null/block power,
+MC uncertainty and independent acceptance remain; reports grant no MDE,
+activation, production authority or PIT certification.

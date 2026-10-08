@@ -1119,7 +1119,7 @@ def test_available_fitting_floors_use_only_available_purged_dates(available_fitt
 
 @pytest.fixture
 def fitted_archive_scenario(
-        prospective_inputs, prospective_outcome_archives, synthetic, monkeypatch):
+        prospective_inputs, prospective_outcome_archives, synthetic, monkeypatch, request):
     from datetime import date, datetime
     from decimal import Decimal
     from research_examples.debenture_equity import snapshots
@@ -1135,12 +1135,15 @@ def fitted_archive_scenario(
     # Small external fixture design exercises archive integration, never alters
     # the real 90/50/100 protocol or its inference floors.
     candidate = deepcopy(candidate)
-    candidate['calendar'].update(training_reference_sessions=4, validation_reference_sessions=4)
+    lengths = getattr(request, 'param', {'training': 4, 'validation': 4})
+    development_length = lengths['training']+lengths['validation']
+    candidate['calendar'].update(training_reference_sessions=lengths['training'],
+                                 validation_reference_sessions=lengths['validation'])
     candidate['method'].update(min_train_dates=1, min_validation_dates=1)
     publications = {}
     monkeypatch.setattr(snapshots, '_publication_time', lambda path: publications[path.parent.name])
     inputs, reports = [], []
-    for i in range(10):
+    for i in range(development_length+2):
         d, next_ = dates[origin+i:origin+i+2]
         seen, now = next_+'T09:05:00-03:00', next_+'T09:59:00-03:00'
         data = deepcopy(prototype)
@@ -1173,7 +1176,7 @@ def fitted_archive_scenario(
         inputs.append(path)
         reports.append(report)
     root, pin = inputs[0], reports[0]['manifest_sha256']
-    for i in range(6):
+    for i in range(development_length-2):
         d, exit_, next_ = dates[origin+i], dates[origin+i+2], dates[origin+i+3]
         seen, now = next_+'T09:05:00-03:00', next_+'T09:59:00-03:00'
         data = {'verified_cash_calendar': {'sessions': [x for x in dates if x <= next_],
@@ -1301,3 +1304,141 @@ def test_power_date_ceiling_refuses_invalid_reference_length():
     p['calendar']['training_reference_sessions'] = True
     with pytest.raises(ValueError, match='positive integers'):
         development_date_ceiling(p)
+
+
+@pytest.fixture
+def nested_loss_inputs():
+    p = json.loads(Path('research_examples/debenture_equity/prospective_protocol_v3.json').read_text())
+    # Deliberately short synthetic design for chronology tests only.
+    p['calendar'].update(training_reference_sessions=12, validation_reference_sessions=10)
+    p['method'].update(min_train_dates=3, min_validation_dates=2)
+    days = pd.bdate_range('2026-01-02', periods=30).strftime('%Y-%m-%d').tolist()
+    fields = p['method']['equity_features']+p['method']['credit_features']
+    features, labels = [], []
+    for i, d in enumerate(days[:22]):
+        for issuer in range(3):
+            row = {'cnpj': str(issuer+1).zfill(14), 'signal_date': d,
+                   'input_manifest_sha256': 'input-'+str(i), 'original_registry_sha256': 'root',
+                   **{c: float(np.sin((i+1)*(j+1)*.23+issuer)) for j, c in enumerate(fields)}}
+            features.append(row)
+            labels.append({**row, 'horizon': 1, 'entry_delay_sessions': 1,
+                           'entry_date': days[i+1], 'exit_date': days[i+2],
+                           'label_available_at': days[i+3]+'T09:59:00-03:00',
+                           'label_manifest_sha256': 'label-'+str(i),
+                           'residual_return': float(np.sin(i+issuer)*.01)})
+    return pd.DataFrame(features), pd.DataFrame(labels), days, p
+
+
+def test_nested_losses_are_genuinely_oos_and_availability_purged(nested_loss_inputs):
+    from research_examples.debenture_equity.development import nested_losses
+    f, y, days, p = nested_loss_inputs
+    losses, report = nested_losses(f, y, days, p, development_start=days[0], horizon=1, delay=1)
+    assert report['oos_dates'] == 11 and report['oos_issuers'] == 3
+    assert report['power_status'] == 'not_estimable' and report['minimum_detectable_gain'] is None
+    assert not report['test_activation_allowed'] and not report['strict_pit_certified']
+    assert set(losses.signal_date) == set(days[9:20])
+    for fold in report['folds']:
+        assert all(r['signal_date'] < fold['signal_date'] for r in fold['final_fit_lineage'])
+        assert all(timestamp(r['label_available_at']) <= timestamp(fold['fit_cutoff'])
+                   for r in fold['final_fit_lineage'])
+        assert all(timestamp(r['label_available_at']) <= timestamp(fold['validation_cutoff'])
+                   for r in fold['training_lineage'])
+    np.testing.assert_allclose(losses.loss_gain, losses.loss_equity_only-losses.loss_equity_plus_credit)
+    # OOS targets and earlier-but-unavailable targets cannot affect this fold.
+    changed = y.copy()
+    changed.loc[changed.signal_date >= days[7], 'residual_return'] = 1000
+    altered, second = nested_losses(f, changed, days, p, development_start=days[0], horizon=1, delay=1)
+    assert second['folds'][0]['models'] == report['folds'][0]['models']
+    cols = ['prediction_equity_only', 'prediction_equity_plus_credit']
+    pd.testing.assert_frame_equal(losses[losses.signal_date == days[9]][cols],
+                                  altered[altered.signal_date == days[9]][cols])
+    assert not np.allclose(losses.loss_gain, altered.loss_gain)
+
+
+def test_nested_losses_retain_sparse_mask_and_exclude_unavailable_labels(nested_loss_inputs):
+    from research_examples.debenture_equity.development import nested_losses
+    f, y, days, p = nested_loss_inputs
+    y = y[~((y.signal_date == days[9]) & (y.cnpj == '00000000000001'))].copy()
+    y.loc[y.signal_date == days[10], 'label_available_at'] = days[25]+'T09:59:00-03:00'
+    y.loc[y.signal_date == days[10], 'residual_return'] = np.nan
+    losses, report = nested_losses(f, y, days, p, development_start=days[0], horizon=1, delay=1)
+    assert len(losses[losses.signal_date == days[9]]) == 2
+    assert days[10] not in set(losses.signal_date)
+    # Three deliberately late labels plus the final signal's three labels,
+    # which cannot yet be realized at the first test cutoff.
+    assert report['unavailable_at_development_cutoff'] == 6
+    assert report['missing_oos_labels'] == 4
+
+
+def test_nested_losses_refuse_test_labels_changed_features_or_fabricated_exit(nested_loss_inputs):
+    from research_examples.debenture_equity.development import nested_losses
+    f, y, days, p = nested_loss_inputs
+    kwargs = dict(development_start=days[0], horizon=1, delay=1)
+    test = y.iloc[[0]].copy().assign(signal_date=days[22])
+    with pytest.raises(ValueError, match='development interval'):
+        nested_losses(f, pd.concat([y, test]), days, p, **kwargs)
+    changed = y.copy()
+    changed.loc[0, p['method']['credit_features'][0]] += 1
+    with pytest.raises(ValueError, match='frozen feature'):
+        nested_losses(f, changed, days, p, **kwargs)
+    changed = y.copy()
+    changed.loc[0, 'exit_date'] = days[1]
+    with pytest.raises(ValueError, match='calendar'):
+        nested_losses(f, changed, days, p, **kwargs)
+
+
+def test_nested_losses_use_canonical_archives_without_test_outcomes(fitted_archive_scenario):
+    from research_examples.debenture_equity.development import nested_original_losses
+    root, pin, inputs, candidate, _ = fitted_archive_scenario
+    losses, report = nested_original_losses(root, inputs[8], inputs[:8], registry_sha256=pin,
+                                            horizon=1, delay=1, candidate=candidate)
+    # This tiny existing 4/4 fixture has no room for a fully purged nested fold.
+    assert losses.empty and report['folds'] == []
+    assert report['archive_exclusions'] == {'missing_original_slot': 2}
+    assert report['supplied_development_inputs'] == 8 and report['omitted_development_inputs'] == 0
+    assert report['power_status'] == 'not_estimable'
+    with pytest.raises(ValueError, match='development interval'):
+        nested_original_losses(root, inputs[8], inputs[:8]+[inputs[8]], registry_sha256=pin,
+                               horizon=1, delay=1, candidate=candidate)
+
+
+def test_nested_losses_real_v3_floors_reach_only_the_optimistic_74_date_ceiling(nested_loss_inputs):
+    from research_examples.debenture_equity.development import nested_losses
+    f, y, _, _ = nested_loss_inputs
+    p = json.loads(Path('research_examples/debenture_equity/prospective_protocol_v3.json').read_text())
+    days = pd.bdate_range('2026-01-02', periods=205).strftime('%Y-%m-%d').tolist()
+    # Perfect synthetic coverage verifies arithmetic with unchanged real floors,
+    # not a historical dataset, power result, issuer floor or protocol acceptance.
+    rows, outcomes = [], []
+    for i, d in enumerate(days[:180]):
+        row = f.iloc[i % len(f)].to_dict()
+        row.update(cnpj='00000000000001', signal_date=d, input_manifest_sha256='input-'+str(i))
+        rows.append(row)
+        outcomes.append({**row, 'horizon': 20, 'entry_delay_sessions': 2,
+                         'entry_date': days[i+2], 'exit_date': days[i+22],
+                         'label_available_at': days[i+23]+'T09:59:00-03:00',
+                         'label_manifest_sha256': 'label-'+str(i), 'residual_return': float(np.sin(i)*.01)})
+    losses, report = nested_losses(pd.DataFrame(rows), pd.DataFrame(outcomes), days, p,
+                                   development_start=days[0], horizon=20, delay=2)
+    assert report['oos_dates'] == 74 and report['oos_issuers'] == 1
+    assert set(losses.signal_date) == set(days[84:158])
+    assert all(fold['train_dates'] >= 30 and fold['validation_dates'] == 10 for fold in report['folds'])
+    assert (losses.exit_date < days[180]).all()
+    assert report['power_status'] == 'not_estimable' and report['minimum_detectable_gain'] is None
+
+
+@pytest.mark.parametrize('fitted_archive_scenario', [{'training': 4, 'validation': 6}], indirect=True)
+def test_nested_canonical_archives_produce_realized_development_losses(fitted_archive_scenario):
+    from research_examples.debenture_equity.development import nested_original_losses
+    root, pin, inputs, candidate, _ = fitted_archive_scenario
+    losses, report = nested_original_losses(root, inputs[10], inputs[:10], registry_sha256=pin,
+                                            horizon=1, delay=1, candidate=candidate)
+    assert report['oos_dates'] == 2 and report['oos_issuers'] == 1
+    assert report['archive_exclusions'] == {'missing_original_slot': 2}
+    assert len(losses) == 2 and np.isfinite(losses.loss_gain).all()
+    assert set(losses.original_registry_sha256) == {pin}
+    assert losses.label_manifest_sha256.str.fullmatch('[0-9a-f]{64}').all()
+    assert losses.input_manifest_sha256.str.fullmatch('[0-9a-f]{64}').all()
+    assert (losses.exit_date < report['untouched_test_start']).all()
+    assert all(fold['train_dates'] >= 1 and fold['validation_dates'] == 1 for fold in report['folds'])
+    assert not report['test_activation_allowed'] and report['minimum_detectable_gain'] is None

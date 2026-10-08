@@ -200,6 +200,44 @@ If development coverage, null calibration or nested losses are inadequate, retur
 qualifying development loss series, so no power number is reported. The grid is
 frozen preparation; an executable power assessment remains required.
 
+### Nested development losses
+
+`development.nested_original_losses` now reads frozen feature archives and their
+canonical original labels inside the externally pinned root, using the fixed
+first-test input only to establish the development boundary and cutoff. It loads
+no test outcome, refuses duplicate/out-of-development inventory, checks calendar
+prefixes and counts omitted inputs and missing/unavailable original slots. The
+pure `nested_losses` seam is also tested directly; it does not authenticate raw
+tables without that archive adapter and independent source/PIT acceptance.
+
+The deterministic implementation rule is expanding training with a rolling
+validation reference window of `V=min_validation_dates`. For OOS signal ordinal
+`s` and `g=horizon+delay`, validation begins at `s-g-V`. Training exits precede
+that start; validation exits precede `s`. Training labels must have been archived
+by the next-session 10:00 Brasília cutoff for the validation start; all final-fit
+labels must have been archived by the corresponding OOS cutoff. Scaling and ridge
+tuning use the existing causal model-pair helper. Missing observations may drop a
+fold below its date floor; the code skips it instead of extending into later data.
+This fold rule and implementation/runtime must be accepted before outcomes;
+neither existing protocol hash/default is changed or activated here.
+
+OOS targets are attached only after fitting, with exit strictly before untouched
+test and original availability by its first cutoff. The output retains each
+issuer/date observation, both predictions, squared losses and their difference,
+input/label hashes, actual label availability, and per-fold parameters and fitting
+lineage. Missing issuer/date labels are not filled with zero. Frozen feature values
+and input scope must match their label rows exactly. Synthetic tests prove future
+unavailable targets cannot change an earlier prediction and reproduce the V3
+74-date best-case ceiling using unchanged real date floors.
+
+This is a retrospectively computed **development diagnostic on prospective
+archives**, not proof that those nested predictions were published on time.
+There are no qualifying real prospective archives yet. Reports always retain
+`power_status=not_estimable`, no minimum detectable gain, no activation and no
+PIT certification. Sector controls/coverage, minimum issuer coverage, dominant
+issuer/day checks, block/null calibration and MC assessment remain required before
+any loss-test sensitivity or sample-size conclusion.
+
 ### Structural date audit and longer candidate
 
 `power.py` now computes a necessary **optimistic ceiling**, not statistical power.
@@ -208,7 +246,7 @@ Let `N` be development reference sessions, `T=30`, `V=10`, and
 signal, the earliest possible nested OOS signal has ordinal `T+V+2g`: both the
 training and validation labels must exit strictly before their next split.
 The latest OOS signal whose exit precedes untouched test is `N-g-1`. Thus at
-most `max(0, N-T-V-3g)` independent OOS dates can contribute. This assumes
+most `max(0, N-T-V-3g)` distinct OOS dates can contribute. This assumes
 perfect daily source/issuer/sector coverage and timely labels; real attrition
 can only lower it. Tests independently enumerate feasible split positions.
 
@@ -235,8 +273,9 @@ Parent V2 hash remains
 `83eebc6a7c3ffbd7ead97235dd73767a25535d500bdfa460cf3d33fdbe9d7555`.
 No existing root or historical output is relabeled. The checker always reports
 `power_status=not_estimable`, no MDE and no test activation. The full nested
-loss-generation, null/block calibration and MC assessment still require
-implementation and qualifying prospective development observations.
+loss-generation implementation now exists as described above; null/block
+calibration and MC assessment still require implementation, and all need
+qualifying prospective development observations.
 
 The V3 storage scenario is **1,892,133,888 bytes**, using the completed
 recovery's peak increment per recovered session, before snapshots, duplicate
@@ -276,7 +315,7 @@ storage allowance and production retention policy.
 | Longer protocol | V2 preserved but structurally insufficient for nested horizon-20 power; separate unactivated V3 120/60/100 candidate and ordinal audit | Owner acceptance, real session calendar, actual attrition and calibrated development power gate before activation |
 | Prospective PIT | Local retention, input/outcome replay, canonical original slots, availability-aware first fit and deadline-bound prediction publication/reuse | Accepted pre-outcome root pin/inventory, verified exchange entry-close, late/missing/revision handling, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
 | Adjusted returns/benchmark | Existing total-return exports with coherent revision checks | Independent convention/event acceptance and frozen prospective vintages |
-| Power | Predeclared grid/rules and executable necessary date-ceiling audit; V2 fails, V3 passes only the optimistic date condition | Nested OOS loss generation and calibrated assessment on sufficient development-only losses, including issuer/sector coverage and MC uncertainty |
+| Power | Predeclared grid/rules, necessary date-ceiling audit and canonical-archive nested OOS loss generator; V2 fails, V3 passes only the optimistic date condition | Accepted fold rule/inventory, sufficient real development-only losses, sector/issuer robustness and calibrated assessment including MC uncertainty |
 | Confirmatory result | None; every current study is inconclusive | Adequate untouched history, frozen scoring and all inference/robustness gates |
 | Price/rate/tradability extensions | Explicitly excluded from liquidity-first claim; ADR 0004 retained | Cash-flow/event and observed-rate conventions plus execution cost/capacity evidence before any such claim |
 

@@ -444,8 +444,31 @@ intact and the default; no helper silently adopts V3 or relabels existing roots.
 The checker returns `power_status=not_estimable`, `minimum_detectable_gain=null`
 and `test_activation_allowed=false` for **both** candidates. Passing a necessary
 date ceiling supplies no loss series, calibration or power estimate. Nested
-development loss generation, issuer/sector coverage, dependence/null calibration,
+development observations, issuer/sector coverage, dependence/null calibration,
 Monte Carlo uncertainty and owner acceptance remain required. See the versioned
 [design audit](prospective-design.md#structural-date-audit-and-longer-candidate).
 The V3 302-session storage scenario is about 1.892 GB before snapshots/staging,
 WAL/backups or source variation; it grants no capture or storage authorization.
+
+## Nested development loss preparation
+
+`development.nested_original_losses(root, boundary_input, development_inputs,
+registry_sha256=..., horizon=..., delay=..., candidate=...)` replays canonical
+original labels and frozen features using the first-test input's fixed boundary.
+It returns an issuer/date loss frame and a diagnostic report. No test outcome is
+loaded, no network or file write occurs, and missing/omitted archives are counted.
+The pure `nested_losses` interface expects already verified tables; it alone
+cannot authenticate archival provenance or completeness.
+
+Each development OOS signal uses expanding training and a rolling validation
+reference window equal to the validation date floor, with exit-before-split and
+actual-label-availability purges. Ridge tuning and scaling stay inside each fold.
+Targets are joined only after prediction. Outputs retain original input/label
+hashes, paired squared losses, per-fold parameters and fit lineage; sparse activity
+is preserved. This diagnostic does not claim timely publication of nested
+predictions. Accept its fold rule and implementation before inspecting outcomes.
+
+Both interfaces always report `not_estimable`, no MDE, no test activation and no
+PIT certification. Real qualifying prospective inputs, sector/issuer robustness,
+calibrated null/block resampling and MC uncertainty remain required. See the
+[development design](prospective-design.md#nested-development-losses).
