@@ -568,7 +568,7 @@ CREDIT_NA_CODES = ("credito_nao_cdi",)  # schema 2.1: direct credit on IPCA or p
 def _contracted_html(view: dict) -> str:
     """Schema 2.1 (#766, method C): the contracted return of each bank credit line, apart from the measured table and
     from every total: the rate the statement prints applied to the CDI or IPCA of the window. Annex only, until the
-    owner decides whether it may sit beside the measured returns."""
+    owner decided on 2026-10-08 (#766) it stays apart from the measured returns."""
     r = view.get("returns") or {}
     b = "returns"
     rows = []

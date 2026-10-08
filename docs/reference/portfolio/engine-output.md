@@ -29,8 +29,7 @@ measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the val
 
 2.1 (#766, owner 2026-10-08; catalog v71): keys added, none renamed, retyped or removed. Direct credit gets a return.
 A CRA or CRI identified in the CVM register has `basis` `curva_securitizadora` (method A, `portfolio_credit_returns`,
-one call for every such line); a debênture's code is `retorno_debenture_metodo_pendente` (method B waits for the owner's
-threshold); a CDB, LCI, LCA or a CDCA the statement prints has `retorno_contratado_anexo` and a `contracted` block
+one call for every such line); a debênture's code is `retorno_debenture_metodo_pendente` (method B, the funds' median mark, is not built: no PU-fall threshold evaluates a semiannual payer; owner, 2026-10-08); a CDB, LCI, LCA or a CDCA the statement prints has `retorno_contratado_anexo` and a `contracted` block
 (method C). Every `returns.lines[]` gains `credit_code` and `contracted` (null when not bank credit); a curve line also
 gains `series`, its `month_ends[]` gain `data_referencia`, `paid_per_unit`, `factor`, `month_flag` and `taxa_juros`,
 and its windows `month_flags`. `returns` gains `pct_of_cdi_credit_note` and `contracted_note`; `coverage.{12m,6m}`

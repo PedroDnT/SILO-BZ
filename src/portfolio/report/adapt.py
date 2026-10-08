@@ -795,7 +795,7 @@ RETURN_WINDOW_DROP = ("sources", "reason", "cdi_reason_code", "fee_reason_code",
 
 def _contracted_view(c: dict | None, order: list) -> dict | None:
     """Schema 2.1, method C: the contracted return of a bank credit line, windows in the engine's order, reasons as
-    fixed texts. It is shown in the annex only, apart from every measured figure (owner's decision pending, #766)."""
+    fixed texts. It is shown in the annex only, apart from every measured figure (owner, 2026-10-08, #766)."""
     if not isinstance(c, dict):
         return None
     wins = []

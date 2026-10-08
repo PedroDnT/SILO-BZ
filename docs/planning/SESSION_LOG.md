@@ -12,10 +12,11 @@ new `contracted.py`), the BTG reader keeps 'Data inicial', the Redator no longer
 to 10.65% (Marfrig CRA, 14.54%, 99.38% of the CDI); contracted return apart, 18.43% (OMNI CDB IPCA + 6,20%: 10.69%;
 CDCA 11,87% a.a.: 11.87%).
 
-**Decisions.** Owner: guards `queda_sem_evento_arquivado` and `pu_repetido` (2026-10-08). Taken here, for the owner to
-check: the third guard `pagamento_acima_do_pu`; the band of `pagamento_incompativel` (0.5 to 1.5 times the line's
+**Decisions.** Owner, 2026-10-08: guards `queda_sem_evento_arquivado` and `pu_repetido`; then "go with the
+recommendations": the `pagamento_incompativel` band stays at 0.5 to 1.5, C stays in the annex only, and method B is
+not built on a PU-fall threshold. Taken here and covered by that answer: the third guard `pagamento_acima_do_pu`; the band of `pagamento_incompativel` (0.5 to 1.5 times the line's
 month with no payment), proposed from 7,788 payment months after the first real run published CRA02400AYL's 6-month
-window at 340% of the CDI; C apart from every measured figure (annex only) until the owner decides;
+window at 340% of the CDI; C apart from every measured figure (annex only);
 a CRA or CRI on the curve left out of the contribution sum (never mix methods in a total); "% do CDI" for credit from the
 rate the statement prints, never the register's `taxa_juros`.
 
@@ -24,8 +25,8 @@ spreadsheet's `data_aplicacao`). IPCA + s is an approximation (IPCA of the windo
 rata), said on the window. The function was tested on a scratch local Postgres (CI's analytical apply, the SQL behaviour
 checks, and the production rows of the six codes); it is not applied to production.
 
-**Outside scope.** Method B (debentures): waits for the owner's threshold, and section 8 shows no threshold evaluates a
-semiannual payer. The Supabase MCP did not answer; production reads used `psql` in read-only mode. Seen, not fixed: the
+**Outside scope.** Method B (debentures): not built, by the owner's decision; section 8 shows no threshold evaluates a
+semiannual payer. Register item 20.3 (B3 OTC prices) is the other route, not started. The Supabase MCP did not answer; production reads used `psql` in read-only mode. Seen, not fixed: the
 tax block could read the same 'Data inicial' (it reads only `data_aplicacao`). Fixed while merging main: a stray
 `||||||| d25f70ee` conflict marker main carried in this file.
 

@@ -2,7 +2,7 @@
 
 Method A: a CRA or CRI on the securitizer's curve (``portfolio_credit_returns``, one call for every such line).
 Method C: the contracted return of a CDB, LCI, LCA or CDCA, from the rate the statement prints, in the line's
-``contracted`` block and never in a measured figure or total. Method B (debentures) waits for the owner's threshold.
+``contracted`` block and never in a measured figure or total. Method B (debentures) is not built (owner, 2026-10-08).
 """
 
 from __future__ import annotations
