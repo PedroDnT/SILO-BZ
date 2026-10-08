@@ -71,9 +71,20 @@ STRATEGIES = {
     "retornoabsoluto": "Retorno Absoluto",
     "rendavariavel": "Renda Variável",
 }
-SECTION_END_KEYS = ("detalhamentodosativos", "arentabilidadecompleta", "rentabilidadecompleta", "movimentacoesdaconta")
+# "E, quando abrimos a rentabilidade por estratégia" and "Atribuição de Resultado" follow the position in the
+# 2026-08 layout, which has no "Detalhamento dos ativos" between them (#747); key() keeps the comma.
+SECTION_END_KEYS = (
+    "detalhamentodosativos",
+    "arentabilidadecompleta",
+    "rentabilidadecompleta",
+    "movimentacoesdaconta",
+    "e,quandoabrimosarentabilidade",
+    "atribuicaoderesultado",
+)
 FURNITURE = re.compile(r"^(pagina\d+(de\d+)?|relatoriodeperformance)$")
 COLUMN_HEADER_KEYS = ("posicaobruta", "%total")
+# The same header wrapped one word per line (2026-08 layout, #747): matched whole, never as a prefix.
+COLUMN_HEADER_WORDS = {"posicao", "ativo", "bruta"}
 
 _MONEY = re.compile(r"^-?\d{1,3}(?:\.\d{3})*,\d{2}$|^-?\d+,\d{2}$")
 _PCT = re.compile(r"^-?\d+(?:,\d+)?%$")
@@ -245,12 +256,23 @@ def _flush_frags(st: _Stream, sec: _Section, coord: str, diag: Diagnostics) -> N
     st.frags_anchored = False
 
 
+def _end_block(st: _Stream, sec: _Section, coord: str, diag: Diagnostics) -> None:
+    """A line blank in this column ends the row block: text after a value line is that row's tail.
+
+    The 2026-08 layout prints a long name in two halves around its value line (#747), so the
+    half below must not wait to become the next row's prefix.
+    """
+    if st.frags and st.frags_anchored:
+        _flush_frags(st, sec, coord, diag)
+    st.last_was_row = False
+
+
 def _process_line(line: str, st: _Stream, sec: _Section, coord: str, diag: Diagnostics) -> None:
     label, tail = split_row(line)
     k = key(label)
     if not label and not tail:
         return
-    if FURNITURE.match(k) or any(k.startswith(h) for h in COLUMN_HEADER_KEYS):
+    if FURNITURE.match(k) or k in COLUMN_HEADER_WORDS or any(k.startswith(h) for h in COLUMN_HEADER_KEYS):
         return
     money = _money_or_none(tail)
     if k == "total" and money is not None:
@@ -522,7 +544,29 @@ def _summary_anchors(lines):
                 if moneys:
                     caixa = moneys[0]
                     break
+    if caixa is None:
+        caixa = _wrapped_conta_corrente(lines)
     return bruto, liquido, saldo_final, caixa
+
+
+def _wrapped_conta_corrente(lines) -> Decimal | None:
+    """The amount of a 'Conta corrente' label the summary table wraps around its value line.
+
+    The 2026-08 layout prints 'Cont a', then a line with only the percent and the amount, then
+    'corrent e' (#747). Only that exact three-line shape is read; anything else stays None.
+    """
+    for i in range(len(lines) - 2):
+        label, tail = split_row(lines[i][2])
+        k = key(label)
+        if k.startswith("movimentacoesdaconta"):
+            return None
+        if k != "conta" or tail:
+            continue
+        v_label, v_tail = split_row(lines[i + 1][2])
+        moneys = [parse_br_number(t) for t in v_tail if is_money(t)]
+        if not v_label.strip() and len(moneys) == 1 and key(split_row(lines[i + 2][2])[0]) == "corrente":
+            return moneys[0]
+    return None
 
 
 def _consolidated_section(lines, diag: Diagnostics) -> _Section:
@@ -567,13 +611,17 @@ def _consolidated_section(lines, diag: Diagnostics) -> _Section:
         if right_start is None:
             parts = [("S", text)]
         else:
-            units = _split_units(text)
+            units = _split_units(text, right_start)
             if len(units) >= 2:
                 parts = [("L", units[0][1]), ("R", " ".join(u for _, u in units[1:]))]
             elif units:
                 parts = [("R" if units[0][0] >= right_start - 6 else "L", units[0][1])]
             else:
                 parts = []
+        present = {sid for sid, part in parts if part.strip()}
+        for sid, st in streams.items():
+            if sid not in present:
+                _end_block(st, sec, coord, diag)
         for sid, part in parts:
             if not part.strip():
                 continue
@@ -589,12 +637,16 @@ def _consolidated_section(lines, diag: Diagnostics) -> _Section:
     return sec
 
 
-def _split_units(line: str) -> list[tuple[int, str]]:
+def _split_units(line: str, right_start: int | None = None) -> list[tuple[int, str]]:
     """The row units of a (possibly two-column) line, as (start column, text).
 
     A unit ends when its run of money and percent tokens ends and text follows, or at a gap of
     three or more spaces between two text tokens. This does not depend on a fixed character
     column, which the text layer rescales from page to page and even from line to line.
+
+    With ``right_start`` (the page's right column, once known), a run of numbers that began in
+    the left column also ends at the first number that starts in the right one: a line can hold
+    only the two columns' values, their names wrapped above and below it (#747).
     """
     units: list[list[tuple[int, str]]] = []
     cur: list[tuple[int, str]] = []
@@ -604,7 +656,10 @@ def _split_units(line: str) -> list[tuple[int, str]]:
         t, start = m.group(), m.start()
         gap = start - prev_end if prev_end is not None else 0
         numeric = is_money(t) or is_pct(t) or (t == "-" and gap >= 3)
-        if cur and ((prev_numeric and not numeric) or (not prev_numeric and not numeric and gap >= 3)):
+        crosses = (
+            right_start is not None and prev_numeric and numeric and cur[0][0] < right_start - 6 <= start
+        )
+        if cur and ((prev_numeric and not numeric) or (not prev_numeric and not numeric and gap >= 3) or crosses):
             units.append(cur)
             cur = []
         cur.append((start, t))
