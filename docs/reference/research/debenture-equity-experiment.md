@@ -81,7 +81,7 @@ date fields require a fresh export. These checks improve retrospective identity
 selection without certifying original-date publication knowledge.
 
 The local [reviewed links](../../../research_examples/debenture_equity/reviewed_links.json)
-cite issuance documents, fiduciary reports and instrument records for twenty-two
+cite issuance documents, fiduciary reports and instrument records for twenty-six
 **original issuers**:
 
 | Bond / ISIN | Original issuer full CNPJ | Existing FCA equities |
@@ -108,6 +108,10 @@ cite issuance documents, fiduciary reports and instrument records for twenty-two
 | IOCHA3 / BRMYPKDBS0C2 | 61156113000175, Iochpe-Maxion | MYPK3 |
 | IRBR12 / BRIRBRDBS022 | 33376989000191, IRB Brasil Resseguros | IRBR3 |
 | ITSA17 / BRITSADBS093 | 61532644000115, Itaúsa | ITSA3, ITSA4 |
+| JHSF1A / BRJHSFDBS061 | 08294224000165, JHSF Participações | JHSF3 |
+| MATD12 / BRMATDDBS014 | 16676520000159, Hospital Mater Dei | MATD3 |
+| JALL13 / BRJALLDBS028 | 02635522000195, Jalles Machado | JALL3 |
+| MILSA0 / BRMILSDBS0C8 | 27093558000115, Mills Locação, Serviços e Logística | MILS3 |
 
 Each link records citation/page, original issuance date, review cutoff and actual
 knowledge timestamp. Retrospective use assumes no intervening issuer transfer;
@@ -553,6 +557,50 @@ The prior eighteen-issuer run remains a historical checkpoint.
 ```text
 twenty-two-issuer bundle d460a425a8b6561de6393339465890b7bab219e57526873be39275b1c1bc8d0f
 twenty-two-issuer links  8d5c6fe22e4a263b569ae5f0bd0c24a66190ebb44066d211a9926f42f2b579a7
+```
+
+Documentary review then added **JHSF1A, MATD12, JALL13 and MILSA0**, reaching
+**26 original-issuer links**. Complete 2025 fiduciary reports identify full
+CNPJ/code/issuance date on PDF pages 3/2/3/2, respectively; JHSF and Jalles also
+identify ISIN on those pages, while SND supplies the exact Mater Dei/Mills ISINs.
+Hashes and page locators are retained in the link file; relevant pages were
+visually checked. Existing FCA records match each full CNPJ to JHSF3, MATD3,
+JALL3 and MILS3. Current company-register commercial names are JHSF, HOSPITAL
+MATER DEI S.A., JALLES MACHADO S.A and MILLS ESTRUTURAS E SERVIÇOS DE ENGENHARIA
+S/A; these current aliases do not date a historical identity change.
+
+JALL13 and MILSA0 were chosen because their original-issuer documents were
+available, not because of predictive outcomes. The JALL11 report omits issuance
+fields and says no securities remain in circulation; it does not establish the
+required original tuple. Some other CVM download responses were HTML despite
+successful HTTP status and were rejected as PDFs; no incomplete response was
+accepted as documentary evidence.
+
+The latest bounded export ran **10:59:27–10:59:41 UTC-3 on 08/10**. The full
+response exceeded the connector's 8 MiB limit, so two read-only credit partitions
+were combined only after all repeated datasets and full selected-fact censuses
+compared equal. The bundle preserves both timestamps; this is not a single
+transaction or a historical vintage. It contains 13,608 credit metric rows,
+5,762 equity rows, 239 FCA rows and 602 sector/index rows. The unchanged pilot
+produces **935 overlapping outcomes** (355/336/244 at 1/5/20 sessions) from
+**22 of 26 documented issuers**. JHSF3 contributes three rows and JALL3 38;
+MATD12's 14 volume observations and MILSA0's five are all INTRAGRUPO and excluded
+by the pre-existing EXTRAGRUPO rule. ENEV3 and BRST3 still lack trailing beta
+history. These exclusions must not be repaired by relaxing the protocol.
+
+All horizons remain inconclusive before fitting/scoring. Only 108 outcomes have
+eligible exact-date sectors, with no sector training history. For signal dates
+after 04/09, one-session outcomes cover 18 issuers/19 dates and five-session
+outcomes 18 issuers/15 dates; twenty-session outcomes have no untouched-test
+coverage. Strict PIT still yields zero rows because all 69 historical credit
+sessions were captured after their decision dates. Reaching the initial target
+of 25 documentary candidates does not satisfy the 21 eligible untouched-test
+issuers, dated-amendment review or statistical-power requirements. The prior
+22-link run remains a historical checkpoint.
+
+```text
+twenty-six-issuer bundle e12c6796f53ad1b2b7e7fc840778c7989b36988a1722456f7d6a1825f0e6e0d4
+twenty-six-issuer links  bcb38d37a60125b1cbbdceebd8b245cd8ac88e1bc154647d086457b293cab9a3
 ```
 
 The remaining implementation sequence is conditional, not a new production approval:

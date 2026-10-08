@@ -44,13 +44,15 @@ One bond can have zero, one or several candidates. An issuer need not have equit
 
 ## Bounded existing-data export and recovery proposal
 
-The experimental pilot uses six documentary **original-issuer** links in
+The reviewed sample now contains 26 documentary **original-issuer** links in
 `reviewed_links.json`. Their retrospective validity assumes no intervening transfer;
 they do not certify original-date knowledge or the full candidate universe.
 `protocol.json` freezes the method and chronological splits. This three-month
 pilot cannot meet its confirmatory date/issuer floors even after recovery.
 
-Print a read-only export using existing total-return API functions and stored credit:
+Print a read-only export using existing total-return API functions and stored credit.
+This example selects the initial six-link subset; pass every reviewed bond and its
+FCA equity candidates to reproduce the full sample documented in the plan:
 
 ```sh
 .venv/bin/python -m research_examples.debenture_equity.prepare \

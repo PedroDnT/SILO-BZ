@@ -452,5 +452,81 @@
       }
     ],
     "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "JHSF1A",
+    "isin": "BRJHSFDBS061",
+    "cnpj": "08294224000165",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2021-06-25",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:58:40.667097-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1509822&numSequencia=1034528&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 3: original issuer full CNPJ, JHSF1A, issuance/series and 2021-06-25 issuance, BRJHSFDBS061; SHA256 989dc61486f94ff50d2d43796452d4441ec41b83713eb30427a6087632637c4e"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "MATD12",
+    "isin": "BRMATDDBS014",
+    "cnpj": "16676520000159",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2024-05-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:58:40.669051-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1514093&numSequencia=1038799&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: original issuer full CNPJ, MATD12, issuance/series and 2024-05-15 issuance; SHA256 a63188668bc1536c365511c042c298b59f6f9d0f3e423e18ba0e7be5b8ac0d1c"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=MATD12&tip_deb=publicas",
+        "locator": "Instrument characteristics: MATD12, BRMATDDBS014, issuer, issuance/series and 2024-05-15 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "JALL13",
+    "isin": "BRJALLDBS028",
+    "cnpj": "02635522000195",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2022-09-15",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:58:40.669632-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1513180&numSequencia=1037886&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 3: original issuer full CNPJ, JALL13, issuance/series and 2022-09-15 issuance, BRJALLDBS028; SHA256 d9fe1d185536c5c79c83e809c5143226dd8542c04f9269784e1cb7ea76c70b01"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "MILSA0",
+    "isin": "BRMILSDBS0C8",
+    "cnpj": "27093558000115",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2024-11-25",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:58:40.670627-03:00",
+    "evidence": [
+      {
+        "url": "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&CodigoInstituicao=1&numProtocolo=1511940&numSequencia=1036646&numVersao=1",
+        "locator": "2025 fiduciary annual report, PDF page 2: original issuer full CNPJ, MILSA0, issuance/series and 2024-11-25 issuance; SHA256 6162b16b73804a82c4f73b5a8d9c5064b29732fd5ae9efd0759aea2cb7b4177a"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=MILSA0&tip_deb=publicas",
+        "locator": "Instrument characteristics: MILSA0, BRMILSDBS0C8, issuer, issuance/series and 2024-11-25 issuance; current contractual terms are not observed secondary-market rates"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
   }
 ]

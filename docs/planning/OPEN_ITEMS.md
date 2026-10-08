@@ -527,9 +527,9 @@ window, representing 82 candidate CNPJs. These are not verified issuance links.
 The [read-only runner](../../research_examples/debenture_equity/README.md) never
 loads data or certifies strict historical PIT from retrieval dates.
 
-Offline experiment/preparation now implemented; twenty-two documented original-issuer
+Offline experiment/preparation now implemented; twenty-six documented original-issuer
 links are available (ALPA13, ALUP18, ANIM18, ASAI18, BSA318, BRKMA6, CAMLB1, CSED12,
-ARML13, CSAN18, CCROA5, CTEE18, CGASA1, ENEV13, DXCO13, EGIE27, BRST15, DESK17, HYPEA8, IOCHA3, IRBR12, ITSA17). The runner uses current total-return equity/IBOV exports, trailing
+ARML13, CSAN18, CCROA5, CTEE18, CGASA1, ENEV13, DXCO13, EGIE27, BRST15, DESK17, HYPEA8, IOCHA3, IRBR12, ITSA17, JHSF1A, MATD12, JALL13, MILSA0). The runner uses current total-return equity/IBOV exports, trailing
 beta, past-liquidity equity selection, chronological purges and dependence checks.
 Initial live run: four one-session outcomes, no primary five-session outcomes.
 Owner approved all 13 recovery slices for 01/07–29/09. After an initial transport
@@ -537,12 +537,14 @@ failure, all 13 are now complete: 770,562 facts, zero drops, valid hashes, audit
 `ok` and nine distinct metrics per source group. The execution-time peak credit
 allocation increase was 400,982,016 bytes (later 386,850,816), below the 1 GB stop.
 All 69 known study sessions are delivered;
-no recovery windows remain. Expanded twenty-two-link offline run: 894 overlapping horizon rows from 20 issuers
-(340/322/232 at 1/5/20 sessions; ENEV3 and BRST3 lack trailing beta history), all inconclusive; strict PIT still zero. FCA recorded
+no recovery windows remain. Expanded twenty-six-link offline run: 935 overlapping horizon rows from 22 issuers
+(355/336/244 at 1/5/20 sessions; ENEV3/BRST3 lack trailing beta history, MATD12/MILSA0 only have excluded intragroup trades), all inconclusive; strict PIT still zero. FCA recorded
 listing intervals are enforced and exact-date sector robustness is implemented;
 available B3 sector history starts 16/09 and cannot cover training. The three-month pilot
 cannot meet fixed training/validation/test floors despite completed recovery;
-broader identities, longer protocol, sector robustness and power assessment remain.
+dated identity changes, longer protocol, sector coverage and power assessment remain.
+The documentary candidate target is met, but the primary untouched test still has
+18 issuers/15 dates, below its unchanged acceptance floors.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer
