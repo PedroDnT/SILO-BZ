@@ -6,6 +6,73 @@ The approved three-month historical capture is complete. Broad identity acceptan
 and confirmatory evaluation remain open. Predictability has not been demonstrated.
 [ADR 0004](../../adr/0004-debenture-market-data-sources.md) remains authoritative.
 
+## Execution reset: reviewed 2026-10-08 (UTC-3)
+
+This section supersedes the **execution order**, not the frozen protocols,
+acceptance floors, historical evidence or production authorization below.
+Requested by the owner to evaluate progress and finish faster. Track execution
+under existing #662/#628 and OPEN_ITEMS item 18; do not create a parallel backlog.
+
+### Goal and progress assessment
+
+The scientific question is whether secondary-market debenture signals improve
+out-of-sample issuer-equity residual-return prediction beyond equity information.
+The implemented first experiment tests **extragroup liquidity activity**, not
+yield/spread or cash-flow-adjusted bond returns. A negative liquidity result would
+not reject every possible credit signal. Statistical evidence is not a proof of
+causality or tradability.
+
+| Deliverable | Evidence at this review | Acceptance status |
+| --- | --- | --- |
+| Existing-data audit and approved recovery | 13 approved slices reconciled; 69/69 study sessions; recovery process exit 0 | Complete within the approved scope; never repeat it |
+| Identity and retrospective pilot | 26 documented original issuers; 22 with outcomes; 935 overlapping horizon rows; primary test 18 issuers/15 dates | Useful plumbing evidence; dated identity and unchanged test floors not accepted |
+| Local prospective machinery | Archive/replay, canonical originals, fitting/publication, nested losses and conditional simulation exist | Implementation evidence; no successful real cutoff archive or independent PIT acceptance |
+| Confirmatory evidence | Historical strict PIT has zero eligible rows; sector training coverage fails; no qualifying prospective history | Incomplete; no predictive conclusion, accepted power or MDE |
+
+The execution drift was building downstream statistical machinery before closing
+the upstream collection path. Additional synthetic tests and statistical helpers
+cannot supply absent prospective observations. The broad goal “complete the plan”
+also mixes finite engineering work with elapsed-market-time research. The goal
+tool currently reports `usageLimited`; this review does not restart it, enlarge
+its budget or declare it complete. No percentage complete is inferred from code
+volume, test counts or commit counts.
+
+### Replacement sequence and stopping rules
+
+Time estimates below are active engineering effort, not promises of elapsed
+research duration. Start with milestone 1; do not implement the later machinery
+merely because production execution is waiting for approval.
+
+| Order / bounded outcome | Work and dependencies | Acceptance / stop | Effort estimate |
+| --- | --- | --- | --- |
+| 1. One-session capture package ready for review | Reuse the existing ingestor and local archive/replay modules. Prepare exact seven-component exports, full-company FCA census, dated identity/sector inputs, equity/IBOV conventions and official next-session calendar evidence. Specify actual ISO signal date, cutoff, archive path, source queries, runner, fresh read-only storage baseline, resource limits and abort checks. | Local rehearsal exercises fetch/export → archive → replay, with raw hashes, complete census, nine metrics/group, zero drops and explicit exclusions. No production write. If any required component is unavailable, record the concrete failing seam and fix only that seam. Stop after one focused session with the package or a reproducible blocker; no detour into power/robustness features. | 2–4 hours; checkpoint after 2 hours |
+| 2. Approved one-session operational canary | Depends on milestone 1 and specific owner approval for its production date/window and limits. Keep B3_CREDIT_ENABLED off; no schema apply or automatic continuation. | Report actual arrival/archive times, source reconciliation, replay result, exclusions, bytes and elapsed time. The entire required snapshot must precede the next verified cash-session 10:00 cutoff (UTC-3). An expired approval/date is not silently rolled. Failure/partial writes remain visible; no automatic cleanup. Capture success alone is not financial/PIT certification. | One execution, approximately 15–30 minutes; source latency may cause failure |
+| 3. Accept and start the prospective development contract | Depends on canary evidence. Resolve the existing source/convention and dated identity gaps, accepted root/inventory, missing/late/revision policy and budget/retention. Present V3 as a candidate, preserving V2/defaults; obtain separate approval for recurring production. | Explicit pre-outcome acceptance and a successful scheduled input archive, with at least 21 eligible issuers after attrition for leave-one-issuer checks. V2 cannot meet the existing horizon-20 power date floor. V3's 302 new sessions are a scenario under current rules, not sufficient power or an authorized schedule. If coverage fails, document attrition before proposing any scope change. | 1–2 focused sessions after the canary; external acceptance may take longer |
+| 4. Development decision before untouched test | Depends on real prospective development inputs and available original labels. Run existing nested comparisons first; implement only missing calibration/sector/dominance/delay/placebo and late/revision checks required for acceptance. | Development-only coverage and independent learning/activity/inference calibration pass; freeze test model, scope and scoring before test outcomes. Conditional simulation alone never activates a test. If gates fail, return insufficient evidence and propose a separately approved revision without using test outcomes. | Engineering estimated after real attrition is measured; elapsed sessions dominate |
+| 5. Untouched-test result and finite closeout | Depends on accepted milestone 4 and elapsed test/outcome sessions. Execute frozen scoring and all existing inference/robustness gates. | Publish incremental evidence, unsupported hypothesis or insufficient evidence, with effect/uncertainty, attrition and provenance. A valid inconclusive result closes the execution milestone; it must not trigger endless unapproved expansion. Trading claims remain excluded. | Approximately 1 focused analysis session once qualifying observations exist |
+
+Milestone 1 is the next **finite completion target**. Milestones 2–5 remain open;
+ready-for-review is not authorization to execute them. A single-session canary
+needs no trained test model and no power estimate: it validates input collection,
+timing and replay. It is operational evidence only and is not automatically a
+development observation or an accepted pre-outcome root.
+
+### Work parked until its dependency exists
+
+Do not add more power simulators, model variants or general orchestration before
+milestone 1 closes. Reuse the already implemented code; do not rewrite it. Do not
+expand issuance searches to all 82 name candidates before measuring the canary's
+eligible sample. Review dated changes for the bounded cohort where acceptance
+requires them. Yield/spread, outstanding, new sources/mappers and trading-cost
+extensions stay outside this liquidity-first continuation.
+
+Do not lower date/issuer floors, remove horizons or replace inference methods to
+shorten the calendar without an explicit scope decision and a separately frozen
+protocol. Finishing engineering faster cannot manufacture historical PIT or
+future sessions. The immediate next action is to prepare and rehearse the exact
+collector/archive path; retain failures as evidence, not reasons for open-ended
+additional infrastructure.
+
 ## 1. Identity and coverage gate: implemented candidate census
 
 [Runner and instructions](../../../research_examples/debenture_equity/README.md)

@@ -57,3 +57,8 @@ An [unactivated prospective design](../../research_examples/debenture_equity/pro
 records the longer candidate, frozen power grid, snapshot/label rules and completion audit.
 Permanent capture remains off; broader identity review, a longer frozen protocol,
 statistical power and strict PIT acceptance remain open.
+The [2026-10-08 execution reset](../reference/research/debenture-equity-experiment.md#execution-reset-reviewed-2026-10-08-utc-3)
+prioritizes one complete input-collection/archive rehearsal and an exact canary
+approval package before additional statistical tooling. Engineering readiness,
+approved production and future confirmatory observations are separate milestones;
+the existing frozen requirements and production boundaries remain intact.
