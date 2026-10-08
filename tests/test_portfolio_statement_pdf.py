@@ -249,17 +249,18 @@ def test_engine_output_over_a_pdf_statement_holds_no_original():
 
 
 def test_pdf_bytes_go_to_the_extractor_on_stdin_and_never_to_disk(monkeypatch, tmp_path):
-    calls = {}
+    calls = []
 
     def fake_run(cmd, input=None, capture_output=None, timeout=None, check=None):
-        calls["cmd"], calls["input"] = cmd, input
+        calls.append((cmd, input))
         return subprocess.CompletedProcess(cmd, 0, stdout="\f".join(variant_a_pages()).encode(), stderr=b"")
 
     monkeypatch.setattr(sp.shutil, "which", lambda name: "/usr/bin/pdftotext")
     monkeypatch.setattr(sp.subprocess, "run", fake_run)
     monkeypatch.chdir(tmp_path)
     st, diag = read_pdf_statement_bytes(b"%PDF-fake")
-    assert calls["cmd"] == ["pdftotext", "-layout", "-", "-"] and calls["input"] == b"%PDF-fake"
+    # the layout text, then the raw words that repair split names (#756): both from STDIN
+    assert calls == [(["pdftotext", "-layout", "-", "-"], b"%PDF-fake"), (["pdftotext", "-raw", "-", "-"], b"%PDF-fake")]
     assert list(tmp_path.iterdir()) == [] and diag.extractor == "poppler"
     assert st.sum_of_lines == BRUTO
 
@@ -456,3 +457,27 @@ def test_layout_2026_08_cut_cash_is_derived_only_when_the_printed_digits_agree()
     assert any("cortada" in n and "'5.000,0'" in n for n in st.notes)
     with pytest.raises(StatementTotalMismatch):
         parse_pdf_pages(edit(layout_2026_08_pages(), 1, "R$ 5.000,00", "R$ 5.001,0"))
+
+
+# ---------------------------------------------------------------------------
+# Stray spaces in names, repaired from the raw text's words (#756)
+# ---------------------------------------------------------------------------
+
+
+def test_respace_joins_only_runs_the_raw_text_prints_whole():
+    words = frozenset({"Marfrig", "Artesanal", "Multimercado", "FICFIM", "Investimento", "o", "Valor", "aplicado", "-"})
+    assert sp.respace_name("Marf rig - CRA-CRA0250018H*", words) == "Marfrig - CRA-CRA0250018H*"
+    assert sp.respace_name("Art esanal Mult imercado FICFIM", words) == "Artesanal Multimercado FICFIM"
+    assert sp.respace_name("Fundo de Invest iment o", words) == "Fundo de Investimento"
+    # two real words stay apart even when they sit next to each other
+    assert sp.respace_name("Valor aplicado", words | {"Valoraplicado"}) == "Valor aplicado"
+    assert sp.respace_name("Marf rig", frozenset()) == "Marf rig"  # no raw text: as printed
+
+
+def test_layout_2026_08_names_are_respaced_when_raw_words_are_given():
+    pages = edit(layout_2026_08_pages(), 2, "FUNDO DELTA FIM", "Fundo Delt a Mult imercado")
+    st, _ = parse_pdf_pages(pages)
+    assert "Fundo Delt a Mult imercado" in {p.linha_extrato for p in st.positions}
+    st, _ = parse_pdf_pages(pages, words=frozenset({"Fundo", "Delta", "Multimercado"}))
+    assert "Fundo Delta Multimercado" in {p.linha_extrato for p in st.positions}
+    assert st.sum_of_lines == st.stated_total

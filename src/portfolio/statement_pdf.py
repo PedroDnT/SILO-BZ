@@ -170,6 +170,43 @@ def extract_pages(data: bytes) -> tuple[list[str], str]:
     return pages, "pypdf"
 
 
+def raw_words(data: bytes) -> frozenset[str]:
+    """The words of ``pdftotext -raw`` (STDIN, never disk), which prints them whole where the
+    layout mode splits them next to t, f and r ('Marf rig'). Empty without poppler or on failure:
+    names then stay as the layout text printed them (#756)."""
+    if not shutil.which("pdftotext"):
+        return frozenset()
+    proc = subprocess.run(["pdftotext", "-raw", "-", "-"], input=data, capture_output=True, timeout=180, check=False)
+    if proc.returncode != 0:
+        return frozenset()
+    return frozenset(proc.stdout.decode("utf-8", errors="replace").split())
+
+
+def respace_name(name: str, words: frozenset[str]) -> str:
+    """Join a run of 2 to 4 tokens when the joined word is in ``words`` and one piece is not a word there.
+
+    'Marf rig' -> 'Marfrig' and 'Invest iment o' -> 'Investimento'; 'Valor aplicado' stays, because
+    'Valoraplicado' is not a word of the raw text. Nothing outside the raw text is ever produced.
+    """
+    if not words:
+        return name
+    toks = name.split()
+    out: list[str] = []
+    i = 0
+    while i < len(toks):
+        for j in range(min(len(toks), i + 4), i + 1, -1):
+            run = toks[i:j]
+            joined = "".join(run)
+            if joined in words and any(t not in words for t in run):
+                out.append(joined)
+                i = j
+                break
+        else:
+            out.append(toks[i])
+            i += 1
+    return " ".join(out)
+
+
 # ---------------------------------------------------------------------------
 # Parse model.
 # ---------------------------------------------------------------------------
@@ -402,7 +439,7 @@ def _holder_masker(cover: str) -> tuple[Masker, list[str]]:
     return Masker(nome, None, conta), notes
 
 
-def parse_pdf_pages(pages: list[str], extractor: str = "text") -> tuple[Statement, Diagnostics]:
+def parse_pdf_pages(pages: list[str], extractor: str = "text", words: frozenset[str] = frozenset()) -> tuple[Statement, Diagnostics]:
     diag = Diagnostics(extractor=extractor, pages=len(pages))
     if not pages or not any(p.strip() for p in pages):
         raise StatementFormatError("the PDF has no text")
@@ -425,6 +462,7 @@ def parse_pdf_pages(pages: list[str], extractor: str = "text") -> tuple[Statemen
     leaves: list[Position] = []
     unread = list(sec.unread)
     for row in sec.rows:
+        row.name = respace_name(row.name, words)
         pos = _position_from_row(row, period_end, len(leaves) + 1, detail, diag)
         leaves.append(pos)
     for pos in leaves:
@@ -936,7 +974,7 @@ def _run_checks(diag, sec: _Section, leaves, sum_leaves, sum_all, bruto, saldo_f
 
 def read_pdf_statement_bytes(data: bytes) -> tuple[Statement, Diagnostics]:
     pages, extractor = extract_pages(data)
-    return parse_pdf_pages(pages, extractor)
+    return parse_pdf_pages(pages, extractor, raw_words(data) if extractor == "poppler" else frozenset())
 
 
 def read_pdf_statement(path: str | Path) -> Statement:
