@@ -610,13 +610,18 @@ def _returns_summary(view: dict) -> str:
         cdi = v(view, f"{wq}.cdi_pct") if win.get("cdi_pct") is not None else "—"
         diff = v(view, f"{wq}.net_minus_cdi_pp") if win.get("cdi_pct") is not None else "—"
         if win.get("pct_of_cdi") is not None:  # only for a fund whose filed benchmark is CDI or DI (engine 1.13)
-            diff += f"<br><span class=v>{v(view, f'{wq}.pct_of_cdi')}</span>"
-        rows.append([name, f"<span class=v>{v(view, f'{wq}.net_return_pct')}</span>", cdi, diff])
+            pct_cdi = f"<span class=v>{v(view, f'{wq}.pct_of_cdi')}</span>"
+        elif win.get("pct_of_cdi_reason"):  # the engine's fixed reason, also for a share or an FII: never "0" or "—"
+            pct_cdi = f"<span class=cit>{v(view, f'{wq}.pct_of_cdi_reason')}</span>"
+        else:
+            pct_cdi = "—"
+        rows.append([name, f"<span class=v>{v(view, f'{wq}.net_return_pct')}</span>", cdi, diff, pct_cdi])
     cov = next((i for i, c in enumerate(r.get("coverage") or []) if c.get("id") == "12m"), None)
     out = [f"<p class=cit>{v(view, f'{b}.note')}</p>"]
     if rows:
         out.append(_table([("Posição", False), ("Retorno líquido em 12 meses", True), ("CDI nas mesmas datas", True),
-                           ("Líquido menos CDI", True)], rows))
+                           ("Líquido menos CDI", True), ("% do CDI", False)], rows)  # text column: a reason wraps
+                   .replace("<table>", '<table class="ret-cdi">', 1))
     else:
         out.append("<p>Nenhuma posição teve retorno de 12 meses avaliado.</p>")
     if cov is not None:
@@ -1144,23 +1149,46 @@ def _risks_section(view: dict, compact: bool = False) -> str:
     return "\n".join(out)
 
 
+def _fee_coverage_html(view: dict, key: str) -> str:
+    """"cobre X do valor em fundos" from a ``coverage_*_fund_value_pct`` key (a share of the fund value, never a fee)."""
+    if ((view.get("fees") or {}).get("summary") or {}).get(key) is None:
+        return "cobertura não disponível"
+    return f"cobre <span class=v>{v(view, f'fees.summary.{key}')}</span> do valor em fundos"
+
+
+def _fee_pair_html(view: dict) -> str:
+    """The disclosed fixed fee and the disclosed range side by side, with the same weight, each with its own coverage
+    of the fund value. The two are never added: engine-output.md defines no total of them (``fees.summary`` carries
+    none), and the balancete estimate stays apart. A block the engine left null says so; it is never R$ 0."""
+    sm = (view.get("fees") or {}).get("summary") or {}
+    b = "fees.summary"
+    if sm.get("adm_disclosed_fixed_per_year_brl") is not None:
+        fixed = (f'<span class="numero">{v(view, f"{b}.adm_disclosed_fixed_per_year_brl")}</span> por ano'
+                 f'<br><span class="numero-2">{v(view, f"{b}.adm_disclosed_fixed_portfolio_pct")} da carteira ao ano</span>')
+    else:
+        fixed = '<span class="numero-2">nenhum fundo com taxa fixa divulgada</span>'
+    if sm.get("adm_disclosed_range_low_per_year_brl") is not None:
+        rng = (f'<span class="numero">{v(view, f"{b}.adm_disclosed_range_low_per_year_brl")} a '
+               f'{v(view, f"{b}.adm_disclosed_range_high_per_year_brl")}</span> por ano'
+               f'<br><span class="numero-2">{v(view, f"{b}.adm_disclosed_range_low_portfolio_pct")} a '
+               f'{v(view, f"{b}.adm_disclosed_range_high_portfolio_pct")} da carteira ao ano</span>')
+    else:
+        rng = '<span class="numero-2">nenhum fundo com faixa divulgada</span>'
+    fixed += ("<br><span class=cit>taxa de administração fixa divulgada, somada nos fundos com taxa fixa; "
+              f"{_fee_coverage_html(view, 'coverage_fixed_fund_value_pct')}</span>")
+    rng += ("<br><span class=cit>faixa divulgada (fundos com classes de taxas diferentes); "
+            f"{_fee_coverage_html(view, 'coverage_range_fund_value_pct')}</span>")
+    return (f'<table class="destaque-par"><tr><td class="destaque">{fixed}</td><td class="destaque">{rng}</td></tr></table>'
+            "<p class=cit>Taxa fixa e faixa ficam lado a lado e não são somadas.</p>")
+
+
 def _fee_headline_section(view: dict) -> str:
     """Engine 1.8: "Quanto a carteira paga em taxas": the disclosed total, the ETF site's apart, the coverage, and
     what is not included. The balancete estimate is shown apart and never added."""
     sm = (view.get("fees") or {}).get("summary") or {}
     b = "fees.summary"
-    out = []
-    if sm.get("adm_disclosed_fixed_per_year_brl") is not None:
-        out.append(f'<div class="destaque"><span class="numero">{v(view, f"{b}.adm_disclosed_fixed_per_year_brl")}</span> por ano '
-                   f'<span class="numero-2">{v(view, f"{b}.adm_disclosed_fixed_portfolio_pct")} da carteira ao ano</span>'
-                   "<br><span class=cit>taxa de administração divulgada, somada nos fundos com taxa fixa</span></div>")
-    else:
-        out.append('<div class="destaque"><span class="numero-2">Nenhuma taxa de administração fixa divulgada para somar.</span></div>')
+    out = [_fee_pair_html(view)]
     items = []
-    if sm.get("adm_disclosed_range_low_per_year_brl") is not None:
-        items.append(f"Fundos com classes de taxas diferentes (faixa divulgada), à parte: <span class=v>{v(view, f'{b}.adm_disclosed_range_low_per_year_brl')}</span> "
-                     f"a <span class=v>{v(view, f'{b}.adm_disclosed_range_high_per_year_brl')}</span> por ano "
-                     f"({v(view, f'{b}.adm_disclosed_range_low_portfolio_pct')} a {v(view, f'{b}.adm_disclosed_range_high_portfolio_pct')} da carteira).")
     if sm.get("adm_etf_site_per_year_brl") is not None:
         items.append(f"ETFs, à parte: <span class=v>{v(view, f'{b}.adm_etf_site_per_year_brl')}</span> por ano "
                      f"({v(view, f'{b}.adm_etf_site_portfolio_pct')} da carteira): {v(view, f'{b}.etf_site_label')}.")
@@ -1415,6 +1443,38 @@ def _client_fit_section(view: dict) -> str:
     return "".join(out)
 
 
+FIELDS_NOT_AVAILABLE = "número de campos não disponível"
+
+
+def _restated_by_fund(view: dict) -> list[str]:
+    """One "Informe reapresentado" point per fund (keyed by statement line, not by name, which the view may lack), with
+    each restated competência in the engine's order and its number of changed fields. A missing count says so, never
+    "—" or zero. The count of documents is a count of the engine's rows, not a figure the engine left out."""
+    groups: dict[str, list[int]] = {}
+    items = (view.get("restatements") or {}).get("items") or []
+    for i, it in enumerate(items):
+        groups.setdefault(str(it.get("line_id") or it.get("cnpj") or i), []).append(i)
+    out = []
+    for idx in groups.values():
+        parts = []
+        for i in idx:
+            q = f"restatements.items[{i}]"
+            n = items[i].get("n_fields_changed")
+            count = (FIELDS_NOT_AVAILABLE if n is None else
+                     f"{v(view, q + '.n_fields_changed')} {'campo' if n == 1 else 'campos'}")
+            parts.append(f"{v(view, q + '.competencia')}: {count}")
+        q0 = f"restatements.items[{idx[0]}]"
+        what = "o informe" if len(idx) == 1 else f"{len(idx)} informes"
+        assessments = []
+        for i in idx:
+            a = v(view, f"restatements.items[{i}].assessment")
+            if a not in assessments:
+                assessments.append(a)
+        out.append(f"<li><strong>Informe reapresentado.</strong> {v(view, q0 + '.fund_name')} reapresentou {what} "
+                   f"({'; '.join(parts)}); {'; '.join(assessments)}.</li>")
+    return out
+
+
 def _points_to_check(view: dict) -> list[str]:
     """Page 1, "Pontos a conferir com o cliente": facts the engine already flags, in fixed wording with placeholders
     (the Redator types nothing here), at most four, each naming a fund or issuer and never an action. FGC issuers above
@@ -1428,11 +1488,7 @@ def _points_to_check(view: dict) -> list[str]:
             kinds[0].append(f"<li><strong>Emissor acima do limite do FGC.</strong> {v(view, q + '.issuer')} soma "
                        f"{v(view, q + '.eligible_value_brl')} em CDB, LCI e LCA, {v(view, q + '.excess_brl')} acima de "
                        f"{v(view, 'concentration.fgc.limit_brl')}; a conferir: o limite é por CPF e instituição.</li>")
-    for i, it in enumerate((view.get("restatements") or {}).get("items") or []):
-        q = f"restatements.items[{i}]"
-        kinds[1].append(f"<li><strong>Informe reapresentado.</strong> {v(view, q + '.fund_name')} reapresentou o informe de "
-                   f"{v(view, q + '.competencia')}; {v(view, q + '.n_fields_changed')} campos mudaram; "
-                   f"{v(view, q + '.assessment')}.</li>")
+    kinds[1] = _restated_by_fund(view)
     for i, it in enumerate((view.get("movement") or {}).get("strong") or []):
         q = f"movement.strong[{i}]"
         kinds[2].append(f"<li><strong>Cota fora da faixa da classe.</strong> {v(view, q + '.fund_name')}, em "
@@ -1459,14 +1515,14 @@ def _resumo(engine: dict, narrative: Narrative, toc: list[tuple[str, str]]) -> s
                "<p>As telas que rodaram não apontaram ponto a conferir. O que não foi possível avaliar está abaixo.</p>")
     out.append(_findings_html(engine, replace(narrative, kept=[f for f in narrative.kept if f.section == "resumo"][:3]), "resumo"))
     fees = (engine.get("fees") or {}).get("summary") or {}
-    if fees.get("adm_disclosed_fixed_per_year_brl") is not None:
-        out.append(f"<h3>Custo</h3><p><strong>{v(engine, 'fees.summary.adm_disclosed_fixed_per_year_brl')} por ano</strong> "
-                   f"({v(engine, 'fees.summary.adm_disclosed_fixed_portfolio_pct')} da carteira): só a taxa de administração "
-                   f"divulgada, nos fundos que somam {v(engine, 'fees.summary.coverage_fixed_fund_value_pct')} do valor em fundos. "
-                   f"{v(engine, 'fees.summary.coverage_range_fund_value_pct')} têm só uma faixa de taxa (à parte) e "
-                   f"{v(engine, 'fees.summary.coverage_without_fee_fund_value_pct')} não têm taxa utilizável. Não é o custo total.</p>")
+    if (fees.get("adm_disclosed_fixed_per_year_brl") is not None
+            or fees.get("adm_disclosed_range_low_per_year_brl") is not None):
+        tail = (f"{v(engine, 'fees.summary.coverage_without_fee_fund_value_pct')} do valor em fundos não têm taxa utilizável. "
+                if fees.get("coverage_without_fee_fund_value_pct") is not None else "")
+        out.append(f"<h3>Custo</h3>{_fee_pair_html(engine)}<p>Só a taxa de administração divulgada. {tail}"
+                   "Não é o custo total.</p>")
     else:
-        out.append("<h3>Custo</h3><p>Não avaliado: total de administração fixa divulgada indisponível.</p>")
+        out.append("<h3>Custo</h3><p>Não avaliado: nenhuma taxa de administração divulgada, fixa ou em faixa, para mostrar.</p>")
     ret = engine.get("returns") or {}
     parts = []
     if (engine.get("portfolio") or {}).get("n_unknown"):

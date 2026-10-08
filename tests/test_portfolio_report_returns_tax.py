@@ -376,6 +376,59 @@ def test_page_one_lists_points_to_check_by_name_from_engine_facts(view):
     assert len(re.findall(r"<li>", page.split("Pontos a conferir")[1].split("</ul>")[0])) <= 4
 
 
+def _restated_points(view):
+    _, page = _page1(view)
+    pts = page.split("Pontos a conferir")[1].split("</ul>")[0]
+    return [li for li in re.findall(r"<li>(.*?)</li>", pts, re.S) if "Informe reapresentado" in li]
+
+
+def test_page_one_groups_the_restatements_of_one_fund_into_one_point(view):
+    items = view["restatements"]["items"]
+    assert len(items) == 3 and len({it["line_id"] for it in items}) == 1  # the demo: one FIDC, three informes
+    pts = _restated_points(view)
+    assert len(pts) == 1
+    li = pts[0]
+    assert "3 informes" in li and li.count(render.e(items[0]["fund_name"])) == 1
+    comps = [values.format_value(view, f"restatements.items[{i}].competencia") for i in range(3)]
+    assert [li.index(c) for c in comps] == sorted(li.index(c) for c in comps)  # the engine's order
+    assert all(f"{c}: 2 campos" in li for c in comps)
+    assert li.count(render.e(items[0]["assessment"])) == 1
+
+
+def test_a_missing_field_count_reads_not_available_never_a_dash(view):
+    v2 = copy.deepcopy(view)
+    v2["restatements"]["items"][1]["n_fields_changed"] = None
+    v2["restatements"]["items"][0]["n_fields_changed"] = 1
+    li = _restated_points(v2)[0]
+    c1 = values.format_value(v2, "restatements.items[1].competencia")
+    assert f"{c1}: número de campos não disponível" in li
+    assert "— campos" not in li and "None" not in li
+    assert "1 campo;" in li and "1 campos" not in li  # singular
+
+
+def test_page_one_shows_the_fixed_fee_and_the_range_side_by_side_never_summed(view):
+    _, page = _page1(view)
+    cost = page.split("<h3>Custo</h3>")[-1].split("<h3>")[0]
+    s = view["fees"]["summary"]
+    for k in ("adm_disclosed_fixed_per_year_brl", "adm_disclosed_range_low_per_year_brl",
+              "adm_disclosed_range_high_per_year_brl", "coverage_fixed_fund_value_pct", "coverage_range_fund_value_pct"):
+        assert s[k] is not None and values.format_value(view, f"fees.summary.{k}") in cost
+    assert cost.count('<td class="destaque">') == 2 and "não são somadas" in cost
+    v2 = copy.deepcopy(view)
+    for k in ("adm_disclosed_range_low_per_year_brl", "adm_disclosed_range_high_per_year_brl",
+              "adm_disclosed_range_low_portfolio_pct", "adm_disclosed_range_high_portfolio_pct"):
+        v2["fees"]["summary"][k] = None
+    _, page2 = _page1(v2)
+    cost2 = page2.split("<h3>Custo</h3>")[-1].split("<h3>")[0]
+    assert "nenhum fundo com faixa divulgada" in cost2 and "R$ 0,00" not in cost2
+
+
+def test_the_fgc_caveat_appears_once_in_the_template_finding(view):
+    f = next(f for f in redator.template_findings(view)["findings"] if "limite do FGC" in f["title"])
+    html = render.substitute(view, f["title"] + " " + f["text"])
+    assert html.count("a conferir") == 1
+
+
 def test_page_one_states_the_cost_with_its_coverage_and_what_was_not_assessed(view):
     _, page = _page1(view)
     s = view["fees"]["summary"]
@@ -477,9 +530,31 @@ def test_the_body_risk_table_has_four_columns_and_only_atencao_and_moderado_rows
 def test_the_body_return_table_has_one_row_per_evaluated_position_and_no_total(view, built_demo):
     sec = built_demo.split("<h2>Retorno passado contra o CDI</h2>")[1].split("</section>")[0]
     first = sec.split("<table")[1].split("</table>")[0]
-    assert re.findall(r"<th[^>]*>([^<]*)</th>", first) == ["Posição", "Retorno líquido em 12 meses", "CDI nas mesmas datas", "Líquido menos CDI"]
+    assert re.findall(r"<th[^>]*>([^<]*)</th>", first) == ["Posição", "Retorno líquido em 12 meses", "CDI nas mesmas datas",
+                                                           "Líquido menos CDI", "% do CDI"]
     evaluated = [ln for ln in view["returns"]["lines"] if ln["windows"][0]["status"] == "avaliado"]
     assert first.count("<tr>") - 1 == len(evaluated) and "retroativa" in sec and "6 meses" not in first
+
+
+def test_the_body_return_table_shows_pct_of_cdi_or_the_engine_reason_never_zero_or_dash(view, built_demo):
+    sec = built_demo.split("<h2>Retorno passado contra o CDI</h2>")[1].split("</section>")[0]
+    rows = sec.split("<table")[1].split("</table>")[0].split("<tbody>")[1].split("</tr>")[:-1]
+    evaluated = [ln["windows"][0] for ln in view["returns"]["lines"] if ln["windows"][0]["status"] == "avaliado"]
+    assert len(rows) == len(evaluated)
+    seen_value = seen_reason = False
+    for w, row in zip(evaluated, rows):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+        assert len(cells) == 5
+        assert "p.p." in cells[3]  # the difference stays in percentage points, in its own column
+        pct = cells[4]
+        if w["pct_of_cdi"] is not None:
+            assert values.format_value(w, "pct_of_cdi") in pct and "do CDI" in pct
+            seen_value = True
+        else:
+            assert render.e(REASON_TEXT[w["pct_of_cdi_reason_code"]]) in pct  # also for a share (pct_cdi_so_fundos)
+            assert re.sub(r"<[^>]+>", "", pct).strip() not in ("", "—", "0", "0,00%")
+            seen_reason = True
+    assert seen_value and seen_reason
 
 
 def test_the_contents_list_ends_with_the_annex(built_demo):
