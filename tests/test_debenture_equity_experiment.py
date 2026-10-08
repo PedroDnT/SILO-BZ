@@ -300,6 +300,10 @@ def test_small_test_sample_is_explicitly_inconclusive():
     result = evaluate_panel(frame, p)['5']
     assert result['status'] == 'inconclusive'
     assert 'bonferroni_p' not in result
+    assert 'mse_equity_only' not in result
+    pair, reason = model_pair(frame, p)
+    assert pair is None
+    assert 'date/issuer coverage' in reason
 
 
 def test_dated_sectors_are_not_backfilled_or_used_before_observation():
@@ -385,6 +389,8 @@ def test_clustered_uncertainty_and_placebo_are_reproducible():
     assert first['draws'] == 100
     assert 'issuer_shuffle_p' in first
     assert 'without_top_three_activity_dates' in first['dominance_sensitivities']
+    assert first['status'] == 'inconclusive'
+    assert 'Dominance' in first['reason']
 
 
 def test_recovery_plan_never_recaptures_delivered_sessions():

@@ -50,8 +50,8 @@ historical measurements. The [executable readiness audit and experiment gates](.
 separate name candidates from confirmed links and retrieval time from historical PIT.
 All 13 approved recovery slices now passed hash, audit and nine-metric checks:
 69/69 study sessions are covered, with allocation growth below the approved 1 GB
-stop. The fresh pilot has 172 overlapping horizon outcomes, all inconclusive;
-the three-month period and three reviewed issuers cannot satisfy confirmatory
+stop. The expanded pilot has 288 overlapping horizon outcomes, all inconclusive;
+the three-month period and six reviewed original issuers cannot satisfy confirmatory
 floors. Dated sector robustness is implemented but lacks training history.
 Permanent capture remains off; broader identity review, a longer frozen protocol,
 statistical power and strict PIT acceptance remain open.

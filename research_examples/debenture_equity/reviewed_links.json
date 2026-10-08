@@ -69,5 +69,64 @@
       }
     ],
     "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; no original-date knowledge certification."
+  },
+  {
+    "instrument_code": "ASAI18",
+    "isin": "BRASAIDBS069",
+    "cnpj": "06057223000171",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2023-12-22",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:24:55.965704-03:00",
+    "evidence": [
+      {
+        "url": "https://www.pentagonotrustee.com.br/Docs/RelatAnuais/Relatorio_Anual_Debenture_2023/SENDAS%20DISTRIBUIDORA%20S.A.%20-%208%C2%AA%20EMISS%C3%83O.pdf",
+        "locator": "2023 fiduciary annual report, PDF page 2: Sendas issuer CNPJ, ASAI18 and 22/12/2023 issuance; SHA256 8a21b8d658dee63995be8916b42623755e3ebcf7df906db32b5878f975fa1f5e"
+      },
+      {
+        "url": "https://www.pentagonotrustee.com.br/Site/DetalhesEmissor?ativo=ASAI18",
+        "locator": "Issuer characteristics: Sendas full CNPJ, ASAI18, BRASAIDBS069 and 22/12/2023 issuance; contractual remuneration is not observed secondary-market yield"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report and current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "BSA318",
+    "isin": "BRB3SADBS081",
+    "cnpj": "09346601000125",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2024-05-28",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:24:55.965704-03:00",
+    "evidence": [
+      {
+        "url": "https://api.mziq.com/mzfilemanager/v2/d/5fd7b7d8-54a1-472d-8426-eb896ad8a3c4/1f43569d-87e4-89cb-fb49-f5f4e7648731?origin=2",
+        "locator": "2025 fiduciary annual report (Vortx), PDF page 3: B3 issuer CNPJ, BSA318, BRB3SADBS081 and 28/05/2024 issuance; SHA256 2ae9fe91b0ae53da85cd8241aa9fe161ebf79c4b5854019fb99aa5629ee76495"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report and current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "BRKMA6",
+    "isin": "BRBRKMDBS0A1",
+    "cnpj": "42150391000170",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2022-05-12",
+    "reviewed_through": "2026-10-06",
+    "known_at": "2026-10-08T10:24:55.965704-03:00",
+    "evidence": [
+      {
+        "url": "https://api.mziq.com/mzfilemanager/v2/d/540b55c5-af99-45f7-a772-92665eb948e9/0b5c2e85-b8ff-5afa-63ff-90e55cc809b9?origin=1",
+        "locator": "2024 fiduciary annual report (Pentagono), PDF page 2: Braskem issuer CNPJ, BRKMA6 and 12/05/2022 issuance; SHA256 b490c44b550944f0e3827d7cea9966bebbc86465b27d1f3b55ae3894c0026db4"
+      },
+      {
+        "url": "https://conteudos.xpi.com.br/renda-fixa/brkma6/caracteristicas/",
+        "locator": "Distributor instrument characteristics: Braskem issuer CNPJ 42.150.391/0001-70, BRKMA6 and ISIN BRBRKMDBS0A1; quoted nominal PU is not a secondary trade"
+      }
+    ],
+    "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report and current characteristics do not certify every intervening amendment or original-date knowledge."
   }
 ]

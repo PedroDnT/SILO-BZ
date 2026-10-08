@@ -2,8 +2,8 @@
 
 Owner-authorized implementation sequence, 2026-10-07 (UTC-3). This records the
 plan agreed in the conversation, the executable audit and the offline experiment.
-Historical capture, broad identity acceptance and confirmatory evaluation remain
-open. Predictability has not been demonstrated.
+The approved three-month historical capture is complete. Broad identity acceptance
+and confirmatory evaluation remain open. Predictability has not been demonstrated.
 [ADR 0004](../../adr/0004-debenture-market-data-sources.md) remains authoritative.
 
 ## 1. Identity and coverage gate: implemented candidate census
@@ -81,13 +81,17 @@ date fields require a fresh export. These checks improve retrospective identity
 selection without certifying original-date publication knowledge.
 
 The local [reviewed links](../../../research_examples/debenture_equity/reviewed_links.json)
-cite official issuance documents and SND records for three **original issuers**:
+cite issuance documents, fiduciary reports and instrument records for six
+**original issuers**:
 
 | Bond / ISIN | Original issuer full CNPJ | Existing FCA equities |
 | --- | --- | --- |
 | ALPA13 / BRALPADBS051 | 61079117000105, Alpargatas | ALPA3, ALPA4 |
 | ALUP18 / BRALUPDBS0C9 | 08364948000138, Alupar | ALUP11 |
 | ANIM18 / BRANIMDBS073 | 09288252000132, Ânima | ANIM3 |
+| ASAI18 / BRASAIDBS069 | 06057223000171, Sendas Distribuidora | ASAI3 |
+| BSA318 / BRB3SADBS081 | 09346601000125, B3 | B3SA3 |
+| BRKMA6 / BRBRKMDBS0A1 | 42150391000170, Braskem | BRKM3, BRKM5, BRKM6 |
 
 Each link records citation/page, original issuance date, review cutoff and actual
 knowledge timestamp. Retrospective use assumes no intervening issuer transfer;
@@ -235,6 +239,16 @@ The contemporaneous database size was **87,923,518,611 bytes**, below the record
 135 GB operational allowance. No additional recovery or permanent enablement is
 needed for this approved window.
 
+The finite recovery process also terminated successfully (exit 0) on 07/10 at
+22:35:23 UTC-3. It reused slice 1 and completed the other twelve in 8 min 45 s;
+each export succeeded on its single configured attempt. The largest observed
+between-slice allocation increase was **400,982,016 bytes** (total relations
+465,338,368 bytes), still below the stop. This is the execution-time measurement;
+the 386,850,816-byte increase above is the later read-only measurement, not the
+peak. The cause of that allocation difference is not established. Persisted raw
+UTF-8 payloads across the thirteen slices total **557,818,677 bytes**. No recovery
+process remains active.
+
 The new research bundle carries **1,746 selected credit metric rows**, 764 equity
 rows, 191 benchmark/cash sessions, 36 FCA rows with listing intervals, and 84 B3
 sector records across indices. Its SHA-256 is
@@ -347,3 +361,77 @@ coverage audit about one day; historical preparation 1–3 days subject to sourc
 latency and approval; model/evaluation 2–4 days. Prospective validation requires
 elapsed market history. The full research plan remains open; offline implementation
 and a prepared capture proposal do not complete its empirical acceptance gates.
+
+## 6. Expanded documentary pilot and next protocol requirements
+
+On 08/10, documentary review added ASAI18, BSA318 and BRKMA6, using the cited
+fiduciary reports and instrument characteristics. Report pages were visually
+checked, complete PDF payloads fingerprinted, and full CNPJs joined through FCA.
+Published CVM commercial names are Sendas Distribuidora S.A., B3 and Braskem;
+no different brand alias or parent identity was inferred. Coupon formulas and
+original issuance quantities in these reports remain contractual/snapshot facts,
+not secondary-market yields or a daily outstanding denominator.
+
+A new bounded export at **10:25:26 UTC-3** contains 3,177 selected credit metric
+rows, 1,505 equity rows, 77 FCA rows and 154 sector/index records. The six-issuer
+runner produces **288 overlapping outcomes** (112/102/74 at 1/5/20 sessions), all
+inconclusive. Only 27 horizon rows retain observed exact-date sectors, with none
+in training. Strict PIT still yields zero rows. No fitted performance is now
+reported when untouched-test date/issuer floors fail; the floor is checked before
+ridge tuning, fitting or scoring, including sensitivity/placebo refits.
+
+The initial six-issuer diagnostic run computed exploratory one-session MSE before
+rejecting its inadequate 14-date/four-issuer test sample. That exposed a gate-order
+defect, now corrected; those metrics do not inform sample selection, protocol
+tuning or a predictive claim. The corrected local result supersedes that diagnostic.
+
+```text
+six-issuer bundle e9348ed02c508e138524649d23a85457e50a7971e5e7de07b10ce90dcf77e5c2
+six-issuer links  b185588d862dfee8f123fae8451f633117c8d204add6fec99800fc15ae8b7a29
+```
+
+Earlier three-issuer results and their fingerprints remain historical checkpoints.
+The original protocol is unchanged; adding identities cannot repair its date ceiling.
+These six original-issuer links still assume no intervening issuer transfer and
+do not satisfy broad dated identity acceptance or the 20-issuer test floor.
+
+The remaining implementation sequence is conditional, not a new production approval:
+
+1. Review at least 21 independent full-CNPJ issuers and their dated changes using
+   primary documentary evidence. Freeze eligibility without selecting on predictive
+   outcomes. Retain commercial/legal aliases with their source; ambiguous ownership,
+   unlisted issuers and missing equity history are exclusions, not parent substitutions.
+   At least 21 must remain eligible in the untouched test sample so a leave-one-issuer
+   refit still meets the unchanged 20-issuer floor; identity review alone cannot
+   guarantee trading, sector or date coverage. Target 25 documentary candidates
+   initially to allow attrition, without relaxing the 21-eligible-issuer requirement.
+2. Freeze a separately versioned protocol before confirmatory scoring. A feasible
+   proposed calendar structure is 90 training, 50 validation and 100 untouched-test
+   reference sessions, followed by 22 outcome sessions. With two-session entry delay
+   and a 20-session horizon, strict split purges leave optimistic ceilings of
+   68/28/100 dates, above the unchanged 30/10/60 floors. Require 126 prior equity
+   warm-up sessions. Actual trading and gaps can only reduce these ceilings; they
+   are not a statistical-power calculation or fixed civil-calendar end dates.
+3. Establish actual decision-time snapshots before claiming prospective PIT.
+   Proposed cutoff: 10:00 Brasília on the next cash session, using only data then
+   observed for the prior session. Primary entry is that next session's close;
+   delayed robustness enters one session later. Archive the exact credit, equity
+   adjustment revision, benchmark, FCA identity and sector inputs known at the
+   cutoff. A reference date or a later export is insufficient. The current strict
+   runner deliberately cannot certify this: a prospective evaluator and retention
+   design must be separately accepted before enabling a new capture schedule.
+4. Assess power on development data before inspecting untouched outcomes. Report
+   minimum detectable loss gains across a predeclared relative-MSE grid, preserving
+   issuer/date dependence, activity sparsity and overlapping labels. Floors alone
+   are insufficient. Keep price/rate additions and tradability outside any claim
+   until their cash-flow/convention and execution-cost/capacity gates are evidenced.
+5. Obtain specific production approval for any expanded window or continuing capture,
+   including snapshot retention and a measured storage allowance. The executed pilot's
+   peak implies about 6.27 MB per recovered session; 262 new sessions would be about
+   1.64 GB if that layout repeated, before additional input snapshots, WAL or backups.
+   This is a scenario, not a bound, and exceeds the prior 1 GB allowance. Keep daily
+   credit disabled and do not start another recovery under the completed 13-lot approval.
+
+Prospective acceptance also requires elapsed trading history; no amount of present
+backfill reconstructs the original knowledge vintages now missing. Historical
+research may remain explicitly retrospective, with its limitations retained.

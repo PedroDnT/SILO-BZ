@@ -44,7 +44,7 @@ One bond can have zero, one or several candidates. An issuer need not have equit
 
 ## Bounded existing-data export and recovery proposal
 
-The experimental pilot uses three documentary **original-issuer** links in
+The experimental pilot uses six documentary **original-issuer** links in
 `reviewed_links.json`. Their retrospective validity assumes no intervening transfer;
 they do not certify original-date knowledge or the full candidate universe.
 `protocol.json` freezes the method and chronological splits. This three-month
@@ -54,7 +54,8 @@ Print a read-only export using existing total-return API functions and stored cr
 
 ```sh
 .venv/bin/python -m research_examples.debenture_equity.prepare \
-  --bonds ALPA13 ALUP18 ANIM18 --tickers ALPA3 ALPA4 ALUP11 ANIM3
+  --bonds ALPA13 ALUP18 ANIM18 ASAI18 BSA318 BRKMA6 \
+  --tickers ALPA3 ALPA4 ALUP11 ANIM3 ASAI3 B3SA3 BRKM3 BRKM5 BRKM6
 ```
 
 Execute the printed SELECT through Supabase MCP. Save only its `bundle` object

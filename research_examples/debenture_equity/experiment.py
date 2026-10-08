@@ -311,6 +311,9 @@ def model_pair(panel, protocol):
     test = panel[panel['signal_date'] > p['validation_end']].copy()
     if valid.empty or test.empty:
         return None, 'Empty validation or untouched test interval'
+    if (test['signal_date'].nunique() < p['min_test_dates']
+            or test['cnpj'].nunique() < p['min_test_issuers']):
+        return None, 'Insufficient independent date/issuer coverage for inference'
     train = train_raw[train_raw['exit_date'] < valid['signal_date'].min()]
     if train['signal_date'].nunique() < p['min_train_dates'] or valid['signal_date'].nunique() < p['min_validation_dates']:
         return None, 'Insufficient training/validation dates after label purge'
@@ -471,6 +474,10 @@ def evaluate_panel(panel, protocol, sector_controls=False):
         sensitivities['without_top_three_activity_dates'] = (float(reduced['test']['loss_gain'].mean())
                                                              if reduced is not None else None)
         result['dominance_sensitivities'] = sensitivities
+        if any(v is None for v in sensitivities.values()):
+            results[str(h)] = {**result, 'status': 'inconclusive',
+                               'reason': 'Dominance exclusions leave insufficient evaluation coverage'}
+            continue
         supported = (result['familywise_interval'][0] > 0 and result['bonferroni_p'] < protocol['family_alpha']
                      and result['issuer_shuffle_p'] < protocol['family_alpha']
                      and all(v is not None and np.isfinite(v) and v > 0 for v in sensitivities.values()))
