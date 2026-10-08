@@ -625,7 +625,7 @@ def _returns_summary(view: dict) -> str:
                            ("Líquido menos CDI", True), ("% do CDI", True)], rows)
                    .replace("<table>", '<table class="ret-cdi">', 1))
         if na_reasons:
-            out.append("<p class=cit>n/a em % do CDI: " + "; ".join(na_reasons) + ".</p>")
+            out.append("<p class=cit>n/a em % do CDI: " + "; ".join(r.rstrip(". ") for r in na_reasons) + ".</p>")
     else:
         out.append("<p>Nenhuma posição teve retorno de 12 meses avaliado.</p>")
     if cov is not None:
@@ -668,7 +668,7 @@ def _contracted_section(view: dict) -> str:
                            ("Retorno contratado em 12 meses", True), ("CDI nas mesmas datas", True),
                            ("Contratado menos CDI", True), ("% do CDI", True)], rows))
         if na:
-            out.append("<p class=cit>n/a em % do CDI: " + "; ".join(na) + ".</p>")
+            out.append("<p class=cit>n/a em % do CDI: " + "; ".join(r.rstrip(". ") for r in na) + ".</p>")
     else:
         out.append("<p>Nenhuma posição teve retorno contratado de 12 meses.</p>")
     if skipped:
