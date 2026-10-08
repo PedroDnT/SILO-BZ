@@ -166,3 +166,27 @@ changes, return conventions, financial payloads or predictive models. The
 collector and prospective evaluator remain required, and a local archive is not
 a durable production-retention policy. Do not create a retrospective manifest
 that labels October retrieval as July knowledge. No canary has been run.
+
+## Separate frozen features and realized outcomes
+
+`experiment.build_features(bundle, links, protocol)` now calculates one row per
+issuer/date without requiring future return observations. It retains the chosen
+share class, equity ISIN/revision, alpha, beta and input features.
+`experiment.attach_outcomes(features, label_bundle, protocol)` attaches realized
+returns using coherent entry/exit levels from the label bundle. It never
+reselects the share class or recalculates frozen features, alpha or beta. It
+refuses duplicate issuer/date features and mixed label revisions, and excludes
+a ticker whose label ISIN differs from the frozen equity identity. Label inputs
+need equities/benchmark/calendar/return basis/export timestamp, not credit, FCA
+or volume. Output retains both feature and label equity revision identifiers.
+
+The existing `build_panel` composes these functions for the retrospective pilot.
+Its 26-issuer result and every prior column of all 935 panel rows were compared
+before/after and are unchanged; `equity_isin` and `label_equity_revision` are
+additional provenance columns. Strict historical PIT still yields no outcomes.
+These are financial calculation boundaries, not a completed prospective evaluator:
+archive integration, verified next-session calendars, actual label availability,
+identity-transfer and source/convention acceptance remain required. Neither
+function establishes a label's knowledge time from its reference date. The current
+IBOV response has no revision identifier; benchmark-vintage coherence still needs
+the exact retained response/partition evidence and independent convention review.

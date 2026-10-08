@@ -56,9 +56,6 @@ def validate_links(links):
 def validate_bundle(bundle, protocol):
     if bundle['protocol_sha256'] != fingerprint(protocol):
         raise ValueError('Bundle was exported under a different protocol')
-    if bundle['return_basis'] != 'total_return' or bundle['benchmark_code'] != 'IBOV':
-        raise ValueError('Equity and benchmark must both represent total returns')
-    timestamp(bundle['exported_at'])
     if any(not FCA_INTERVAL_FIELDS <= record.keys() for record in bundle['fca']):
         raise ValueError('FCA interval fields missing; re-export the existing-data bundle')
     if len({c['capture_id'] for c in bundle['captures']}) != len(bundle['captures']):
@@ -81,6 +78,14 @@ def validate_bundle(bundle, protocol):
                 or counts['group_count'] != c['debenture_rows']
                 or counts['fact_count'] != 9*c['debenture_rows']):
             raise ValueError('Credit fact census disagrees with stored capture or selected export')
+    return validate_return_series(bundle)
+
+
+def validate_return_series(bundle):
+    """Coherent endpoint series; independent of credit or future label availability."""
+    if bundle['return_basis'] != 'total_return' or bundle['benchmark_code'] != 'IBOV':
+        raise ValueError('Equity and benchmark must both represent total returns')
+    timestamp(bundle['exported_at'])
     eq = pd.DataFrame(bundle['equities'])
     bench = pd.DataFrame(bundle['benchmark'])
     if eq.empty or bench.empty:
@@ -162,30 +167,35 @@ def active_fca_records(records, signal_date):
     return active
 
 
-def build_panel(bundle, links, protocol, mode='retrospective', delay=None):
-    """No fills. Each target starts after availability and uses past-only beta/class choice."""
-    if mode not in ('retrospective', 'strict_pit'):
-        raise ValueError('Unknown availability mode')
-    validate_links(links)
-    eq, bench = validate_bundle(bundle, protocol)
-    p = protocol
-    delay = p['entry_delay_sessions'] if delay is None else delay
-    if delay < 1:
-        raise ValueError('Cannot enter before next session after the signal')
+def return_series(eq, bench):
+    """Published levels and adjacent returns without filling gaps or splicing revisions."""
     calendar = list(bench['trade_date'])
-    position = {d: i for i, d in enumerate(calendar)}
     market = bench.set_index('trade_date')['level'].astype(float).reindex(calendar)
     if not np.isfinite(market).all() or (market <= 0).any():
         raise ValueError('Invalid published benchmark level')
     market_return = np.log(market).diff()
     market_return.loc[bench.set_index('trade_date')['divisor_step'].astype(bool)] = np.nan
-    prices, volumes = {}, {}
+    prices = {}
     for ticker, group in eq.groupby('ticker'):
         series = group.set_index('trade_date')['close_total_return'].astype(float).reindex(calendar)
         if 'close_total_return_null_reason' in group:
             reasons = group.set_index('trade_date')['close_total_return_null_reason'].reindex(calendar)
             series = series.where(reasons.isna())
         prices[ticker] = series.where(np.isfinite(series) & (series > 0))
+    return calendar, prices, market, market_return
+
+
+def build_features(bundle, links, protocol, mode='retrospective'):
+    """Past-only issuer/date features computed without requiring future outcomes."""
+    if mode not in ('retrospective', 'strict_pit'):
+        raise ValueError('Unknown availability mode')
+    validate_links(links)
+    eq, bench = validate_bundle(bundle, protocol)
+    p = protocol
+    calendar, prices, _, market_return = return_series(eq, bench)
+    position = {d: i for i, d in enumerate(calendar)}
+    volumes = {}
+    for ticker, group in eq.groupby('ticker'):
         vol = group.set_index('trade_date')['volume'].astype(float).reindex(calendar)
         volumes[ticker] = vol.where(np.isfinite(vol) & (vol >= 0))
     rows, exclusions = [], Counter()
@@ -267,24 +277,73 @@ def build_panel(bundle, links, protocol, mode='retrospective', delay=None):
                     'credit_log_trades': float(np.log1p(bonds['trade_count'].astype(float).sum())),
                     'credit_active_bonds': int(bonds['instrument_code'].nunique()),
                     'credit_capture_ids': sorted(set(bonds['capture_id'])),
-                    'equity_revision': eq.loc[eq['ticker'] == ticker, 'data_revision'].iloc[0]}
-            entry = i + delay
-            for h in p['horizons']:
-                exit_ = entry + h
-                if exit_ >= len(calendar) or calendar[exit_] > p['outcome_to']:
-                    exclusions[f'future_outcome_unavailable_{h}'] += 1
-                    continue
-                if price.iloc[entry:exit_+1].isna().any() or market_return.iloc[entry+1:exit_+1].isna().any():
-                    exclusions[f'future_outcome_gap_{h}'] += 1
-                    continue
-                er = np.log(price.iloc[exit_]/price.iloc[entry])
-                mr = np.log(market.iloc[exit_]/market.iloc[entry])
-                rows.append({**base, 'horizon': h, 'entry_date': calendar[entry],
-                             'exit_date': calendar[exit_], 'residual_return': float(er-h*alpha-beta*mr)})
+                    'equity_revision': eq.loc[eq['ticker'] == ticker, 'data_revision'].iloc[0],
+                    'equity_isin': eq.loc[eq['ticker'] == ticker, 'isin'].iloc[0]}
+            rows.append(base)
+    features = pd.DataFrame(rows)
+    if not features.empty and features.duplicated(['cnpj', 'signal_date']).any():
+        raise ValueError('Issuer/date pseudo-replication detected')
+    return features, dict(exclusions)
+
+
+def attach_outcomes(features, bundle, protocol, delay=None):
+    """Use one realized vintage, retaining the frozen class, features, alpha and beta.
+
+    This arithmetic seam is not archive/PIT or label-availability certification.
+    """
+    p = protocol
+    delay = p['entry_delay_sessions'] if delay is None else delay
+    if delay < 1:
+        raise ValueError('Cannot enter before next session after the signal')
+    if features.empty:
+        return pd.DataFrame(), {}
+    if features.duplicated(['cnpj', 'signal_date']).any():
+        raise ValueError('Issuer/date pseudo-replication detected')
+    if {'horizon', 'residual_return', 'entry_date', 'exit_date'} & set(features.columns):
+        raise ValueError('Frozen features cannot contain future outcomes')
+    if not np.isfinite(features[['alpha', 'beta']].to_numpy(dtype=float)).all():
+        raise ValueError('Frozen alpha/beta must be finite')
+    eq, bench = validate_return_series(bundle)
+    calendar, prices, market, market_return = return_series(eq, bench)
+    position = {d: i for i, d in enumerate(calendar)}
+    identities = {t: g['isin'].iloc[0] for t, g in eq.groupby('ticker')}
+    revisions = {t: g['data_revision'].iloc[0] for t, g in eq.groupby('ticker')}
+    rows, exclusions = [], Counter()
+    for base in features.to_dict('records'):
+        d, ticker = base['signal_date'], base['ticker']
+        if d not in position or ticker not in prices:
+            exclusions['label_series_unavailable'] += 1
+            continue
+        if not base['equity_isin'] or identities[ticker] != base['equity_isin']:
+            exclusions['label_equity_identity_changed'] += 1
+            continue
+        i, price = position[d], prices[ticker]
+        entry = i + delay
+        for h in p['horizons']:
+            exit_ = entry + h
+            if exit_ >= len(calendar) or calendar[exit_] > p['outcome_to']:
+                exclusions[f'future_outcome_unavailable_{h}'] += 1
+                continue
+            if price.iloc[entry:exit_+1].isna().any() or market_return.iloc[entry+1:exit_+1].isna().any():
+                exclusions[f'future_outcome_gap_{h}'] += 1
+                continue
+            er = np.log(price.iloc[exit_]/price.iloc[entry])
+            mr = np.log(market.iloc[exit_]/market.iloc[entry])
+            rows.append({**base, 'horizon': h, 'entry_date': calendar[entry],
+                         'exit_date': calendar[exit_],
+                         'label_equity_revision': revisions[ticker],
+                         'residual_return': float(er-h*base['alpha']-base['beta']*mr)})
     panel = pd.DataFrame(rows)
     if not panel.empty and panel.duplicated(['cnpj', 'signal_date', 'horizon']).any():
         raise ValueError('Issuer/date pseudo-replication detected')
     return panel, dict(exclusions)
+
+
+def build_panel(bundle, links, protocol, mode='retrospective', delay=None):
+    """Retrospective composition; strict mode still refuses missing historical vintages."""
+    features, feature_exclusions = build_features(bundle, links, protocol, mode)
+    panel, label_exclusions = attach_outcomes(features, bundle, protocol, delay)
+    return panel, dict(Counter(feature_exclusions)+Counter(label_exclusions))
 
 
 def fit_ridge(train, features, alpha):

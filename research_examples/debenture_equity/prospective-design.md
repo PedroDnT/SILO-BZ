@@ -111,6 +111,16 @@ later corrected labels form a separately frozen sensitivity report. Do not
 overwrite the original evaluation. This needs an implemented and reviewed
 prospective evaluator; the existing strict runner deliberately refuses it.
 
+The calculation layer now separates `build_features` from `attach_outcomes`.
+Frozen features retain equity ISIN/revision and class selection; future label
+vintages cannot recompute those inputs, alpha or beta. Labels use coherent
+endpoints, retain their separate equity revision and reject a changed ISIN. The
+retrospective composition reproduces the prior 935-row result. This is the
+evaluator foundation only: archive/source/calendar/label-availability integration
+and the independent financial convention gates remain incomplete. The existing
+IBOV response has no revision identifier; its retained response/partition evidence
+must establish the label benchmark vintage rather than an assumed revision field.
+
 ## Development power assessment
 
 Predeclare relative-MSE gain grid 0%, 1%, 2.5%, 5%, 10%, 20%, target power 80%,

@@ -619,6 +619,13 @@ diagnostic evidence only; verification refuses changed manifests/components. It
 does not fetch, validate source semantics or certify strict PIT. Collector and
 prospective evaluator integration remain outstanding.
 
+The calculation layer now separates frozen issuer/date features from realized
+labels. Later label revisions cannot change class selection, alpha, beta or
+features; equity ISIN is retained and checked, and feature/label equity revisions
+are recorded separately. The original 935-row pilot result and prior columns
+were compared before/after and are unchanged. Archive/source/calendar and actual
+label-availability integration remain open; this is not strict-PIT acceptance.
+
 The remaining implementation sequence is conditional, not a new production approval:
 
 1. Review at least 21 independent full-CNPJ issuers and their dated changes using

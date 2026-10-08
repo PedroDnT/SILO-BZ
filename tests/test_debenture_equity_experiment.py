@@ -232,6 +232,77 @@ def test_snapshot_refuses_component_symlink_and_timezone_naive_receipt(snapshot_
         snapshots.archive(request, dest.parent/'other-archive')
 
 
+def test_features_can_be_frozen_without_future_outcomes(synthetic):
+    from research_examples.debenture_equity.experiment import build_features, attach_outcomes
+    bundle, links, p = synthetic
+    future = deepcopy(bundle)
+    day = p['signal_from']
+    bundle['equities'] = [r for r in bundle['equities'] if r['trade_date'] <= day]
+    bundle['benchmark'] = [r for r in bundle['benchmark'] if r['trade_date'] <= day]
+    bundle['cash_sessions'] = [d for d in bundle['cash_sessions'] if d <= day]
+    features, _ = build_features(bundle, links, p)
+    assert features.signal_date.tolist() == [day]
+    assert 'residual_return' not in features and 'exit_date' not in features
+    assert features.equity_isin.tolist() == ['BRTESTACNPR0']
+    panel, _ = attach_outcomes(features, future, p)
+    assert set(panel.horizon) == {1, 5, 20}
+    assert np.allclose(panel.residual_return, 0, atol=1e-10)
+
+
+def test_new_label_vintage_never_changes_frozen_features_or_share_class(synthetic):
+    from research_examples.debenture_equity.experiment import build_features, attach_outcomes
+    bundle, links, p = synthetic
+    features, _ = build_features(bundle, links, p)
+    frozen = features.copy(deep=True)
+    revised = deepcopy(bundle)
+    for r in revised['equities']:
+        r['data_revision'] = 'synthetic-new-label-vintage'
+        r['close_total_return'] *= 10
+        if r['ticker'] == 'TEST3':
+            r['volume'] = 1e9
+    panel, _ = attach_outcomes(features, revised, p)
+    pd.testing.assert_frame_equal(features, frozen)
+    assert set(panel.ticker) == {'TEST4'}
+    assert set(panel.equity_revision) == {'synthetic-revision'}
+    assert set(panel.label_equity_revision) == {'synthetic-new-label-vintage'}
+    assert np.allclose(panel.residual_return, 0, atol=1e-10)
+
+
+def test_outcomes_reject_a_reused_ticker_with_a_different_equity_isin(synthetic):
+    from research_examples.debenture_equity.experiment import build_features, attach_outcomes
+    bundle, links, p = synthetic
+    features, _ = build_features(bundle, links, p)
+    for r in bundle['equities']:
+        if r['ticker'] == 'TEST4':
+            r['isin'] = 'BROTHERACPR0'
+    panel, excluded = attach_outcomes(features, bundle, p)
+    assert panel.empty
+    assert excluded['label_equity_identity_changed'] == len(features)
+
+
+def test_outcomes_refuse_duplicate_frozen_issuer_dates(synthetic):
+    from research_examples.debenture_equity.experiment import build_features, attach_outcomes
+    bundle, links, p = synthetic
+    features, _ = build_features(bundle, links, p)
+    with pytest.raises(ValueError, match='pseudo-replication'):
+        attach_outcomes(pd.concat([features, features]), bundle, p)
+
+
+def test_label_bundle_needs_no_credit_fca_or_volume_and_refuses_mixed_revisions(synthetic):
+    from research_examples.debenture_equity.experiment import build_features, attach_outcomes
+    bundle, links, p = synthetic
+    features, _ = build_features(bundle, links, p)
+    labels = {k: deepcopy(bundle[k]) for k in ('equities', 'benchmark', 'cash_sessions',
+              'return_basis', 'benchmark_code', 'exported_at')}
+    for r in labels['equities']:
+        del r['volume']
+    panel, _ = attach_outcomes(features, labels, p)
+    assert not panel.empty
+    labels['equities'][0]['data_revision'] = 'synthetic-conflicting-vintage'
+    with pytest.raises(ValueError, match='revisions'):
+        attach_outcomes(features, labels, p)
+
+
 def test_source_classification_spelling_does_not_remove_valid_trades(synthetic):
     bundle, links, p = synthetic
     expected, _ = build_panel(bundle, links, p)

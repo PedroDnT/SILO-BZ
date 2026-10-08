@@ -552,6 +552,9 @@ requirements, a development-only power grid and the requirement-by-requirement
 completion audit. It is unactivated. A local retention helper now verifies hashes, byte budgets and
 actual-clock cutoffs without fetching or certifying PIT; collector/evaluator and
 power assessment implementation, owner acceptance and future elapsed history remain.
+The evaluator foundation now separates frozen features from coherent realized
+label vintages, preserving class/ISIN, alpha/beta and prior pilot behavior;
+archive/source/calendar and actual label-availability integration are still open.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer
