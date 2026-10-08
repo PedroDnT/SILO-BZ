@@ -573,7 +573,9 @@ Ranked by share of the portfolio against the work to close it.
 | 2 | 2 Tesouro titles without a return | 9,07% | Tesouro Direto price history as a new public dataset (one fetcher, one table, one `api.*` function), then the returns block reads it like a quote. The public file and its terms are not checked yet. | New data, small |
 | 3 | 2 debentures without a return | 8,03% | SILO already captures B3 OTC debenture prices (`b3_credit_observations`, migration 74). Grant a serving function and read it as the debenture's price series. | Rule over existing data |
 
-Larger gaps with no public source, so not in the top three: 6 CRA and CRI without a return (21,52%; CVM's
-securitization series carries no price, so it cannot give a return) and 1 CDB unidentified (15,45%; no public
-bank-issuance registry is ingested). Two suspected join gaps to check before any build: 2 multimercado funds with
+Not in the top three: 6 CRA and CRI without a return (21,52%), already measured by #766 (the securitizer's curve in
+`cvm_securit_serie` evaluates 1 of the 6 with its guards; the owner decides the guards,
+`docs/reference/research/portfolio-return-coverage.md` section 8), and 1 CDB unidentified (15,45%; no public
+bank-issuance registry is ingested). Item 3 uses B3's own OTC prices, not #766's method B (the median fund mark,
+which evaluates 0 of the 2 debentures). Two suspected join gaps to check before any build: 2 multimercado funds with
 no CDA for 2026-04 (6,99%) and the same 2 with 9 and 10 of 13 month-end quotas missing.
