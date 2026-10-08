@@ -560,3 +560,22 @@ Production analytical apply, MCP redeployment and live acceptance remain pending
 No new collection or source-vintage archive is part of this change.
 [Audit and field map](../reference/research/cotahist-storage-serving-map.md).
 
+
+## 20. Diagnosis coverage: three gaps to close (#765), proposal for the owner
+
+**Status: proposal, not built. Needs the owner's approval before any work.** From the trace audit of the
+2026-10-08 real report (`docs/reference/research/report-v2-trace-audit.md`). Shares are of that portfolio's value.
+Ranked by share of the portfolio against the work to close it.
+
+| # | Gap | Share | Smallest change that closes it | Work |
+| --- | --- | --- | --- | --- |
+| 1 | 2 funds ambiguous: "a cota não desempatou" | 19,55% | `api.portfolio_resolve` compares the statement's quota only on the exact position date, and both lines had none that day. Compare on the last quota filed on or before that date (a few business days back), or with the quota implied by value over quantity from the "Detalhamento" table (#751). The BTG performance PDF prints no CNPJ, so a CNPJ tie-break does not apply. Check first that both candidates file a daily quota (a FIDC or FIAGRO does not). | Rule fix in SQL, catalog bump, test |
+| 2 | 2 Tesouro titles without a return | 9,07% | Tesouro Direto price history as a new public dataset (one fetcher, one table, one `api.*` function), then the returns block reads it like a quote. The public file and its terms are not checked yet. | New data, small |
+| 3 | 2 debentures without a return | 8,03% | SILO already captures B3 OTC debenture prices (`b3_credit_observations`, migration 74). Grant a serving function and read it as the debenture's price series. | Rule over existing data |
+
+Not in the top three: 6 CRA and CRI without a return (21,52%), already measured by #766 (the securitizer's curve in
+`cvm_securit_serie` evaluates 1 of the 6 with its guards; the owner decides the guards,
+`docs/reference/research/portfolio-return-coverage.md` section 8), and 1 CDB unidentified (15,45%; no public
+bank-issuance registry is ingested). Item 3 uses B3's own OTC prices, not #766's method B (the median fund mark,
+which evaluates 0 of the 2 debentures). Two suspected join gaps to check before any build: 2 multimercado funds with
+no CDA for 2026-04 (6,99%) and the same 2 with 9 and 10 of 13 month-end quotas missing.

@@ -597,6 +597,7 @@ def _returns_summary(view: dict) -> str:
     r = view.get("returns") or {}
     b = "returns"
     rows = []
+    na_reasons: list[str] = []
     for i, ln in enumerate(r.get("lines") or []):
         w = next(((j, w) for j, w in enumerate(ln.get("windows") or []) if w.get("id") == "12m"), None)
         if not w or w[1].get("status") != "avaliado":
@@ -611,17 +612,20 @@ def _returns_summary(view: dict) -> str:
         diff = v(view, f"{wq}.net_minus_cdi_pp") if win.get("cdi_pct") is not None else "—"
         if win.get("pct_of_cdi") is not None:  # only for a fund whose filed benchmark is CDI or DI (engine 1.13)
             pct_cdi = f"<span class=v>{v(view, f'{wq}.pct_of_cdi')}</span>"
-        elif win.get("pct_of_cdi_reason"):  # the engine's fixed reason, also for a share or an FII: never "0" or "—"
-            pct_cdi = f"<span class=cit>{v(view, f'{wq}.pct_of_cdi_reason')}</span>"
-        else:
-            pct_cdi = "—"
+        else:  # #765: "n/a" in the cell; the engine's fixed reason is said once, in the footnote under the table
+            pct_cdi = "n/a"
+            reason = v(view, f"{wq}.pct_of_cdi_reason") if win.get("pct_of_cdi_reason") else "não calculado pelo motor"
+            if reason not in na_reasons:
+                na_reasons.append(reason)
         rows.append([name, f"<span class=v>{v(view, f'{wq}.net_return_pct')}</span>", cdi, diff, pct_cdi])
     cov = next((i for i, c in enumerate(r.get("coverage") or []) if c.get("id") == "12m"), None)
     out = [f"<p class=cit>{v(view, f'{b}.note')}</p>"]
     if rows:
         out.append(_table([("Posição", False), ("Retorno líquido em 12 meses", True), ("CDI nas mesmas datas", True),
-                           ("Líquido menos CDI", True), ("% do CDI", False)], rows)  # text column: a reason wraps
+                           ("Líquido menos CDI", True), ("% do CDI", True)], rows)
                    .replace("<table>", '<table class="ret-cdi">', 1))
+        if na_reasons:
+            out.append("<p class=cit>n/a em % do CDI: " + "; ".join(na_reasons) + ".</p>")
     else:
         out.append("<p>Nenhuma posição teve retorno de 12 meses avaliado.</p>")
     if cov is not None:
@@ -1171,6 +1175,26 @@ def _fee_coverage_html(view: dict, key: str) -> str:
     return f"cobre <span class=v>{v(view, f'fees.summary.{key}')}</span> do valor em fundos"
 
 
+KNOWN_COST_MIN_COVERAGE_PCT = 50  # #765: below this share of the portfolio the cost is not the headline number
+
+
+def _known_cost_html(view: dict, brl_key: str, coverage_key: str, high_key: str | None = None) -> str:
+    """One known fee in R$ a year with how much of the PORTFOLIO it covers (#765). When the covered share is under
+    half of the portfolio, the big number is that share ("custo conhecido só para X da carteira") and the R$ follows
+    in small type, so a fee on a sliver of the portfolio never reads as its cost."""
+    b = "fees.summary"
+    sm = (view.get("fees") or {}).get("summary") or {}
+    brl = v(view, f"{b}.{brl_key}") + (f" a {v(view, f'{b}.{high_key}')}" if high_key else "")
+    cov = sm.get(coverage_key)
+    if cov is None:
+        return f'<span class="numero">{brl}</span> por ano<br><span class="numero-2">cobertura da carteira não disponível</span>'
+    cov_txt = v(view, f"{b}.{coverage_key}")
+    if cov < KNOWN_COST_MIN_COVERAGE_PCT:
+        return (f'<span class="numero-2">custo conhecido só para {cov_txt} da carteira</span>'
+                f'<br><span class="v">{brl}</span> por ano')
+    return f'<span class="numero">{brl}</span> por ano<br><span class="numero-2">cobre {cov_txt} da carteira</span>'
+
+
 def _fee_pair_html(view: dict) -> str:
     """The disclosed fixed fee and the disclosed range side by side, with the same weight, each with its own coverage
     of the fund value. The two are never added: engine-output.md defines no total of them (``fees.summary`` carries
@@ -1178,15 +1202,12 @@ def _fee_pair_html(view: dict) -> str:
     sm = (view.get("fees") or {}).get("summary") or {}
     b = "fees.summary"
     if sm.get("adm_disclosed_fixed_per_year_brl") is not None:
-        fixed = (f'<span class="numero">{v(view, f"{b}.adm_disclosed_fixed_per_year_brl")}</span> por ano'
-                 f'<br><span class="numero-2">{v(view, f"{b}.adm_disclosed_fixed_portfolio_pct")} da carteira ao ano</span>')
+        fixed = _known_cost_html(view, "adm_disclosed_fixed_per_year_brl", "coverage_fixed_portfolio_pct")
     else:
         fixed = '<span class="numero-2">nenhum fundo com taxa fixa divulgada</span>'
     if sm.get("adm_disclosed_range_low_per_year_brl") is not None:
-        rng = (f'<span class="numero">{v(view, f"{b}.adm_disclosed_range_low_per_year_brl")} a '
-               f'{v(view, f"{b}.adm_disclosed_range_high_per_year_brl")}</span> por ano'
-               f'<br><span class="numero-2">{v(view, f"{b}.adm_disclosed_range_low_portfolio_pct")} a '
-               f'{v(view, f"{b}.adm_disclosed_range_high_portfolio_pct")} da carteira ao ano</span>')
+        rng = _known_cost_html(view, "adm_disclosed_range_low_per_year_brl", "coverage_range_portfolio_pct",
+                               "adm_disclosed_range_high_per_year_brl")
     else:
         rng = '<span class="numero-2">nenhum fundo com faixa divulgada</span>'
     fixed += ("<br><span class=cit>taxa de administração fixa divulgada, somada nos fundos com taxa fixa; "
@@ -1516,36 +1537,92 @@ def _points_to_check(view: dict) -> list[str]:
     return out[:4]
 
 
+PAGE_ONE_ATTENTION_LINES = 5  # #765: page 1 stays one page; the rest of the rows are in "O que pede atenção"
+# A risk row a fixed page-1 point already states (FGC above the limit, a restated report, strong movement) is not
+# repeated; the movement row's level is the table-only one (Revisor rule 5), so it never reaches page 1.
+_ROWS_COVERED_BY_POINTS = {"fgc_acima_limite": 0, "reapresentacoes": 1}
+
+
+def _attention_lines(view: dict, point_kinds: set[int] | None = None) -> list[str]:
+    """Page 1, item 3 (#765): one line per risk row evaluated at atenção, then at moderado, in table order within each,
+    with its value, subject and level word; fixed text, every figure a path. The row's explanation and limits stay in
+    the table. ``point_kinds``: the kinds of fixed point already on the page (see ``_ROWS_COVERED_BY_POINTS``)."""
+    out = []
+    rows = list(enumerate((view.get("risks") or {}).get("rows") or []))
+    rows = [x for sev in ("atencao", "moderado") for x in rows if x[1].get("severity") == sev]
+    for i, r in rows:
+        if r.get("status") != "avaliado" or r.get("id") == "movimento_anormal" or r.get("text_allowed") is False:
+            continue
+        if _ROWS_COVERED_BY_POINTS.get(r.get("id"), -1) in (point_kinds or set()):
+            continue
+        q = f"risks.rows[{i}]"
+        unit = r.get("unit")
+        value = v(view, f"{q}.value_{unit}") if r.get(f"value_{unit}") is not None else ""
+        subject = f" · {v(view, f'{q}.subject')}" if r.get("subject") else ""
+        out.append(f'<li><strong>{v(view, f"{q}.risk")}</strong>: {value}{subject} · '
+                   f'<span class="sev {SEVERITY_CLASS.get(r.get("severity"), "")}"></span>{v(view, f"{q}.severity_label")}</li>')
+    return out
+
+
+def _not_assessed_sentence(view: dict) -> str:
+    """Page 1, item 4 (#765): one sentence, each unidentified group with its own share of the portfolio (the gap's
+    ``weight_pct``, never summed here) and the share whose return was evaluated."""
+    parts = []
+    for i, g in enumerate(view.get("gaps") or []):
+        if g.get("weight_pct") is not None:
+            parts.append(f"{v(view, f'gaps[{i}].text')} ({v(view, f'gaps[{i}].weight_pct')} da carteira)")
+    ret = view.get("returns") or {}
+    cov = next((i for i, c in enumerate(ret.get("coverage") or []) if c.get("id") == "12m"), None)
+    if cov is not None and ret.get("n_not_evaluated"):
+        parts.append(f"retorno de {v(view, 'returns.n_not_evaluated')} de {v(view, 'returns.n_lines')} posições "
+                     f"(avaliado só para {v(view, f'returns.coverage[{cov}].coverage_portfolio_value_pct')} da carteira)")
+    if not parts:
+        return "Nenhuma posição ficou de fora das telas principais. Dados ausentes não são zero."
+    return " · ".join(parts) + ". Dados ausentes não são zero."
+
+
 def _resumo(engine: dict, narrative: Narrative, toc: list[tuple[str, str]]) -> str:
-    """Page 1: who and when, what to check, what it costs and how much of the portfolio that covers, what was not
-    assessed, and a contents list. Every figure is the engine's, printed through ``v``; nothing is aggregated here."""
+    """Page 1 in the reader's order (#765, report-structure-for-cio.md): (1) what it costs, with the share of the
+    portfolio that cost covers; (2) how much of the CDI it delivered, with the coverage; (3) what needs attention, one
+    line each; (4) what was not assessed, one sentence with the share of the value. Everything else is in the body or
+    the annex. Fixed text only: the Redator types nothing on this page. Every figure is the engine's, through ``v``."""
     out = ['<section class="brief" id="resumo"><h2>Resumo para a reunião</h2>']
     constraints = ("restrições do cliente não informadas" if not ((engine.get("client_fit") or {}).get("declared"))
                    else "restrições do cliente declaradas na seção própria")
     out.append(f"<p>Carteira de {v(engine, 'portfolio.total_brl')} · {v(engine, 'portfolio.n_lines')} posições · "
                f"{v(engine, 'portfolio.n_identified')} identificadas · {constraints}</p>")
-    out.append("<h3>Pontos a conferir com o cliente</h3>")
-    pts = _points_to_check(engine)
-    out.append("<ul>" + "".join(pts) + "</ul>" if pts else
-               "<p>As telas que rodaram não apontaram ponto a conferir. O que não foi possível avaliar está abaixo.</p>")
-    out.append(_findings_html(engine, replace(narrative, kept=[f for f in narrative.kept if f.section == "resumo"][:3]), "resumo"))
+    # (1) Quanto custa
     fees = (engine.get("fees") or {}).get("summary") or {}
     if (fees.get("adm_disclosed_fixed_per_year_brl") is not None
             or fees.get("adm_disclosed_range_low_per_year_brl") is not None):
-        tail = (f"{v(engine, 'fees.summary.coverage_without_fee_fund_value_pct')} do valor em fundos não têm taxa utilizável. "
-                if fees.get("coverage_without_fee_fund_value_pct") is not None else "")
-        out.append(f"<h3>Custo</h3>{_fee_pair_html(engine)}<p>Só a taxa de administração divulgada. {tail}"
-                   "Não é o custo total.</p>")
+        out.append(f"<h3>Quanto custa</h3>{_fee_pair_html(engine)}<p class=cit>Só a taxa de administração divulgada; "
+                   "fora dela: taxa de ETF do site, spread do crédito direto e taxa de performance. Não é o custo total. "
+                   '<a href="#s-quanto-a-carteira-paga-em-taxas">Detalhe</a>.</p>')
     else:
-        out.append("<h3>Custo</h3><p>Não avaliado: nenhuma taxa de administração divulgada, fixa ou em faixa, para mostrar.</p>")
+        out.append("<h3>Quanto custa</h3><p>Não avaliado: nenhuma taxa de administração divulgada, fixa ou em faixa, para mostrar.</p>")
+    # (2) Quanto do CDI entrega
     ret = engine.get("returns") or {}
-    parts = []
-    if (engine.get("portfolio") or {}).get("n_unknown"):
-        parts.append(f"{v(engine, 'portfolio.n_unknown')} posições não identificadas")
-    if ret.get("n_not_evaluated"):
-        parts.append(f"retorno de {v(engine, 'returns.n_not_evaluated')} de {v(engine, 'returns.n_lines')} posições")
-    out.append("<h3>Não avaliado</h3><p>" + ("; ".join(parts) if parts else "Nenhuma posição ficou de fora das telas principais")
-               + '. Dados ausentes não são zero. Detalhes na seção <a href="#s-o-que-nao-foi-possivel-avaliar">O que não foi possível avaliar</a>.</p>')
+    cov = next((i for i, c in enumerate(ret.get("coverage") or []) if c.get("id") == "12m"), None)
+    if cov is not None:
+        out.append(f"<h3>Retorno contra o CDI</h3><p>Retorno de 12 meses avaliado para "
+                   f"{v(engine, f'returns.coverage[{cov}].n_evaluated')} de {v(engine, 'returns.n_lines')} posições, "
+                   f"{v(engine, f'returns.coverage[{cov}].coverage_portfolio_value_pct')} da carteira. "
+                   '<a href="#s-retorno-passado-contra-o-cdi">Resultado por posição</a>.</p>')
+    # (3) O que exige ação: fixed points first (FGC, restatement, strong movement), then the risk rows
+    points = _points_to_check(engine)
+    kinds = {k for k, word in enumerate(("limite do FGC", "Informe reapresentado")) if any(word in x for x in points)}
+    pts = points + _attention_lines(engine, kinds)
+    out.append("<h3>O que pede atenção</h3>")
+    if pts:
+        more = len(pts) - PAGE_ONE_ATTENTION_LINES
+        out.append("<ul>" + "".join(pts[:PAGE_ONE_ATTENTION_LINES]) + "</ul>")
+        if more > 0:
+            out.append(f'<p class=cit>Mais {more} na seção <a href="#s-o-que-pede-atencao">O que pede atenção</a>.</p>')
+    else:
+        out.append("<p>Nenhuma linha da tabela de riscos ficou em atenção ou moderado, e nenhum ponto fixo a conferir.</p>")
+    # (4) O que não foi avaliado
+    out.append("<h3>Não avaliado</h3><p>" + _not_assessed_sentence(engine)
+               + ' <a href="#s-o-que-nao-foi-possivel-avaliar">Detalhes</a>.</p>')
     out.append('<h3>Nesta análise</h3><p class="toc">' + " · ".join(f'<a href="#{sid}">{e(t)}</a>' for sid, t in toc) + "</p>")
     out.append('<p class="cit">Não é recomendação de investimento. <a href="#aviso">Aviso ao final do relatório.</a></p></section>')
     return "".join(out)
@@ -1616,6 +1693,9 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
         section("O que não foi possível avaliar", _unknowns_section(engine, narrative)),
     ]
     annex = [
+        # #765: the Redator's summary findings left page 1, which is fixed text only
+        *([section("Resumo escrito pelo redator", f("resumo"), listed=False)]
+          if narrative.status == "complete" and any(x.section == "resumo" for x in narrative.kept) else []),
         section("Como cada posição foi identificada", _ident_section(engine) + f("identificacao"), listed=False),
         *([section("Crédito direto no registro da CVM", _credit_section(engine), listed=False)]
           if (engine.get("credit") or {}).get("lines") else []),
