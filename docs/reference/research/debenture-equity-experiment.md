@@ -690,3 +690,10 @@ be replaced; verification never searches alternative revision paths. This is
 scope-local exclusivity, not proof of globally earliest source history. The root
 pin must be accepted before outcomes, and fitting must bind the same input hashes.
 Late/missing/revision sensitivity and actual frozen predictions remain open.
+
+The local [model preparation](../../../research_examples/debenture_equity/fitting.py)
+now uses canonical development originals available at the fixed first-test cutoff,
+with separate training/validation availability and exit purges. Model parameters,
+scaling and exact data lineage are retained. Offline preparation does not prove
+timely prediction publication or later-signal reuse; those integrations, power,
+sector robustness, inventory completeness and independent acceptance remain open.

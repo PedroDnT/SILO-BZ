@@ -119,8 +119,8 @@ Frozen features retain equity ISIN/revision and class selection; future label
 vintages cannot recompute those inputs, alpha or beta. Labels use coherent
 endpoints, retain their separate equity revision and reject a changed ISIN. The
 retrospective composition reproduces the prior 935-row result. This is the
-evaluator foundation only: archive/source/calendar/label-availability integration
-and the independent financial convention gates remain incomplete. The existing
+financial calculation foundation only; the scoped archive/fitting layers below
+add checks without clearing independent source/convention acceptance. The existing
 IBOV response has no revision identifier; its retained response/partition evidence
 must establish the label benchmark vintage rather than an assumed revision field.
 
@@ -131,8 +131,8 @@ the first post-exit cash session before 10:00 Brasília; price dates alone canno
 establish availability. Actual publication time controls eligibility at the
 requested fit cutoff. Output retains input/label/response hashes and the separate
 equity revision. This replay alone does not select the first version; the scoped
-selector below handles that boundary. Late/revision sensitivity,
-availability-aware fitting and frozen predictions remain unimplemented. The
+selector below handles that boundary. Late/revision sensitivity and timely
+frozen prediction publication/reuse remain unimplemented. The
 independent source/convention gates remain.
 
 `originals.py` now supplies exclusive original selection inside an externally
@@ -142,8 +142,18 @@ including reserved partial/invalid slots; preflight failure before mkdir does
 not reserve one. Only canonical slots are loaded, with the exact input binding,
 verified context and actual availability. This proves exclusivity within that
 scope, not global absence of earlier archives. Prediction-bound input selection,
-late/missing-label reporting, separately frozen revision sensitivity and
-availability-aware fitting remain required, alongside independent acceptance.
+late/missing-label reporting, separately frozen revision sensitivity and accepted
+availability-aware fitting/prediction publication remain required.
+
+The local `fitting.py` now prepares a first-test model candidate from canonical
+development originals. The first test is fixed by the 90/50 calendar ordinal;
+only available development labels enter train/validation tuning and final refit,
+with exit and actual-availability purges. Models retain their penalties, scaling,
+coefficients and separate training/validation/final-fit lineage. Missing/omitted
+originals are reported and existing invalid slots fail. Offline preparation is
+not timely publication: model/prediction sealing, later-signal reuse without test
+refitting, complete development inventory, power, sector robustness and independent
+acceptance remain. This does not activate the test or certify PIT.
 
 ## Development power assessment
 
@@ -203,7 +213,7 @@ storage allowance and production retention policy.
 | Original issuer mapping | 26 cited original issuers, exact full CNPJ/ISIN, FCA equity candidates and source aliases | Dated changes and at least 21 eligible untouched-test issuers after attrition |
 | Retrospective experiment | Offline runner, purges, fixed floors, sector/delay/placebo/dominance methods; 935 overlapping rows | Current test/sector coverage fails; no predictive conclusion |
 | Longer protocol | Version 2 candidate and explicit date ceilings | Owner acceptance, real session calendar and development power gate before activation |
-| Prospective PIT | Local retention, frozen-input/outcome replay and canonical original slots within an externally pinned scope | Accepted pre-outcome root pin, availability-aware fitting/frozen predictions, late/missing/revision handling, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
+| Prospective PIT | Local retention, frozen-input/outcome replay, canonical original slots and availability-aware first-test fitting preparation | Accepted pre-outcome root pin/inventory, timely frozen prediction publication/reuse, late/missing/revision handling, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
 | Adjusted returns/benchmark | Existing total-return exports with coherent revision checks | Independent convention/event acceptance and frozen prospective vintages |
 | Power | Predeclared development grid, dependence and failure rules | Implemented/calibrated assessment on sufficient development-only OOS losses |
 | Confirmatory result | None; every current study is inconclusive | Adequate untouched history, frozen scoring and all inference/robustness gates |

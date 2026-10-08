@@ -566,6 +566,10 @@ Canonical original slots now refuse replacement within an externally pinned
 first-input scope and do not search alternative archives. Pre-outcome acceptance
 of that pin, prediction-bound inputs, late/missing/revision handling and
 availability-aware fitting remain required.
+First-test fitting preparation now uses canonical available development labels,
+fixed 90/50 calendar cuts, purged train/validation tuning and final-refit lineage.
+It is offline preparation, not proof of publication before entry; inventory
+acceptance, frozen prediction publication/reuse, power and financial/PIT gates remain.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer

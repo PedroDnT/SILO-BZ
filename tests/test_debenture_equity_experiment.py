@@ -1047,3 +1047,156 @@ def test_recovery_slices_preserve_calendar_edges_and_weekends():
     assert [(w['start'], w['end']) for w in result['windows']] == [
         ('2026-09-24', '2026-09-27'), ('2026-09-28', '2026-09-28'),
         ('2026-09-29', '2026-09-30')]
+
+
+@pytest.fixture
+def available_fitting_inputs():
+    candidate = json.loads(Path('research_examples/debenture_equity/prospective_protocol.json').read_text())
+    method = candidate['method']
+    dates = pd.bdate_range('2026-01-02', '2026-09-15').strftime('%Y-%m-%d').tolist()
+    test_start, validation_start = '2026-09-07', '2026-07-01'
+    columns = method['equity_features']+method['credit_features']
+    records = []
+    for i, d in enumerate(dates):
+        if d >= test_start:
+            break
+        records.append({'cnpj': '00000000000001', 'signal_date': d, 'entry_date': dates[i+1],
+                        'exit_date': dates[i+2], 'horizon': 1, 'entry_delay_sessions': 1,
+                        'label_available_at': dates[i+3]+'T09:59:00-03:00',
+                        'original_registry_sha256': 'r'*64, 'input_manifest_sha256': str(i),
+                        'label_manifest_sha256': 'label-'+str(i), 'residual_return': float(np.sin(i)*0.01),
+                        **{c: float(np.sin(i*(k+1)*.1)) for k, c in enumerate(columns)}})
+    labels = pd.DataFrame(records)
+    features = pd.DataFrame([{'cnpj': '00000000000001', 'signal_date': test_start,
+                              **{c: .1 for c in columns}}])
+    timing = {'fit_cutoff': '2026-09-08T10:00:00-03:00', 'validation_start': validation_start,
+              'validation_cutoff': '2026-07-02T10:00:00-03:00', 'test_start': test_start}
+    return features, labels, method, timing
+
+
+def test_available_fitting_preserves_lineage_and_cannot_use_future_labels(available_fitting_inputs):
+    from research_examples.debenture_equity.fitting import fit_available_pair
+    features, labels, method, timing = available_fitting_inputs
+    result, reason = fit_available_pair(features, labels, method, **timing)
+    assert reason is None and result['train_dates'] >= 30 and result['validation_dates'] >= 10
+    assert set(result['models']) == {'equity_only', 'equity_plus_credit'}
+    assert all(r['signal_date'] < timing['validation_start'] for r in result['training_lineage'])
+    assert all(timestamp(r['label_available_at']) <= timestamp(timing['fit_cutoff'])
+               for r in result['final_fit_lineage'])
+    # A future-unavailable development target cannot affect scaling, tuning or fitting.
+    late = labels.iloc[[0]].copy()
+    late['signal_date'] = '2026-01-01'
+    late['label_available_at'] = '2026-09-09T09:59:00-03:00'
+    late['residual_return'] = np.nan
+    late[method['credit_features']] = 1e100
+    changed, _ = fit_available_pair(features, pd.concat([labels, late], ignore_index=True), method, **timing)
+    assert changed['models'] == result['models']
+    pd.testing.assert_frame_equal(changed['predictions'], result['predictions'])
+
+
+def test_available_fitting_rejects_test_labels_and_mixed_scope(available_fitting_inputs):
+    from research_examples.debenture_equity.fitting import fit_available_pair
+    features, labels, method, timing = available_fitting_inputs
+    wrong = labels.copy()
+    wrong.loc[0, 'signal_date'] = timing['test_start']
+    with pytest.raises(ValueError, match='Test outcomes'):
+        fit_available_pair(features, wrong, method, **timing)
+    wrong = labels.copy()
+    wrong.loc[0, 'horizon'] = 5
+    with pytest.raises(ValueError, match='mix horizons'):
+        fit_available_pair(features, wrong, method, **timing)
+    with pytest.raises(ValueError, match='future outcomes'):
+        fit_available_pair(features.assign(residual_return=0), labels, method, **timing)
+
+
+def test_available_fitting_floors_use_only_available_purged_dates(available_fitting_inputs):
+    from research_examples.debenture_equity.fitting import fit_available_pair
+    features, labels, method, timing = available_fitting_inputs
+    labels.loc[labels.signal_date >= timing['validation_start'], 'label_available_at'] = '2026-09-09T10:00:00-03:00'
+    result, reason = fit_available_pair(features, labels, method, **timing)
+    assert result is None and 'Insufficient available' in reason
+
+
+def test_fitting_integrates_real_archive_interfaces_with_test_only_short_design(
+        prospective_inputs, prospective_outcome_archives, synthetic, monkeypatch):
+    from datetime import date, datetime
+    from decimal import Decimal
+    from research_examples.debenture_equity import snapshots
+    from research_examples.debenture_equity.fitting import fit_originals
+    from research_examples.debenture_equity.originals import archive_original, _slot
+    from research_examples.debenture_equity.prospective import compute_features
+    from src.parsers import b3_credit as parser
+    prototype, candidate, day, _ = prospective_inputs
+    _, _, _, seal, _ = prospective_outcome_archives
+    bundle, _, _ = synthetic
+    dates = bundle['cash_sessions']
+    origin = dates.index(day)
+    # Small external fixture design exercises archive integration, never alters
+    # the real 90/50/100 protocol or its inference floors.
+    candidate = deepcopy(candidate)
+    candidate['calendar'].update(training_reference_sessions=4, validation_reference_sessions=4)
+    candidate['method'].update(min_train_dates=1, min_validation_dates=1)
+    publications = {}
+    monkeypatch.setattr(snapshots, '_publication_time', lambda path: publications[path.parent.name])
+    inputs, reports = [], []
+    for i in range(9):
+        d, next_ = dates[origin+i:origin+i+2]
+        seen, now = next_+'T09:05:00-03:00', next_+'T09:59:00-03:00'
+        data = deepcopy(prototype)
+        credit = data['credit_full_capture_and_audit_census']
+        capture = credit['captures'][0]
+        capture.update(capture_id='short-test-'+str(i), observed_at=seen, requested_from=d, requested_to=d,
+                       expected_dates=[d], delivered_dates=[d])
+        capture['raw_csv'] = capture['raw_csv'].replace('01/07/2026', date.fromisoformat(d).strftime('%d/%m/%Y'))
+        import hashlib
+        capture['payload_sha256'] = hashlib.sha256(capture['raw_csv'].encode()).hexdigest()
+        parsed = parser.parse(capture['raw_csv'], date.fromisoformat(d), date.fromisoformat(d))
+        credit['credit'] = json.loads(json.dumps(parser.facts(parsed, capture['capture_id']),
+                            default=lambda x: float(x) if isinstance(x, Decimal) else str(x)))
+        credit['credit_census'][0]['capture_id'] = capture['capture_id']
+        credit['audits'][0].update(capture_id=capture['capture_id'], finished_at=seen)
+        data['verified_cash_calendar'].update(sessions=[x for x in dates if x <= next_], observed_at=seen)
+        data['equity_quote_responses_and_adjustment_revision'].update(
+            equities=[{**r, 'data_revision': seen} for r in bundle['equities'] if r['trade_date'] <= d], exported_at=seen)
+        data['ibov_response_and_conventions'].update(
+            benchmark=[r for r in bundle['benchmark'] if r['trade_date'] <= d], exported_at=seen)
+        data['dated_sector_input']['sectors'][0].update(reference_date=d, fetched_at=seen)
+        features, _ = compute_features(data, candidate, d, next_+'T10:00:00-03:00')
+        data['frozen_model_and_feature_manifest'] = {'protocol': candidate, 'features': features.to_dict('records')}
+        request = {'signal_date': d, 'cutoff_at': next_+'T10:00:00-03:00',
+                   'protocol_sha256': fingerprint(candidate),
+                   'links_sha256': fingerprint(data['complete_relevant_fca_vintages_and_identity_evidence']['links'])}
+        name = 'short-input-'+str(i)
+        publications[name] = datetime.fromisoformat(now)
+        path, report = seal(name, data, request, now)
+        inputs.append(path)
+        reports.append(report)
+    root, pin = inputs[0], reports[0]['manifest_sha256']
+    for i in range(6):
+        d, exit_, next_ = dates[origin+i], dates[origin+i+2], dates[origin+i+3]
+        seen, now = next_+'T09:05:00-03:00', next_+'T09:59:00-03:00'
+        data = {'verified_cash_calendar': {'sessions': [x for x in dates if x <= next_],
+                    'observed_at': seen, 'source_url': 'https://example.invalid/test-only-calendar'},
+                'realized_return_response': {'equities': [{**r, 'data_revision': seen} for r in bundle['equities']
+                                                           if d <= r['trade_date'] <= exit_],
+                    'benchmark': [r for r in bundle['benchmark'] if d <= r['trade_date'] <= exit_],
+                    'return_basis': 'total_return', 'benchmark_code': 'IBOV', 'exported_at': seen},
+                'frozen_feature_reference': {'input_manifest_sha256': reports[i]['manifest_sha256']}}
+        item, _, _ = snapshots.read_archive(inputs[i])
+        request = {k: item[k] for k in ('signal_date', 'protocol_sha256', 'links_sha256')}
+        request.update(kind='outcome', cutoff_at=next_+'T10:00:00-03:00',
+                       outcome={'horizon': 1, 'entry_delay_sessions': 1, 'input_manifest_sha256': reports[i]['manifest_sha256']})
+        name = 'short-label-source-'+str(i)
+        publications[name] = datetime.fromisoformat(now)
+        source, _ = seal(name, data, request, now)
+        saved, _, _ = snapshots.read_archive(source)
+        request['components'] = {k: {**v, 'path': str(source/v['file'])} for k, v in saved['components'].items()}
+        publications[_slot(root, d, 1, 1).name] = datetime.fromisoformat(now)
+        archive_original(root, inputs[i], request, registry_sha256=pin, candidate=candidate)
+    result, report = fit_originals(root, inputs[8], inputs[:8], registry_sha256=pin,
+                                   horizon=1, delay=1, candidate=candidate)
+    assert report['reason'] is None and report['exclusions'] == {'missing_original_slot': 2}
+    assert result['train_dates'] == 2 and result['validation_dates'] == 2 and result['fit_dates'] == 6
+    assert len(result['predictions']) == 1 and report['strict_pit_certified'] is False
+    with pytest.raises(ValueError, match='fixed first test signal'):
+        fit_originals(root, inputs[7], inputs[:7], registry_sha256=pin, horizon=1, delay=1, candidate=candidate)

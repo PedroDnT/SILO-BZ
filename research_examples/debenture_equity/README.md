@@ -331,3 +331,44 @@ it must not select alternative feature archives after observing outcomes. Late
 outcomes, missing-label reports and separately frozen revision sensitivity are
 still pending. No collector, production retention policy, model acceptance,
 financial convention acceptance or strict-PIT certification is supplied.
+
+## Availability-aware first-test model preparation
+
+`fitting.fit_originals(registry_path, prediction_input, development_inputs,
+registry_sha256=..., horizon=..., delay=..., candidate=None)` prepares the two
+ridge models and first-test feature predictions from verified archives. It has
+no fetch, database access, publication or activation side effect. The external
+candidate defaults through input replay to `prospective_protocol.json`.
+
+The first test signal is fixed at the registry calendar's first signal plus
+90 training and 50 validation reference sessions. The prediction archive must
+establish that signal and its next-session cutoff. Its calendar must preserve
+the root's frozen prefix. The bounded development inventory accepts at most
+140 unique earlier signal inputs with the same protocol/link scope. Missing
+and omitted original slots are counted; invalid reserved originals fail rather
+than being replaced. Original publication after the fit cutoff is excluded
+before decoding its outcome through replay. No test outcome is requested.
+
+For tuning, training outcomes must exit before the first validation signal and
+be available by its next-session 10:00 cutoff. Validation outcomes must exit
+before the fixed first test signal and be available at the fit cutoff. Both
+original date floors remain, measured after purging. Each ridge penalty is
+chosen on validation using training-only centering/scaling. The final model
+refits on eligible development labels available at the first test cutoff, with
+exit strictly before the first test signal. Predictions use the frozen current
+feature vector; future test targets cannot enter tuning, fitting or scaling.
+
+Output retains feature names, ridge penalties, centers, scales and coefficients,
+the prediction input/registry hashes, and separate training, validation and final
+fit lineage with exact input/label hashes and actual label availability. This
+initialization accepts only the **first test signal**; it supplies no silently
+expanding test-label refit. The separate arithmetic `fit_available_pair` boundary
+also rejects test labels, duplicate issuer/dates and mixed horizons/delays/scopes.
+
+The offline candidate can be prepared after the recorded cutoff. That does not
+prove a timely forecast: atomic model/prediction publication before entry,
+prediction-bound input reuse on later signals, accepted development inventory
+completeness, sector robustness, power and independent source/financial/PIT gates
+remain required. Tests use a clearly separate short synthetic design for archive
+integration; the real 90/50/100 design and inference floors are unchanged. There
+is no new empirical result or production authorization.
