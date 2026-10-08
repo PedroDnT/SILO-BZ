@@ -1551,4 +1551,68 @@ BEGIN
 END $$;
 
 
+
+-- api.portfolio_credit_curve (v71, #766): the securitizer's curve month by month, with a flag on every unknown month.
+-- ZZCURVA1: four clean months (pu 1000 -> 1010 -> 1020.1, then a coupon of 30 with the pu back to 1000);
+-- ZZCURVA2: quantity changes in month 2, month 3 missing, so month 4 has no previous pu;
+-- ZZCURVA3: a payment above the pu (per-unit value next to totals); ZZCURVA4: two series in one month.
+INSERT INTO cvm_securit_serie
+    (instrument_type, codigo_identificacao, data_referencia, classe, numero_serie, codigo_cetip,
+     quantidade_certificados, valor_certificados, rendimentos, amortizacoes, taxa_juros, versao, occurrence)
+VALUES
+    ('cra_mensal', 'ZZC1', '2026-01-01', 'Sênior', 1, 'ZZCURVA1', 100, 100000, 0, 0, '110% CDI', 1, 1),
+    ('cra_mensal', 'ZZC1', '2026-02-01', 'Sênior', 1, 'ZZCURVA1', 100, 101000, 0, 0, '110% CDI', 1, 1),
+    ('cra_mensal', 'ZZC1', '2026-03-01', 'Sênior', 1, 'ZZCURVA1', 100, 102010, 0, 0, '110% CDI', 1, 1),
+    ('cra_mensal', 'ZZC1', '2026-04-01', 'Sênior', 1, 'ZZCURVA1', 100, 100000, 3030.10, 0, '110% CDI', 1, 1),
+    ('cri_mensal', 'ZZC2', '2026-01-01', 'Sênior', 1, 'ZZCURVA2', 100, 100000, 0, 0, 'IPCA + 6%', 1, 1),
+    ('cri_mensal', 'ZZC2', '2026-02-01', 'Sênior', 1, 'ZZCURVA2', 90, 91000, 0, 0, 'IPCA + 6%', 1, 1),
+    ('cri_mensal', 'ZZC2', '2026-04-01', 'Sênior', 1, 'ZZCURVA2', 90, 90000, 0, 0, 'IPCA + 6%', 1, 1),
+    ('cra_mensal', 'ZZC3', '2026-01-01', 'Sênior', 1, 'ZZCURVA3', 380000, 1005, 0, 0, '15% a.a.', 1, 1),
+    ('cra_mensal', 'ZZC3', '2026-02-01', 'Sênior', 1, 'ZZCURVA3', 380000, 1006, 5000000, 0, '15% a.a.', 1, 1),
+    ('cra_mensal', 'ZZC4', '2026-01-01', 'Sênior', 1, 'ZZCURVA4', 100, 100000, 0, 0, 'CDI + 2%', 1, 1),
+    ('cra_mensal', 'ZZC4', '2026-02-01', 'Sênior', 1, 'ZZCURVA4', 100, 101000, 0, 0, 'CDI + 2%', 1, 1),
+    ('cra_mensal', 'ZZC4', '2026-02-01', 'Subordinada', 2, 'ZZCURVA4', 10, 11000, 0, 0, 'CDI + 5%', 1, 1);
+
+DO $$
+DECLARE r RECORD; n INT;
+BEGIN
+    SELECT count(*) INTO n FROM api.portfolio_credit_curve(ARRAY['CRA-ZZCURVA1', 'ZZCURVA2', 'ZZCURVA3', 'ZZCURVA4'],
+                                                          DATE '2026-01-15', DATE '2026-04-30');
+    IF n <> 16 THEN RAISE EXCEPTION 'credit_curve: expected one row per code and month (16), got %', n; END IF;
+    SELECT * INTO r FROM api.portfolio_credit_curve(ARRAY['CRA-ZZCURVA1'], DATE '2026-01-01', DATE '2026-04-01') WHERE month = DATE '2026-01-01';
+    IF r.code <> 'ZZCURVA1' OR r.factor IS NOT NULL OR r.month_flag IS NOT NULL OR r.pu <> 1000 THEN
+        RAISE EXCEPTION 'credit_curve: the base month has a pu and no factor (%, %, %)', r.code, r.factor, r.month_flag;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_credit_curve(ARRAY['ZZCURVA1'], DATE '2026-01-01', DATE '2026-04-01') WHERE month = DATE '2026-04-01';
+    IF r.month_flag IS NOT NULL OR r.factor <> 1.0100000000 OR r.paid_per_unit <> 30.3010 THEN
+        RAISE EXCEPTION 'credit_curve: a coupon month is (pu + paid) / previous pu (%, %)', r.factor, r.month_flag;
+    END IF;
+    SELECT string_agg(coalesce(month_flag, '-'), ',' ORDER BY month) INTO STRICT r FROM api.portfolio_credit_curve(ARRAY['ZZCURVA2'], DATE '2026-01-01', DATE '2026-04-01');
+    IF r.string_agg <> '-,quantidade_mudou,mes_ausente,mes_anterior_desconhecido' THEN
+        RAISE EXCEPTION 'credit_curve: quantity change and missing month flags wrong: %', r.string_agg;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_credit_curve(ARRAY['ZZCURVA3'], DATE '2026-01-01', DATE '2026-02-01') WHERE month = DATE '2026-02-01';
+    IF r.month_flag <> 'pagamento_maior_que_pu' OR r.factor IS NOT NULL THEN
+        RAISE EXCEPTION 'credit_curve: a payment above the pu must be unknown, got %', r.month_flag;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_credit_curve(ARRAY['ZZCURVA4'], DATE '2026-01-01', DATE '2026-02-01') WHERE month = DATE '2026-02-01';
+    IF r.month_flag <> 'mais_de_uma_serie' OR r.n_series <> 2 OR r.pu IS NOT NULL THEN
+        RAISE EXCEPTION 'credit_curve: two series in a month must not be picked, got %', r.month_flag;
+    END IF;
+    BEGIN
+        PERFORM * FROM api.portfolio_credit_curve(ARRAY(SELECT 'ZZ' || g FROM generate_series(1, 41) g), DATE '2026-01-01', DATE '2026-02-01');
+        RAISE EXCEPTION 'credit_curve accepted 41 codes';
+    EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+    BEGIN
+        PERFORM * FROM api.portfolio_credit_curve(ARRAY['ZZCURVA1'], DATE '2024-01-01', DATE '2026-02-01');
+        RAISE EXCEPTION 'credit_curve accepted 26 months';
+    EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+    SET LOCAL ROLE anon;
+    SELECT count(*) INTO n FROM api.portfolio_credit_curve(ARRAY['ZZCURVA1'], DATE '2026-01-01', DATE '2026-04-01');
+    IF n <> 4 THEN RAISE EXCEPTION 'anon cannot read the credit curve'; END IF;
+    RESET ROLE;
+    RAISE NOTICE 'portfolio_credit_curve behavior OK';
+END $$;
+
+
 ROLLBACK;
