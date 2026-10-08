@@ -30,7 +30,7 @@ def compute_restatements(
     if not targets:
         sec.status = STATUS_NOT_APPLICABLE
         sec.reason = "Nenhuma posição FIDC ou FII identificada."
-        return {**sec.head(), "lines": [], "assessment": "thresholds parked by the owner"}
+        return {**sec.head(), "lines": [], "assessment": "Limiares de materialidade estacionados pelo dono: nenhum julgamento."}
 
     p_from = add_months(pos_date.replace(day=1), -months).isoformat()
     p_to = pos_date.isoformat()
