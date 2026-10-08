@@ -1,0 +1,22 @@
+--- a/.github/workflows/daily_ingest.yml
++++ b/.github/workflows/daily_ingest.yml
+@@ -327,6 +327,8 @@
+       - name: Refresh B3 corporate events and cash dividends
+         if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+         timeout-minutes: 75
++        env:
++          B3_CREDIT_ENABLED: ${{ vars.B3_CREDIT_ENABLED }}
+         run: python -m src.pipeline.run_b3_events
+ 
+       # The FNET document register (fnet_document / fnet_document_filter) runs
+--- a/.github/workflows/watchdog.yml
++++ b/.github/workflows/watchdog.yml
+@@ -122,6 +122,8 @@
+       - name: Refresh B3 corporate events and cash dividends (recovery)
+         if: ${{ !cancelled() && (steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true') }}
+         timeout-minutes: 75
++        env:
++          B3_CREDIT_ENABLED: ${{ vars.B3_CREDIT_ENABLED }}
+         run: python -m src.pipeline.run_b3_events
+ 
+       - name: Report no-op

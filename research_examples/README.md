@@ -48,3 +48,9 @@ the separate live API preflight passes for the required research RPCs.
 `research_examples/baseline-results.json` preserves the graded baseline;
 future latest-result updates do not change that evidence. The spend ledger
 must exist, reconcile with its entries, and stay within the US$20 total cap.
+
+## Debenture/equity readiness
+
+[Bounded existing-data audit](debenture_equity/README.md): render a single-capture
+read-only SELECT for Supabase MCP, then generate a table offline from the returned
+JSON. Commercial/legal names remain candidates; this does not run a backtest.
