@@ -111,6 +111,7 @@ def nested_losses(features, labels, calendar, protocol, *, development_start, ho
     frame = pd.concat(losses, ignore_index=True) if losses else pd.DataFrame()
     return frame, {'protocol_sha256': fingerprint(protocol), 'development_start': development_start,
                    'untouched_test_start': calendar[boundary], 'development_cutoff': cutoff,
+                   'oos_reference_sessions': calendar[first:boundary-g],
                    'horizon': horizon, 'entry_delay_sessions': delay,
                    'validation_rule': 'rolling_minimum_reference_window_before_oos_exit_purge',
                    'folds': folds, 'oos_dates': int(frame.signal_date.nunique()) if not frame.empty else 0,

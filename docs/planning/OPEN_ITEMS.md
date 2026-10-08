@@ -586,6 +586,12 @@ binding and sparse OOS loss/parameter lineage. It loads no test labels and makes
 no timely-publication or power claim. Fold-rule acceptance, qualifying real
 prospective observations, sector/issuer robustness, null/block calibration and
 MC uncertainty remain; no test activation or production authority is added.
+Conditional crossed-issuer/non-circular calendar-block simulation now preserves
+the full OOS session axis and missing activity, reports null/gain-grid rejection
+frequencies with MC intervals and counts empty/incomplete draws. It is numerical
+preparation, not independent training/activity or hybrid-inference calibration.
+No qualifying prospective history or sector/dominance/delay acceptance is supplied,
+and all reports retain not-estimable/no-MDE/no-activation/PIT-false status.
 
 The approved three-month recovery and its storage checks are complete. Open
 acceptance, in order: broader documentary dated identity evidence (#660); a longer

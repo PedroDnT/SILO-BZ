@@ -1442,3 +1442,140 @@ def test_nested_canonical_archives_produce_realized_development_losses(fitted_ar
     assert (losses.exit_date < report['untouched_test_start']).all()
     assert all(fold['train_dates'] >= 1 and fold['validation_dates'] == 1 for fold in report['folds'])
     assert not report['test_activation_allowed'] and report['minimum_detectable_gain'] is None
+
+
+def test_crossed_resampling_uses_calendar_blocks_and_preserves_observation_mask():
+    from research_examples.debenture_equity.sensitivity import crossed_indices, sampled_means
+    rng = np.random.default_rng(628)
+    dates, issuers = crossed_indices(9, 3, 4, 20, rng)
+    assert dates.shape == (20, 9) and issuers.shape == (20, 3)
+    assert ((dates >= 0) & (dates < 9)).all()
+    assert ((issuers >= 0) & (issuers < 3)).all()
+    for start, length in [(0, 4), (4, 4), (8, 1)]:
+        assert (np.diff(dates[:, start:start+length], axis=1) == 1).all()
+    panel = np.arange(27, dtype=float).reshape(9, 3)
+    panel[2:5] = np.nan  # Full-calendar gaps remain three absent cash sessions.
+    panel[:, 1] = np.nan
+    actual = sampled_means(panel, dates, issuers)
+    expected = []
+    for d, i in zip(dates, issuers):
+        values = panel[np.ix_(d, i)]
+        expected.append(float(np.nanmean(values)) if np.isfinite(values).any() else np.nan)
+    np.testing.assert_allclose(actual, expected, equal_nan=True)
+    assert np.isnan(sampled_means(panel, np.array([[2, 3, 4]]), np.array([[1, 1, 1]]))[0])
+
+
+@pytest.fixture
+def conditional_loss_inputs():
+    p = json.loads(Path('research_examples/debenture_equity/prospective_protocol_v3.json').read_text())
+    # Small Monte Carlo fixture only. Real protocol files/floors are unchanged.
+    p['power_design'].update(outer_repetitions=50, minimum_development_oos_dates=10,
+                            minimum_development_oos_issuers=3, block_sessions_grid=[3, 5])
+    p['method']['bootstrap_repetitions'] = 99
+    days = pd.bdate_range('2026-01-02', periods=20).strftime('%Y-%m-%d').tolist()
+    rows = []
+    for d, day in enumerate(days[:15]):
+        if d == 6:  # Deliberately missing an entire session.
+            continue
+        for i in range(4):
+            if (d+i) % 5 == 0:
+                continue
+            gain = float(.05*np.sin(d*.6)+.02*np.cos(i*.5))
+            rows.append({'cnpj': str(i+1).zfill(14), 'signal_date': day,
+                         'exit_date': days[d+2], 'label_available_at': days[d+3]+'T09:59:00-03:00',
+                         'horizon': 1, 'entry_delay_sessions': 1, 'original_registry_sha256': 'root',
+                         'loss_equity_only': 1., 'loss_equity_plus_credit': 1.-gain, 'loss_gain': gain})
+    report = {'protocol_sha256': fingerprint(p), 'horizon': 1, 'entry_delay_sessions': 1,
+              'original_registry_sha256': 'root', 'oos_reference_sessions': days[:15],
+              'untouched_test_start': days[18], 'development_cutoff': days[19]+'T10:00:00-03:00'}
+    return pd.DataFrame(rows), report, p
+
+
+def test_conditional_sensitivity_reports_mc_and_no_accepted_mde(conditional_loss_inputs):
+    from research_examples.debenture_equity.sensitivity import conditional_sensitivity
+    frame, report, p = conditional_loss_inputs
+    first = conditional_sensitivity(frame, report, p)
+    assert first == conditional_sensitivity(frame, report, p)
+    assert first['observed_dates'] == 14 and first['calendar_reference_sessions'] == 15
+    assert first['missing_calendar_sessions'] == 1 and first['observed_issuers'] == 4
+    assert first['power_status'] == 'not_estimable' and first['minimum_detectable_gain'] is None
+    assert not first['test_activation_allowed'] and not first['strict_pit_certified']
+    assert len(first['block_diagnostics']) == 2
+    for block in first['block_diagnostics']:
+        assert block['outer_requested'] == 50
+        grid = block['gain_grid']
+        assert [r['relative_mse_gain'] for r in grid] == p['power_design']['relative_mse_gain_grid']
+        assert block['null_rejection_mc'] == grid[0]
+        assert [r['rejections'] for r in grid] == sorted(r['rejections'] for r in grid)
+        for row in grid:
+            assert row['trials'] <= 50
+            lo, hi = row['wilson_mc_interval_95']
+            assert 0 <= lo <= row['rejection_frequency'] <= hi <= 1
+
+
+def test_conditional_sensitivity_refuses_bad_losses_or_test_targets(conditional_loss_inputs):
+    from research_examples.debenture_equity.sensitivity import conditional_sensitivity
+    frame, report, p = conditional_loss_inputs
+    bad = frame.copy()
+    bad.loc[0, 'loss_gain'] += 1
+    with pytest.raises(ValueError, match='paired losses'):
+        conditional_sensitivity(bad, report, p)
+    bad = frame.copy()
+    bad.loc[0, 'signal_date'] = report['untouched_test_start']
+    with pytest.raises(ValueError, match='development'):
+        conditional_sensitivity(bad, report, p)
+    bad = frame.copy()
+    bad.loc[0, 'cnpj'] = '123'
+    with pytest.raises(ValueError, match='full CNPJ'):
+        conditional_sensitivity(bad, report, p)
+
+
+def test_conditional_sensitivity_stops_before_resampling_when_floors_fail(conditional_loss_inputs, monkeypatch):
+    from research_examples.debenture_equity import sensitivity
+    frame, report, p = conditional_loss_inputs
+    monkeypatch.setattr(sensitivity, 'crossed_indices', lambda *args: pytest.fail('Insufficient sample was resampled'))
+    result = sensitivity.conditional_sensitivity(frame.iloc[:2], report, p)
+    assert result['block_diagnostics'] == [] and result['power_status'] == 'not_estimable'
+    assert result['minimum_detectable_gain'] is None
+    assert 'coverage' in result['reason']
+
+
+def test_conditional_sensitivity_refuses_degenerate_or_overlong_blocks(conditional_loss_inputs):
+    from research_examples.debenture_equity.sensitivity import conditional_sensitivity
+    frame, report, p = conditional_loss_inputs
+    constant = frame.copy()
+    constant['loss_equity_plus_credit'] = constant['loss_equity_only']
+    constant['loss_gain'] = 0.
+    assert 'Degenerate' in conditional_sensitivity(constant, report, p)['reason']
+    p['power_design']['block_sessions_grid'] = [len(report['oos_reference_sessions'])]
+    report['protocol_sha256'] = fingerprint(p)
+    result = conditional_sensitivity(frame, report, p)
+    assert result['block_diagnostics'] == [] and 'Calendar too short' in result['reason']
+    assert result['minimum_detectable_gain'] is None
+
+
+def test_conditional_sensitivity_counts_empty_draws_without_redrawing(conditional_loss_inputs):
+    from research_examples.debenture_equity.sensitivity import conditional_sensitivity
+    frame, report, p = conditional_loss_inputs
+    sparse = frame.iloc[[0, -1]].copy()
+    p['power_design'].update(minimum_development_oos_dates=1, minimum_development_oos_issuers=1)
+    report['protocol_sha256'] = fingerprint(p)
+    result = conditional_sensitivity(sparse, report, p)
+    assert result['calibration_status'] == 'incomplete_conditional_simulation'
+    for block in result['block_diagnostics']:
+        assert block['outer_evaluated']+block['empty_outer']+block['outer_with_incomplete_inner'] == 50
+        assert block['empty_outer']+block['empty_inner'] > 0
+    assert result['power_status'] == 'not_estimable' and result['minimum_detectable_gain'] is None
+
+
+@pytest.mark.parametrize('fitted_archive_scenario', [{'training': 4, 'validation': 6}], indirect=True)
+def test_conditional_archive_adapter_stops_on_actual_small_coverage(fitted_archive_scenario):
+    from research_examples.debenture_equity.sensitivity import diagnostic_originals
+    root, pin, inputs, candidate, _ = fitted_archive_scenario
+    report = diagnostic_originals(root, inputs[10], inputs[:10], registry_sha256=pin,
+                                  horizon=1, delay=1, candidate=candidate)
+    assert report['observed_dates'] == 2 and report['observed_issuers'] == 1
+    assert report['original_registry_sha256'] == pin
+    assert report['archive_exclusions'] == {'missing_original_slot': 2}
+    assert report['block_diagnostics'] == [] and report['minimum_detectable_gain'] is None
+    assert not report['test_activation_allowed'] and report['power_status'] == 'not_estimable'

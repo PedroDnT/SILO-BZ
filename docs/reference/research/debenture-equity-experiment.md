@@ -729,3 +729,13 @@ checks reach the V3 best-case 74 dates with real floors; there are no qualifying
 real prospective archives. Sector/issuer robustness, calibrated null/block power,
 MC uncertainty and independent acceptance remain; reports grant no MDE,
 activation, production authority or PIT certification.
+
+The [conditional sensitivity simulator](../../../research_examples/debenture_equity/sensitivity.py)
+now consumes canonical nested development losses, keeps the full OOS cash-session
+axis including gaps, and crosses issuer draws with non-circular calendar blocks.
+Independent inner tests on outer centered-null panels report conditional null
+rejection and gain-grid Monte Carlo frequencies/intervals, with empty draws and
+short-history block geometry exposed. This is not independent calibration of
+training, source activity or the hybrid inference rule. Actual development
+observations and sector/dominance/delay robustness remain required; every report
+continues to refuse power/MDE acceptance, activation and PIT certification.

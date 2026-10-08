@@ -198,7 +198,52 @@ activity process require calibration before accepting a sample-size conclusion.
 If development coverage, null calibration or nested losses are inadequate, return
 `not_estimable` without an MDE claim or test activation. The present pilot has no
 qualifying development loss series, so no power number is reported. The grid is
-frozen preparation; an executable power assessment remains required.
+frozen preparation; independent end-to-end calibration and power acceptance remain
+required. The executable conditional simulation below is not that acceptance.
+
+### Conditional loss-test simulation
+
+`sensitivity.diagnostic_originals` calls the canonical nested development archive
+adapter, then `conditional_sensitivity`. The nested report now carries every
+reference session in the possible OOS interval, including dates with no retained
+observations. The simulation builds a date × full-CNPJ matrix whose absent cells
+stay absent. It never compresses cash-calendar gaps or fills inactivity with zero.
+Protocol/report hashes, horizon/delay/scope, available development-only labels,
+unique issuer/dates and reconciled finite paired losses are checked before use.
+Coverage floors, degenerate losses, overlong blocks and insufficient inner
+Monte Carlo p-value resolution stop simulation and leave power not estimable.
+
+For each predeclared 20/40-session block length, independently draw whole issuers
+and non-circular moving calendar blocks, truncating the final sampled block to
+the original calendar length. Center original loss gains at their observed mean.
+The 1,000 outer draws each form a resampled null panel; duplicate issuers/dates
+retain their multiplicity and missing cells remain absent. Each outer panel gets
+1,000 independent inner draws (the existing method's bootstrap count), centered
+at its observed mean. The one-sided test uses `(1+tail_count)/(inner_count+1)`
+against family alpha divided by the three horizons. The same inner distribution
+tests every frozen gain-grid shift, expressed as a fraction of the original
+baseline MSE. Block/horizon/delay-keyed seeds make each sensitivity reproducible.
+
+Report each grid point's rejection count, denominator/frequency and 95% Wilson
+Monte Carlo interval; the zero-shift row is the conditional null rejection
+diagnostic. These intervals measure simulation precision, not statistical
+uncertainty of a trading gain. Empty outer draws are counted, not redrawn. An
+outer test with any empty inner draw is counted as incomplete, never quietly
+tested with a smaller bank. Frequencies then condition on completed tests and
+the report explicitly flags incomplete simulation. Block/calendar fractions,
+available start positions and full-block counts expose short-history limitations.
+
+This hybrid is an implementation to **evaluate**, not an established finite-sample
+validity result. [Owen's crossed/unbalanced bootstrap](https://arxiv.org/abs/0712.1111)
+and [Künsch's block bootstrap for stationary observations](https://doi.org/10.1214/aos/1176347265)
+motivate the two dependence axes separately; neither validates this combination,
+the sparse financial activity process or refitted credit-signal learning. Numeric
+unit/integration checks are not independent inferential calibration. Actual
+development archives, sector/dominance/delay robustness, training/selection and
+source-activity null calibration remain required. The code always returns
+`power_status=not_estimable`, `minimum_detectable_gain=null`, no activation and no
+PIT certification, even if a hypothetical grid point has high rejection frequency.
+No protocol hash/default, production authority or hypothesis conclusion changes.
 
 ### Nested development losses
 
@@ -273,9 +318,9 @@ Parent V2 hash remains
 `83eebc6a7c3ffbd7ead97235dd73767a25535d500bdfa460cf3d33fdbe9d7555`.
 No existing root or historical output is relabeled. The checker always reports
 `power_status=not_estimable`, no MDE and no test activation. The full nested
-loss-generation implementation now exists as described above; null/block
-calibration and MC assessment still require implementation, and all need
-qualifying prospective development observations.
+loss-generation and conditional null/block MC simulation now exist as described
+above. Independent end-to-end calibration still requires implementation/evidence,
+and all need qualifying prospective development observations.
 
 The V3 storage scenario is **1,892,133,888 bytes**, using the completed
 recovery's peak increment per recovered session, before snapshots, duplicate
@@ -315,7 +360,7 @@ storage allowance and production retention policy.
 | Longer protocol | V2 preserved but structurally insufficient for nested horizon-20 power; separate unactivated V3 120/60/100 candidate and ordinal audit | Owner acceptance, real session calendar, actual attrition and calibrated development power gate before activation |
 | Prospective PIT | Local retention, input/outcome replay, canonical original slots, availability-aware first fit and deadline-bound prediction publication/reuse | Accepted pre-outcome root pin/inventory, verified exchange entry-close, late/missing/revision handling, collector integration, independent acceptance, exact canary approval, successful cutoff evidence and elapsed history |
 | Adjusted returns/benchmark | Existing total-return exports with coherent revision checks | Independent convention/event acceptance and frozen prospective vintages |
-| Power | Predeclared grid/rules, necessary date-ceiling audit and canonical-archive nested OOS loss generator; V2 fails, V3 passes only the optimistic date condition | Accepted fold rule/inventory, sufficient real development-only losses, sector/issuer robustness and calibrated assessment including MC uncertainty |
+| Power | Grid/rules, date-ceiling audit, canonical nested OOS losses and conditional crossed/block null/MC simulator; V2 fails, V3 passes only the optimistic date condition | Accepted fold/resampling rule/inventory, sufficient real losses, sector/dominance/delay robustness and independent training/activity calibration before power or MDE acceptance |
 | Confirmatory result | None; every current study is inconclusive | Adequate untouched history, frozen scoring and all inference/robustness gates |
 | Price/rate/tradability extensions | Explicitly excluded from liquidity-first claim; ADR 0004 retained | Cash-flow/event and observed-rate conventions plus execution cost/capacity evidence before any such claim |
 

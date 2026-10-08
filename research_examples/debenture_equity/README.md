@@ -472,3 +472,37 @@ Both interfaces always report `not_estimable`, no MDE, no test activation and no
 PIT certification. Real qualifying prospective inputs, sector/issuer robustness,
 calibrated null/block resampling and MC uncertainty remain required. See the
 [development design](prospective-design.md#nested-development-losses).
+
+## Conditional null/block sensitivity diagnostic
+
+```sh
+.venv/bin/python -m research_examples.debenture_equity.sensitivity \
+  --registry .context/accepted-first-input \
+  --registry-sha256 EXTERNALLY_PINNED_MANIFEST_SHA256 \
+  --boundary-input .context/first-test-input \
+  --development-input .context/development-input-1 \
+  --development-input .context/development-input-2 \
+  --horizon 5 --delay 1 \
+  --protocol research_examples/debenture_equity/prospective_protocol_v3.json
+```
+
+These are placeholders for an accepted root and the complete development input
+inventory, not existing qualifying archives. Repeat `--development-input` for the
+inventory; omissions/missing slots are counted. No data is fetched or written,
+and no test label is read. Numeric/table users can call `conditional_sensitivity`
+only with independently verified nested losses/report; raw tables alone do not
+authenticate original provenance or completeness.
+
+The full possible OOS cash-calendar interval is retained, including sessions with
+no observations. Whole-issuer draws cross non-circular 20/40-session blocks on
+that calendar. Outer centered-null panels receive independent inner centered
+bootstrap tests; all predeclared mean shifts share each inner bank. Output reports
+conditional rejection frequencies/95% Wilson MC intervals, null diagnostics,
+missing cells, block geometry and empty/incomplete draws without redrawing them.
+The real design uses 1,000 outer and 1,000 inner draws per block/horizon/delay.
+
+This is conditional simulation, not calibrated learning power. Sector/dominance/
+delay robustness, training/selection/source-activity calibration and actual
+prospective data remain required. All results keep `not_estimable`, no MDE,
+no activation and no PIT certification. A favorable hypothetical grid point
+cannot clear those gates. See the [numerical design and limits](prospective-design.md#conditional-loss-test-simulation).
