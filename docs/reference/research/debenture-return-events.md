@@ -37,15 +37,37 @@ source for the payment events.
   The terms of any portal that publishes the events, and whether the owner's ANBIMA permission
   (ADR 0004) covers it, are **not checked**.
 
+## Option A checked: the public debenture portal's events agenda (2026-10-09)
+
+The one candidate with a public page, checked by reading it (no code, no storage):
+
+- It lists financial events by date, asset, type (interest or amortization), remuneration type and a
+  rate or percentage: 94,296 rows for 1,252 assets in the market-wide page, and a per-asset page with
+  the same columns.
+- **It is forward-looking only.** The pages are generated on the day of the request and start the next
+  day (here 2026-10-10, running to 2099). Past events are not listed, and I found no historical page
+  (the two paths I tried returned 404). It cannot rebuild the 2025-08 to 2026-08 window. A daily
+  snapshot would build history from today, so the first full 12-month window would end in late 2027.
+- **It gives a percentage, not cash.** An amortization is a percentage of the nominal value; interest
+  is a spread over an index. A cash amount needs the nominal value on that day and the index
+  accumulated since the last payment, which is the cash-flow engine ADR 0004 leaves out of V1.
+- **Terms: not found.** I found no terms-of-use text on the pages read, and no `robots.txt`. That is not
+  permission. Whether the owner's ANBIMA permission (ADR 0004) covers this portal is for the owner.
+- The market-wide page is 51 MB of HTML per request: a poor fit for a daily job.
+
+So option A does not close gap 3 now. At best it flags the months with a payment, and a flagged window
+is "não avaliado" again.
+
 ## Decision for the owner
 
 | Option | Effect | Cost |
 | --- | --- | --- |
-| A. Find a source of payment events, check its terms, store it as observed data | Gap 3 becomes buildable: month-end price plus the events inside the window | A new dataset and a terms check first; the larger piece of work |
+| A. Store a source of payment events | Needs history (the one public page has none), cash amounts (it gives percentages) and a terms answer. First full window: late 2027 | A new dataset, a daily capture, and a cash-flow computation ADR 0004 leaves out |
 | B. Close gap 3 as not evaluable | The two debentures stay "não avaliado" with a reason in plain words; no work | None; 8,03% of the portfolio stays without a return |
 
-Recommendation: B for now, and move to gap 2 (the Tesouro titles, 9,07%), whose source is a single
-public price file. Revisit A only if a source whose terms allow storage turns up. A build for A would
+Recommendation: B, and move to gap 2 (the Tesouro titles, 9,07%; see
+`tesouro-direto-price-source.md`). Revisit A only if a source with history, cash amounts and terms that
+allow storage turns up. **The owner chose B on 2026-10-09** (A was then checked and does not change it). A build for A would
 sit on the serving read of #796, which is open: no `api.*` code is
 written here until it merges.
 
