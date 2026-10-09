@@ -1,0 +1,1 @@
+| 2026-10-09 | claude/ship-api-change-skill | **Skill `ship-api-change`.** A project skill puts the `AGENTS.md` rules for an `api.*` change in order: claim, SQL, catalog bump, contract regeneration, tests, changelog fragment, ready PR, and the `analytics-only` and `deploy_mcp.yml` steps after the merge. |
