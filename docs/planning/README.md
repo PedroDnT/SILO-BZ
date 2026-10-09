@@ -88,3 +88,5 @@ valid completion receipt. Credit allocation grew 14,270,464 bytes; elapsed time
 runbook. The earlier failed audit remains visible. No schema, permanent activation,
 new dataset or PIT certification; the next-day heartbeat stays paused. Recurring
 weekly-window cost and the first three scheduled cash sessions remain unverified.
+
+Observation-only credit serving is tracked in [#789](https://github.com/PedroDnT/SILO-BZ/issues/789), with [implementation plan](../../tasks/plan.md) and [rollout acceptance](../reference/credit-market-serving-rollout.md).

@@ -688,3 +688,13 @@ unidentified (15,45%; no public bank-issuance registry is ingested; since #766 i
 statement prints, is in the annex, apart from the measured coverage). Item 3 uses B3's own OTC prices, not #766's method B (the median fund mark,
 which evaluates 0 of the 2 debentures). Two suspected join gaps to check before any build: 2 multimercado funds with
 no CDA for 2026-04 (6,99%) and the same 2 with 9 and 10 of 13 month-end quotas missing.
+
+
+## 21. Debenture observation serving (#789)
+
+Owner approved the observation-only plan. SQL read function and local rollback
+behavior tests implement capture selection before code filters, audit-aware
+cutoff, full settlement/classification grain and refusal above 1000 groups.
+Catalog/OpenAPI/HTTP/SDK/tool contracts are implemented and verified locally;
+CI and production rollout acceptance remain pending. #774 returns
+remain separate. Recurring capture remains disabled after its storage stop.
