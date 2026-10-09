@@ -106,3 +106,16 @@ def test_the_named_methods_send_what_they_sent_before():
          {"p_prefix": "PETR", "p_to": "2026-03-01", "p_limit": 10}),
         ("/rest/v1/rpc/curve", {"p_curve": "PRE"}),
     ]
+
+
+def test_credit_rpc_preserves_explicit_capture_cutoff():
+    silo, sent = _recording_client([{"quantity": None}])
+    assert silo.rpc("credit_market_history", p_code="TEST01",
+                    p_from=date(2026, 10, 2), p_to=date(2026, 10, 8),
+                    p_as_of="2026-10-09T05:00:00-03:00") == [{"quantity": None}]
+    assert sent == [("/rest/v1/rpc/credit_market_history", {
+        "p_code": "TEST01", "p_from": "2026-10-02", "p_to": "2026-10-08",
+        "p_as_of": "2026-10-09T05:00:00-03:00"})]
+    with pytest.raises(ValueError, match="requires p_code"):
+        silo.rpc("credit_market_history", p_from="2026-10-02")
+    assert len(sent) == 1
