@@ -3,6 +3,20 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-09 · codex/mrv-april-source-forensics · source reconciliation
+
+**Done.** Investigated issue #798 using read-only production records and the original 2026 CRI monthly ZIP. The
+source class member confirms two senior series share one certificate identifier: series 1 maps to CETIP 24I1980390;
+series 2 maps to 24I1980417. `Total_Integralizado` values for those tranches swap in April and May while the series
+identifiers, quantities, and per-series PUs remain attached to their rows. Per-series `Rendimentos` and `Amortizacoes`
+remain zero.
+
+The separate flow member records R$46,257,835.20 senior interest in April but has only the shared certificate id and
+class, with no CETIP/ISIN/series attribution. Applying the aggregate amount to 24I1980390 would imply +1.9014% for
+April (~174.29% CDI using 20 SGS 12 daily rates), not the filed 110% CDI. Do not allocate this flow or infer a coupon
+from `Total_Integralizado`; the MRV 12-month return stays unevaluated. Evidence and the source ZIP/member names are
+in `docs/reference/research/portfolio-return-coverage.md` and issue #798. No production data or calculation changed.
+
 ## 2026-10-09 · codex/portfolio-credit-prod-verification · production validation
 
 **Done.** Owner deferred B's PU-fall cutoff to issue #797 (“ship what can be shipped now”) and explicitly authorized

@@ -273,6 +273,16 @@ explicit missing months. A falls without a filed flow and the 2026-04 MRV discre
 source investigation in [#798](https://github.com/PedroDnT/SILO-BZ/issues/798). Measured coverage remains 10.6523%; B
 adds no evaluated value with the owner's cutoff deferred. Contracted C remains a separate 18.4279% share.
 
+#### MRV April 2026 source-file follow-up
+
+The read-only comparison used the original [2026 CRI monthly archive](https://dados.cvm.gov.br/dados/SECURIT/DOC/INF_MENSAL_CRI/DADOS/inf_mensal_cri_2026.zip), members `inf_mensal_cri_classe_2026.csv` and `inf_mensal_cri_fluxo_caixa_2026.csv`, against production `cvm_securit_serie` and `cvm_securit_fluxo`.
+
+The class member has two senior tranches under the shared `Codigo_Identificacao_Certificado=BRAPCSCRIQH1`: series 1 is CETIP `24I1980390` / ISIN `BRAPCSCRIQH1`; series 2 is CETIP `24I1980417` / ISIN `BRAPCSCRIQI9`. For March 2026, `Total_Integralizado` is R$538,669,000 for series 1 and R$102,755,000 for series 2. In April and May, those two integralized totals are swapped in the source rows while CETIP, ISIN, quantities, and `Valor_Certificados` remain with their respective tranches. Per-series `Rendimentos` and `Amortizacoes` are zero in March, April, and May.
+
+The flow member has one row per shared certificate identifier and month, not per CETIP/ISIN/series. April reports R$46,257,835.20 as senior interest and zero senior principal. It confirms a class-level event but cannot allocate the cash to either senior series. Dividing the entire amount by series 1's 538,669 certificates would imply R$85.8743 per certificate and a +1.9014% April factor (about 174.29% of CDI using 20 BACEN SGS 12 daily factors, 2026-03-31 inclusive to 2026-04-30 exclusive), which does not reconcile with the filed 110% CDI rate. `Total_Integralizado` is also inconsistent across the tranches and is not a cash-flow field.
+
+Conclusion: do not join or allocate the aggregate flow to `24I1980390`, and do not treat the integralized-total swap as a payment. The 12-month return remains **not evaluated** with `queda_sem_evento_arquivado` for 2026-04. The acceptance case needs corrected per-series source data or issuer records that identify the tranche payment; follow-up remains open in [#798](https://github.com/PedroDnT/SILO-BZ/issues/798).
+
 ## 5. ETFs and the CDI
 
 **ETFs.** Of the 178 active ETFs in `cvm_etf_registry`, 106 have a cash-tape
