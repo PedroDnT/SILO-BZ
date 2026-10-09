@@ -1,0 +1,1 @@
+| 2026-10-09 | claude/no-push-merged-hook | **Hook: no push from a merged branch.** A Claude Code `PreToolUse` hook on `git push` (`.claude/hooks/no-push-merged-branch.sh`) refuses a push from a branch whose PR is merged, rule 6 of "Working beside other agents" in `AGENTS.md`. It asks GitHub over REST and lets the push through when `gh` is missing or offline. |
