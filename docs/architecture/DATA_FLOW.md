@@ -19,8 +19,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 
 ## Ingest
 
-- A **slice** is one (source, doc_type, period). It ends `ok`, `skipped` (the
-  source has not published yet) or `error` (ours to fix).
+- A **slice** is (source, doc_type, period): `ok`, `skipped` (unpublished), or `error`.
 - Daily windows heal late publication: CVM 4 months (gap-aware), the four CDA
   blocks every month through M+5 (CVM completes them about 90 days late), last
   year's FII files from January to March, COTAHIST and
@@ -34,7 +33,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   [SYSTEM](SYSTEM.md).
 - OTC DEB (migration 74): `b3_credit_capture` saves raw CSV and knowledge time;
   `fact_credit_market` stores long metrics. Missing sessions/drops fail the slice.
-  Daily capture is opt-in pending rollout; history uses weekly slices.
+  Daily capture is opt-in; history uses weekly slices.
 
 ## Analytical
 
@@ -59,10 +58,13 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   `etf_market_snapshot`. `class_return_distribution` reads `fact_fund_monthly`;
   `portfolio_equivalents` reads the same view (approved pairs), `cvm_etf_registry`
   and `etf_market_snapshot`.
-- Nothing depends on pg_cron. The live database has none (checked 2026-09-29),
-  so the jobs in `08_cron_schedules.sql` do not run.
+- pg_cron is absent (checked 2026-09-29); its schedules do not run.
 
 ## Serving
+
+`credit_market_history` selects complete audited captures per date before code
+filters, then pivots nine metrics per settlement/classification group; no return
+or inferred issuer link. Its as-of cutoff is observation plus audit completion.
 
 | Path                       | Reads              | Fresh as of           |
 | -------------------------- | ------------------ | --------------------- |

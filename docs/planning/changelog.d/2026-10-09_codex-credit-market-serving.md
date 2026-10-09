@@ -1,0 +1,1 @@
+| 2026-10-09 | codex/credit-market-serving | Add an observation-only debenture read contract with audited capture selection per trade date, full settlement/classification grain, availability cutoff and strict 1000-group refusal. Local rollback scenarios verify removals, partial captures, late audits, NULLs, caps and private-table privileges. Serving rollout remains pending. |
