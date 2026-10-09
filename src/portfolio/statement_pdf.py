@@ -1032,7 +1032,6 @@ def _position_from_row(row: Row, period_end: dt.date, line_no: int, detail: list
         data_posicao=period_end,
         vencimento=vencimento,
         taxa_texto=taxa,
-        data_inicial=inicio,
         estrategia_corretora=row.estrategia,
         classe_corretora=row.classe,
         preco_implicito=implicit,

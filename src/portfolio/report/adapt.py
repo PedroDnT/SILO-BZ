@@ -895,29 +895,7 @@ def _returns_view(eng: dict) -> dict | None:
                                                                               "n_contracted")}} for wid in order if wid in cov],
         "lines": lines,
         "contribution": _contribution_view(r.get("contribution"), order),
-        "contracted": _contracted_view(r.get("contracted"), order),  # engine 2.1 (#766): the annex only
     }
-
-
-def _contracted_view(c: dict | None, order: list) -> dict | None:
-    """Engine 2.1 (#766, method C): the contracted return, copied, windows as a list, every reason a fixed text."""
-    if not isinstance(c, dict):
-        return None
-    lines = []
-    for ln in c.get("lines") or []:
-        wins = []
-        for wid in order:
-            w = (ln.get("windows") or {}).get(wid) or {"status": "nao_avaliado"}
-            wins.append({**{k: v for k, v in w.items() if k != "sources"}, "id": wid,
-                         "reason": reason_text(w.get("reason_code")) if w.get("reason_code") else None,
-                         "pct_of_cdi_reason": reason_text(w.get("pct_of_cdi_reason_code")) if w.get("pct_of_cdi_reason_code") else None,
-                         "provenance": _prov(w.get("sources"))})
-        lines.append({"line_id": f"L{ln['line_no']}", "instrument": ln.get("linha_extrato"), "tipo": ln.get("tipo"),
-                      "value_brl": ln.get("valor_brl"), "taxa_texto": ln.get("taxa_texto"), "rate": ln.get("rate"),
-                      "data_inicial": ln.get("data_inicial"), "vencimento": ln.get("vencimento"), "status": ln.get("status"),
-                      "windows": wins, "provenance": _prov(ln.get("sources"))})
-    return {"label": c.get("label"), "note": c.get("note"), "n_lines": c.get("n_lines"),
-            "n_evaluated": c.get("n_evaluated"), "lines": lines}
 
 
 def _contribution_view(c: dict | None, order: list) -> dict | None:

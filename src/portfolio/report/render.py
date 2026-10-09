@@ -675,7 +675,7 @@ def _returns_summary(view: dict) -> str:
                            ("Líquido menos CDI", True), ("% do CDI", True)], rows)
                    .replace("<table>", '<table class="ret-cdi">', 1))
         if na_reasons:
-            out.append("<p class=cit>n/a em % do CDI: " + "; ".join(r.rstrip(". ") for r in na_reasons) + ".</p>")
+            out.append("<p class=cit>n/a em % do CDI: " + "; ".join(na_reasons) + ".</p>")
     else:
         out.append("<p>Nenhuma posição teve retorno de 12 meses avaliado.</p>")
     if cov is not None:
@@ -687,46 +687,6 @@ def _returns_summary(view: dict) -> str:
             out.append(f"<p class=cit>Retorno contratado de crédito bancário, à parte e só no anexo (não é retorno medido): "
                        f"{v(view, f'{b}.coverage[{cov}].n_contracted')} linha(s), "
                        f"{v(view, f'{b}.coverage[{cov}].contracted_coverage_portfolio_value_pct')} do valor da carteira.</p>")
-    return "\n".join(out)
-
-
-def _contracted_section(view: dict) -> str:
-    """Engine 2.1 (#766, method C), annex only: the rate the statement prints accrued over the 12-month window, labelled
-    "retorno contratado". An empty "% do CDI" is n/a with each reason once in a footnote; a line not evaluated is
-    listed with its fixed reason. No total, mean or ranking."""
-    c = (view.get("returns") or {}).get("contracted") or {}
-    b = "returns.contracted"
-    out = [f"<p class=cit>{v(view, f'{b}.note')}</p>"]
-    rows, na, skipped = [], [], []
-    for i, ln in enumerate(c.get("lines") or []):
-        j = next((k for k, w in enumerate(ln.get("windows") or []) if w.get("id") == "12m"), None)
-        if j is None:
-            continue
-        w, q = ln["windows"][j], f"{b}.lines[{i}]"
-        wq = f"{q}.windows[{j}]"
-        if w.get("status") != "avaliado":
-            skipped.append(f"{v(view, q + '.instrument')} ({v(view, wq + '.reason')})")
-            continue
-        if w.get("pct_of_cdi") is not None:
-            pct = f"<span class=v>{v(view, wq + '.pct_of_cdi')}</span>"
-        else:
-            pct = "n/a"
-            reason = v(view, wq + ".pct_of_cdi_reason")
-            if reason not in na:
-                na.append(reason)
-        rows.append([v(view, q + ".instrument"), v(view, q + ".taxa_texto"), v(view, q + ".data_inicial"),
-                     f"<span class=v>{v(view, wq + '.contracted_return_pct')}</span>", v(view, wq + ".cdi_pct"),
-                     v(view, wq + ".net_minus_cdi_pp"), pct])
-    if rows:
-        out.append(_table([("Posição", False), ("Taxa impressa", False), ("Data inicial", False),
-                           ("Retorno contratado em 12 meses", True), ("CDI nas mesmas datas", True),
-                           ("Contratado menos CDI", True), ("% do CDI", True)], rows))
-        if na:
-            out.append("<p class=cit>n/a em % do CDI: " + "; ".join(r.rstrip(". ") for r in na) + ".</p>")
-    else:
-        out.append("<p>Nenhuma posição teve retorno contratado de 12 meses.</p>")
-    if skipped:
-        out.append("<p class=cit>Sem retorno contratado: " + "; ".join(skipped) + ".</p>")
     return "\n".join(out)
 
 
@@ -1798,8 +1758,6 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
         *([section("Todos os riscos e seus limites", _risks_section(engine), listed=False)] if engine.get("risks") else []),
         *([section("Retorno por posição em detalhe", _returns_section(engine, contribution="6m"), listed=False)]
           if engine.get("returns") else []),
-        *([section("Retorno contratado (não é retorno de mercado)", _contracted_section(engine), listed=False)]
-          if ((engine.get("returns") or {}).get("contracted") or {}).get("lines") else []),
         *([section("ETF comparável (não é recomendação)", _equivalents_section(engine) + f("equivalentes"), listed=False)]
           if engine.get("equivalents") else []),
         section("Metodologia e limitações", _method_section(engine, narrative), listed=False),

@@ -686,17 +686,6 @@ one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a n
   the securitizer's value on the curve, not a market price.
 - A merge deploys nothing: the functions go live on the next analytical apply
   (`daily_ingest` `mode=analytics-only`), the MCP tools after `deploy_mcp.yml`.
-- **`api.portfolio_credit_curve(p_codes, p_from, p_to)`** (catalog v71, #766): a CRA
-  or CRI month by month on the securitizer's curve (`cvm_securit_serie`). One row per
-  code (at most 40, a leading `CRA-` or `CRI-` stripped) and month (at most 25): `pu` =
-  `valor_certificados` / `quantidade_certificados`, `paid_per_unit` = (`rendimentos` +
-  `amortizacoes`) / quantity, and `factor` = (`pu` + `paid_per_unit`) / the previous
-  `pu`, only when `month_flag` is NULL. `month_flag` names why a month is unknown:
-  `mes_ausente`, `mais_de_uma_serie`, `valor_nao_informado`, `mes_anterior_desconhecido`,
-  `quantidade_mudou`, `pagamento_maior_que_pu`, `pu_repetido`, `queda_sem_evento_arquivado`,
-  `retorno_mensal_fora_da_faixa` (outside -3% to +3% a month). The first month is the base
-  and has no factor. It is the securitizer's curve, not a market price; nothing is filled
-  in and `rentabilidade` is not read.
 
 ### Using the research seam
 

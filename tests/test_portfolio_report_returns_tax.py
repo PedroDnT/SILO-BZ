@@ -508,8 +508,7 @@ BODY_ORDER = ("Resumo para a reunião", "O que pede atenção", "Achados", "Quan
               "Concentração e liquidez", "Retorno passado contra o CDI", "Taxa e imposto por posição",
               "Informes reapresentados e movimento incomum", "O que não foi possível avaliar")
 ANNEX = ("Resumo escrito pelo redator", "Como cada posição foi identificada", "Crédito direto no registro da CVM", "Detalhe da exposição", "Taxa por fundo", "Todos os riscos e seus limites",
-         "Retorno por posição em detalhe", "Retorno contratado (não é retorno de mercado)", "ETF comparável (não é recomendação)",
-         "Metodologia e limitações")
+         "Retorno por posição em detalhe", "ETF comparável (não é recomendação)", "Metodologia e limitações")
 
 
 def test_the_body_answers_in_the_order_a_cio_asks_and_the_evidence_is_in_the_annex(built_demo):
@@ -558,7 +557,7 @@ def test_the_body_return_table_shows_pct_of_cdi_or_the_engine_reason_never_zero_
         else:  # #765: "n/a" in the cell, the engine's reason once in the footnote (also for a share and, schema 2.1,
             # for direct credit on IPCA or prefixado)
             assert pct.strip() == "n/a"
-            reason = render.e(REASON_TEXT[w["pct_of_cdi_reason_code"]].rstrip(". "))
+            reason = render.e(REASON_TEXT[w["pct_of_cdi_reason_code"]])
             assert reason not in rows[0] and sec.count(reason) == 1
             seen_reason = True
     assert seen_value and seen_reason
