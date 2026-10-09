@@ -675,7 +675,8 @@ def _returns_summary(view: dict) -> str:
                            ("Líquido menos CDI", True), ("% do CDI", True)], rows)
                    .replace("<table>", '<table class="ret-cdi">', 1))
         if na_reasons:
-            out.append("<p class=cit>n/a em % do CDI: " + "; ".join(na_reasons) + ".</p>")
+            # a reason ends in "p.p." or a period: strip it, or the footnote reads "p.p.."
+            out.append("<p class=cit>n/a em % do CDI: " + "; ".join(r.rstrip(". ") for r in na_reasons) + ".</p>")
     else:
         out.append("<p>Nenhuma posição teve retorno de 12 meses avaliado.</p>")
     if cov is not None:

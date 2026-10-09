@@ -3,6 +3,15 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-08 · claude/credit-return-method-a-c (#772, #766)
+
+**Done.** Built #766 a second time in parallel with #771/#773 (`api.portfolio_credit_curve`, catalog v71). Both had
+claimed the issue. On the owner's "resolve", main's build was kept whole (the merge's tree equals main) and the PR
+carries only the "% do CDI" footnote fix (no "p.p.."). Measurements of that build (MRV 110.1% of the CDI on a complete
+window; the eight papers; C on production CDI and IPCA) agree with main's and are not repeated here.
+
+**Outside scope.** None kept.
+
 ## 2026-10-08 · claude/credit-direct-return-build (#766)
 
 **Done.** The build that follows #768 (the measurement and the stop at MRV's test case), after the owner accepted the

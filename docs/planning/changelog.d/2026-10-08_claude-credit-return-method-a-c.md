@@ -1,0 +1,1 @@
+| 2026-10-08 | claude/credit-return-method-a-c | **"% do CDI" footnote: no double period (#766 follow-up).** This branch first built #766 a second time (`api.portfolio_credit_curve`); #771 and #773 had merged the same build, so it keeps main's whole and carries only the fix: a reason ending in "p.p." no longer prints "p.p.." in the footnote under "Retorno passado contra o CDI". |
