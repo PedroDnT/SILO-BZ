@@ -1,0 +1,1 @@
+| 2026-10-09 | claude/agents-md-insights | **AGENTS.md: two rules from the usage insights.** "Working beside other agents" adds a ticket overlap check before a fix (REST search), a merge of main before a catalog bump, and no push to a merged branch. "Adding an API endpoint" adds the ordered `api.*` change checklist and the `COMMENT` quote escape. |
