@@ -1034,3 +1034,51 @@ decision.
 
 Roadmap for how "ingested" became "a researcher pulls a panel":
 [docs/planning/SERVING.md](../planning/SERVING.md).
+
+
+## Debenture market observations (rollout pending)
+
+The new `api.credit_market_history(p_code, p_from, p_to, p_as_of)` contract
+serves held market observations. A merge alone does not apply analytical SQL
+or deploy the remote tool. Check the live catalog before using it.
+
+```json
+{"p_code": "TEST01", "p_from": "2026-10-02", "p_to": "2026-10-08",
+ "p_as_of": "2026-10-09T05:00:00-03:00"}
+```
+
+`TEST01` above is an illustrative code, not a claim of stored observations.
+The local adapter equivalent is
+`GET /v1/credit/TEST01/history?from=2026-10-02&to=2026-10-08&as_of=2026-10-09T05:00:00-03:00`.
+The SDK uses `silo.rpc("credit_market_history", p_code=..., p_from=...,
+p_to=..., p_as_of=...)`; the remote tool has the same RPC name and parameters.
+
+### Transformation and interpretation
+
+The read transformation selects the latest complete, successfully reconciled
+capture **per trade date before filtering the requested code**. Both capture
+observation and audit completion must precede `p_as_of` (default: current
+knowledge). A newer complete capture removing a code yields absence; incomplete
+captures do not supersede complete ones. Backfilled observations retain their
+actual late capture timestamps. This describes warehouse knowledge time,
+not proof of original publication-time availability.
+
+It pivots the nine stored metrics into one row per
+`(instrument_code, trade_date, settlement_date, trade_classification)`:
+`quantity`, `min_price`, `avg_price`, `max_price`, `last_price`,
+`reference_price`, `trade_count`, `volume_brl`, `oscillation_pct`.
+`units` provides the original metric-to-unit map. NULL means unpublished.
+No prices or economic groups are combined. Last/reference prices are repeated
+instrument-wide values: do not sum or volume-average their repeated copies.
+Reference prices can be modeled and never substitute for traded prices.
+Transaction volume is not outstanding principal. These observations do not
+provide derived yield, coupon-adjusted return or an issuer-to-equity mapping.
+
+Each row retains ISIN, reported issuer name, source identifier, capture ID,
+raw payload hash, row hash, `observed_at` and `available_at` (audit completion).
+Unknown codes at the cutoff raise `22023` (HTTP 404); known codes with an empty
+window return zero rows. More than 1,000 groups raises `22023` (HTTP 400),
+without trimming: narrow the date window. There is no date-only cursor because
+several groups can share a date. Raw captures and fact tables stay private.
+
+Rollout and evidence checklist: [credit serving acceptance](credit-market-serving-rollout.md).

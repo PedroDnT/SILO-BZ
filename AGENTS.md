@@ -276,10 +276,6 @@ three agree. A new or changed signature also regenerates the SDK's
 `sdk/silo_client/contract.json` (`scripts/gen_sdk_contract.py`), which `SiloClient.rpc()`
 checks calls against; `tests/test_sdk_rpc.py` fails while it is stale.
 
-Any `api.*` change, in order: bump the catalog version, regenerate `openapi.json` and the
-MCP contract, add or adjust tests, run `pytest tests/ -q`, open the PR. Escape single
-quotes in SQL `COMMENT` literals (`''`); one unescaped quote broke a schema apply.
-
 ## Commands
 
 ```bash
@@ -505,10 +501,6 @@ see, so it is the lock (owner decision, 2026-10-07, #711):
 3. **Branch prefix names the agent:** `claude/`, `codex/`, `orchestrator/`, `agent/`
    (B7 Routines), `research/`, `demo/`.
 4. GitHub is REST only from Claude Code sessions (`gh api repos/...`; GraphQL is 403).
-5. **Before a fix, look for overlap by ticket.** `git fetch`, then search open and recently
-   merged PRs for the ticket number (`gh api "search/issues?q=repo:PedroDnT/SILO-BZ+is:pr+<n>"`).
-   If main moved, merge it before you bump the catalog version, and renumber if needed.
-6. **Never push to a branch whose PR is merged.** GitHub deleted it; a push recreates it.
 
 ## Codex task-boundary board
 
