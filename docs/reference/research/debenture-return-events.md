@@ -65,8 +65,7 @@ is "não avaliado" again.
 | A. Store a source of payment events | Needs history (the one public page has none), cash amounts (it gives percentages) and a terms answer. First full window: late 2027 | A new dataset, a daily capture, and a cash-flow computation ADR 0004 leaves out |
 | B. Close gap 3 as not evaluable | The two debentures stay "não avaliado" with a reason in plain words; no work | None; 8,03% of the portfolio stays without a return |
 
-Recommendation: B, and move to gap 2 (the Tesouro titles, 9,07%; see
-`tesouro-direto-price-source.md`). Revisit A only if a source with history, cash amounts and terms that
+Recommendation: B, and move to gap 2 (the Tesouro titles, 9,07%). Revisit A only if a source with history, cash amounts and terms that
 allow storage turns up. **The owner chose B on 2026-10-09** (A was then checked and does not change it). A build for A would
 sit on the serving read of #796, which is open: no `api.*` code is
 written here until it merges.
