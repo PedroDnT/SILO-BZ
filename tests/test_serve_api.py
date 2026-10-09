@@ -99,6 +99,57 @@ def test_quote_latest_404(client):
     assert rv.get_json()["ticker"] == "PETR4"
 
 
+def test_credit_history_keeps_groups_nulls_and_cutoff(client):
+    from datetime import datetime, timezone
+    from decimal import Decimal
+    client.pool.cur = _Cur(
+        rows=[("TEST01", "2001-01-02", "2001-01-02", "EXTRAGRUPO", Decimal("10"), None),
+              ("TEST01", "2001-01-02", "2001-01-03", "INTRAGRUPO", Decimal("20"), None)],
+        description=[(x,) for x in ("instrument_code", "trade_date", "settlement_date",
+                                   "trade_classification", "volume_brl", "reference_price")],
+    )
+    rv = client.get("/v1/credit/test01/history?from=2001-01-02&to=2001-01-03&as_of=2020-01-01T10:00:00Z")
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["count"] == 2 and body["adjusted"] is False
+    assert [r["volume_brl"] for r in body["rows"]] == [10, 20]
+    assert all(r["reference_price"] is None for r in body["rows"])
+    assert client.pool.cur.sql == "SELECT * FROM api.credit_market_history(%s, %s::date, %s::date, %s::timestamptz)"
+    assert client.pool.cur.params == ("TEST01", "2001-01-02", "2001-01-03",
+                                      datetime(2020, 1, 1, 10, tzinfo=timezone.utc))
+    assert client.pool.checkouts == client.pool.putbacks == 1
+
+
+def test_credit_history_known_empty_is_not_a_zero(client):
+    rv = client.get("/v1/credit/TEST01/history?from=2001-01-01&to=2001-01-02")
+    assert rv.status_code == 200
+    assert rv.get_json()["rows"] == [] and rv.get_json()["count"] == 0
+
+
+@pytest.mark.parametrize("query", [
+    "as_of=2020-01-01T10:00:00", "as_of=bad", "as_of=2999-01-01T10:00:00Z",
+    "from=2001-02-01&to=2001-01-01", "from=bad", "as_of=",
+])
+def test_credit_history_invalid_input_never_queries(client, query):
+    rv = client.get("/v1/credit/TEST01/history?" + query)
+    assert rv.status_code == 400 and client.pool.checkouts == 0
+
+
+@pytest.mark.parametrize("message,status", [
+    ("credit_market_history: unknown code at p_as_of: TEST01", 404),
+    ("credit_market_history exceeds 1000 rows; narrow dates", 400),
+])
+def test_credit_history_sql_refusals_return_connection(client, message, status):
+    import psycopg2.errors
+    class Refusing(_Cur):
+        def execute(self, sql, params=None):
+            raise psycopg2.errors.InvalidParameterValue(message)
+    client.pool.cur = Refusing()
+    rv = client.get("/v1/credit/TEST01/history")
+    assert rv.status_code == status
+    assert client.pool.checkouts == client.pool.putbacks == 1
+
+
 def test_quote_latest_ok(client):
     client.pool.cur = _Cur(
         rows=[("PETR4", "2026-08-13", 41.9)],

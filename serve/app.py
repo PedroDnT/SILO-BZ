@@ -16,7 +16,7 @@ import atexit
 import logging
 import os
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -443,6 +443,45 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             return jsonify({"error": "format must be rows or columnar"}), 400
         board = request.args.get("board")
         return _quote_series(code, window[0], window[1], board, fmt, fields)
+
+    @app.get("/v1/credit/<code>/history")
+    def credit_market_history(code: str):
+        """Preserve settlement/classification groups; one bounded SQL read."""
+        try:
+            code = normalize_ticker(code)
+            window = parse_window(
+                request.args,
+                default_from=(date.today() - timedelta(days=365)).isoformat(),
+            )
+            if window[0] > window[1]:
+                raise ValueError("from must not be after to")
+            as_of = datetime.fromisoformat(request.args["as_of"].replace("Z", "+00:00")) \
+                if "as_of" in request.args else datetime.now(timezone.utc)
+            if as_of.utcoffset() is None:
+                raise ValueError("as_of must include a timezone offset")
+            if as_of > datetime.now(timezone.utc):
+                raise ValueError("as_of cannot be in the future")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        assert window is not None
+        try:
+            with pool.connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM api.credit_market_history(%s, %s::date, %s::date, %s::timestamptz)",
+                    (code, window[0], window[1], as_of),
+                )
+                cols = [d[0] for d in cur.description]
+                rows = [_row(r, cols) for r in cur.fetchall()]
+        except psycopg2.errors.InvalidParameterValue as exc:
+            if "credit_market_history: unknown code at p_as_of:" in str(exc):
+                return jsonify({"error": "not found at cutoff", "instrument_code": code}), 404
+            raise
+        return jsonify({
+            "kind": "observations", "instrument_code": code,
+            "from": window[0], "to": window[1], "as_of": as_of.isoformat(),
+            "grain": "instrument/trade_date/settlement_date/trade_classification",
+            "adjusted": False, "count": len(rows), "rows": rows,
+        }), 200, _cache(300)
 
     @app.get("/v1/funds")
     def funds_search():
