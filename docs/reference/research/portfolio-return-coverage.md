@@ -239,6 +239,40 @@ is 18.43%, not an additional measured return. The fake-provider HTML was generat
 12-month return, CDI, p.p. difference and % CDI columns render; its synthetic demo exercises A and B. C's evaluated-row
 presentation is covered by a focused renderer test because this demo lacks the required initial date.
 
+### Production apply and PostgREST validation (2026-10-09)
+
+After the owner deferred B's cutoff to a follow-up issue and explicitly authorized the production apply, workflow
+[`Daily CVM Ingest #44`](https://github.com/PedroDnT/SILO-BZ/actions/runs/37963283293) ran in `analytics-only` mode and
+completed successfully. Schema/migrations and all 32 analytical SQL files applied (0 warnings, 0 failures); daily
+ingestion and external refresh steps were skipped, and the Vercel dashboard hook was not triggered. The standard
+schema bootstrap also applied migration 34's existing repair: `cvm_fip_periodic.classe_cota` was populated on 18,301
+rows. Catalog version is 73; both RPCs are granted to `anon`. Read-only PostgREST calls returned HTTP 200: method A
+returned 78 rows for the six CRA/CRI codes and method B returned 26 rows for CUTI11 and ENAT11. The run did not
+publish a dashboard or change the return cutoff.
+
+The production report window is 2025-08 through 2026-08 (13 month rows per paper). The direct-credit source of method
+A is `cvm_securit_serie` keyed by the exact CETIP code. Method B reads `cvm_fi_cda_acoes` by exact CDA block-4 ticker,
+with `tp_aplic = 'Debêntures'`; no coupon is inferred. CDI is `api.macro_series('CDI')` from BACEN SGS 12, compounded
+with the engine's B3 factor convention, 2025-08-29 inclusive through 2026-08-31 exclusive: 252 daily rates,
+14.634610% (last rate 2026-08-28).
+
+| Paper | Method and source | Source months / return factors | 12-month result | Production flags / reason |
+| --- | --- | ---: | ---: | --- |
+| CRA02500001 | A, `cvm_securit_serie`, exact code | 13 / 0 | — | `pagamento_acima_do_pu` in 2025-09..12, 2026-02..04 and 2026-06..08; `pu_repetido` 2026-01 and 2026-05 |
+| CRA0240066G | A, `cvm_securit_serie`, exact code | 12 / 9 | — | `queda_sem_evento_arquivado` 2026-06; `mes_ausente` 2026-07 and 2026-08 |
+| CRA0260025T | A, `cvm_securit_serie`, exact code | 4 / 3 | — | `mes_ausente` 2025-08..2026-05; the first available value cannot form a month factor after that gap |
+| CRA0250018H | A, `cvm_securit_serie`, exact code | 13 / 12 | 14.54413%; 99.3817% of CDI | No window flags; filed rate `100% CDI` |
+| CRA02400AYL | A, `cvm_securit_serie`, exact code | 13 / 8 | — | `pu_repetido` 2025-10 and 2025-11; `queda_sem_evento_arquivado` 2025-12; `pagamento_incompativel` 2026-05 |
+| 24I1980390 | A, `cvm_securit_serie`, exact code | 13 / 11 | — | `queda_sem_evento_arquivado` 2026-04: PU 1,071.48630 → 1,005.98531 (−6.11%), no filed interest or amortization; filed rate `110,0000% CDI` |
+| CUTI11 | B, `cvm_fi_cda_acoes`, exact ticker | 13 / 9; 18–70 funds/month | — | `limite_pendente` 2025-12 (−8.46%), 2026-03 (−0.38%) and 2026-06 (−11.02%); cutoff remains NULL, tracked in [#797](https://github.com/PedroDnT/SILO-BZ/issues/797) |
+| ENAT11 | B, `cvm_fi_cda_acoes`, exact ticker | 13 / 10; 52–166 funds/month | — | `limite_pendente` 2025-12 (−3.57%) and 2026-06 (−16.09%); cutoff remains NULL, tracked in [#797](https://github.com/PedroDnT/SILO-BZ/issues/797) |
+
+Each “source months” figure counts rows with `data_referencia` (A) or monthly fund marks (B); “return factors” counts
+usable monthly factors before any 12-month result is admitted. The functions returned all 13 window rows, including
+explicit missing months. A falls without a filed flow and the 2026-04 MRV discrepancy remain unevaluated pending
+source investigation in [#798](https://github.com/PedroDnT/SILO-BZ/issues/798). Measured coverage remains 10.6523%; B
+adds no evaluated value with the owner's cutoff deferred. Contracted C remains a separate 18.4279% share.
+
 ## 5. ETFs and the CDI
 
 **ETFs.** Of the 178 active ETFs in `cvm_etf_registry`, 106 have a cash-tape
