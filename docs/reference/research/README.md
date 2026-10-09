@@ -158,3 +158,13 @@ Six notes answer the research tickets of the diagnosis map:
   portfolio diagnosis report and a proposed order for a consultancy CIO (answer
   first, one summary page, annex), from NN/G, GOV.UK, the SEC Plain English
   Handbook, Few, Tufte, WCAG, CVM Resolução 175 and CFA/GIPS, read on 2026-10-06.
+
+## Fund return against holder return, low-duration sovereign fixed income
+
+[`cdi-fund-vs-holder-return.md`](cdi-fund-vs-holder-return.md) measures the
+12 months to 2026-09-30 for the 231 funds whose latest extrato files
+`RENDA FIXA BAIXA DURAÇÃO - SOBERANO` and that have a quota on both ends. The
+median fund returned 97.73% of the CDI. Weighted by the 1,031,484 holders filed
+on 2026-09-30, the return was 87.60%. The SQL, its output, the method and the
+public CVM and BACEN files that reproduce it are in the document. Read-only,
+measured 2026-10-08 (UTC-3).

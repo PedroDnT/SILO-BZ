@@ -22,6 +22,18 @@ was run.
 **Outside scope.** Tests for B/C, the eight-paper run, and the fake-provider report were not run because method A's
 acceptance gate failed and the brief says to stop at that point.
 
+## 2026-10-08 · research/cdi-holder-gap (#776)
+
+**Done.** Saved the CDI study the owner asked for: `docs/reference/research/cdi-fund-vs-holder-return.md`, one
+read-only SELECT against production at 22:07 UTC-3 (01:07 UTC on 2026-10-09). The owner expected 230 funds, 97.7% and
+87.6%. The query gives 231 funds, 97.73% and 87.60%, 1,031,484 holders. The one extra fund returned −77.31% of the CDI
+with 1 holder; it is kept, because nothing in its filing marks it as an error. Without it the two figures do not change.
+
+**Decisions.** Universe from the latest extrato's `classe_anbima`, quota on both ends on the same subclass, holders as
+filed on 2026-09-30. No interpretation of why the gap exists beyond what was measured (fees were not measured).
+
+**Outside scope.** A one-page site for the owner's company links this document; that work is in another repository.
+
 ## 2026-10-08 · claude/credit-return-method-a-c (#772, #766)
 
 **Done.** Built #766 a second time in parallel with #771/#773 (`api.portfolio_credit_curve`, catalog v71). Both had
