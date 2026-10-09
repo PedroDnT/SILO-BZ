@@ -104,14 +104,18 @@ def _load_allowlist() -> dict[str, list[dict[str, object]]]:
         raise ValueError(f"allowlist keys must be exactly {sorted(expected_keys)}")
     for category, entries in data.items():
         for entry in entries:
-            if not isinstance(entry, dict) or not entry.get("reason"):
+            if (
+                not isinstance(entry, dict)
+                or not entry.get("reason")
+                or not isinstance(entry.get("objects"), list)
+            ):
                 raise ValueError(f"every {category} allowlist entry needs a reason")
     return data
 
 
 def _allowed(entries: list[dict[str, object]]) -> set[tuple[str, ...]]:
     return {
-        tuple(obj)
+        (obj,) if isinstance(obj, str) else tuple(obj)
         for entry in entries
         for obj in entry["objects"]
     }

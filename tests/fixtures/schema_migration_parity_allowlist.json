@@ -2,10 +2,6 @@
   "tables_only_in_schema": [],
   "tables_only_after_migrations": [
     {
-      "objects": ["anbima_etf_class_monthly"],
-      "reason": "Migration 09 owns the ANBIMA source table; schema.sql is the CVM and BACEN base snapshot."
-    },
-    {
       "objects": [
         "cia_account", "cia_account_2010", "cia_account_2011", "cia_account_2012",
         "cia_account_2013", "cia_account_2014", "cia_account_2015", "cia_account_2016",
