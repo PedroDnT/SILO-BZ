@@ -81,22 +81,37 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Install PDF tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes poppler-utils libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libharfbuzz-subset0
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
       - name: Cache pytest
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .pytest_cache
-          key: pytest-${{ runner.os }}-${{ hashFiles('requirements.txt', 'requirements-dev.txt', 'tests/**', 'serve/**', 'src/**') }}
+          key: pytest-${{ runner.os }}-${{ hashFiles('requirements.txt', 'requirements-dev.txt', 'requirements-report.txt', 'tests/**', 'serve/**', 'src/**') }}
           restore-keys: |
             pytest-${{ runner.os }}-
 
-      # requirements-dev.txt = requirements.txt + what only the tests import
-      # (pydantic, openai, openai-agents). One file, the same one AGENTS.md
-      # tells a contributor to install, so a fresh venv collects every test.
+      # requirements-dev.txt = requirements.txt + what only the tests import.
+      # requirements-report.txt adds the report/PDF dependencies exercised here.
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt -r requirements-report.txt
+
+      - name: Verify test tools are available
+        run: |
+          command -v pdftotext
+          node --version
+          python -c "import pypdf, reportlab, weasyprint; print('PDF test dependencies available')"
 
       - name: Run tests
-        run: python -m pytest tests/ -q --tb=short
+        run: python -m pytest tests/ -q -rs --tb=short
 
   # Prove every piece of SQL in the repo actually compiles — schema.sql, all
   # migrations, the whole analytical layer, and every Evidence source query —

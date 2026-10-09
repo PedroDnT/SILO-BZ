@@ -67,9 +67,6 @@ def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     return _system_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
 
 
-socket.getaddrinfo = _ipv4_getaddrinfo
-
-
 def probe(url: str, timeout: float, attempts: int) -> int:
     last: str = ""
     for attempt in range(1, attempts + 1):
@@ -108,6 +105,9 @@ def probe(url: str, timeout: float, attempts: int) -> int:
 
 
 def main() -> int:
+    # Limit the standalone preflight's DNS lookup to IPv4, like the fetcher.
+    # Keep this out of module import so offline unit tests can mock urlopen.
+    socket.getaddrinfo = _ipv4_getaddrinfo
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--url", default=DEFAULT_URL)
     ap.add_argument("--timeout", type=float, default=30.0)
