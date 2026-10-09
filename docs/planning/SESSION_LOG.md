@@ -3,6 +3,29 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-09 · codex/portfolio-credit-prod-verification · production validation
+
+**Done.** Owner deferred B's PU-fall cutoff to issue #797 (“ship what can be shipped now”) and explicitly authorized
+the production apply. PR #784 had already been merged externally. Dispatched `Daily CVM Ingest` in `analytics-only`
+mode (run #37963283293): schema/migrations succeeded; all 32 analytical SQL files applied with 0 warnings and 0
+failures; data-ingest, source-refresh and dashboard-publish steps were skipped. The standard bootstrap also ran the
+existing migration 34 repair, which populated `cvm_fip_periodic.classe_cota` on 18,301 rows. No return cutoff was set.
+
+**Production API.** Catalog v73 is live and both return RPCs are granted to `anon`. Read-only PostgREST calls returned
+HTTP 200 (78 A rows for six CRA/CRI codes; 26 B rows for two debenture tickers), confirming the exposed API schema
+recognized both signatures. Only CRA0250018H evaluated: 14.54413%, 99.3817% of CDI (252 SGS 12 rates; 14.634610%).
+24I1980390 remains unknown at April 2026 (−6.11%, no filed interest/amortization). B remains unevaluated where PU
+falls because the cutoff is NULL: CUTI11 has falls in Dec 2025, Mar 2026 and Jun 2026; ENAT11 in Dec 2025 and Jun
+2026. The full row-level flags, source-month counts and monthly fund-count ranges are in
+`docs/reference/research/portfolio-return-coverage.md`.
+
+**Issues and evidence.** Opened owner-decision issue #797 for the cutoff and data-quality issue #798 for the MRV source
+gap; both are linked to #766. Added the production outcome to #766 and PR #784's discussion. No dashboard publish or
+manual ingest was triggered. Production execution was through the repository workflow, not local credentials.
+
+**Outside scope.** No engine/container deployment, no change to the cutoff, no fabricated source flow, and no merge
+action was performed in this session.
+
 ## 2026-10-09 · research/equity-vs-ibov (#786)
 
 **Done.** Study 2 after #776: equity funds against the Ibovespa, read-only, run 12:03 UTC-3 (15:03 UTC). Ibovespa from
