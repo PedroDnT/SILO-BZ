@@ -557,7 +557,7 @@ def test_the_body_return_table_shows_pct_of_cdi_or_the_engine_reason_never_zero_
         else:  # #765: "n/a" in the cell, the engine's reason once in the footnote (also for a share and, schema 2.1,
             # for direct credit on IPCA or prefixado)
             assert pct.strip() == "n/a"
-            reason = render.e(REASON_TEXT[w["pct_of_cdi_reason_code"]])
+            reason = render.e(REASON_TEXT[w["pct_of_cdi_reason_code"]].rstrip(". "))
             assert reason not in rows[0] and sec.count(reason) == 1
             seen_reason = True
     assert seen_value and seen_reason

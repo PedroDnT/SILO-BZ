@@ -132,3 +132,9 @@ def test_revisor_keeps_one_sentence_per_risk_finding(view):
     kept, removals = revisor.check_finding(eng, f)
     assert kept is not None and kept.text == "As duas linhas tratam do mesmo emissor."
     assert any(r.reason == "mais de uma frase por achado" for r in removals)
+
+
+def test_the_pct_of_cdi_footnote_never_doubles_a_period(report_html):
+    section = report_html.split("<h2>Retorno passado contra o CDI</h2>")[1].split("</section>")[0]
+    note = next(p for p in re.findall(r"<p class=cit>(.*?)</p>", section, re.S) if p.startswith("n/a em % do CDI"))
+    assert ".." not in note and note.endswith(".")
