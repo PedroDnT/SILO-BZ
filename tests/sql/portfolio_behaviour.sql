@@ -260,6 +260,131 @@ BEGIN
     RAISE NOTICE 'portfolio_resolve OK';
 END $$;
 
+-- Issue #783, two shapes from the real 2026-08-31 statement (synthetic names and CNPJs).
+--   ZETA CDB PLUS: the statement abbreviates the fund type ("FIRF CrPr"), a long input is scored
+--   by whole-string similarity alone, and the fund files a long name, so it is no candidate at
+--   all. The decoys are what the real run returned. Dropping the abbreviations finds the family;
+--   only the quota (a daily one, exact date) says which member.
+--   ALFA AGRO: five FIAGRO, which file no daily quota. The month-end quota is in the monthly
+--   informe, filed with two decimals, and two funds sit within 0.5% of the statement's.
+INSERT INTO cvm_fi_cda_fund_name (cnpj, period, denom_social) VALUES
+    ('91000000000191', '2026-05-01', 'ZETA CDB PLUS FUNDO DE INVESTIMENTO FINANCEIRO RENDA FIXA RESPONSABILIDADE LIMITADA'),
+    ('91000001000191', '2026-05-01', 'ZETA CDB PLUS PREVIDENCIA FUNDO DE INVESTIMENTO FINANCEIRO MULTIMERCADO RESPONSABILIDADE LIMITADA'),
+    ('91000002000191', '2026-05-01', 'FICFIDC ZETA PACTUAL PLUS'),
+    ('91000003000191', '2026-05-01', 'FIA FCL OMEGA PLUS'),
+    -- Dead siblings of the same family with LOWER CNPJs than the live fund and no quota rows: they
+    -- tie with it at the hint's 0.5 cap (the live shape: nine names tied, the right fund fourth).
+    ('90000001000191', '2016-03-01', 'ZETA PACTUAL CDB PLUS FUNDO DE INVESTIMENTO EM COTAS DE FI RENDA FIXA CREDITO PRIVADO'),
+    ('90000002000191', '2015-11-01', 'ZETA PACTUAL MASTER CDB PLUS FUNDO DE INVESTIMENTO RENDA FIXA CREDITO PRIVADO'),
+    ('90000003000191', '2015-11-01', 'ZETA CDB PLUS II FUNDO DE INVESTIMENTO RENDA FIXA CREDITO PRIVADO'),
+    ('90000004000191', '2015-11-01', 'ZETA PACTUAL CDB PLUS ANS FUNDO DE INVESTIMENTO RENDA FIXA CREDITO PRIVADO'),
+    ('94000000000191', '2026-05-01', 'QUASAR AURORA FUNDO DE INVESTIMENTO FINANCEIRO RENDA FIXA CREDITO PRIVADO RESPONSABILIDADE LIMITADA'),
+    ('92000000000191', '2026-05-01', 'ZETA CREDITO AGRICOLA ALFA II CDI FIAGRO DIREITOS CREDITORIOS RESPONSABILIDADE LIMITADA'),
+    ('92000001000191', '2026-05-01', 'ZETA CREDITO AGRICOLA ALFA MASTER II FIAGRO RESPONSABILIDADE LIMITADA'),
+    ('93000000000191', '2026-05-01', 'KAPPA INCORPORACAO FII FUNDO DE INVESTIMENTO IMOBILIARIO LIMITADA'),
+    ('93000001000191', '2026-05-01', 'KAPPA INCORPORACAO FUNDO DE INVESTIMENTO IMOBILIARIO NORTE'),
+    ('93000002000191', '2026-05-01', 'KAPPA INCORPORACAO FUNDO DE INVESTIMENTO IMOBILIARIO SUL');
+REFRESH MATERIALIZED VIEW public.mv_fund_name_history;
+INSERT INTO cvm_fi_diario (cnpj, id_subclasse, dt_comptc, vl_quota, vl_patrim_liq, raw) VALUES
+    ('91000000000191', '', '2026-08-31', 3.761750, 1000, '{}'),
+    ('91000001000191', '', '2026-08-31', 1.536180, 1000, '{}'),
+    ('94000000000191', '', '2026-08-31', 2.5, 1000, '{}');
+INSERT INTO cvm_fiagro_mensal (cnpj, period, vl_quota, vl_patrim_liq, raw) VALUES
+    ('92000000000191', '2026-08-01', 102.07, 1000, '{}'),
+    ('92000001000191', '2026-08-01', 101.99, 1000, '{}');
+
+DO $$
+DECLARE
+    r RECORD;
+    n INT;
+    a BOOLEAN;
+BEGIN
+    -- The abbreviations dropped, the exact-date daily quota decides: one fund, not ambiguous.
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['ZETA CDB Plus FIRF CrPr'], NULL, ARRAY[3.76175044::numeric],
+                                               ARRAY[DATE '2026-08-31']) WHERE rank = 1;
+    IF r.candidate_cnpj IS DISTINCT FROM '91000000000191' OR r.ambiguous OR r.quota_rel_diff > 0.0001
+       OR r.reason NOT LIKE '%abbreviations%' THEN
+        RAISE EXCEPTION 'abbreviated name by quota: got % amb=% diff=% (%)', r.candidate_cnpj, r.ambiguous, r.quota_rel_diff, r.reason;
+    END IF;
+    -- The cut to 5 per line is after the quota: the dead siblings (lower CNPJs) never push it out.
+    SELECT count(*) INTO n FROM api.portfolio_resolve(ARRAY['ZETA CDB Plus FIRF CrPr'], NULL, ARRAY[3.76175044::numeric],
+                                                      ARRAY[DATE '2026-08-31']);
+    IF n > 5 THEN RAISE EXCEPTION 'more than 5 candidates for one line: %', n; END IF;
+    -- The other member of the family, by its own quota.
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['ZETA CDB Plus FIRF CrPr'], NULL, ARRAY[1.53618::numeric],
+                                               ARRAY[DATE '2026-08-31']) WHERE rank = 1;
+    IF r.candidate_cnpj IS DISTINCT FROM '91000001000191' OR r.ambiguous THEN
+        RAISE EXCEPTION 'abbreviated name, other member: got % amb=% (%)', r.candidate_cnpj, r.ambiguous, r.reason;
+    END IF;
+    -- A name hint is never a confident match. Without a quota it ranks behind the candidates that
+    -- scored on their own (here a decoy keeps rank 1, as before the hint existed) ...
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['ZETA CDB Plus FIRF CrPr']) WHERE rank = 1;
+    IF r.reason LIKE '%abbreviations%' AND NOT r.ambiguous THEN
+        RAISE EXCEPTION 'a name hint was reported unambiguous without a quota: % %', r.candidate_cnpj, r.reason;
+    END IF;
+    -- ... and when it is the line's only candidate it is rank 1 and ambiguous, never identified.
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['QUASAR AURORA FIRF CrPr RESP']) WHERE rank = 1;
+    IF r.candidate_cnpj IS DISTINCT FROM '94000000000191' OR NOT r.ambiguous OR r.reason NOT LIKE '%only candidate is a name hint%' THEN
+        RAISE EXCEPTION 'a lone name hint: got % amb=% (%)', r.candidate_cnpj, r.ambiguous, r.reason;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['QUASAR AURORA FIRF CrPr RESP'], NULL, ARRAY[2.5::numeric],
+                                               ARRAY[DATE '2026-08-31']) WHERE rank = 1;
+    IF r.candidate_cnpj IS DISTINCT FROM '94000000000191' OR r.ambiguous THEN
+        RAISE EXCEPTION 'a lone name hint with its quota: got % amb=% (%)', r.candidate_cnpj, r.ambiguous, r.reason;
+    END IF;
+    -- A quota that matches no member confirms none of them, and a lone hint stays ambiguous.
+    SELECT count(*) INTO n FROM api.portfolio_resolve(ARRAY['ZETA CDB Plus FIRF CrPr'], NULL, ARRAY[9.99::numeric],
+                                                      ARRAY[DATE '2026-08-31']) WHERE reason LIKE '%matches the statement%';
+    IF n <> 0 THEN RAISE EXCEPTION 'a quota of 9.99 matched % candidates', n; END IF;
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['QUASAR AURORA FIRF CrPr RESP'], NULL, ARRAY[9.99::numeric],
+                                               ARRAY[DATE '2026-08-31']) WHERE rank = 1;
+    IF NOT r.ambiguous OR r.reason NOT LIKE '%AMBIGUOUS%' THEN
+        RAISE EXCEPTION 'a lone hint with a wrong quota: % %', r.ambiguous, r.reason;
+    END IF;
+    -- A name with nothing to drop is scored as before.
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['ZETA CDB Plus'], NULL, ARRAY[3.76175044::numeric],
+                                               ARRAY[DATE '2026-08-31']) WHERE rank = 1;
+    IF r.candidate_cnpj IS DISTINCT FROM '91000000000191' OR r.ambiguous OR r.reason LIKE '%abbreviations%' THEN
+        RAISE EXCEPTION 'plain name: got % amb=% (%)', r.candidate_cnpj, r.ambiguous, r.reason;
+    END IF;
+
+    -- A line whose own words already score (a real identified line has this shape: two of its
+    -- tokens are fund-type abbreviations): the hint adds nothing and changes no score.
+    SELECT count(*) INTO n FROM api.portfolio_resolve(ARRAY['KAPPA INCORPORACAO FII FI LTDA'])
+     WHERE reason LIKE '%abbreviations%';
+    IF n <> 0 THEN
+        RAISE EXCEPTION 'a line that already scores got % name-hint rows', n;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['KAPPA INCORPORACAO FII FI LTDA']) WHERE rank = 1;
+    IF r.candidate_cnpj IS DISTINCT FROM '93000000000191'
+       OR r.similarity IS DISTINCT FROM round(public.fund_name_score(
+              public.fund_name_norm('KAPPA INCORPORACAO FII FI LTDA'),
+              public.fund_name_norm('KAPPA INCORPORACAO FII FUNDO DE INVESTIMENTO IMOBILIARIO LIMITADA'))::numeric, 4) THEN
+        RAISE EXCEPTION 'plain scoring changed: got % %', r.candidate_cnpj, r.similarity;
+    END IF;
+
+    -- FIAGRO: the month-end quota of the informe mensal tells the two apart (0.009% against 0.07%).
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['ZETA CRED AGRICOLA ALFA II CDI AGRO DC*'], NULL,
+                                               ARRAY[102.06073846::numeric], ARRAY[DATE '2026-08-31']) WHERE rank = 1;
+    IF r.candidate_cnpj IS DISTINCT FROM '92000000000191' OR r.ambiguous OR r.quota_on_date <> 102.07
+       OR r.reason NOT LIKE '%monthly informe%' THEN
+        RAISE EXCEPTION 'FIAGRO by the monthly quota: got % amb=% quota=% (%)', r.candidate_cnpj, r.ambiguous, r.quota_on_date, r.reason;
+    END IF;
+    -- Not a month end: the monthly figure is not that day's quota, so none is read.
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['ZETA CRED AGRICOLA ALFA II CDI AGRO DC*'], NULL,
+                                               ARRAY[102.06073846::numeric], ARRAY[DATE '2026-08-28']) WHERE rank = 1;
+    IF r.quota_on_date IS NOT NULL OR r.reason NOT LIKE '%no quota filed%' THEN
+        RAISE EXCEPTION 'FIAGRO mid-month: % %', r.quota_on_date, r.reason;
+    END IF;
+    -- A quota between the two (outside the rounding of both) separates nothing.
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['ZETA CRED AGRICOLA ALFA II CDI AGRO DC*'], NULL,
+                                               ARRAY[102.5::numeric], ARRAY[DATE '2026-08-31']) WHERE rank = 1;
+    IF NOT r.ambiguous THEN
+        RAISE EXCEPTION 'FIAGRO with a quota that fits neither: % (%)', r.ambiguous, r.reason;
+    END IF;
+    RAISE NOTICE 'portfolio_resolve abbreviations and monthly quota OK';
+END $$;
+
 -- 201 lines are refused with the reason, 200 are served; parallel arrays must agree.
 DO $$
 DECLARE

@@ -42,7 +42,7 @@ codes in `common.REASON_TEXT`: `retorno_debenture_metodo_pendente`, `serie_ambig
 The new calls (`portfolio_credit_returns`, and `inflation` when a contracted rate is on IPCA) come after the CDI call
 of the return block, so the call ids of later blocks move.
 
-2.2 (#766, owner 2026-10-09; catalog v72): method B now reads identified debenture tickers from
+2.2 (#766, owner 2026-10-09; catalog v73): method B now reads identified debenture tickers from
 `api.portfolio_debenture_returns` in one set-based call for the portfolio. Each `returns.lines[]` includes a 12-month
 and 6-month window from the monthly median `vl_merc_pos_final / qt_pos_final` across at least three funds in
 `cvm_fi_cda_acoes` (block 4, `tp_aplic='Debêntures'`). The line's `series` names the table and exact months, and each
@@ -956,7 +956,7 @@ still renders. The view's `sections` and `gaps` ("O que não foi possível avali
 
 ## Tools the engine calls
 
-`portfolio_credit_returns` (2.1, catalog v71) and `portfolio_debenture_returns` (2.2, catalog v72; the latter is not
+`portfolio_credit_returns` (2.1, catalog v71) and `portfolio_debenture_returns` (2.2, catalog v73; the latter is not
 yet deployed; see the PR's production-read boundary) and
 `inflation` (2.1, IPCA, only for a contracted rate on IPCA), `portfolio_equivalents` and `class_return_distribution` (1.13, catalog v68 and v66; live once the analytical SQL
 and the MCP are deployed), `fund_nav`, `quote_history`, `macro_series` and `trade_consolidated_history` (1.10, the return block; the last

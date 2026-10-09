@@ -463,7 +463,19 @@ one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a n
   right fund 1 time in 10 on an obsolete name (Phase 0, 2026-10-03). A statement
   quota with its date is compared with `cvm_fi_diario.vl_quota` on that exact
   date; within 0.5% ranks first (the XP Bancos master and FIC, same words,
-  quotas 1.952607 and 1.542011 on 2026-09-30). `ambiguous` is TRUE on every row
+  quotas 1.952607 and 1.542011 on 2026-09-30). Since catalog v72 (#783) two cases
+  that left a fund unresolved are handled, neither by carrying a quota from another
+  date. A **FIAGRO** files no daily quota, so on a statement dated the last day of
+  a month its `cvm_fiagro_mensal.vl_quota` of that month is compared (filed with two
+  decimals: the tolerance is half a cent of the quota plus 0.01%; any other date
+  reads nothing; FII is not read, its monthly figure is the patrimonial value). And
+  a **name hint**: a line that abbreviates the fund type (`FIRF`, `CrPr`) is scored by
+  whole-string similarity and could miss the real fund entirely, so a name below the
+  0.25 floor that reaches it once those tokens are dropped is added as a candidate,
+  scored 0.5 at most, ranked behind every candidate that scored on its own unless its
+  quota matches and theirs does not, with the fact in `reason`, and `ambiguous` unless
+  its quota matches. Every such candidate is read against the quota before the cut to 5. A score that already
+  counts is never changed. `ambiguous` is TRUE on every row
   of a line whose top two candidates are within 0.05 and the quota does not
   separate them: the line is unresolved, `reason` says why, nothing is picked.
   Unaccenting is a fixed `translate()` map (`unaccent` is not installed on
