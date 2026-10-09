@@ -20,7 +20,9 @@ cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty')
 [ -n "$cwd" ] && cd "$cwd" 2>/dev/null
 b=$(git branch --show-current 2>/dev/null)
 [ -n "$b" ] || exit 0
-n=$(gh pr list --state merged --head "$b" --json number -q '.[0].number' 2>/dev/null)
+# REST, not `gh pr list`: GraphQL is 403 from these sessions (AGENTS.md).
+n=$(gh api "repos/{owner}/{repo}/pulls?state=closed&head={owner}:$b" \
+  -q '[.[] | select(.merged_at != null)][0].number // empty' 2>/dev/null)
 if [ -n "$n" ]; then
   echo "Branch $b already merged (PR #$n). Do not push: GitHub deleted it and a push recreates it. Branch from main instead." >&2
   exit 2
