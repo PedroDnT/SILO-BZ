@@ -305,6 +305,31 @@ suggested):
 
 ## 8. Direct credit: CRA, CRI and debentures (#766)
 
+### Recheck before resuming implementation (2026-10-09)
+
+Read-only production recheck, with `transaction_read_only=on`, against the same
+portfolio month (2026-08). `api.portfolio_credit_returns(['24I1980390'],
+'2026-08-01')` returned all 13 month-ends from 2025-08 through 2026-08.
+April 2026 remains flagged `queda_sem_evento_arquivado`: PU fell from
+1,071.48630 (March) to 1,005.98531 (April), −6.11%, while filed
+`rendimentos` and `amortizacoes` are both zero. The later records through
+August do not repair that unknown month. The method-A acceptance test still
+fails on the report window; the guarded window remains **not evaluated**.
+Per the brief, implementation stops here pending the owner reviewing this
+case. No method-B return, new threshold, C change, code, catalog, or migration
+is included in this PR.
+
+Warehouse availability was also rechecked: `cvm_securit_serie` has values
+through 2026-08 for all six CRA/CRI codes; CRA0260025T has only four monthly
+records (May–August 2026). `cvm_fi_cda_acoes` has 13 monthly observations in
+2025-08..2026-08 for CUTI11 (91 distinct funds) and ENAT11 (210 distinct
+funds). This verifies source availability, not that method B can distinguish
+coupon events from market losses. The contract still says `titulo_cetip` in
+`cvm_fi_cda_debentures` is a yes/no flag and is not used as a security code.
+
+The observed April values reproduce the existing stop described below. No
+claim is made that later report or portfolio coverage has changed.
+
 Measured 2026-10-08 from 18:00 to 18:50 UTC-3 (21:00 to 21:50 UTC), read-only
 (`psql` with `default_transaction_read_only=on`; the Supabase MCP did not
 answer), against production. The portfolio is the real BTG statement of

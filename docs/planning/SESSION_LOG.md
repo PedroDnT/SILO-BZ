@@ -3,6 +3,25 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-09 · codex/portfolio-credit-mrv-stop
+
+**Done.** Rechecked the live warehouse with read-only PostgreSQL (`transaction_read_only=on`). The production
+`api.portfolio_credit_returns` response for MRV 24I1980390, ending 2026-08, still flags 2026-04
+`queda_sem_evento_arquivado`: PU 1,071.48630 to 1,005.98531 (−6.11%), with no filed interest or amortization.
+All 13 requested month-ends exist, but the guarded 12-month return is unknown. Per the brief's explicit stop
+condition, implementation did not proceed. Source coverage was checked: the six CRA/CRI codes have rows through
+2026-08 (CRA0260025T has four months); CUTI11 and ENAT11 each have 13 months through 2026-08, held by 91 and
+210 distinct funds respectively.
+
+**Decisions.** None. B's PU-drop threshold and C's placement were not decided or changed; no production migration
+was run.
+
+**Assumptions.** The 2026-10-08 report uses the 2026-08-31 portfolio snapshot, consistent with the tested
+2025-08..2026-08 window. No new position weights or report generation were inferred.
+
+**Outside scope.** Tests for B/C, the eight-paper run, and the fake-provider report were not run because method A's
+acceptance gate failed and the brief says to stop at that point.
+
 ## 2026-10-08 · claude/credit-return-method-a-c (#772, #766)
 
 **Done.** Built #766 a second time in parallel with #771/#773 (`api.portfolio_credit_curve`, catalog v71). Both had
