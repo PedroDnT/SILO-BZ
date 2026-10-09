@@ -70,6 +70,22 @@
 -- within 0.5% and the second does not). Nothing is ever picked silently: every
 -- candidate row is returned with its rank, and ambiguous is TRUE on every row
 -- of an ambiguous line.
+-- Two additions (catalog v72, #783), measured on the real 2026-08-31 statement:
+--   * Name hint. A line with fund-type abbreviations ('FIRF CrPr') scored by
+--     whole-string similarity alone could miss the real fund entirely. public.fund_name_core
+--     drops the tokens that only name a legal form or a credit class; a name whose own score
+--     is below the 0.25 floor but whose score for that shortened line reaches it is ADDED as a
+--     candidate, scored 0.5 at most, flagged in its reason, ranked behind every candidate that
+--     scored on its own unless its quota matches and theirs does not (a quota that matches
+--     ranks first, as for any candidate), and never unambiguous unless its quota matches. A
+--     score that already counts is not touched. Every hint candidate is scored against the
+--     quota before the cut to 5 per line: they tie at the cap, so a cut before it would keep
+--     an arbitrary few.
+--   * Monthly quota. A FIAGRO files no daily quota. For a statement dated on the last day of a
+--     month, a candidate with no cvm_fi_diario row that day is compared with the quota of that
+--     month in cvm_fiagro_mensal (filed with two decimals, so its tolerance is half a cent of
+--     the quota plus 0.01%, not 0.5%). Any other date reads nothing: a quota is never carried
+--     from another session. FII is not read: its monthly figure is the patrimonial value.
 --
 -- FEES (portfolio_fees). Two kinds of number, in separate columns, never mixed:
 --   * DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in
@@ -296,6 +312,42 @@ COMMENT ON FUNCTION public.fund_name_score(TEXT, TEXT) IS
     'Internal (31_api_portfolio.sql). Trigram score of a normalised input against a normalised filed name: similarity(), or greatest(similarity, word_similarity) when the input has at most four words.';
 
 -- ---------------------------------------------------------------------------
+-- fund_name_core - a normalised input without its fund-type abbreviations
+-- ---------------------------------------------------------------------------
+-- A broker abbreviates the legal form and the credit class ('BTG CDB Plus FIRF
+-- CrPr'); the fund files them spelled out, in a longer name. A line of more than
+-- four words is scored by whole-string similarity() alone, so those words pull the
+-- fund out of the candidates (#783: the real fund was no candidate, two unrelated
+-- ones were). This drops the tokens that only name a legal form or a credit class
+-- and nothing else: nothing is expanded or guessed. NULL when no token is dropped
+-- or fewer than two words would be left, so a name without them is scored exactly
+-- as before. The result is a name HINT, never a match (see the resolver).
+CREATE OR REPLACE FUNCTION public.fund_name_core(p_norm TEXT)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+SET search_path = ''
+AS $fn$
+    SELECT CASE WHEN pg_catalog.cardinality(k.kept) >= 2
+                 AND pg_catalog.cardinality(k.kept) < pg_catalog.cardinality(k.words)
+                THEN pg_catalog.array_to_string(k.kept, ' ')
+           END
+    FROM (SELECT w.words,
+                 ARRAY(SELECT u.x
+                       FROM pg_catalog.unnest(w.words) WITH ORDINALITY AS u(x, i)
+                       WHERE u.x <> ALL (ARRAY['firf', 'fif', 'fic', 'ficfi', 'fi', 'crpr', 'resp', 'ltda'])
+                       ORDER BY u.i) AS kept
+          FROM (SELECT pg_catalog.string_to_array(p_norm, ' ') AS words) w) k
+$fn$;
+
+REVOKE ALL ON FUNCTION public.fund_name_core(TEXT) FROM PUBLIC;
+
+COMMENT ON FUNCTION public.fund_name_core(TEXT) IS
+    'Internal (31_api_portfolio.sql, #783). A normalised statement name without the tokens that only abbreviate a legal form or a credit class (firf, fif, fic, ficfi, fi, crpr, resp, ltda); NULL when none is dropped or fewer than two words remain. A name hint for the resolver, never a match on its own.';
+
+-- ---------------------------------------------------------------------------
 -- mv_fund_name_history - every name a fund filed, one row per (cnpj, name)
 -- ---------------------------------------------------------------------------
 -- Rebuilt on every apply, like 30. Nothing depends on it (functions do not
@@ -415,6 +467,7 @@ BEGIN
         SELECT g.i AS line_no,
                p_names[g.i] AS input_name,
                public.fund_name_norm(NULLIF(btrim(p_names[g.i]), '')) AS nn,
+               public.fund_name_core(public.fund_name_norm(NULLIF(btrim(p_names[g.i]), ''))) AS nn_core,
                CASE WHEN NULLIF(regexp_replace(COALESCE(p_cnpjs[g.i], ''), '\D', '', 'g'), '') IS NULL
                     THEN NULL
                     ELSE lpad(regexp_replace(p_cnpjs[g.i], '\D', '', 'g'), 14, '0')
@@ -427,7 +480,7 @@ BEGIN
     by_cnpj AS (
         SELECT l.line_no, l.in_cnpj AS cnpj, 'cnpj'::text AS kind,
                best.name AS matched_name, best.last_period AS matched_period,
-               best.score AS sim
+               best.score AS sim, FALSE AS via_core
         FROM lines l
         LEFT JOIN LATERAL (
             SELECT h.name, h.last_period,
@@ -448,7 +501,7 @@ BEGIN
     by_etf AS (
         SELECT l.line_no, e.cnpj, 'etf_ticker'::text AS kind,
                e.fund_name AS matched_name, NULL::date AS matched_period,
-               1.0::numeric AS sim
+               1.0::numeric AS sim, FALSE AS via_core
         FROM lines l
         JOIN public.cvm_etf_registry e ON e.ticker = upper(btrim(l.input_name))
         WHERE l.in_cnpj IS NULL AND l.nn IS NOT NULL AND e.cnpj IS NOT NULL
@@ -458,7 +511,7 @@ BEGIN
         SELECT l.line_no, h.cnpj,
                CASE WHEN bool_or(h.is_current) THEN 'exact_current' ELSE 'exact_history' END AS kind,
                min(h.name) AS matched_name, max(h.last_period) AS matched_period,
-               1.0::numeric AS sim
+               1.0::numeric AS sim, FALSE AS via_core
         FROM lines l
         JOIN public.mv_fund_name_history h ON h.name_norm = l.nn
         WHERE l.in_cnpj IS NULL AND l.nn IS NOT NULL
@@ -468,13 +521,24 @@ BEGIN
     -- 3. Trigram, only where nothing matched exactly.
     fuzzy AS (
         SELECT l.line_no, f.cnpj, 'trigram'::text AS kind,
-               f.name AS matched_name, f.last_period AS matched_period, f.score AS sim
+               f.name AS matched_name, f.last_period AS matched_period, f.score AS sim,
+               f.via_core
         FROM lines l
         CROSS JOIN LATERAL (
-            SELECT DISTINCT ON (k.cnpj) k.cnpj, k.name, k.last_period, k.score
+            SELECT DISTINCT ON (k.cnpj) k.cnpj, k.name, k.last_period, k.score, k.via_core
             FROM (
+                -- A name HINT (#783): a name whose own score is below the 0.25 floor but
+                -- whose score for the line without its fund-type abbreviations reaches it
+                -- is added as a candidate, scored 0.5 at most and flagged via_core: only a
+                -- quota may confirm it. A score that already counts is never changed.
                 SELECT x.cnpj, x.name, x.last_period,
-                       public.fund_name_score(l.nn, x.name_norm)::numeric AS score
+                       CASE WHEN public.fund_name_score(l.nn, x.name_norm) < 0.25
+                             AND COALESCE(public.fund_name_score(l.nn_core, x.name_norm), 0) >= 0.25
+                            THEN least(0.5, public.fund_name_score(l.nn_core, x.name_norm))
+                            ELSE public.fund_name_score(l.nn, x.name_norm)
+                       END::numeric AS score,
+                       (public.fund_name_score(l.nn, x.name_norm) < 0.25
+                        AND COALESCE(public.fund_name_score(l.nn_core, x.name_norm), 0) >= 0.25) AS via_core
                 FROM (
                     (SELECT h.cnpj, h.name, h.name_norm, h.last_period
                      FROM public.mv_fund_name_history h
@@ -484,6 +548,18 @@ BEGIN
                     (SELECT h.cnpj, h.name, h.name_norm, h.last_period
                      FROM public.mv_fund_name_history h
                      ORDER BY l.nn OPERATOR(public.<->) h.name_norm
+                     LIMIT 25)
+                    UNION
+                    (SELECT h.cnpj, h.name, h.name_norm, h.last_period
+                     FROM public.mv_fund_name_history h
+                     WHERE l.nn_core IS NOT NULL
+                     ORDER BY l.nn_core OPERATOR(public.<<->) h.name_norm
+                     LIMIT 25)
+                    UNION
+                    (SELECT h.cnpj, h.name, h.name_norm, h.last_period
+                     FROM public.mv_fund_name_history h
+                     WHERE l.nn_core IS NOT NULL
+                     ORDER BY l.nn_core OPERATOR(public.<->) h.name_norm
                      LIMIT 25)
                 ) x
             ) k
@@ -497,13 +573,19 @@ BEGIN
           AND NOT EXISTS (SELECT 1 FROM by_etf b WHERE b.line_no = l.line_no)
     ),
     fuzzy_top AS (
-        SELECT z.line_no, z.cnpj, z.kind, z.matched_name, z.matched_period, z.sim
+        -- The line's own matches: the best 5. Every name-hint candidate (via_core, #783)
+        -- goes on to the quota (at most the 50 the nearest-neighbour searches returned):
+        -- hints tie at their 0.5 cap, so cutting them here would keep an arbitrary few
+        -- (by CNPJ) and could drop the one fund the quota confirms. The cut to 5 per line
+        -- is after the ranking, below.
+        SELECT z.line_no, z.cnpj, z.kind, z.matched_name, z.matched_period, z.sim, z.via_core
         FROM (
-            SELECT fz.*, row_number() OVER (PARTITION BY fz.line_no
-                                            ORDER BY fz.sim DESC, fz.cnpj) AS rn
+            SELECT fz.*,
+                   row_number() OVER (PARTITION BY fz.line_no, fz.via_core
+                                      ORDER BY fz.sim DESC, fz.cnpj) AS rn
             FROM fuzzy fz
         ) z
-        WHERE z.rn <= 5
+        WHERE z.via_core OR z.rn <= 5
     ),
     cand AS (
         SELECT * FROM by_cnpj
@@ -512,14 +594,20 @@ BEGIN
         UNION ALL SELECT * FROM fuzzy_top
     ),
     scored AS (
-        SELECT c.line_no, c.cnpj, c.kind, c.matched_name, c.matched_period, c.sim,
+        SELECT c.line_no, c.cnpj, c.kind, c.matched_name, c.matched_period, c.sim, c.via_core,
                -- an ETF the name history does not hold keeps the registry's name (v56)
                CASE WHEN c.kind = 'etf_ticker' THEN COALESCE(cur.name, c.matched_name)
                     ELSE cur.name END AS candidate_name,
                cur.entity_type,
-               qq.vl_quota AS quota_on_date,
-               CASE WHEN l.q IS NULL OR l.q = 0 OR qq.vl_quota IS NULL THEN NULL
-                    ELSE abs(qq.vl_quota - l.q) / abs(l.q) END AS rel_diff,
+               COALESCE(qq.vl_quota, qm.vl_quota) AS quota_on_date,
+               CASE WHEN l.q IS NULL OR l.q = 0 OR COALESCE(qq.vl_quota, qm.vl_quota) IS NULL THEN NULL
+                    ELSE abs(COALESCE(qq.vl_quota, qm.vl_quota) - l.q) / abs(l.q) END AS rel_diff,
+               (qq.vl_quota IS NULL AND qm.vl_quota IS NOT NULL) AS quota_monthly,
+               -- 0.5% for a daily quota. The monthly quota is filed with two decimals, so
+               -- half a cent of it (0.005 / quota) is rounding, plus 0.01% of slack.
+               CASE WHEN qq.vl_quota IS NULL AND qm.vl_quota IS NOT NULL
+                    THEN 0.0001 + 0.005 / qm.vl_quota
+                    ELSE 0.005 END AS quota_tol,
                (l.q IS NOT NULL AND l.qd IS NOT NULL) AS quota_sent
         FROM cand c
         JOIN lines l ON l.line_no = c.line_no
@@ -543,13 +631,30 @@ BEGIN
             ORDER BY abs(d.vl_quota - l.q), d.id_subclasse
             LIMIT 1
         ) qq ON TRUE
+        LEFT JOIN LATERAL (
+            -- A FIAGRO files no daily quota (#783). Its informe mensal carries the quota
+            -- of the month, so a statement dated on the last day of a month is compared
+            -- with it. Any other date reads nothing: the monthly figure is not that day's.
+            -- FII is left out: its monthly figure is the patrimonial value per quota, not
+            -- the price a statement prints.
+            SELECT m.vl_quota
+            FROM public.cvm_fiagro_mensal m
+            WHERE qq.vl_quota IS NULL
+              AND l.q IS NOT NULL AND l.qd IS NOT NULL
+              AND l.qd = (date_trunc('month', l.qd) + interval '1 month' - interval '1 day')::date
+              AND m.cnpj = c.cnpj
+              AND m.period = date_trunc('month', l.qd)::date
+              AND m.vl_quota IS NOT NULL AND m.vl_quota > 0
+            LIMIT 1   -- uq_fiagro_mensal (cnpj, period): at most one row
+        ) qm ON TRUE
     ),
     ranked AS (
         SELECT s.*,
-               (s.rel_diff IS NOT NULL AND s.rel_diff <= 0.005) AS quota_ok,
+               (s.rel_diff IS NOT NULL AND s.rel_diff <= s.quota_tol) AS quota_ok,
                row_number() OVER (
                    PARTITION BY s.line_no
-                   ORDER BY (s.rel_diff IS NOT NULL AND s.rel_diff <= 0.005) DESC,
+                   ORDER BY (s.rel_diff IS NOT NULL AND s.rel_diff <= s.quota_tol) DESC,
+                            s.via_core ASC,
                             s.sim DESC NULLS LAST,
                             s.rel_diff ASC NULLS LAST,
                             s.cnpj
@@ -560,8 +665,11 @@ BEGIN
     verdict AS (
         SELECT r1.line_no,
                CASE
-                   WHEN r1.kind IN ('cnpj', 'etf_ticker') OR r1.n_cand = 1 THEN FALSE
+                   WHEN r1.kind IN ('cnpj', 'etf_ticker') THEN FALSE
                    WHEN r1.quota_ok AND NOT COALESCE(r2.quota_ok, FALSE) THEN FALSE
+                   -- A name hint (#783) is never a match on its own: only a quota confirms it.
+                   WHEN r1.via_core THEN TRUE
+                   WHEN r1.n_cand = 1 THEN FALSE
                    ELSE (COALESCE(r1.sim, 0) - COALESCE(r2.sim, 0)) < 0.05
                END AS ambiguous,
                r1.sim AS sim1, r2.sim AS sim2, r1.quota_ok AS q1, r2.quota_ok AS q2
@@ -600,12 +708,23 @@ BEGIN
                    WHEN r.cnpj IS NULL OR NOT r.quota_sent THEN ''
                    WHEN r.quota_on_date IS NULL THEN
                        '; no quota filed on ' || l.qd::text
+                   WHEN r.quota_monthly AND r.quota_ok THEN
+                       '; the monthly informe quota of ' || to_char(l.qd, 'YYYY-MM')
+                       || ' matches the statement within ' || to_char(r.quota_tol * 100, 'FM990.000') || '%'
+                   WHEN r.quota_monthly THEN
+                       '; the monthly informe quota of ' || to_char(l.qd, 'YYYY-MM')
+                       || ' differs from the statement by ' || to_char(r.rel_diff * 100, 'FM999990.000') || '%'
                    WHEN r.quota_ok THEN
                        '; quota on ' || l.qd::text || ' matches the statement within 0.5%'
                    ELSE '; quota on ' || l.qd::text || ' differs from the statement by '
                         || to_char(r.rel_diff * 100, 'FM999990.00') || '%'
                END
+               || CASE WHEN r.via_core THEN
+                       '; found after dropping the fund-type abbreviations from the line (a name hint: only a quota confirms it)'
+                   ELSE '' END
                || CASE
+                   WHEN r.rk = 1 AND v.ambiguous AND v.sim2 IS NULL THEN
+                       '; AMBIGUOUS: the only candidate is a name hint and the quota does not confirm it'
                    WHEN r.rk = 1 AND v.ambiguous THEN
                        '; AMBIGUOUS: the top two candidates score '
                        || to_char(v.sim1, 'FM0.000') || ' and ' || to_char(v.sim2, 'FM0.000')
@@ -616,7 +735,7 @@ BEGIN
                    ELSE ''
                END
         FROM lines l
-        LEFT JOIN ranked r ON r.line_no = l.line_no
+        LEFT JOIN ranked r ON r.line_no = l.line_no AND r.rk <= 5
         LEFT JOIN verdict v ON v.line_no = l.line_no
         ORDER BY l.line_no, r.rk NULLS FIRST
         LIMIT 1001
@@ -637,7 +756,7 @@ GRANT EXECUTE ON FUNCTION api.portfolio_resolve(TEXT[], TEXT[], NUMERIC[], DATE[
 GRANT EXECUTE ON FUNCTION api.portfolio_resolve(TEXT[], TEXT[], NUMERIC[], DATE[]) TO silo_api;
 
 COMMENT ON FUNCTION api.portfolio_resolve(TEXT[], TEXT[], NUMERIC[], DATE[]) IS
-    'Statement lines to candidate funds. One row per line and candidate (up to 5), ranked: a CNPJ the line carries wins (match_kind cnpj); else a name that is exactly a ticker of SILO''s curated ETF registry (cvm_etf_registry) gives that ETF''s CNPJ (etf_ticker, v56: api.lookup returns no CNPJ for a ticker); else an exact match on any name the fund ever filed, case, accents and whitespace ignored (exact_current: the registry name or the newest CDA name; exact_history: a former name, matched_period = the last CDA month it was filed under); else trigram over the whole name history (CDA DENOM_SOCIAL since 2005 plus the registry), similarity = greatest(similarity, word_similarity), so an abbreviation scores high. With p_quotas and p_quota_dates the candidate''s cvm_fi_diario quota on that exact date is compared, and one within 0.5% ranks first: that is how the XP Bancos master and FIC (same words, quotas 1.952607 and 1.542011 on 2026-09-30) are told apart. ambiguous is TRUE on every row of a line whose top two candidates score within 0.05 and the quota does not separate them: SILO never picks silently, the caller decides. Arrays are parallel, one entry per line. More than 200 lines RAISES 22023; the result is at most one 1000-row page.';
+    'Statement lines to candidate funds. One row per line and candidate (up to 5), ranked: a CNPJ the line carries wins (match_kind cnpj); else a name that is exactly a ticker of SILO''s curated ETF registry (cvm_etf_registry) gives that ETF''s CNPJ (etf_ticker, v56: api.lookup returns no CNPJ for a ticker); else an exact match on any name the fund ever filed, case, accents and whitespace ignored (exact_current: the registry name or the newest CDA name; exact_history: a former name, matched_period = the last CDA month it was filed under); else trigram over the whole name history (CDA DENOM_SOCIAL since 2005 plus the registry), similarity = greatest(similarity, word_similarity), so an abbreviation scores high. With p_quotas and p_quota_dates the candidate''s cvm_fi_diario quota on that exact date is compared, and one within 0.5% ranks first (v72: a FIAGRO has none, so on a month-end date its cvm_fiagro_mensal quota for that month is compared, within half a cent of it plus 0.01%; and a fund whose name scores below the floor only because the line abbreviates its type, FIRF or CrPr, is added as a name hint, scored 0.5 at most, ranked behind the candidates that scored on their own unless its quota matches and theirs does not, and ambiguous unless its quota matches): that is how the XP Bancos master and FIC (same words, quotas 1.952607 and 1.542011 on 2026-09-30) are told apart. ambiguous is TRUE on every row of a line whose top two candidates score within 0.05 and the quota does not separate them: SILO never picks silently, the caller decides. Arrays are parallel, one entry per line. More than 200 lines RAISES 22023; the result is at most one 1000-row page.';
 
 -- ---------------------------------------------------------------------------
 -- portfolio_fees - the disclosed fee, and a separate estimate from the balancete
