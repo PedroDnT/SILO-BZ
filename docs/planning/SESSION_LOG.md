@@ -15,7 +15,7 @@ synthetic fund and index; three largest funds checked by hand.
 classes, the excluded groups (the owner's five plus Mono Ação, Fundos Fechados and FMP-FGTS), the p.p. metric,
 annualization of both sides, the PL weighting and the closed-fund count.
 
-**Open for the owner.** Include IBrX; which window goes to the site; a separate number for long-short.
+**Owner decisions, 2026-10-09.** IBrX stays out of the main number; the 12-month window goes to the site; long-short gets no separate number.
 
 **Outside scope.** None.
 
