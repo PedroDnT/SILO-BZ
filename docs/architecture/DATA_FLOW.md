@@ -62,9 +62,8 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 
 ## Serving
 
-`credit_market_history` selects complete audited captures per date before code
-filters, then pivots nine metrics per settlement/classification group; no return
-or inferred issuer link. Its as-of cutoff is observation plus audit completion.
+`credit_market_history`: audited date vintages before code filter; nine metrics
+per settlement/classification.
 
 | Path                       | Reads              | Fresh as of           |
 | -------------------------- | ------------------ | --------------------- |

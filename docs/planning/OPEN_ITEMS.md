@@ -695,5 +695,6 @@ no CDA for 2026-04 (6,99%) and the same 2 with 9 and 10 of 13 month-end quotas m
 Owner approved the observation-only plan. SQL read function and local rollback
 behavior tests implement capture selection before code filters, audit-aware
 cutoff, full settlement/classification grain and refusal above 1000 groups.
-Catalog/HTTP/SDK/tool parity and rollout acceptance remain pending. #774 returns
+Catalog/OpenAPI/HTTP/SDK/tool contracts are implemented and verified locally;
+CI and production rollout acceptance remain pending. #774 returns
 remain separate. Recurring capture remains disabled after its storage stop.

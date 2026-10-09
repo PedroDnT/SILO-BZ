@@ -1,6 +1,6 @@
 # Implementation plan: debenture market serving
 
-Prepared 09/10/2026, UTC-3. Planning only. Tasks tracked in GitHub parent [#789](https://github.com/PedroDnT/SILO-BZ/issues/789); no duplicate todo.md. This plan requires owner review before implementation. No SQL, ingestion or deployment is executed by this plan.
+Prepared 09/10/2026, UTC-3. Implementation approved. Tasks tracked in GitHub parent [#789](https://github.com/PedroDnT/SILO-BZ/issues/789); no duplicate todo.md. Owner accepted implementation; production rollout remains separately gated.
 
 ## Existing evidence and boundaries
 
@@ -12,7 +12,7 @@ A separate approved historical recovery is documented in #774 comments: 69 new c
 
 #774 is already claimed by another agent and concerns portfolio returns. Do not duplicate its code or overwrite its scope. Coupon/amortization source acceptance remains open there. Our first deliverable serves market observations; it does not invent cash flows, yield, adjusted returns or issuer-equity links. Review open PRs and #774 again before implementation.
 
-## Proposed read transformation
+## Approved read transformation
 
 1. Select complete captures with successful, reconciled audits eligible at p_as_of. Both observed_at and audit finished_at must be no later than the cutoff. Default cutoff is current knowledge; historic backfills retain their actual late timestamps. This is SILO knowledge-time selection, not proof of source publication-time PIT.
 2. Choose the latest eligible complete capture PER TRADE DATE across its requested/expected/delivered coverage, with deterministic tie-breaking, before filtering instrument/settlement/classification. A newer snapshot removing a bond must return absence, never revive the older record. Partial later captures are diagnostic and never hide an earlier complete capture.
@@ -40,7 +40,7 @@ Dependencies: 1 -> 2 -> 3 -> 4 -> 5. Each task has at most five likely files, th
 
 ## Estimates
 
-Task 1: 1–2 hours. Tasks 2–4: 45–90 minutes each. Task 5: 60–90 minutes plus approved rollout. Total: roughly 4–8 focused hours, excluding CI queue and owner approval. Execute sequentially in one task by default; no parallel agent is required. Do not start implementation under this planning request.
+Task 1: 1–2 hours. Tasks 2–4: 45–90 minutes each. Task 5: 60–90 minutes plus approved rollout. Total: roughly 4–8 focused hours, excluding CI queue and owner approval. Execute sequentially in one task by default; no parallel agent is required. Implementation approval received.
 
 ## Risks and mitigation
 
@@ -56,8 +56,8 @@ Task 1: 1–2 hours. Tasks 2–4: 45–90 minutes each. Task 5: 60–90 minutes 
 
 ## Owner decision / parking lot
 
-Accept the observation-only serving slice before coding. No need to resolve coupon economics to serve observations honestly. Keep coupons, issuer-to-equity mapping, prospective research acceptance and recurring-ingestion restart in their existing scopes. Production SQL apply and remote tool deployment require specific approval under AGENTS.md. This planning approval is not that rollout authorization.
+Owner accepted the observation-only serving slice. No need to resolve coupon economics to serve observations honestly. Keep coupons, issuer-to-equity mapping, prospective research acceptance and recurring-ingestion restart in their existing scopes. Production SQL apply and remote tool deployment require specific approval under AGENTS.md. This planning approval is not that rollout authorization.
 
 ## Implementation status
 
-09/10/2026: Task 1 SQL behavior scenarios passed against isolated local PostgreSQL; no production apply. Remaining tasks are pending.
+09/10/2026: Task 1 SQL behavior scenarios passed against isolated local PostgreSQL; no production apply. Tasks 2–4 contracts and HTTP tests pass locally. Documentation and rollout checklist are complete. Full regression validation is in progress; CI and production acceptance remain distinct.
