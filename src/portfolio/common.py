@@ -85,6 +85,7 @@ REASON_TEXT = {
     "taxa_nao_aplicavel": "ação: sem taxa de administração; retorno bruto e taxa por ponto não se aplicam",
     # schema 2.1 (#766): direct credit. A (CRA/CRI on the securitizer's curve) and C (contracted return, annex)
     "retorno_debenture_metodo_pendente": "debênture: a marcação dos fundos cai no mês de juros ou amortização e o SILO não tem o fluxo de eventos; método pendente, retorno não avaliado",
+    "retorno_debenture_sem_serie": "debênture sem ticker identificado para a série mensal dos fundos",
     "serie_ambigua": "o código tem mais de uma série ou classe no informe da securitizadora e o extrato não diz qual; retorno não avaliado",
     "valor_invalido": "quantidade ou valor dos certificados não positivo no informe da securitizadora; retorno não avaliado",
     "quantidade_mudou": "a quantidade de certificados mudou na janela (resgate, amortização em quantidade ou nova emissão); retorno não avaliado",

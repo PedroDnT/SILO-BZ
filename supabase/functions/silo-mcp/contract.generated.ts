@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "71";
+export const CONTRACT_VERSION = "73";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -66,6 +66,7 @@ export const ENDPOINT_NAMES: string[] = [
   "option_history",
   "panel",
   "portfolio_credit_returns",
+  "portfolio_debenture_returns",
   "portfolio_equivalents",
   "portfolio_fee_peers",
   "portfolio_fees",
@@ -3533,6 +3534,48 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "portfolio_debenture_returns": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_debenture_returns",
+    "description": "Method B: one call for up to 70 debenture tickers; 13 month-ends from cvm_fi_cda_acoes block 4, tp_aplic Debêntures. Per fund and month, PU = sum(vl_merc_pos_final) / sum(qt_pos_final), then median PU over funds (not pooled values); at least 3 funds are required. factor = median PU / previous month median. A decrease beyond p_max_monthly_drop_pct is flagged queda_pu_possivel_evento because CDA block 4 does not carry the debenture cash-flow events; it is never counted as a loss. NULL threshold (owner decision pending) flags every decrease as limite_pendente. Invalid values, a missing month, or fewer than 3 funds leave the window unevaluated. It is the funds' marks, not a trade price, and includes no invented coupon or amortization. More than 70 tickers raises 22023; one page, never trimmed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_tickers": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_end_month": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "p_max_monthly_drop_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Defaults to `NULL::numeric`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_tickers",
+        "p_end_month"
+      ],
+      "additionalProperties": false
+    }
+  },
   "portfolio_equivalents": {
     "kind": "rpc",
     "path": "/rpc/portfolio_equivalents",
@@ -3770,7 +3813,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "portfolio_resolve": {
     "kind": "rpc",
     "path": "/rpc/portfolio_resolve",
-    "description": "Statement lines to candidate funds. One row per line and candidate (up to 5), ranked: a CNPJ the line carries wins (match_kind cnpj); else a name that is exactly a ticker of SILO's curated ETF registry (cvm_etf_registry) gives that ETF's CNPJ (etf_ticker, v56: api.lookup returns no CNPJ for a ticker); else an exact match on any name the fund ever filed, case, accents and whitespace ignored (exact_current: the registry name or the newest CDA name; exact_history: a former name, matched_period = the last CDA month it was filed under); else trigram over the whole name history (CDA DENOM_SOCIAL since 2005 plus the registry), similarity = greatest(similarity, word_similarity), so an abbreviation scores high. With p_quotas and p_quota_dates the candidate's cvm_fi_diario quota on that exact date is compared, and one within 0.5% ranks first: that is how the XP Bancos master and FIC (same words, quotas 1.952607 and 1.542011 on 2026-09-30) are told apart. ambiguous is TRUE on every row of a line whose top two candidates score within 0.05 and the quota does not separate them: SILO never picks silently, the caller decides. Arrays are parallel, one entry per line. More than 200 lines RAISES 22023; the result is at most one 1000-row page.",
+    "description": "Statement lines to candidate funds. One row per line and candidate (up to 5), ranked: a CNPJ the line carries wins (match_kind cnpj); else a name that is exactly a ticker of SILO's curated ETF registry (cvm_etf_registry) gives that ETF's CNPJ (etf_ticker, v56: api.lookup returns no CNPJ for a ticker); else an exact match on any name the fund ever filed, case, accents and whitespace ignored (exact_current: the registry name or the newest CDA name; exact_history: a former name, matched_period = the last CDA month it was filed under); else trigram over the whole name history (CDA DENOM_SOCIAL since 2005 plus the registry), similarity = greatest(similarity, word_similarity), so an abbreviation scores high. With p_quotas and p_quota_dates the candidate's cvm_fi_diario quota on that exact date is compared, and one within 0.5% ranks first (v72: a FIAGRO has none, so on a month-end date its cvm_fiagro_mensal quota for that month is compared, within half a cent of it plus 0.01%; and a fund whose name scores below the floor only because the line abbreviates its type, FIRF or CrPr, is added as a name hint, scored 0.5 at most, ranked behind the candidates that scored on their own unless its quota matches and theirs does not, and ambiguous unless its quota matches): that is how the XP Bancos master and FIC (same words, quotas 1.952607 and 1.542011 on 2026-09-30) are told apart. ambiguous is TRUE on every row of a line whose top two candidates score within 0.05 and the quota does not separate them: SILO never picks silently, the caller decides. Arrays are parallel, one entry per line. More than 200 lines RAISES 22023; the result is at most one 1000-row page.",
     "inputSchema": {
       "type": "object",
       "properties": {

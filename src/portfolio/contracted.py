@@ -1,10 +1,11 @@
-"""Schema 2.1 (#766, method C): the contracted return of a bank credit line (CDB, LCI, LCA, CDCA).
+"""Schema 2.2 (#766, method C): the contracted return of a bank credit line (CDB, LCI, LCA, CDCA).
 
 SILO has no price series for these papers. What the statement prints is a rate ("110,00% do CDI", "CDI + 1,50%",
 "IPCA + 6,20%", "13,84% a.a."). Applied to the CDI or the IPCA of the window, it gives what the contract pays over the
 window: a "retorno contratado", with no credit risk and no mark to market, gross of income tax. It is never a measured
-return: it lives in the line's ``contracted`` block, never in ``windows``, ``coverage``'s measured share, the
-contribution or the body table (owner, 2026-10-08: annex only).
+return: it lives in the line's separate ``contracted`` block, never in measured ``windows``, the measured share of
+``coverage`` or the contribution. The owner chose to show its 12-month figure in the same report table as methods A
+and B on 2026-10-09; it remains clearly labelled contracted and is not added to their coverage or totals.
 
 Rules, fixed (never tuned per paper):
 
@@ -37,9 +38,9 @@ EVALUATED = "avaliado"
 NOT_EVALUATED = "nao_avaliado"
 LABEL = "retorno contratado"
 NOTE = (
-    "Retorno contratado: a taxa impressa no extrato aplicada ao CDI ou ao IPCA da janela. Não é retorno medido: não tem "
-    "risco de crédito nem marcação a mercado, e é bruto de IR. Fica fora da cobertura medida, da contribuição e de "
-    "qualquer total."
+    "Retorno contratado: a taxa impressa no extrato aplicada ao CDI ou ao IPCA da janela, condicionado a o papel existir "
+    "durante toda a janela. A taxa não incorpora risco de crédito nem marcação a mercado e é bruta de IR; aparece "
+    "identificada como contratada e permanece fora da cobertura medida e das contribuições."
 )
 NOTE_IPCA = (
     "aproximação: IPCA dos meses da janela, sem defasagem nem pró-rata da data de aniversário do papel"
