@@ -51,6 +51,30 @@ semiannual payer. Register item 20.3 (B3 OTC prices) is the other route, not sta
 tax block could read the same 'Data inicial' (it reads only `data_aplicacao`). Fixed while merging main: a stray
 `||||||| d25f70ee` conflict marker main carried in this file.
 
+## 2026-10-09 · claude/resolve-ambiguous-funds (#783)
+
+**Done.** Register item 20, gap 1 (the owner chose it on 2026-10-09): the two `ambiguo` fund lines of the 2026-08-31
+real report, 19,55% of its value. Measured on the live database first, read-only: the proposed fix (the last quota on or
+before the date) would have resolved neither line. One line abbreviated the fund type (`FIRF`, `CrPr`), so the real fund
+was no candidate; the other had five FIAGRO, which file no daily quota. `api.portfolio_resolve` (catalog v72, same
+signature and columns) now adds a name-hint candidate (scored 0.5 at most, ranked behind candidates that scored on
+their own unless its quota matches, ambiguous unless its quota matches) and compares a FIAGRO's `cvm_fiagro_mensal` quota
+on a month-end date, with a half-cent tolerance.
+
+**Decisions.** A hint only adds names below the 0.25 floor; a score that already counts is never changed (line 14 of the
+real report, identified at 0.44, would have flipped to ambiguous otherwise). Every hint candidate reaches the quota
+before the cut to 5: the advisor's check on the live names showed nine tied at the cap and the real fund fourth by CNPJ,
+which a 2-slot cut dropped. FII is not read (its monthly figure is the patrimonial value, not a price).
+
+**Assumptions.** The monthly informe quota is the month-end quota; supported by one line (0.009% from the statement), not
+measured across funds. Token list of `fund_name_core` rests on two observed tokens plus six legal-form abbreviations.
+
+**Outside scope.** Acceptance replayed the report's six fund lines through the old and new resolver on a read-only copy of
+production's name history and 2026-08-31 and 2026-08 quotas (local scratch DBs, outside the repository): lines 13 and 17
+resolve with `ambiguous` false, lines 14, 15, 16 and 18 unchanged. Not applied to production: run `daily_ingest`
+`mode=analytics-only`, then `deploy_mcp.yml`, then resolve the two lines again. Seen, not fixed: `ship-api-change` and
+AGENTS.md do not name `scripts/gen_catalog_sql.py`, which `tests/test_api_contract_sql.py` requires after a catalog edit.
+
 ## 2026-10-08 · claude/report-v2-trace-audit (#765)
 
 **Done.** Phase 1: the trace of the real report of 2026-10-08 17:25 UTC-3 read through `scripts/trace_view.py`, its
