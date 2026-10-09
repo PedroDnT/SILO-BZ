@@ -1,8 +1,9 @@
 """Compare schema.sql alone with schema.sql followed by every migration.
 
-The comparison is deliberately structural: column names and constraint names
-are the contract called out by issue #685. Expected differences belong in the
-checked-in allowlist, with a reason for each entry.
+The comparison covers physical public tables and checks column and constraint
+names on tables present in both snapshots. Migration-owned tables and the two
+known migration-added columns are explicit allowlist entries; views are outside
+this table-structure check.
 """
 
 from __future__ import annotations
@@ -20,24 +21,42 @@ ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST = ROOT / "tests" / "fixtures" / "schema_migration_parity_allowlist.json"
 
 
-def _columns(conn) -> set[tuple[str, str, str]]:
+def _tables(conn) -> set[tuple[str]]:
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT table_schema, table_name, column_name
-                 FROM information_schema.columns
-                WHERE table_schema = 'public'"""
+            """SELECT c.relname
+                 FROM pg_class c
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public'
+                  AND c.relkind IN ('r', 'p')"""
         )
         return set(cur.fetchall())
 
 
-def _constraints(conn) -> set[tuple[str, str, str]]:
+def _columns(conn) -> set[tuple[str, str]]:
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT n.nspname, c.relname, con.conname
+            """SELECT c.relname, a.attname
+                 FROM pg_class c
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+                 JOIN pg_attribute a ON a.attrelid = c.oid
+                WHERE n.nspname = 'public'
+                  AND c.relkind IN ('r', 'p')
+                  AND a.attnum > 0
+                  AND NOT a.attisdropped"""
+        )
+        return set(cur.fetchall())
+
+
+def _constraints(conn) -> set[tuple[str, str]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT c.relname, con.conname
                  FROM pg_constraint con
                  JOIN pg_class c ON c.oid = con.conrelid
                  JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = 'public'"""
+                WHERE n.nspname = 'public'
+                  AND c.relkind IN ('r', 'p')"""
         )
         return set(cur.fetchall())
 
@@ -46,21 +65,36 @@ def _actual_differences(schema_url: str, migrated_url: str) -> dict[str, set[tup
     with closing(psycopg2.connect(schema_url)) as schema_conn, closing(
         psycopg2.connect(migrated_url)
     ) as migrated_conn:
+        schema_tables = _tables(schema_conn)
+        migrated_tables = _tables(migrated_conn)
         schema_columns = _columns(schema_conn)
         migrated_columns = _columns(migrated_conn)
         schema_constraints = _constraints(schema_conn)
         migrated_constraints = _constraints(migrated_conn)
+    shared_tables = {table[0] for table in schema_tables & migrated_tables}
     return {
-        "columns_only_in_schema": schema_columns - migrated_columns,
-        "columns_only_after_migrations": migrated_columns - schema_columns,
-        "constraints_only_in_schema": schema_constraints - migrated_constraints,
-        "constraints_only_after_migrations": migrated_constraints - schema_constraints,
+        "tables_only_in_schema": schema_tables - migrated_tables,
+        "tables_only_after_migrations": migrated_tables - schema_tables,
+        "columns_only_in_schema": {
+            item for item in schema_columns - migrated_columns if item[0] in shared_tables
+        },
+        "columns_only_after_migrations": {
+            item for item in migrated_columns - schema_columns if item[0] in shared_tables
+        },
+        "constraints_only_in_schema": {
+            item for item in schema_constraints - migrated_constraints if item[0] in shared_tables
+        },
+        "constraints_only_after_migrations": {
+            item for item in migrated_constraints - schema_constraints if item[0] in shared_tables
+        },
     }
 
 
 def _load_allowlist() -> dict[str, list[dict[str, object]]]:
     data = json.loads(ALLOWLIST.read_text(encoding="utf-8"))
     expected_keys = {
+        "tables_only_in_schema",
+        "tables_only_after_migrations",
         "columns_only_in_schema",
         "columns_only_after_migrations",
         "constraints_only_in_schema",
@@ -76,7 +110,11 @@ def _load_allowlist() -> dict[str, list[dict[str, object]]]:
 
 
 def _allowed(entries: list[dict[str, object]]) -> set[tuple[str, ...]]:
-    return {tuple(entry["object"]) for entry in entries}
+    return {
+        tuple(obj)
+        for entry in entries
+        for obj in entry["objects"]
+    }
 
 
 def main() -> int:
