@@ -59,6 +59,13 @@
           {
             "type": "command",
             "if": "Bash(git push *)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/no-push-merged-branch.sh\"",
+            "timeout": 20,
+            "statusMessage": "merged-branch check…"
+          },
+          {
+            "type": "command",
+            "if": "Bash(git push *)",
             "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-push-docs.sh\"",
             "timeout": 30,
             "statusMessage": "docs check…"

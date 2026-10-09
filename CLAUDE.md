@@ -31,6 +31,10 @@ The hooks in `.claude/settings.json`:
   describes (the map is in the script) until that page is edited, or a
   `No-architecture-change: <reason>` trailer says it is still right, and holds an
   edited page over its size cap (4 KiB, `DECISIONS.md` 5 KiB).
+- **PreToolUse on `git push`** (`.claude/hooks/no-push-merged-branch.sh`) refuses a push
+  from a branch whose PR is already merged (rule 6 of "Working beside other agents"),
+  because GitHub deleted that branch and a push recreates it. `--delete` is allowed; it
+  does nothing when `gh` is missing or offline.
 - **PreToolUse on Bash** (`.claude/hooks/npm-cwd-guard.sh`) refuses
   `npm install|i|ci` aimed at `$HOME` or at a directory with no `package.json`
   (`-g` is allowed).
