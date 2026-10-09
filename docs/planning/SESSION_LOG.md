@@ -3,6 +3,21 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-09 · research/equity-vs-ibov (#786)
+
+**Done.** Study 2 after #776: equity funds against the Ibovespa, read-only, run 12:03 UTC-3 (15:03 UTC). Ibovespa from
+`b3_index_level` (IBOV, no divisor step since 1997); declared benchmark from `cvm_registro_classe.raw`
+`Indicador_Desempenho`. 12 months: 620 funds, Ibovespa 27.42%, median fund 16.40%, median −11.03 p.p., holder-weighted
+−7.05 p.p., PL-weighted −5.06 p.p. 36 and 60 months, annualized: medians −3.96 and −4.14 p.p. Offline test with a
+synthetic fund and index; three largest funds checked by hand.
+
+**Decisions.** Same rules as the CDI study for class, quota, holders and FICs. New, written in the document: the main
+classes, the excluded groups (the owner's five plus Mono Ação, Fundos Fechados and FMP-FGTS), the p.p. metric,
+annualization of both sides, the PL weighting and the closed-fund count.
+
+**Owner decisions, 2026-10-09.** IBrX stays out of the main number; the 12-month window goes to the site; long-short gets no separate number.
+
+**Outside scope.** None.
 ## 2026-10-09 · codex/portfolio-credit-mrv-stop · resumed
 
 **Done.** Continued PR #784 after the owner asked to follow the plan despite the MRV acceptance case. Added method B
