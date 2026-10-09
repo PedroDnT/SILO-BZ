@@ -528,5 +528,26 @@
       }
     ],
     "limitation": "Original issuer identity; no ultimate-obligor or guarantor inference. Retrospective application assumes no intervening issuer transfer; annual report/current characteristics do not certify every intervening amendment or original-date knowledge."
+  },
+  {
+    "instrument_code": "AXIA18",
+    "isin": "BRAXIADBS0C8",
+    "cnpj": "00001180000126",
+    "relationship": "issuer",
+    "status": "reviewed_original_issuer",
+    "valid_from": "2026-02-15",
+    "reviewed_through": "2026-10-08",
+    "known_at": "2026-10-09T17:40:26.789363-03:00",
+    "evidence": [
+      {
+        "url": "https://ofertaspublicas.xpi.com.br/wp-content/uploads/sites/10/2026/02/Deb.-AXIA-Energia-8-Emissao-Anuncio-de-Inicio-v.-publicacao110132642.1.pdf",
+        "locator": "Original commencement notice, page 1: issuer CNPJ 00.001.180/0001-26 and first-series ISIN BRAXIADBS0C8; page 2: issuance date 15/02/2026"
+      },
+      {
+        "url": "https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_d.asp?selecao=AXIA18&tip_deb=publicas",
+        "locator": "Ativo AXIA18; ISIN BRAXIADBS0C8; series 001, issuance 008; issue date 15/02/2026; current page observed 09/10/2026"
+      }
+    ],
+    "limitation": "Original issuer identity only; retrospective use through 08/10/2026 assumes no intervening issuer transfer, which this review does not certify. No original-date knowledge certification, ultimate-obligor or guarantor inference, ELET18 alias, or SHARES/AXIA18/BRAXIAA08PC5 identity equivalence."
   }
 ]
