@@ -130,6 +130,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Set up Python for schema comparison
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install schema comparison dependency
+        run: pip install psycopg2-binary==2.9.13
+
       # Supabase provides anon/authenticated; a vanilla postgres:15 does not.
       # silo_api is created by 12_grants_and_rls.sql itself (guarded).
       - name: Create Supabase client roles
@@ -155,6 +163,26 @@ jobs:
         uses: ./.github/actions/apply-schema
         with:
           postgres-url: ${{ env.POSTGRES_URL }}
+
+      # schema.sql is the current snapshot; replaying every migration after it
+      # must leave the public column and constraint-name surface unchanged.
+      # Separate empty databases ensure neither path inherits objects from the
+      # SQL compile or the existing-database upgrade fixture above.
+      - name: Compare schema snapshot with migration replay
+        env:
+          SCHEMA_ONLY_URL: postgresql://postgres:ci@localhost:5432/silo_schema_only
+          SCHEMA_MIGRATED_URL: postgresql://postgres:ci@localhost:5432/silo_schema_migrated
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE silo_schema_only;" \
+            -c "CREATE DATABASE silo_schema_migrated;"
+          psql "$SCHEMA_ONLY_URL" -v ON_ERROR_STOP=1 -q -f src/store/schema.sql > /dev/null
+          psql "$SCHEMA_MIGRATED_URL" -v ON_ERROR_STOP=1 -q -f src/store/schema.sql > /dev/null
+          for file in src/store/migrations/*.sql; do
+            psql "$SCHEMA_MIGRATED_URL" -v ON_ERROR_STOP=1 -q -f "$file" > /dev/null
+          done
+          python scripts/verify_schema_migration_parity.py
 
       # An empty database is the one state production is never in. Applying
       # schema.sql to a fresh DB proved nothing about the upgrade, and twice in

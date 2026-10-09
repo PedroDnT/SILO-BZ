@@ -1,0 +1,33 @@
+{
+  "tables_only_in_schema": [],
+  "tables_only_after_migrations": [
+    {
+      "objects": [
+        "cia_account", "cia_account_2010", "cia_account_2011", "cia_account_2012",
+        "cia_account_2013", "cia_account_2014", "cia_account_2015", "cia_account_2016",
+        "cia_account_2017", "cia_account_2018", "cia_account_2019", "cia_account_2020",
+        "cia_account_2021", "cia_account_2022", "cia_account_2023", "cia_account_2024",
+        "cia_account_2025", "cia_account_2026", "cia_account_future",
+        "cia_company", "cia_event", "cia_filing", "cia_ticker"
+      ],
+      "reason": "Migration 04 owns the listed-company tables and yearly cia_account partitions, which are not part of the CVM and BACEN base snapshot."
+    },
+    {
+      "objects": ["cvm_etf_registry"],
+      "reason": "Migration 06 owns the ETF registry and its derived materialized views."
+    }
+  ],
+  "columns_only_in_schema": [],
+  "columns_only_after_migrations": [
+    {
+      "objects": [["cvm_fi_perfil", "tp_fundo"]],
+      "reason": "Migration 01 adds the filed fund type to the profile table."
+    },
+    {
+      "objects": [["cvm_fund_registry", "is_active"]],
+      "reason": "Migration 07 adds the derived lifecycle flag to the fund registry."
+    }
+  ],
+  "constraints_only_in_schema": [],
+  "constraints_only_after_migrations": []
+}
