@@ -226,6 +226,8 @@ BEGIN
                 'Page with the cursor: send p_after = '''' for the first page, then the last row''s '
                 || 'trade_date as YYYY-MM-DD; a page shorter than 1000 rows is the last. '
                 || 'Or narrow p_from/p_to.'
+            WHEN p_fn = 'credit_market_history' THEN
+                'This function has no cursor. Narrow p_from/p_to: several settlement/classification groups can share a trade date.'
             WHEN p_fn = 'fund_nav' THEN
                 'Page with the cursor: send p_after = '''' for the first page, then the last row''s '
                 || 'period as YYYY-MM-DD, and pass p_entity_type (paging requires one family); '
@@ -4107,6 +4109,26 @@ AS $$
         FROM public.cvm_ingest_log l
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity = 'b3' AND l.doc_type = 'trade_consolidated'
+        UNION ALL
+        SELECT '*credit_market*'::text, MAX(l.finished_at),
+               (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]
+        FROM public.cvm_ingest_log l
+        WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
+          AND l.entity = 'b3' AND l.doc_type = 'credit_consolidated'
+    ),
+    credit_span AS (
+        SELECT MIN(d.day::date) AS first_date, MAX(d.day::date) AS last_date
+        FROM public.b3_credit_capture c
+        JOIN public.cvm_ingest_log l ON l.run_id = c.capture_id
+        CROSS JOIN LATERAL jsonb_array_elements_text(c.expected_dates) d(day)
+        WHERE c.source = 'b3_bdi_consolidated_records' AND c.status = 'complete'
+          AND l.entity = 'b3' AND l.doc_type = 'credit_consolidated' AND l.status = 'ok'
+          AND l.rows_upserted = c.debenture_rows * 9
+          AND c.observed_at <= CURRENT_TIMESTAMP
+          AND l.finished_at BETWEEN c.observed_at AND CURRENT_TIMESTAMP
+          AND c.delivered_dates ? d.day
+          AND d.day::date BETWEEN c.requested_from AND c.requested_to
+          AND d.day::date <= CURRENT_DATE
     ),
     base AS (
         -- Session data (quotes/derivatives) is complete by construction and a
@@ -4434,6 +4456,13 @@ AS $$
                    || COALESCE((SELECT MIN(t.trade_date)::text FROM public.b3_trade_consolidated t), 'none loaded yet')
                    || '.'::text,
                (SELECT MAX(t.trade_date) FROM public.b3_trade_consolidated t), '*b3_trade_consolidated*'::text
+        UNION ALL
+        SELECT 'credit_market_history'::text, s.last_date, s.last_date,
+               'b3_bdi_consolidated_records'::text,
+               'Stored debenture observation span from ' || COALESCE(s.first_date::text, 'none')
+               || '. Latest complete audited capture is selected per trade date before instrument filters. The span does not certify gap-free history or original publication-time PIT. Separate settlement/classification groups; reference prices are not trades. No yield, outstanding or coupon-adjusted return.'::text,
+               s.last_date, '*credit_market*'::text
+        FROM credit_span s
     )
     SELECT b.dataset, b.as_of, b.complete_through, b.source, b.notes,
            b.newest_period, l.landed_at, l.landed_git_sha
@@ -6226,7 +6255,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 73,
+  "version": 74,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close_adj` (split-, grouping- and bonus-adjusted) for share and unit tickers, `close` for other tickers and `nav` for CNPJs, and quote_history with no p_fields returns ticker, trade_date and close_adj; that is the call to make unless you actually need another measure — name metrics or fields explicitly only when you will use them (p_fields=['close'] for the raw close). A close_adj window SILO cannot adjust is refused with the cause, never served raw. The wide endpoints are the exception and behave the other way round: quote_latest and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -7199,7 +7228,8 @@ SELECT $json${
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "CIA, FII AND FOCUS HELD DATA. api.financial_statement_history returns raw CIA account lines across all stored filing versions for one required statement and company id; `financials` remains latest-version only. Filing header metadata is present only on an exact key match. Values are already scaled at ingest and remain in filed currency. api.fii_property_history filters one exact fund CNPJ and reference-date window; CVM publishes no stable property id, so row_hash identifies a source row, not a durable asset. Nullable measurements remain NULL. api.focus_expectations returns the weekly path across BCB survey dates for one exact endpoint and required forecast horizon, with an optional indicator. The stored key retains each date/horizon; `baseCalculo=0` is the trailing 30-day respondent sample and 12-month inflation is unsmoothed. It is not a vintage archive of corrected old reports, and migration 16-era missing horizons may await re-fetch. All three endpoints refuse above 1,000 rows.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all fifty-seven — panel, quote_history, fund_nav, option_history, termo_history, financials, financial_statement_history, company_financials, income_statements, balance_sheets, cash_flow_statements, anbima_classes, inflation, inflation_items, fii_property_history, focus_expectations, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, fund_restatements, fund_restatement_diff, company_events, macro_series, ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, trade_consolidated_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers, class_return_distribution, portfolio_equivalents, portfolio_credit_returns, portfolio_debenture_returns and the ten screen_* functions (`limits.page.all`). FIVE OF THEM PAGE with p_after: panel, quote_history, fund_nav, index_history and trade_consolidated_history. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history, fund_nav, index_history and trade_consolidated_history just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), for fund_holdings / fund_debentures narrow the months (a p_ticker or p_issuer lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 the FIDC three, and until v41 fund_holdings and fund_debentures, trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
+    "DEBENTURE MARKET OBSERVATIONS: api.credit_market_history preserves instrument code, trade date, settlement date and trade classification, with nine nullable metrics, units, capture/raw/row hashes and actual observation/audit timestamps. Select complete successfully audited captures per trade date BEFORE filtering a code; a removed row stays removed. p_as_of filters both observation and audit completion, not original publication-time PIT. Group min/avg/max prices, quantity/count/volume differ from repeated instrument-wide last/reference prices; reference may be modeled and never substitutes for a trade. No summed repeated prices, inferred issuer CNPJ/stock ticker, yield, spread, outstanding or coupon-adjusted return. Known empty windows stay empty; unknown code at cutoff raises 22023. Narrow the dates above 1000 groups; no date-only paging. Coverage reports a held span, not gap-free trading history.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all fifty-eight — panel, quote_history, fund_nav, option_history, termo_history, financials, financial_statement_history, company_financials, income_statements, balance_sheets, cash_flow_statements, anbima_classes, inflation, inflation_items, fii_property_history, focus_expectations, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, fund_restatements, fund_restatement_diff, company_events, macro_series, ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, trade_consolidated_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers, class_return_distribution, portfolio_equivalents, portfolio_credit_returns, portfolio_debenture_returns, credit_market_history and the ten screen_* functions (`limits.page.all`). FIVE OF THEM PAGE with p_after: panel, quote_history, fund_nav, index_history and trade_consolidated_history. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history, fund_nav, index_history and trade_consolidated_history just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), for fund_holdings / fund_debentures narrow the months (a p_ticker or p_issuer lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 the FIDC three, and until v41 fund_holdings and fund_debentures, trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
@@ -7280,7 +7310,8 @@ SELECT $json${
         "class_return_distribution",
         "portfolio_equivalents",
         "portfolio_credit_returns",
-        "portfolio_debenture_returns"
+        "portfolio_debenture_returns",
+        "credit_market_history"
       ],
       "cursor_protocol": "p_after: null = whole result (refused above 1000 rows); '' = first page; the function's key copied from the last row = the next page; a page shorter than 1000 is the last",
       "functions": {
@@ -7343,7 +7374,8 @@ SELECT $json${
           "class_return_distribution",
           "portfolio_equivalents",
           "portfolio_credit_returns",
-          "portfolio_debenture_returns"
+          "portfolio_debenture_returns",
+          "credit_market_history"
         ]
       },
       "over_cap": "SQLSTATE 22023 naming the function — nothing is trimmed to fit. The message says WHY (one 1000-row page; SILO never returns a silently truncated result) and HOW for that function (page with p_after, narrow p_from/p_to, take an explicit p_limit head, raise a screen's thresholds); PostgREST also returns the two halves as `details` and `hint`",
@@ -7774,6 +7806,7 @@ SELECT $json${
     "panel": "GET /v1/panel",
     "lookup": "GET /v1/lookup?q=",
     "quotes": "GET /v1/quotes/{ticker}",
+    "credit_market_history": "GET /v1/credit/{code}/history",
     "funds": "GET /v1/funds/{cnpj}/nav",
     "coverage": "GET /v1/coverage",
     "metric_coverage": "GET /v1/metric-coverage"
@@ -7841,6 +7874,7 @@ SELECT $json${
     "research_universe": "POST /rest/v1/rpc/research_universe",
     "index_history": "POST /rest/v1/rpc/index_history",
     "trade_consolidated_history": "POST /rest/v1/rpc/trade_consolidated_history",
+    "credit_market_history": "POST /rest/v1/rpc/credit_market_history",
     "portfolio_resolve": "POST /rest/v1/rpc/portfolio_resolve",
     "portfolio_fees": "POST /rest/v1/rpc/portfolio_fees",
     "portfolio_lookthrough": "POST /rest/v1/rpc/portfolio_lookthrough",

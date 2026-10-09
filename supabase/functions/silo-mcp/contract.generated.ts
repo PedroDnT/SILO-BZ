@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "73";
+export const CONTRACT_VERSION = "74";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -28,6 +28,7 @@ export const ENDPOINT_NAMES: string[] = [
   "company_events",
   "company_financials",
   "coverage",
+  "credit_market_history",
   "curve",
   "curve_history",
   "equities",
@@ -1982,6 +1983,50 @@ export const CONTRACT: Record<string, ContractEntry> = {
     "inputSchema": {
       "type": "object",
       "properties": {},
+      "additionalProperties": false
+    }
+  },
+  "credit_market_history": {
+    "kind": "rpc",
+    "path": "/rpc/credit_market_history",
+    "description": "Debenture market observations for one instrument code, oldest first, one row per trade_date, settlement_date and trade_classification. Select the latest complete successfully audited capture PER TRADE DATE before instrument filtering; a newer snapshot removing a code does not resurrect an older row. p_as_of defaults to current knowledge and requires both observed_at and available_at (successful audit completion) no later than that cutoff; backfilled trade dates never become original publication-time PIT. Unknown code at the cutoff raises 22023; a known code with no observations in the window returns an empty set, never a zero or filled price. Nine nullable metrics with explicit units and capture/raw/row hashes, ISIN and source-reported issuer name; no inferred issuer CNPJ or stock ticker. min/avg/max prices, quantity, trade_count and volume_brl belong to the full group. last_price and reference_price are instrument-wide and repeat across groups: never sum or average their repeated copies. reference_price may be modeled, is not a trade and never substitutes for last_price. Prices are BRL/unit, quantity units, trade_count trades, volume_brl BRL and oscillation_pct percent. volume_brl is transaction volume, not outstanding. No yield, spread, coupon/amortization-adjusted total return or cash-flow engine. NULL stays unpublished. Row cap: more than 1000 rows RAISES 22023, never trimmed; narrow p_from/p_to. No date-only cursor because several groups share a date. Capture completeness covers requested sessions, not every session across the warehouse history; inspect api.coverage for known span, and absence is never filled.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 365)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        },
+        "p_as_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Defaults to `now()`."
+        }
+      },
+      "required": [
+        "p_code"
+      ],
       "additionalProperties": false
     }
   },
