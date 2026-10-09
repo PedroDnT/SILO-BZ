@@ -60,4 +60,4 @@ Owner accepted the observation-only serving slice. No need to resolve coupon eco
 
 ## Implementation status
 
-09/10/2026: Task 1 SQL behavior scenarios passed against isolated local PostgreSQL; no production apply. Tasks 2–4 contracts and HTTP tests pass locally. Documentation and rollout checklist are complete. Full regression validation is in progress; CI and production acceptance remain distinct.
+09/10/2026: Task 1 SQL behavior scenarios passed against isolated local PostgreSQL; no production apply. Tasks 2–4 contracts and HTTP tests pass locally. Documentation and rollout checklist are complete. Full offline suite: 4,284 passed, 35 skipped; both credit SQL behavior suites passed locally. PR #796 is open. CI and production acceptance remain distinct.
