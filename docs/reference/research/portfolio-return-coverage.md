@@ -48,12 +48,13 @@ and B3's Caderno de Fórmulas (section 1). The demo portfolio is synthetic.
    the rest. Section 6 has the computation.
 
 6. **Direct credit (#766, 2026-10-08).** Method A (the securitizer's curve)
-   gives 109.9% to 110.1% of the CDI for MRV's CRI 24I1980390 on every window
-   with complete filings, but 53.0% on the window of the 08/10 report, because
-   the 2026-04 coupon was never filed. With the guards the owner accepted, A
-   evaluates 1 of the 6 CRA/CRI and method B (median fund mark) 0 of 2
-   debentures: measured coverage goes from 8.06% to 10.65%, not about 30%. The
-   contracted return (method C) covers another 18.43%, apart. Section 8.
+   gives about 110% of CDI for MRV's CRI 24I1980390 when the coupon is included.
+   OPEA's issuer calculation workbook confirms the series-1 April 2026 coupon
+   and gives 16.1032% over the 12 months ending 2026-08-31, or 110.0648% of
+   CDI. The production warehouse/API still omits that series-level flow, so its
+   guarded result remains unevaluated and measured coverage remains 10.65%.
+   Method B (median fund mark) evaluates 0 of 2 debentures; the contracted
+   return (method C) covers another 18.43%, apart. Section 8.
 
 ## 1. External facts
 
@@ -281,7 +282,11 @@ The class member has two senior tranches under the shared `Codigo_Identificacao_
 
 The flow member has one row per shared certificate identifier and month, not per CETIP/ISIN/series. April reports R$46,257,835.20 as senior interest and zero senior principal. It confirms a class-level event but cannot allocate the cash to either senior series. Dividing the entire amount by series 1's 538,669 certificates would imply R$85.8743 per certificate and a +1.9014% April factor (about 174.29% of CDI using 20 BACEN SGS 12 daily factors, 2026-03-31 inclusive to 2026-04-30 exclusive), which does not reconcile with the filed 110% CDI rate. `Total_Integralizado` is also inconsistent across the tranches and is not a cash-flow field.
 
-Conclusion: do not join or allocate the aggregate flow to `24I1980390`, and do not treat the integralized-total swap as a payment. The 12-month return remains **not evaluated** with `queda_sem_evento_arquivado` for 2026-04. The acceptance case needs corrected per-series source data or issuer records that identify the tranche payment; follow-up remains open in [#798](https://github.com/PedroDnT/SILO-BZ/issues/798).
+The aggregate CVM flow still cannot be joined to a tranche, and the integralized-total swap is not a payment. The issuer's own per-series calculation workbook, found on the [OPEA emission page](https://app.opea.com.br/pt/emissoes/24I1980390) and supplied for this review, separately identifies the series-1 event. In `Memória de Cálculo.xlsx` (`Simplificado - Flutuante`), row 377 (15/04/2026) reports interest R$77.89949 per certificate, total interest R$41,962,040.37881, and zero amortization; quantity is 538,669. This replaces the earlier conclusion that no tranche-specific source event had been verified. The workbook SHA-256 is `17896ff9c3e505c410867871d6ee3cce07d43a60c7ecac7cb64ae918d3d38c9b`.
+
+**Independent method-A acceptance check.** Using the issuer workbook's daily residual PU (column `VN Resídual`), monthly last-business-day observations from 2025-08-29 through 2026-08-31, and issuer-filed monthly cash payments divided by the unchanged quantity, the 12 compounded monthly returns are 16.103173%. The included coupon payments are R$42,697,819.13929 on 15/10/2025 and R$41,962,040.37881 on 15/04/2026; amortization is zero for both. BACEN SGS 12 compounds to 14.630634% over the same window (252 daily rates), so the return is 110.0648% of CDI. The April month alone is +1.157131% with its coupon; the source PU falls from 1,071.48630 on 31/03 to 1,005.98531 on 30/04.
+
+This verifies the 110%-CDI acceptance case using issuer-level calculation data. The production `api.portfolio_credit_returns` call still does not ingest this workbook, and `cvm_securit_serie` still has zero filed April interest/amortization; therefore the production row remains **not evaluated** with `queda_sem_evento_arquivado`. Follow-up [#798](https://github.com/PedroDnT/SILO-BZ/issues/798) remains open for a governed source-to-warehouse path; do not treat this independent calculation as a production API result.
 
 ## 5. ETFs and the CDI
 

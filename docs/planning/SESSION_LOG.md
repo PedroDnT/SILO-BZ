@@ -3,6 +3,20 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-09 · codex/mrv-april-source-forensics · issuer workbook validation
+
+**Done.** The owner supplied OPEA's `Memória de Cálculo.xlsx` from the issuer page for 24I1980390. The daily
+series-1 schedule identifies the 15/04/2026 interest payment as R$77.89949 per certificate, R$41,962,040.37881
+total over 538,669 certificates, with zero amortization. It also reports R$42,697,819.13929 interest on 15/10/2025.
+
+Using the workbook's last-business-day residual PU observations for the 12 monthly intervals 2025-08-31 through
+2026-08-31, and those issuer-filed flows divided by quantity, method A compounds to 16.103173%. BACEN SGS 12
+compounds to 14.630634% over 252 daily rates; the resulting return is 110.0648% of CDI. This passes the MRV
+acceptance sanity check. The production function remains unevaluated because the workbook flow is not in
+`cvm_securit_serie` or consumed by the RPC; no production data or migration changed. Detailed provenance, monthly
+method, and workbook hash are in `docs/reference/research/portfolio-return-coverage.md`; issue #798 remains open for
+the source-to-warehouse path.
+
 ## 2026-10-09 · codex/mrv-april-source-forensics · source reconciliation
 
 **Done.** Investigated issue #798 using read-only production records and the original 2026 CRI monthly ZIP. The
