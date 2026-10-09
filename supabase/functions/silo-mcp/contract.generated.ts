@@ -65,7 +65,7 @@ export const ENDPOINT_NAMES: string[] = [
   "option_exercises",
   "option_history",
   "panel",
-  "portfolio_credit_curve",
+  "portfolio_credit_returns",
   "portfolio_equivalents",
   "portfolio_fee_peers",
   "portfolio_fees",
@@ -3470,10 +3470,10 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
-  "portfolio_credit_curve": {
+  "portfolio_credit_returns": {
     "kind": "rpc",
-    "path": "/rpc/portfolio_credit_curve",
-    "description": "A CRA or CRI month by month on the securitizer's curve (catalog v71, #766). Per code (trimmed, upper-cased, a leading CRA- or CRI- stripped) and per month from p_from to p_to: the cvm_securit_serie row with codigo_cetip = code (one row per series at its highest versao), pu = valor_certificados / quantidade_certificados, paid_per_unit = (rendimentos + amortizacoes) / quantidade_certificados, and factor = (pu + paid_per_unit) / previous pu only when month_flag is NULL. month_flag says why a month is unknown: mes_ausente, mais_de_uma_serie, valor_nao_informado, mes_anterior_desconhecido, quantidade_mudou, pagamento_maior_que_pu, pu_repetido (equal pu, nothing paid), queda_sem_evento_arquivado (pu falls, nothing paid), retorno_mensal_fora_da_faixa (outside -3% to +3% a month). The first month is the base and gets no factor. The value is the securitizer's curve, not a market price; nothing is filled in, and rentabilidade is not read. At most 40 codes and 25 months, else 22023; at most one 1000-row page, refused above it, never trimmed.",
+    "path": "/rpc/portfolio_credit_returns",
+    "description": "The value ON THE CURVE of a CRA or CRI as its securitizer files it (catalog v71, #766): for each CETIP code (trimmed, upper-cased, a leading CRA- or CRI- stripped), the 13 month-ends p_end_month - 12 .. p_end_month from cvm_securit_serie, one row per (line, month), oldest first. The series is the one p_series / p_classes name (from portfolio_instruments) or the code's only series in the window; two or more with none named is serie_ambigua. A month's row is its informe (data_referencia = the month, the month-end value) at the highest versao. pu = valor_certificados / quantidade_certificados; paid_per_unit = (rendimentos + amortizacoes) / quantidade, NULL read as 0; factor = (pu + paid) / previous pu, 12 places, NULL on the first month or a flagged one: compound the 12 factors for the 12-month return. month_flag says why a month is unknown: serie_ambigua, mes_ausente, valor_invalido, quantidade_mudou, pu_repetido (the value of the month before carried over), queda_sem_evento_arquivado (the pu falls and nothing paid is filed: an unfiled coupon or amortization, never read as a loss), pagamento_acima_do_pu, pagamento_incompativel (a payment month whose return is outside 0.5 .. 1.5 times the median of the line's months with no payment, or with fewer than 3 of them). A window with any flag has no return. rentabilidade is never read. It is the securitizer's value on the curve, not a market price. At most 70 codes (13 rows each); otherwise RAISES 22023; one page, never trimmed.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3489,25 +3489,46 @@ export const CONTRACT: Record<string, ContractEntry> = {
             ]
           }
         },
-        "p_from": {
+        "p_end_month": {
           "type": [
             "string",
             "null"
           ],
           "format": "date"
         },
-        "p_to": {
+        "p_series": {
           "type": [
-            "string",
+            "array",
             "null"
           ],
-          "format": "date"
+          "items": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "description": "Defaults to `NULL::integer[]`.",
+          "default": null
+        },
+        "p_classes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": "Defaults to `NULL::text[]`.",
+          "default": null
         }
       },
       "required": [
         "p_codes",
-        "p_from",
-        "p_to"
+        "p_end_month"
       ],
       "additionalProperties": false
     }

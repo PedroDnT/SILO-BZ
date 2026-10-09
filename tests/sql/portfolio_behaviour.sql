@@ -1,6 +1,6 @@
 -- Executed checks for the portfolio-diagnosis reads (31_api_portfolio.sql:
 -- api.portfolio_resolve, api.portfolio_fees, api.portfolio_lookthrough, catalog
--- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56; ETF cotistas and PL, v57; api.portfolio_instruments and api.portfolio_fund_terms, v61; the filed benchmark and api.portfolio_equivalents, v68). Regex tests pin the SQL text; this proves it DOES the right thing on
+-- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56; ETF cotistas and PL, v57; api.portfolio_instruments and api.portfolio_fund_terms, v61; the filed benchmark and api.portfolio_equivalents, v68; api.portfolio_credit_returns, v71). Regex tests pin the SQL text; this proves it DOES the right thing on
 -- rows. Synthetic CNPJs, inside a transaction that is rolled back, so it runs
 -- on any database with the schema and the analytical layer applied (CI's
 -- sql-compile job, or a scratch copy):
@@ -1551,67 +1551,114 @@ BEGIN
 END $$;
 
 
-
--- api.portfolio_credit_curve (v71, #766): the securitizer's curve month by month, with a flag on every unknown month.
--- ZZCURVA1: four clean months (pu 1000 -> 1010 -> 1020.1, then a coupon of 30 with the pu back to 1000);
--- ZZCURVA2: quantity changes in month 2, month 3 missing, so month 4 has no previous pu;
--- ZZCURVA3: a payment above the pu (per-unit value next to totals); ZZCURVA4: two series in one month.
+-- ===========================================================================
+-- api.portfolio_credit_returns (catalog v71, #766): a CRA / CRI on the
+-- securitizer's curve. Shapes measured 2026-10-08 on production: a clean series
+-- (Marfrig CRA0250018H, coupons filed), an unfiled coupon (MRV 24I1980390,
+-- 2026-04), a repeated value, a quantity that changes, a missing month, and two
+-- series under one code.
+-- ===========================================================================
 INSERT INTO cvm_securit_serie
-    (instrument_type, codigo_identificacao, data_referencia, classe, numero_serie, codigo_cetip,
-     quantidade_certificados, valor_certificados, rendimentos, amortizacoes, taxa_juros, versao, occurrence)
-VALUES
-    ('cra_mensal', 'ZZC1', '2026-01-01', 'Sênior', 1, 'ZZCURVA1', 100, 100000, 0, 0, '110% CDI', 1, 1),
-    ('cra_mensal', 'ZZC1', '2026-02-01', 'Sênior', 1, 'ZZCURVA1', 100, 101000, 0, 0, '110% CDI', 1, 1),
-    ('cra_mensal', 'ZZC1', '2026-03-01', 'Sênior', 1, 'ZZCURVA1', 100, 102010, 0, 0, '110% CDI', 1, 1),
-    ('cra_mensal', 'ZZC1', '2026-04-01', 'Sênior', 1, 'ZZCURVA1', 100, 100000, 3030.10, 0, '110% CDI', 1, 1),
-    ('cri_mensal', 'ZZC2', '2026-01-01', 'Sênior', 1, 'ZZCURVA2', 100, 100000, 0, 0, 'IPCA + 6%', 1, 1),
-    ('cri_mensal', 'ZZC2', '2026-02-01', 'Sênior', 1, 'ZZCURVA2', 90, 91000, 0, 0, 'IPCA + 6%', 1, 1),
-    ('cri_mensal', 'ZZC2', '2026-04-01', 'Sênior', 1, 'ZZCURVA2', 90, 90000, 0, 0, 'IPCA + 6%', 1, 1),
-    ('cra_mensal', 'ZZC3', '2026-01-01', 'Sênior', 1, 'ZZCURVA3', 380000, 1005, 0, 0, '15% a.a.', 1, 1),
-    ('cra_mensal', 'ZZC3', '2026-02-01', 'Sênior', 1, 'ZZCURVA3', 380000, 1006, 5000000, 0, '15% a.a.', 1, 1),
-    ('cra_mensal', 'ZZC4', '2026-01-01', 'Sênior', 1, 'ZZCURVA4', 100, 100000, 0, 0, 'CDI + 2%', 1, 1),
-    ('cra_mensal', 'ZZC4', '2026-02-01', 'Sênior', 1, 'ZZCURVA4', 100, 101000, 0, 0, 'CDI + 2%', 1, 1),
-    ('cra_mensal', 'ZZC4', '2026-02-01', 'Subordinada', 2, 'ZZCURVA4', 10, 11000, 0, 0, 'CDI + 5%', 1, 1);
-
+    (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, classe, numero_serie,
+     codigo_cetip, data_vencimento, taxa_juros, quantidade_certificados, valor_certificados,
+     rendimentos, amortizacoes, versao, occurrence)
+SELECT 'cra_mensal', '87000000000901', 'ZZCRV' || s.k, m::date, 'Sênior', 1, s.code, DATE '2031-01-15', '100% CDI',
+       CASE WHEN s.k = 'Q' AND m >= DATE '2026-03-01' THEN 900 ELSE 1000 END,
+       -- pu 1000 growing 1% a month; a 50.00 coupon paid in 2026-02 takes the pu down by 50
+       (CASE WHEN s.k = 'Q' AND m >= DATE '2026-03-01' THEN 900 ELSE 1000 END)
+         * (1000 * power(1.01, (extract(year FROM age(m, DATE '2025-08-01')) * 12 + extract(month FROM age(m, DATE '2025-08-01'))))
+            - CASE WHEN m >= DATE '2026-02-01' THEN 50 ELSE 0 END),
+       CASE WHEN m = DATE '2026-02-01' AND s.k = 'W' THEN 150 * 1000
+            WHEN m = DATE '2026-02-01' AND s.k <> 'U' THEN 50 * 1000 ELSE 0 END,
+       0, 1, 1
+FROM (VALUES ('C', 'ZZCRV00001C'), ('U', 'ZZCRV00001U'), ('Q', 'ZZCRV00001Q'), ('M', 'ZZCRV00001M'), ('W', 'ZZCRV00001W'))
+     AS s(k, code),
+     generate_series(DATE '2025-08-01', DATE '2026-08-01', interval '1 month') m
+WHERE NOT (s.k = 'M' AND m = DATE '2026-03-01');
+-- C's 2026-08 informe refiled: versao 2 (occurrence 2) is read, never the older versao 0 with a wrong value.
+INSERT INTO cvm_securit_serie
+    (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, classe, numero_serie,
+     codigo_cetip, data_vencimento, taxa_juros, quantidade_certificados, valor_certificados,
+     rendimentos, amortizacoes, versao, occurrence)
+SELECT instrument_type, cnpj_securit, codigo_identificacao, data_referencia, classe, numero_serie, codigo_cetip,
+       data_vencimento, taxa_juros, quantidade_certificados, valor_certificados, rendimentos, amortizacoes, 2, 2
+FROM cvm_securit_serie WHERE codigo_cetip = 'ZZCRV00001C' AND data_referencia = DATE '2026-08-01';
+UPDATE cvm_securit_serie SET versao = 0, valor_certificados = 1
+WHERE codigo_cetip = 'ZZCRV00001C' AND data_referencia = DATE '2026-08-01' AND occurrence = 1;
+-- Two series under one code.
+INSERT INTO cvm_securit_serie
+    (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, classe, numero_serie,
+     codigo_cetip, quantidade_certificados, valor_certificados, rendimentos, amortizacoes, versao, occurrence)
+SELECT 'cri_mensal', '87000000000902', 'ZZCRV2' || n, m::date, 'Sênior', n, 'ZZCRV00002A', 10, 10000, 0, 0, 1, 1
+FROM generate_series(1, 2) n, generate_series(DATE '2025-08-01', DATE '2026-08-01', interval '1 month') m;
 DO $$
-DECLARE r RECORD; n INT;
+DECLARE r RECORD; n INT; ret NUMERIC; s TEXT;
 BEGIN
-    SELECT count(*) INTO n FROM api.portfolio_credit_curve(ARRAY['CRA-ZZCURVA1', 'ZZCURVA2', 'ZZCURVA3', 'ZZCURVA4'],
-                                                          DATE '2026-01-15', DATE '2026-04-30');
-    IF n <> 16 THEN RAISE EXCEPTION 'credit_curve: expected one row per code and month (16), got %', n; END IF;
-    SELECT * INTO r FROM api.portfolio_credit_curve(ARRAY['CRA-ZZCURVA1'], DATE '2026-01-01', DATE '2026-04-01') WHERE month = DATE '2026-01-01';
-    IF r.code <> 'ZZCURVA1' OR r.factor IS NOT NULL OR r.month_flag IS NOT NULL OR r.pu <> 1000 THEN
-        RAISE EXCEPTION 'credit_curve: the base month has a pu and no factor (%, %, %)', r.code, r.factor, r.month_flag;
+    SELECT count(*) INTO n FROM api.portfolio_credit_returns(ARRAY['CRA-ZZCRV00001C', 'ZZCRV00001U'], DATE '2026-08-31');
+    IF n <> 26 THEN RAISE EXCEPTION 'credit returns: 13 month rows per code expected, got %', n; END IF;
+    -- clean: 12 factors, the coupon month included; the fixture's pu keeps growing on the pre-coupon base, so the
+    -- 12 months compound a little above 1.01^12 (12.68%): 13.01%
+    SELECT count(*) FILTER (WHERE month_flag IS NULL AND factor IS NOT NULL), exp(sum(ln(factor))) - 1
+      INTO n, ret
+    FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001C'], DATE '2026-08-15');
+    IF n <> 12 OR ret NOT BETWEEN 0.129 AND 0.131 THEN
+        RAISE EXCEPTION 'credit returns, clean series: % factors, return %', n, ret;
     END IF;
-    SELECT * INTO r FROM api.portfolio_credit_curve(ARRAY['ZZCURVA1'], DATE '2026-01-01', DATE '2026-04-01') WHERE month = DATE '2026-04-01';
-    IF r.month_flag IS NOT NULL OR r.factor <> 1.0100000000 OR r.paid_per_unit <> 30.3010 THEN
-        RAISE EXCEPTION 'credit_curve: a coupon month is (pu + paid) / previous pu (%, %)', r.factor, r.month_flag;
+    SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001C'], DATE '2026-08-01') WHERE month = DATE '2026-08-01';
+    IF r.versao <> 2 OR r.pu < 1000 THEN RAISE EXCEPTION 'credit returns read an older versao: %', row_to_json(r); END IF;
+    SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001C'], DATE '2026-08-01') WHERE month = DATE '2025-08-01';
+    IF r.factor IS NOT NULL OR r.month_flag IS NOT NULL THEN RAISE EXCEPTION 'credit returns, first month: %', row_to_json(r); END IF;
+    -- unfiled coupon: the pu falls with nothing paid
+    SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001U'], DATE '2026-08-01') WHERE month = DATE '2026-02-01';
+    IF r.month_flag IS DISTINCT FROM 'queda_sem_evento_arquivado' OR r.factor IS NOT NULL THEN
+        RAISE EXCEPTION 'credit returns, unfiled coupon: %', row_to_json(r);
     END IF;
-    SELECT string_agg(coalesce(month_flag, '-'), ',' ORDER BY month) INTO STRICT r FROM api.portfolio_credit_curve(ARRAY['ZZCURVA2'], DATE '2026-01-01', DATE '2026-04-01');
-    IF r.string_agg <> '-,quantidade_mudou,mes_ausente,mes_anterior_desconhecido' THEN
-        RAISE EXCEPTION 'credit_curve: quantity change and missing month flags wrong: %', r.string_agg;
+    -- a payment that is not the coupon (150 filed for a fall of 50): the month's return is far from the others
+    SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001W'], DATE '2026-08-01') WHERE month = DATE '2026-02-01';
+    IF r.month_flag IS DISTINCT FROM 'pagamento_incompativel' OR r.factor IS NOT NULL THEN
+        RAISE EXCEPTION 'credit returns, incompatible payment: %', row_to_json(r);
     END IF;
-    SELECT * INTO r FROM api.portfolio_credit_curve(ARRAY['ZZCURVA3'], DATE '2026-01-01', DATE '2026-02-01') WHERE month = DATE '2026-02-01';
-    IF r.month_flag <> 'pagamento_maior_que_pu' OR r.factor IS NOT NULL THEN
-        RAISE EXCEPTION 'credit_curve: a payment above the pu must be unknown, got %', r.month_flag;
+    -- the clean coupon month passes
+    SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001C'], DATE '2026-08-01') WHERE month = DATE '2026-02-01';
+    IF r.month_flag IS NOT NULL OR r.paid_per_unit <> 50 THEN RAISE EXCEPTION 'credit returns, coupon month: %', row_to_json(r); END IF;
+    -- quantity changes in 2026-03
+    SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001Q'], DATE '2026-08-01') WHERE month = DATE '2026-03-01';
+    IF r.month_flag IS DISTINCT FROM 'quantidade_mudou' THEN RAISE EXCEPTION 'credit returns, quantity: %', row_to_json(r); END IF;
+    -- a missing month flags itself and the month after it
+    SELECT string_agg(to_char(month, 'YYYY-MM') || ':' || month_flag, ',' ORDER BY month) INTO s
+    FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001M'], DATE '2026-08-01') WHERE month_flag IS NOT NULL;
+    IF s IS DISTINCT FROM '2026-03:mes_ausente,2026-04:mes_ausente' THEN
+        RAISE EXCEPTION 'credit returns, missing month: %', s;
     END IF;
-    SELECT * INTO r FROM api.portfolio_credit_curve(ARRAY['ZZCURVA4'], DATE '2026-01-01', DATE '2026-02-01') WHERE month = DATE '2026-02-01';
-    IF r.month_flag <> 'mais_de_uma_serie' OR r.n_series <> 2 OR r.pu IS NOT NULL THEN
-        RAISE EXCEPTION 'credit_curve: two series in a month must not be picked, got %', r.month_flag;
+    -- two series, none named: ambiguous; named: read
+    SELECT count(*) FILTER (WHERE month_flag = 'serie_ambigua') INTO n
+    FROM api.portfolio_credit_returns(ARRAY['ZZCRV00002A'], DATE '2026-08-01');
+    IF n <> 13 THEN RAISE EXCEPTION 'credit returns, two series not flagged: %', n; END IF;
+    SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['ZZCRV00002A'], DATE '2026-08-01', ARRAY[2], ARRAY['Sênior'])
+    WHERE month = DATE '2026-08-01';
+    IF r.month_flag IS DISTINCT FROM 'pu_repetido' OR r.numero_serie <> 2 THEN
+        RAISE EXCEPTION 'credit returns, named series (constant pu is pu_repetido): %', row_to_json(r);
+    END IF;
+    -- no row for the code at all
+    SELECT * INTO r FROM api.portfolio_credit_returns(ARRAY['NOPE99'], DATE '2026-08-01') WHERE month = DATE '2026-08-01';
+    IF r.month_flag <> 'mes_ausente' OR r.reason NOT LIKE 'sem informe de securitização%' THEN
+        RAISE EXCEPTION 'credit returns, unknown code: %', row_to_json(r);
     END IF;
     BEGIN
-        PERFORM * FROM api.portfolio_credit_curve(ARRAY(SELECT 'ZZ' || g FROM generate_series(1, 41) g), DATE '2026-01-01', DATE '2026-02-01');
-        RAISE EXCEPTION 'credit_curve accepted 41 codes';
-    EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+        PERFORM * FROM api.portfolio_credit_returns(ARRAY(SELECT 'ZZ' || g FROM generate_series(1, 71) g), DATE '2026-08-01');
+        RAISE EXCEPTION 'credit returns accepted 71 codes';
+    EXCEPTION WHEN SQLSTATE '22023' THEN
+        IF SQLERRM NOT LIKE '%more than 70%' THEN RAISE; END IF;
+    END;
     BEGIN
-        PERFORM * FROM api.portfolio_credit_curve(ARRAY['ZZCURVA1'], DATE '2024-01-01', DATE '2026-02-01');
-        RAISE EXCEPTION 'credit_curve accepted 26 months';
+        PERFORM * FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001C'], NULL);
+        RAISE EXCEPTION 'credit returns accepted no end month';
     EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
     SET LOCAL ROLE anon;
-    SELECT count(*) INTO n FROM api.portfolio_credit_curve(ARRAY['ZZCURVA1'], DATE '2026-01-01', DATE '2026-04-01');
-    IF n <> 4 THEN RAISE EXCEPTION 'anon cannot read the credit curve'; END IF;
+    SELECT count(*) INTO n FROM api.portfolio_credit_returns(ARRAY['ZZCRV00001C'], DATE '2026-08-01');
+    IF n <> 13 THEN RAISE EXCEPTION 'anon cannot read credit returns'; END IF;
     RESET ROLE;
-    RAISE NOTICE 'portfolio_credit_curve behavior OK';
+    RAISE NOTICE 'portfolio_credit_returns behavior OK';
 END $$;
 
 

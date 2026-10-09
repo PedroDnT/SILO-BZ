@@ -239,6 +239,7 @@ def _position_dict(p: Position, total: Decimal) -> dict[str, Any]:
         "vencimento": iso(p.vencimento),
         "taxa_texto": p.taxa_texto,
         "data_aplicacao": iso(p.data_aplicacao),  # engine 1.11: as printed, never assumed
+        "data_inicial": iso(p.data_inicial),  # schema 2.1: the BTG detail table's 'Data inicial', as printed
         "estrategia_corretora": p.estrategia_corretora,
         "classe_corretora": p.classe_corretora,
         "conta_ref": p.conta_ref,

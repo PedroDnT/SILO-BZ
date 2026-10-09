@@ -437,15 +437,16 @@ tickers (67 on 2026-09-29), so `quote_history` and `panel` have nothing for them
   can read `b3_trade_consolidated`. Executed checks:
   `tests/sql/trade_consolidated_history_behaviour.sql`.
 
-### The portfolio reads (catalog v51, v54, v61, v63, v66, v67, v68)
+### The portfolio reads (catalog v51, v54, v61, v63, v66, v67, v68, v71)
 
-Nine functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
+Ten functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
 map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`): three since v51,
 `portfolio_movement` since v54, `portfolio_instruments` and `portfolio_fund_terms`
 since v61 (`portfolio_instruments` serves a CRA or CRI ISIN since v67), `portfolio_fee_peers` since v63,
-`class_return_distribution` since v66, `portfolio_equivalents` since v68 and `portfolio_credit_curve` since v71.
+`class_return_distribution` since v66, `portfolio_equivalents` since v68 and
+`portfolio_credit_returns` since v71.
 All are raise-only on the one 1000-row page and anon-callable like the rest of
-`api`. Seven take a set of funds, codes or lines; `class_return_distribution` takes
+`api`. Eight take a set of funds, codes or lines; `class_return_distribution` takes
 one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a name search that guesses.
 
 - **`api.portfolio_resolve(p_names, p_cnpjs, p_quotas, p_quota_dates)`**: one row
@@ -666,6 +667,23 @@ one ANBIMA class as filed and `portfolio_equivalents` a set of them. None is a n
   Prazo), `AÇÕES - ATIVO - SMALL CAPS` SMAL11 (R$ 2.79 bn), `AÇÕES - ATIVO -
   DIVIDENDOS` DIVO11 and `AÇÕES - ATIVO - SUSTENTABILIDADE / GOVERNANÇA` ISUS11.
   It names an ETF with the same objective, not a recommendation.
+- **`api.portfolio_credit_returns(p_codes, p_end_month, p_series, p_classes)`**
+  (catalog v71, #766): a CRA or CRI's value on the securitizer's curve. For each
+  CETIP code (1 to 70; a leading `CRA-` / `CRI-` stripped), the 13 month-ends
+  `p_end_month - 12 .. p_end_month` from `cvm_securit_serie`, one row per month:
+  the series `p_series` / `p_classes` name (from `portfolio_instruments`) or the
+  code's only series in the window, the highest `versao` of each month. `pu` is
+  `valor_certificados / quantidade_certificados`, `paid_per_unit` the month's
+  `rendimentos + amortizacoes` per certificate, `factor` = (pu + paid) / previous pu.
+  `month_flag` makes a month unknown: `serie_ambigua`, `mes_ausente`,
+  `valor_invalido`, `quantidade_mudou`, `pu_repetido`, `queda_sem_evento_arquivado`
+  (the pu falls and no payment is filed: never read as a loss),
+  `pagamento_acima_do_pu`, `pagamento_incompativel` (a payment month whose return is
+  outside 0.5 to 1.5 times the line's median month with no payment; owner, 2026-10-08,
+  #766). `rentabilidade` is never read. Measured 2026-10-08:
+  MRV's CRI 24I1980390 (110% of the CDI) gives 109.9% to 110.1% of the CDI on
+  every complete 12-month window, and its 2026-04 coupon was never filed. It is
+  the securitizer's value on the curve, not a market price.
 - A merge deploys nothing: the functions go live on the next analytical apply
   (`daily_ingest` `mode=analytics-only`), the MCP tools after `deploy_mcp.yml`.
 - **`api.portfolio_credit_curve(p_codes, p_from, p_to)`** (catalog v71, #766): a CRA
@@ -977,7 +995,7 @@ page with a `p_after` cursor**; the others
 `company_events`, `macro_series`, `ptax`, `future_curve`, `future_series`,
 `curve`, `curve_history`, `research_universe`, `portfolio_resolve`, `portfolio_fees`,
 `portfolio_lookthrough`, `portfolio_movement`, `portfolio_instruments`, `portfolio_fund_terms`,
-`portfolio_fee_peers`, `class_return_distribution`, `portfolio_equivalents` and the ten `screen_*` functions) have no cursor and
+`portfolio_fee_peers`, `class_return_distribution`, `portfolio_equivalents`, `portfolio_credit_returns` and the ten `screen_*` functions) have no cursor and
 ask you to narrow the window or send fewer funds. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.

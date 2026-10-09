@@ -528,5 +528,29 @@ canned["trade_consolidated_history"] = [dict(match={"p_ticker": "EXLF11"}, rows=
     dict(ticker="EXLF11", trade_date=d.isoformat(), last_price=round(v, 4))
     for d, v in _daily(_path(100.0, [1.12, 1.10, 1.14, 1.11, 1.13, 1.09, 1.12, 1.10, 1.14, 1.11, 1.12, 1.13]))])]
 
+# --- schema 2.1 (#766), method A: the demo CRA's value on the securitizer's curve, synthetic. Shaped on Marfrig's
+# CRA0250018H (measured 2026-10-08): the pu grows each month and a coupon filed in 2026-04 takes it down; the factor is
+# (pu + paid) / previous pu, so the coupon month is not a loss.
+def _curve(growth, coupon_month, coupon):
+    rows, pu, prev = [], 1000.0, None
+    for i, m in enumerate(RET_MONTHS):
+        paid = 0.0
+        if i:
+            pu = pu * growth
+            if m == coupon_month:
+                paid, pu = coupon, pu - coupon
+        rows.append(dict(line_no=1, input_code="0260000X", code="0260000X", numero_serie=1, classe="Sênior", month=m.isoformat(),
+                         data_referencia=m.isoformat(), versao=1, quantidade_certificados=250000.0,
+                         valor_certificados=round(pu * 250000, 2), rendimentos=round(paid * 250000, 2), amortizacoes=0.0,
+                         pu=round(pu, 10), paid_per_unit=round(paid, 10),
+                         factor=None if prev is None else round((pu + paid) / prev, 12), month_flag=None,
+                         taxa_juros="IPCA+ 8,7400% a.a", data_vencimento="2032-04-15",
+                         reason="valor na curva informado pela securitizadora (sintético)"))
+        prev = pu
+    return rows
+
+
+canned["portfolio_credit_returns"] = [dict(match={"p_codes": ["0260000X"]}, rows=_curve(1.0105, _dt.date(2026, 4, 1), 61.5))]
+
 json.dump(canned, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 print({k: len(v) for k, v in canned.items() if k != "_note"})

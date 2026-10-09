@@ -53,6 +53,7 @@
         "vencimento": null,
         "taxa_texto": null,
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -85,6 +86,7 @@
         "vencimento": null,
         "taxa_texto": null,
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -117,6 +119,7 @@
         "vencimento": null,
         "taxa_texto": null,
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -149,6 +152,7 @@
         "vencimento": null,
         "taxa_texto": null,
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -181,6 +185,7 @@
         "vencimento": null,
         "taxa_texto": null,
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -213,6 +218,7 @@
         "vencimento": null,
         "taxa_texto": null,
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -245,6 +251,7 @@
         "vencimento": null,
         "taxa_texto": null,
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -277,6 +284,7 @@
         "vencimento": null,
         "taxa_texto": null,
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -309,6 +317,7 @@
         "vencimento": "2028-03-15",
         "taxa_texto": "105,00% do CDI",
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -362,6 +371,7 @@
         "vencimento": "2027-06-15",
         "taxa_texto": "CDI + 0,50%",
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -394,6 +404,7 @@
         "vencimento": "2031-10-15",
         "taxa_texto": "IPCA + 8,74%",
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -426,6 +437,7 @@
         "vencimento": "2030-09-15",
         "taxa_texto": "15,41% a.a.",
         "data_aplicacao": null,
+        "data_inicial": null,
         "estrategia_corretora": null,
         "classe_corretora": null,
         "conta_ref": null,
@@ -17087,6 +17099,8 @@
     "drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
     "performance_note": "o retorno líquido já desconta a performance provisionada; a taxa por ponto mostrada considera só a administração",
     "pct_of_cdi_note": "% do CDI = retorno líquido dividido pelo CDI das mesmas datas, vezes 100; só para fundo cujo índice de referência arquivado (Extrato ou lâmina) é CDI ou DI, e só com CDI do período acima de zero",
+    "pct_of_cdi_credit_note": "Crédito direto: '% do CDI' só quando a taxa impressa no extrato contém CDI; para papel atrelado a IPCA ou prefixado, n/a, e a comparação é a diferença para o CDI em pontos percentuais",
+    "contracted_note": "Retorno contratado: a taxa impressa no extrato aplicada ao CDI ou ao IPCA da janela. Não é retorno medido: não tem risco de crédito nem marcação a mercado, e é bruto de IR. Fica fora da cobertura medida, da contribuição e de qualquer total.",
     "note": "Fato por ativo sobre um período passado: sem limiar, sem total da carteira e sem ranking; não é previsão nem recomendação.",
     "cdi": {
       "series": "CDI",
@@ -17118,7 +17132,7 @@
         "tipo": "tesouro",
         "cnpj": null,
         "ticker": null,
-        "code": null,
+        "credit_code": null,
         "name": "NTN-B 2035-05-15",
         "valor_brl": 412351.0,
         "basis": null,
@@ -17220,7 +17234,8 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": null
       },
       {
         "line_no": 2,
@@ -17228,7 +17243,7 @@
         "tipo": "ação",
         "cnpj": null,
         "ticker": "PETR4",
-        "code": null,
+        "credit_code": null,
         "name": "PETROBRAS",
         "valor_brl": 988000.0,
         "basis": "close_total_return",
@@ -17496,7 +17511,8 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": null
       },
       {
         "line_no": 3,
@@ -17504,7 +17520,7 @@
         "tipo": "fundo",
         "cnpj": "08935128000159",
         "ticker": null,
-        "code": null,
+        "credit_code": null,
         "name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
         "valor_brl": 264615.0,
         "basis": "cota_fundo",
@@ -17829,7 +17845,8 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": null
       },
       {
         "line_no": 4,
@@ -17837,7 +17854,7 @@
         "tipo": "fundo",
         "cnpj": "50088190000119",
         "ticker": null,
-        "code": null,
+        "credit_code": null,
         "name": "XP BANCOS FIC FIF RENDA FIXA",
         "valor_brl": 1387809.9,
         "basis": "cota_fundo",
@@ -18163,7 +18180,8 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": null
       },
       {
         "line_no": 5,
@@ -18171,7 +18189,7 @@
         "tipo": "fundo",
         "cnpj": "51488342000133",
         "ticker": null,
-        "code": null,
+        "credit_code": null,
         "name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
         "valor_brl": 902591.9,
         "basis": "cota_fundo",
@@ -18497,7 +18515,8 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": null
       },
       {
         "line_no": 6,
@@ -18505,7 +18524,7 @@
         "tipo": "FIDC",
         "cnpj": null,
         "ticker": null,
-        "code": null,
+        "credit_code": null,
         "name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
         "valor_brl": 750000.0,
         "basis": null,
@@ -18607,7 +18626,8 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": null
       },
       {
         "line_no": 7,
@@ -18615,7 +18635,7 @@
         "tipo": "fundo",
         "cnpj": "42592315000115",
         "ticker": null,
-        "code": null,
+        "credit_code": null,
         "name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
         "valor_brl": 770616.5,
         "basis": "cota_fundo",
@@ -18939,7 +18959,8 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": null
       },
       {
         "line_no": 8,
@@ -18947,7 +18968,7 @@
         "tipo": "FII",
         "cnpj": null,
         "ticker": "HGLG11",
-        "code": null,
+        "credit_code": null,
         "name": "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO",
         "valor_brl": 175440.0,
         "basis": "close_sem_proventos",
@@ -19213,7 +19234,8 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": null
       },
       {
         "line_no": 9,
@@ -19221,14 +19243,14 @@
         "tipo": "CDB",
         "cnpj": null,
         "ticker": null,
-        "code": null,
+        "credit_code": null,
         "name": null,
         "valor_brl": 270000.0,
         "basis": null,
         "without_distributions": false,
         "status": "nao_avaliado",
-        "reason_code": "retorno_credito_sem_serie",
-        "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+        "reason_code": "retorno_contratado_anexo",
+        "reason": "crédito bancário sem série de preços: o retorno contratado está no anexo",
         "fee": null,
         "benchmark": null,
         "performance_fee_filed": false,
@@ -19237,8 +19259,8 @@
         "windows": {
           "12m": {
             "status": "nao_avaliado",
-            "reason_code": "retorno_credito_sem_serie",
-            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "reason_code": "retorno_contratado_anexo",
+            "reason": "crédito bancário sem série de preços: o retorno contratado está no anexo",
             "base_month": null,
             "end_month": null,
             "base_date": null,
@@ -19276,8 +19298,8 @@
           },
           "6m": {
             "status": "nao_avaliado",
-            "reason_code": "retorno_credito_sem_serie",
-            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "reason_code": "retorno_contratado_anexo",
+            "reason": "crédito bancário sem série de preços: o retorno contratado está no anexo",
             "base_month": null,
             "end_month": null,
             "base_date": null,
@@ -19323,7 +19345,72 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": {
+          "label": "retorno contratado",
+          "basis": "retorno_contratado",
+          "taxa_texto": "105,00% do CDI",
+          "rate": {
+            "indexer": "pct_cdi",
+            "value": 105.0
+          },
+          "data_inicial": null,
+          "data_inicial_source": null,
+          "vencimento": "2028-03-15",
+          "status": "nao_avaliado",
+          "reason_code": "contratado_sem_data_inicial",
+          "notes": [
+            "Retorno contratado: a taxa impressa no extrato aplicada ao CDI ou ao IPCA da janela. Não é retorno medido: não tem risco de crédito nem marcação a mercado, e é bruto de IR. Fica fora da cobertura medida, da contribuição e de qualquer total."
+          ],
+          "windows": {
+            "12m": {
+              "status": "nao_avaliado",
+              "reason_code": "contratado_sem_data_inicial",
+              "base_month": "2025-09-01",
+              "end_month": "2026-09-01",
+              "base_date": null,
+              "end_date": null,
+              "n_business_days": null,
+              "accrual_pct": null,
+              "index_pct": null,
+              "rate_factor_pct": null,
+              "cdi_pct": null,
+              "net_minus_cdi_pp": null,
+              "pct_of_cdi": null,
+              "pct_of_cdi_reason_code": null,
+              "approximation": null,
+              "sources": []
+            },
+            "6m": {
+              "status": "nao_avaliado",
+              "reason_code": "contratado_sem_data_inicial",
+              "base_month": "2026-03-01",
+              "end_month": "2026-09-01",
+              "base_date": null,
+              "end_date": null,
+              "n_business_days": null,
+              "accrual_pct": null,
+              "index_pct": null,
+              "rate_factor_pct": null,
+              "cdi_pct": null,
+              "net_minus_cdi_pp": null,
+              "pct_of_cdi": null,
+              "pct_of_cdi_reason_code": null,
+              "approximation": null,
+              "sources": []
+            }
+          },
+          "sources": [
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 9
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        }
       },
       {
         "line_no": 10,
@@ -19331,14 +19418,14 @@
         "tipo": "LCA",
         "cnpj": null,
         "ticker": null,
-        "code": null,
+        "credit_code": null,
         "name": null,
         "valor_brl": 120000.0,
         "basis": null,
         "without_distributions": false,
         "status": "nao_avaliado",
-        "reason_code": "retorno_credito_sem_serie",
-        "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+        "reason_code": "retorno_contratado_anexo",
+        "reason": "crédito bancário sem série de preços: o retorno contratado está no anexo",
         "fee": null,
         "benchmark": null,
         "performance_fee_filed": false,
@@ -19347,8 +19434,8 @@
         "windows": {
           "12m": {
             "status": "nao_avaliado",
-            "reason_code": "retorno_credito_sem_serie",
-            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "reason_code": "retorno_contratado_anexo",
+            "reason": "crédito bancário sem série de preços: o retorno contratado está no anexo",
             "base_month": null,
             "end_month": null,
             "base_date": null,
@@ -19386,8 +19473,8 @@
           },
           "6m": {
             "status": "nao_avaliado",
-            "reason_code": "retorno_credito_sem_serie",
-            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "reason_code": "retorno_contratado_anexo",
+            "reason": "crédito bancário sem série de preços: o retorno contratado está no anexo",
             "base_month": null,
             "end_month": null,
             "base_date": null,
@@ -19433,7 +19520,72 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": {
+          "label": "retorno contratado",
+          "basis": "retorno_contratado",
+          "taxa_texto": "CDI + 0,50%",
+          "rate": {
+            "indexer": "cdi_spread",
+            "value": 0.5
+          },
+          "data_inicial": null,
+          "data_inicial_source": null,
+          "vencimento": "2027-06-15",
+          "status": "nao_avaliado",
+          "reason_code": "contratado_sem_data_inicial",
+          "notes": [
+            "Retorno contratado: a taxa impressa no extrato aplicada ao CDI ou ao IPCA da janela. Não é retorno medido: não tem risco de crédito nem marcação a mercado, e é bruto de IR. Fica fora da cobertura medida, da contribuição e de qualquer total."
+          ],
+          "windows": {
+            "12m": {
+              "status": "nao_avaliado",
+              "reason_code": "contratado_sem_data_inicial",
+              "base_month": "2025-09-01",
+              "end_month": "2026-09-01",
+              "base_date": null,
+              "end_date": null,
+              "n_business_days": null,
+              "accrual_pct": null,
+              "index_pct": null,
+              "rate_factor_pct": null,
+              "cdi_pct": null,
+              "net_minus_cdi_pp": null,
+              "pct_of_cdi": null,
+              "pct_of_cdi_reason_code": null,
+              "approximation": null,
+              "sources": []
+            },
+            "6m": {
+              "status": "nao_avaliado",
+              "reason_code": "contratado_sem_data_inicial",
+              "base_month": "2026-03-01",
+              "end_month": "2026-09-01",
+              "base_date": null,
+              "end_date": null,
+              "n_business_days": null,
+              "accrual_pct": null,
+              "index_pct": null,
+              "rate_factor_pct": null,
+              "cdi_pct": null,
+              "net_minus_cdi_pp": null,
+              "pct_of_cdi": null,
+              "pct_of_cdi_reason_code": null,
+              "approximation": null,
+              "sources": []
+            }
+          },
+          "sources": [
+            {
+              "tool": "statement",
+              "call_id": null,
+              "args": {
+                "line_no": 10
+              },
+              "data_date": "2026-09-30"
+            }
+          ]
+        }
       },
       {
         "line_no": 11,
@@ -19441,7 +19593,7 @@
         "tipo": "CRA",
         "cnpj": null,
         "ticker": null,
-        "code": "CRA-0260000X",
+        "credit_code": "0260000X",
         "name": null,
         "valor_brl": 95000.0,
         "basis": "curva_securitizadora",
@@ -19451,7 +19603,7 @@
         "reason": null,
         "fee": {
           "status": "nao_se_aplica",
-          "reason_code": "taxa_nao_aplicavel",
+          "reason_code": "taxa_credito_sem_taxa_adm",
           "rate_pct_year": null,
           "kind": null,
           "origin": null,
@@ -19460,7 +19612,9 @@
         },
         "benchmark": {
           "cdi_like": false,
-          "reason_code": "taxa_nao_informada",
+          "reason_code": "credito_nao_cdi",
+          "taxa_texto": "IPCA + 8,74%",
+          "source": "taxa impressa no extrato",
           "extrato": null,
           "lamina": null,
           "lamina_n": null,
@@ -19472,86 +19626,152 @@
         },
         "performance_fee_filed": false,
         "notes": [
-          "Retorno na curva informada pela securitizadora (CVM, cvm_securit_serie): o valor unitário do mês mais os pagamentos do mês por certificado, sobre o valor unitário do mês anterior, composto. É o valor na curva, não preço de mercado; não mede risco de crédito nem marcação."
+          "Valor na curva informado pela securitizadora no informe mensal à CVM (cvm_securit_serie): PU = valor dos certificados / quantidade; juros e amortização pagos no mês somados ao PU do mês. Não é preço de mercado e não mostra evento de crédito que o informe não traga; bruto de IR.",
+          "No mês do pagamento, o valor pago entra pelo valor de face, sem reinvestimento até o fim do mês: o retorno daquele mês fica um pouco abaixo do contratado."
         ],
         "month_ends": [
           {
             "month": "2025-09-01",
             "date": null,
             "value": 1000.0,
-            "null_reason": null
+            "null_reason": null,
+            "data_referencia": "2025-09-01",
+            "paid_per_unit": 0.0,
+            "factor": null,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2025-10-01",
             "date": null,
             "value": 1010.5,
-            "null_reason": null
+            "null_reason": null,
+            "data_referencia": "2025-10-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2025-11-01",
             "date": null,
             "value": 1021.11025,
-            "null_reason": null
+            "null_reason": null,
+            "data_referencia": "2025-11-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2025-12-01",
             "date": null,
-            "value": 1031.83190762,
-            "null_reason": null
+            "value": 1031.83190763,
+            "null_reason": null,
+            "data_referencia": "2025-12-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2026-01-01",
             "date": null,
-            "value": 1042.66614265,
-            "null_reason": null
+            "value": 1042.66614266,
+            "null_reason": null,
+            "data_referencia": "2026-01-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2026-02-01",
             "date": null,
             "value": 1053.61413715,
-            "null_reason": null
+            "null_reason": null,
+            "data_referencia": "2026-02-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2026-03-01",
             "date": null,
-            "value": 1004.67708559,
-            "null_reason": null
+            "value": 1064.67708559,
+            "null_reason": null,
+            "data_referencia": "2026-03-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2026-04-01",
             "date": null,
-            "value": 1015.22619499,
-            "null_reason": null
+            "value": 1014.35619499,
+            "null_reason": null,
+            "data_referencia": "2026-04-01",
+            "paid_per_unit": 61.5,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2026-05-01",
             "date": null,
-            "value": 1025.88607004,
-            "null_reason": null
+            "value": 1025.00693504,
+            "null_reason": null,
+            "data_referencia": "2026-05-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2026-06-01",
             "date": null,
-            "value": 1036.65787378,
-            "null_reason": null
+            "value": 1035.76950786,
+            "null_reason": null,
+            "data_referencia": "2026-06-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2026-07-01",
             "date": null,
-            "value": 1047.54278145,
-            "null_reason": null
+            "value": 1046.64508769,
+            "null_reason": null,
+            "data_referencia": "2026-07-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2026-08-01",
             "date": null,
-            "value": 1058.54198066,
-            "null_reason": null
+            "value": 1057.63486111,
+            "null_reason": null,
+            "data_referencia": "2026-08-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           },
           {
             "month": "2026-09-01",
             "date": null,
-            "value": 1069.65667146,
-            "null_reason": null
+            "value": 1068.74002715,
+            "null_reason": null,
+            "data_referencia": "2026-09-01",
+            "paid_per_unit": 0.0,
+            "factor": 1.0105,
+            "month_flag": null,
+            "taxa_juros": "IPCA+ 8,7400% a.a"
           }
         ],
         "windows": {
@@ -19575,7 +19795,7 @@
             "net_minus_cdi_pp": -1.066787,
             "cdi_like": false,
             "pct_of_cdi": null,
-            "pct_of_cdi_reason_code": "taxa_nao_cdi",
+            "pct_of_cdi_reason_code": "credito_nao_cdi",
             "volatility_annual_pct": 0.0,
             "volatility_note": "12 observações; estimativa ruidosa",
             "max_drawdown_pct": 0.0,
@@ -19583,7 +19803,7 @@
             "max_drawdown_trough_month": null,
             "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
             "fee_status": "nao_se_aplica",
-            "fee_reason_code": "taxa_nao_aplicavel",
+            "fee_reason_code": "taxa_credito_sem_taxa_adm",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
             "fee_per_point": null,
@@ -19591,19 +19811,22 @@
             "fee_per_point_note": null,
             "sharpe_drag": null,
             "sharpe_drag_note": null,
-            "notes": [
-              "Retorno na curva informada pela securitizadora (CVM, cvm_securit_serie): o valor unitário do mês mais os pagamentos do mês por certificado, sobre o valor unitário do mês anterior, composto. É o valor na curva, não preço de mercado; não mede risco de crédito nem marcação."
-            ],
+            "notes": [],
             "sources": [
               {
-                "tool": "portfolio_credit_curve",
+                "tool": "portfolio_credit_returns",
                 "call_id": 44,
                 "args": {
                   "p_codes": [
-                    "CRA-0260000X"
+                    "0260000X"
                   ],
-                  "p_from": "2025-09-01",
-                  "p_to": "2026-09-01"
+                  "p_end_month": "2026-09-01",
+                  "p_series": [
+                    1
+                  ],
+                  "p_classes": [
+                    "Sênior"
+                  ]
                 },
                 "data_date": "2026-09-01"
               },
@@ -19617,7 +19840,8 @@
                 },
                 "data_date": "2026-09-30"
               }
-            ]
+            ],
+            "month_flags": []
           },
           "6m": {
             "status": "avaliado",
@@ -19639,7 +19863,7 @@
             "net_minus_cdi_pp": -0.439703,
             "cdi_like": false,
             "pct_of_cdi": null,
-            "pct_of_cdi_reason_code": "taxa_nao_cdi",
+            "pct_of_cdi_reason_code": "credito_nao_cdi",
             "volatility_annual_pct": 0.0,
             "volatility_note": "6 observações; muito ruidosa",
             "max_drawdown_pct": 0.0,
@@ -19647,7 +19871,7 @@
             "max_drawdown_trough_month": null,
             "max_drawdown_note": "em fechamentos mensais; quedas dentro do mês não aparecem",
             "fee_status": "nao_se_aplica",
-            "fee_reason_code": "taxa_nao_aplicavel",
+            "fee_reason_code": "taxa_credito_sem_taxa_adm",
             "fee_pct_period": null,
             "gross_return_est_pct": null,
             "fee_per_point": null,
@@ -19656,19 +19880,23 @@
             "sharpe_drag": null,
             "sharpe_drag_note": null,
             "notes": [
-              "Retorno na curva informada pela securitizadora (CVM, cvm_securit_serie): o valor unitário do mês mais os pagamentos do mês por certificado, sobre o valor unitário do mês anterior, composto. É o valor na curva, não preço de mercado; não mede risco de crédito nem marcação.",
               "retorno do período de 6 meses, não anualizado"
             ],
             "sources": [
               {
-                "tool": "portfolio_credit_curve",
+                "tool": "portfolio_credit_returns",
                 "call_id": 44,
                 "args": {
                   "p_codes": [
-                    "CRA-0260000X"
+                    "0260000X"
                   ],
-                  "p_from": "2025-09-01",
-                  "p_to": "2026-09-01"
+                  "p_end_month": "2026-09-01",
+                  "p_series": [
+                    1
+                  ],
+                  "p_classes": [
+                    "Sênior"
+                  ]
                 },
                 "data_date": "2026-09-01"
               },
@@ -19682,7 +19910,8 @@
                 },
                 "data_date": "2026-09-30"
               }
-            ]
+            ],
+            "month_flags": []
           }
         },
         "sources": [
@@ -19695,18 +19924,29 @@
             "data_date": "2026-09-30"
           },
           {
-            "tool": "portfolio_credit_curve",
+            "tool": "portfolio_credit_returns",
             "call_id": 44,
             "args": {
               "p_codes": [
-                "CRA-0260000X"
+                "0260000X"
               ],
-              "p_from": "2025-09-01",
-              "p_to": "2026-09-01"
+              "p_end_month": "2026-09-01",
+              "p_series": [
+                1
+              ],
+              "p_classes": [
+                "Sênior"
+              ]
             },
             "data_date": "2026-09-01"
           }
-        ]
+        ],
+        "series": {
+          "numero_serie": 1,
+          "classe": "Sênior",
+          "reason": "valor na curva informado pela securitizadora (sintético)"
+        },
+        "contracted": null
       },
       {
         "line_no": 12,
@@ -19714,14 +19954,14 @@
         "tipo": "debênture",
         "cnpj": null,
         "ticker": null,
-        "code": null,
+        "credit_code": null,
         "name": null,
         "valor_brl": 60000.0,
         "basis": null,
         "without_distributions": false,
         "status": "nao_avaliado",
-        "reason_code": "retorno_credito_sem_serie",
-        "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+        "reason_code": "retorno_debenture_metodo_pendente",
+        "reason": "debênture: método pendente (meses de cupom na marcação dos fundos)",
         "fee": null,
         "benchmark": null,
         "performance_fee_filed": false,
@@ -19730,8 +19970,8 @@
         "windows": {
           "12m": {
             "status": "nao_avaliado",
-            "reason_code": "retorno_credito_sem_serie",
-            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "reason_code": "retorno_debenture_metodo_pendente",
+            "reason": "debênture: método pendente (meses de cupom na marcação dos fundos)",
             "base_month": null,
             "end_month": null,
             "base_date": null,
@@ -19769,8 +20009,8 @@
           },
           "6m": {
             "status": "nao_avaliado",
-            "reason_code": "retorno_credito_sem_serie",
-            "reason": "crédito direto (CDB, LCI, LCA, CRA, CRI, debênture): sem série de preços no SILO",
+            "reason_code": "retorno_debenture_metodo_pendente",
+            "reason": "debênture: método pendente (meses de cupom na marcação dos fundos)",
             "base_month": null,
             "end_month": null,
             "base_date": null,
@@ -19816,7 +20056,8 @@
             },
             "data_date": "2026-09-30"
           }
-        ]
+        ],
+        "contracted": null
       }
     ],
     "n_lines": 12,
@@ -19826,26 +20067,39 @@
       "12m": {
         "evaluated_value_brl": 4584073.3,
         "coverage_portfolio_value_pct": 73.9793,
-        "n_evaluated": 7
+        "n_evaluated": 7,
+        "contracted_value_brl": 0.0,
+        "contracted_coverage_portfolio_value_pct": 0.0,
+        "n_contracted": 0
       },
       "6m": {
         "evaluated_value_brl": 4584073.3,
         "coverage_portfolio_value_pct": 73.9793,
-        "n_evaluated": 7
+        "n_evaluated": 7,
+        "contracted_value_brl": 0.0,
+        "contracted_coverage_portfolio_value_pct": 0.0,
+        "n_contracted": 0
       }
     },
     "contribution": {
       "label": "contribuição retroativa",
-      "note": "Contribuição retroativa: o extrato dá as posições em uma data e nenhum fluxo. O valor no início da janela de cada linha é o valor atual dividido por 1 mais o retorno líquido da janela; o peso é esse valor sobre a soma dos valores iniciais das linhas avaliadas; a contribuição é o peso vezes o retorno. Supõe que não houve aporte nem resgate. A soma é o retorno só da parte avaliada, nunca da carteira inteira.",
+      "note": "Contribuição retroativa: o extrato dá as posições em uma data e nenhum fluxo. O valor no início da janela de cada linha é o valor atual dividido por 1 mais o retorno líquido da janela; o peso é esse valor sobre a soma dos valores iniciais das linhas avaliadas; a contribuição é o peso vezes o retorno. Supõe que não houve aporte nem resgate. A soma é o retorno só da parte avaliada, nunca da carteira inteira. CRA e CRI avaliados pelo valor na curva da securitizadora ficam fora da soma: não é valor de mercado, e métodos diferentes não se somam.",
       "windows": {
         "12m": {
           "status": "avaliado",
           "reason_code": null,
-          "covered_return_pct": 14.475,
-          "start_value_brl": 4004430.14,
-          "end_value_brl": 4584073.3,
-          "n_lines": 7,
-          "coverage_portfolio_value_pct": 73.9793,
+          "covered_return_pct": 14.499,
+          "start_value_brl": 3920621.7,
+          "end_value_brl": 4489073.3,
+          "n_lines": 6,
+          "excluded_lines": [
+            {
+              "line_no": 11,
+              "basis": "curva_securitizadora",
+              "reason_code": "metodo_fora_do_total"
+            }
+          ],
+          "coverage_portfolio_value_pct": 72.4462,
           "lines": [
             {
               "line_no": 2,
@@ -19915,11 +20169,18 @@
         "6m": {
           "status": "avaliado",
           "reason_code": null,
-          "covered_return_pct": 6.3617,
-          "start_value_brl": 4309892.01,
-          "end_value_brl": 4584073.3,
-          "n_lines": 7,
-          "coverage_portfolio_value_pct": 73.9793,
+          "covered_return_pct": 6.3594,
+          "start_value_brl": 4220663.07,
+          "end_value_brl": 4489073.3,
+          "n_lines": 6,
+          "excluded_lines": [
+            {
+              "line_no": 11,
+              "basis": "curva_securitizadora",
+              "reason_code": "metodo_fora_do_total"
+            }
+          ],
+          "coverage_portfolio_value_pct": 72.4462,
           "lines": [
             {
               "line_no": 2,
@@ -23473,13 +23734,18 @@
     },
     {
       "call_id": 44,
-      "tool": "portfolio_credit_curve",
+      "tool": "portfolio_credit_returns",
       "args": {
         "p_codes": [
-          "CRA-0260000X"
+          "0260000X"
         ],
-        "p_from": "2025-09-01",
-        "p_to": "2026-09-01"
+        "p_end_month": "2026-09-01",
+        "p_series": [
+          1
+        ],
+        "p_classes": [
+          "Sênior"
+        ]
       },
       "requested_at_utc": "2026-10-03T15:00:00Z",
       "row_count": 13,

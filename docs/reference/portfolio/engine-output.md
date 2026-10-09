@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 2.0)
+# Portfolio engine output (schema 2.1)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -37,6 +37,21 @@ the annex only. `statement.positions[]` gains `data_inicial` (the PDF's "Data In
 built: every 12-month window has two coupon months (`portfolio-return-coverage.md` section 8).
 
 2.0 (2026-10-07): keys removed, none added. The return, tax and market-equivalent blocks stop writing reader text the report derives from their codes and figures (`src/portfolio/report/labels.py`, added by `adapt` at the same view paths, so the report and the Redator's placeholders are unchanged): `returns.lines[].basis_label` and `status_label`, every return window's `status_label` and `gross_label`; `tax.lines[].fee.third_party_label`, `tax.lines[].tax.status_label`, `instrument_label`, `rate_text` and `candidates[].rate_today_text`, `tax.lines[].pension.regime_label`, `base_text` and `irrevocable_text`; `equivalents.pl_label` and `fee_label`, `equivalents.lines[].etf.pl_label`, `fee_label` and `basis_label`, and every window's `etf_band_label` / `fund_band_label`. The report reads a 1.x document as before (its labels are replaced by the same text).
+
+2.1 (#766, owner 2026-10-08; catalog v71): keys added, none renamed, retyped or removed. Direct credit gets a return.
+A CRA or CRI identified in the CVM register has `basis` `curva_securitizadora` (method A, `portfolio_credit_returns`,
+one call for every such line); a debênture's code is `retorno_debenture_metodo_pendente` (method B, the funds' median mark, is not built: no PU-fall threshold evaluates a semiannual payer; owner, 2026-10-08); a CDB, LCI, LCA or a CDCA the statement prints has `retorno_contratado_anexo` and a `contracted` block
+(method C). Every `returns.lines[]` gains `credit_code` and `contracted` (null when not bank credit); a curve line also
+gains `series`, its `month_ends[]` gain `data_referencia`, `paid_per_unit`, `factor`, `month_flag` and `taxa_juros`,
+and its windows `month_flags`. `returns` gains `pct_of_cdi_credit_note` and `contracted_note`; `coverage.{12m,6m}`
+gains `contracted_value_brl`, `contracted_coverage_portfolio_value_pct` and `n_contracted`; every contribution window
+gains `excluded_lines`. `statement.positions[]` gains `data_inicial` (the BTG detail table's 'Data inicial'). New reason
+codes in `common.REASON_TEXT`: `retorno_debenture_metodo_pendente`, `serie_ambigua`, `valor_invalido`, `quantidade_mudou`,
+`pu_repetido`, `queda_sem_evento_arquivado`, `pagamento_acima_do_pu`, `taxa_credito_sem_taxa_adm`, `credito_nao_cdi`,
+`taxa_nao_informada`, `retorno_contratado_anexo`, `contratado_taxa_ilegivel`, `contratado_sem_data_inicial`,
+`contratado_papel_mais_novo`, `contratado_vence_na_janela`, `contratado_ipca_indisponivel`, `metodo_fora_do_total`.
+The new calls (`portfolio_credit_returns`, and `inflation` when a contracted rate is on IPCA) come after the CDI call
+of the return block, so the call ids of later blocks move.
 
 1.13 (#609 owner's resolution and #606 addendum Q36, 2026-10-05; catalog v68). Keys were added, none renamed, retyped
 or removed. A new top-level section `equivalents` (below), placed after `tax` and before `investigation` (1.12), with its `section_status` entry and the
@@ -617,8 +632,8 @@ A line (every statement line, in order): `line_no`, `linha_extrato`, `tipo`, `cn
 | `close_total_return`        | `quote_history(..., p_fields [close_total_return, close_total_return_null_reason])` | `ação` (or `outro` of class equity). A null is `retorno_total_nulo` with its reason, never the price return.                    |
 | `close_sem_proventos`       | `quote_history(..., p_fields [close])`                                              | `FII` with a ticker; `ETF` that `lookup` found on the cash tape. "Sem proventos": an ETF that distributes is understated.       |
 | `last_price_etf_renda_fixa` | `trade_consolidated_history(p_ticker, p_from, p_to)`, `last_price`                  | `ETF` known only from the ETF registry (not on COTAHIST). Tool unknown or refused: `etf_rf_sem_api`. `ref_price` is never read. |
-| `curva_securitizadora` (2.1) | `portfolio_credit_curve(p_codes, p_from, p_to)`, `factor` per month             | CRA or CRI with a CETIP code. A flagged month is unknown, never filled in. Not a market price.                                     |
-| null                        | none                                                                                | Tesouro, CDB, LCI, LCA, CRA or CRI without a code, debênture, FIDC (tranche unknown), FIP, cash, unidentified line: a fixed `retorno_*` code.    |
+| `curva_securitizadora`      | `portfolio_credit_returns(p_codes, p_end_month, p_series, p_classes)`, `factor`     | 2.1. `CRA` / `CRI` matched in the CVM register (`credit.match_kind` `securit_cetip`). A window's value is 1 at its base month times each month's factor; a month with a `month_flag` makes the window `nao_avaliado` with that flag as its code (`mes_ausente` is `serie_incompleta`). Not a market price; out of the contribution sum. |
+| null                        | none                                                                                | Tesouro, CDB, LCI, LCA, debênture, CRA or CRI not matched, FIDC (tranche unknown), FIP, cash, unidentified line: a fixed code.   |
 
 The month-end value of a ticker is its last session in the month on or before the position date (`date` says
 which). A window needs all its month-ends (13 for `12m`, 7 for `6m`), else `serie_incompleta` with
@@ -672,6 +687,26 @@ trimming, collapsing whitespace and upper-casing, against the rule file's `accep
 otherwise null with `pct_of_cdi_reason_code`: `pct_cdi_so_fundos` (not a fund), `referencia_nao_servida` (no fee row
 carried the benchmark), `referencia_nao_informada`, `referencia_nao_cdi`, `referencia_diverge` (the two documents, or the
 lâmina's classes, disagree, or some classes filed one and some none), `cdi_indisponivel` or `cdi_nao_positivo`. `net_minus_cdi_pp` is kept in every case.
+
+**Direct credit** (2.1, #766). A curve line's `fee` is `nao_se_aplica` with `taxa_credito_sem_taxa_adm`. Its
+`benchmark` is the rate the statement prints (`taxa_texto`), never the register's free-text `taxa_juros`: `cdi_like`
+when it contains CDI, else `pct_of_cdi_reason_code` `credito_nao_cdi` (IPCA or prefixado) or `taxa_nao_informada`, with
+`pct_of_cdi_credit_note` as the report's one footnote. The contribution lists the curve line in `excluded_lines`
+(`metodo_fora_do_total`) and covers only the lines it sums.
+
+`contracted` (method C, a CDB, LCI, LCA or CDCA; `src/portfolio/contracted.py`): `label` ("retorno contratado"), `basis`,
+`taxa_texto` (as printed), `rate` (`indexer` `pct_cdi` | `cdi_spread` | `ipca_spread` | `prefixado`, and `value`; null
+when the text matches none of the four shapes or the OCR did not check it), `data_inicial` and `data_inicial_source`
+(`data_inicial` from the BTG detail table, else the spreadsheet's `data_aplicacao`), `vencimento`, `status`,
+`reason_code`, `notes`, `windows` (`{12m, 6m}`), `sources`. A window: `status`, `reason_code`, `base_month`,
+`end_month`, `base_date`, `end_date` (the CDI calendar's month-ends), `n_business_days` (CDI rates from base inclusive
+to end exclusive), `accrual_pct`, `index_pct` (the CDI or IPCA of the window), `rate_factor_pct`, `cdi_pct`,
+`net_minus_cdi_pp`, `pct_of_cdi` (only for a rate on the CDI), `pct_of_cdi_reason_code`, `approximation` (IPCA only),
+`sources`. % do CDI p: product of `1 + cdi/100 x p/100`, each truncated at 16 places, rounded to 8; CDI + s: the DI
+factor times `(1 + s/100)^(du/252)`; prefixado x: `(1 + x/100)^(du/252)`; IPCA + s: the product of the window's IPCA
+months times `(1 + s/100)^(du/252)`, labelled an approximation. Not computed when the paper starts after the base date,
+matures before the end date, has no initial date or no legible rate. It is never a measured return: the line stays
+`nao_avaliado`, and it is counted only in `coverage.contracted_*`, shown only in the annex.
 
 ## `tax`
 
@@ -920,7 +955,8 @@ still renders. The view's `sections` and `gaps` ("O que não foi possível avali
 
 ## Tools the engine calls
 
-`portfolio_equivalents` and `class_return_distribution` (1.13, catalog v68 and v66; live once the analytical SQL
+`portfolio_credit_returns` (2.1, catalog v71; live once the analytical SQL and the MCP are deployed) and
+`inflation` (2.1, IPCA, only for a contracted rate on IPCA), `portfolio_equivalents` and `class_return_distribution` (1.13, catalog v68 and v66; live once the analytical SQL
 and the MCP are deployed), `fund_nav`, `quote_history`, `macro_series` and `trade_consolidated_history` (1.10, the return block; the last
 is catalog v65, merged in #632 and live once the analytical SQL and the MCP are deployed; until then its unknown-tool answer is the expected `etf_rf_sem_api`), `portfolio_instruments` and `portfolio_fund_terms` (catalog v62), `portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57, 3 in v68), `portfolio_lookthrough` (merged; the canned
 rows follow their documented columns and have not been run against the live functions), and the

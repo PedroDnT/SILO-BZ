@@ -3,24 +3,32 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
-## 2026-10-08 · claude/credit-return-method-a-c (#766)
+## 2026-10-08 · claude/credit-direct-return-build (#766)
 
-**Done.** The owner re-issued #766. The MRV stop was checked again on production (unchanged), and the owner chose A with
-guards, no B, C in the annex. Built: `api.portfolio_credit_curve` (catalog v71: catalog, openapi, MCP and SDK contracts
-regenerated, SQL behaviour test), engine 2.1 (`basis` `curva_securitizadora`, `returns.contracted`), the PDF reader's
-"Data Inicial", and the annex section "Retorno contratado (não é retorno de mercado)". Results in
-`docs/reference/research/portfolio-return-coverage.md` section 9.
+**Done.** The build that follows #768 (the measurement and the stop at MRV's test case), after the owner accepted the
+two guards: `api.portfolio_credit_returns` (catalog v71, `31_api_portfolio.sql`), engine schema 2.1 (`returns.py`,
+new `contracted.py`), the BTG reader keeps 'Data inicial', the Redator no longer receives the `contracted` block (annex only), the report shows A in the body table ("valor na curva";
+"n/a" with the reason in #765's one footnote) and C in the annex only. On the real 2026-08-31 statement: measured 12-month coverage 8.06%
+to 10.65% (Marfrig CRA, 14.54%, 99.38% of the CDI); contracted return apart, 18.43% (OMNI CDB IPCA + 6,20%: 10.69%;
+CDCA 11,87% a.a.: 11.87%).
 
-**Decisions.**
-- Two guards beyond #766: `pagamento_maior_que_pu` and a ±3% monthly band, measured on every CRA/CRI month 2025-01 to
-  2026-08. `pu_repetido` only fires with nothing paid. The band is left to the owner.
-- `data_inicial` is a field of its own; `data_aplicacao`, which the tax block reads, is not filled from the PDF.
-- C's "% do CDI" only for "p% do CDI" and "CDI + s%"; IPCA by whole month, no pro rata.
+**Decisions.** Owner, 2026-10-08: guards `queda_sem_evento_arquivado` and `pu_repetido`; then "go with the
+recommendations": the `pagamento_incompativel` band stays at 0.5 to 1.5, C stays in the annex only, and method B is
+not built on a PU-fall threshold. Taken here and covered by that answer: the third guard `pagamento_acima_do_pu`; the band of `pagamento_incompativel` (0.5 to 1.5 times the line's
+month with no payment), proposed from 7,788 payment months after the first real run published CRA02400AYL's 6-month
+window at 340% of the CDI; C apart from every measured figure (annex only);
+a CRA or CRI on the curve left out of the contribution sum (never mix methods in a total); "% do CDI" for credit from the
+rate the statement prints, never the register's `taxa_juros`.
 
-**Assumptions.** Coverage measured with the function body run read-only on production; the function itself is not in
-production (no migration run). `--provider fake` only.
+**Assumptions.** C needs the paper to exist for the whole window, so it reads the BTG 'Data inicial' (else the
+spreadsheet's `data_aplicacao`). IPCA + s is an approximation (IPCA of the window's months, no lag or anniversary pro
+rata), said on the window. The function was tested on a scratch local Postgres (CI's analytical apply, the SQL behaviour
+checks, and the production rows of the six codes); it is not applied to production.
 
-**Outside scope.** A local Postgres cluster (`~/silo-pg-ci`) to regenerate `openapi.json` and run the SQL test.
+**Outside scope.** Method B (debentures): not built, by the owner's decision; section 8 shows no threshold evaluates a
+semiannual payer. Register item 20.3 (B3 OTC prices) is the other route, not started. The Supabase MCP did not answer; production reads used `psql` in read-only mode. Seen, not fixed: the
+tax block could read the same 'Data inicial' (it reads only `data_aplicacao`). Fixed while merging main: a stray
+`||||||| d25f70ee` conflict marker main carried in this file.
 
 ## 2026-10-08 · claude/report-v2-trace-audit (#765)
 
@@ -58,8 +66,6 @@ the real Redator's three long findings on page 1, which no longer print there. N
 
 **Outside scope.** `brew install pango` and WeasyPrint in `.venv` to build PDFs locally, removed again at the end.
 `test_the_pdf_carries_the_diagrams` fails with WeasyPrint installed, on `main` too; CI does not install WeasyPrint.
-
-||||||| d25f70ee
 
 ## 2026-10-08 · claude/credit-direct-return-cdi (#766)
 
