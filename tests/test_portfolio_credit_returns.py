@@ -17,7 +17,7 @@ from src.portfolio import contracted
 from src.portfolio.client import FakeClient
 from src.portfolio.common import REASON_TEXT
 from src.portfolio.identify import LineId
-from src.portfolio.returns import CURVE, compute_returns
+from src.portfolio.returns import CURVE, DEBENTURE, compute_returns
 from src.portfolio.statement import parse_rows
 
 D = dt.date(2026, 8, 31)  # the 08/10 report's position date: windows end in 2026-08
@@ -206,7 +206,7 @@ def test_a_failed_call_is_recorded_and_the_line_is_not_evaluated():
 
 def test_a_debenture_waits_for_its_method_and_makes_no_call():
     sec, client = run([credit_line(tipo="debênture", code="CUTI11", taxa="IPCA + 5,00%")])
-    assert one(sec)["reason_code"] == "retorno_debenture_metodo_pendente"
+    assert one(sec)["reason_code"] == "retorno_debenture_sem_serie"
     assert [p.tool for p in client.provenance] == ["macro_series"]
 
 
@@ -229,6 +229,68 @@ def test_c_any_other_text_is_not_read(text):
 
 def bank_line(taxa="105,00% do CDI", inicial=dt.date(2024, 1, 10), venc=dt.date(2027, 3, 15), tipo="CDB", linha=None):
     return credit_line(tipo=tipo, code="CDB421A6V20", taxa=taxa, inicial=inicial, venc=venc, linha=linha)
+
+
+def debenture_line(ticker="CUTI11", linha=None):
+    li = credit_line(tipo="debênture", code=ticker, taxa="110% CDI", linha=linha)
+    return dataclasses.replace(li, credit={"match_kind": "cda_ticker", "code": ticker})
+
+
+def debenture_rows(line_no=1, ticker="CUTI11", flags=None, n_fundos=3, drop_at=None, missing=None):
+    flags, out, pu = flags or {}, [], Decimal("100")
+    for i, m in enumerate(MONTHS):
+        if i and i == drop_at:
+            pu *= Decimal("0.90")
+        row_flag = flags.get(i)
+        if i == missing:
+            row_flag = "mes_ausente"
+        if i and row_flag is None and i != drop_at:
+            pu *= Decimal("1.005")
+        out.append(dict(line_no=line_no, input_ticker=ticker, ticker=ticker, month=m.isoformat(),
+                        n_fundos=0 if row_flag == "mes_ausente" else n_fundos, n_invalid_fundos=0,
+                        median_pu=float(pu), factor=None if i == 0 or row_flag else 1.005,
+                        month_flag=row_flag, reason="marca mediana sintética"))
+    return out
+
+
+# Method B ------------------------------------------------------------------------------------------------
+
+
+def test_b_uses_one_bounded_call_and_returns_the_median_mark_against_cdi():
+    rows = debenture_rows()
+    sec, client = run([debenture_line()], {"portfolio_debenture_returns": [{"match": {}, "rows": rows}]})
+    ln = one(sec)
+    assert ln["basis"] == DEBENTURE and ln["windows"]["12m"]["status"] == "avaliado"
+    assert ln["windows"]["12m"]["months_used"] == [m.isoformat() for m in MONTHS]
+    assert ln["windows"]["12m"]["pct_of_cdi"] is not None
+    assert ln["series"]["source_table"] == "cvm_fi_cda_acoes"
+    assert [(c.tool, c.args["p_tickers"], c.args["p_max_monthly_drop_pct"]) for c in client.provenance if c.tool == "portfolio_debenture_returns"] == [
+        ("portfolio_debenture_returns", ["CUTI11"], None)]
+
+
+@pytest.mark.parametrize("flag", ["mes_ausente", "fundos_insuficientes", "posicao_invalida", "limite_pendente"])
+def test_b_unknown_month_keeps_the_12m_window_unknown_with_the_flag(flag):
+    rows = debenture_rows(flags={5: flag}, n_fundos=2 if flag == "fundos_insuficientes" else 3)
+    sec, _ = run([debenture_line()], {"portfolio_debenture_returns": [{"match": {}, "rows": rows}]})
+    w = one(sec)["windows"]["12m"]
+    assert w["status"] == "nao_avaliado" and w["reason_code"] == flag
+    assert w["net_return_pct"] is None and "2026-01-01" in w["months_used"]
+
+
+def test_b_large_pu_fall_is_unknown_as_a_possible_event_and_never_a_loss():
+    rows = debenture_rows(drop_at=5, flags={5: "queda_pu_possivel_evento"})
+    sec, _ = run([debenture_line()], {"portfolio_debenture_returns": [{"match": {}, "rows": rows}]})
+    w = one(sec)["windows"]["12m"]
+    assert w["status"] == "nao_avaliado" and w["reason_code"] == "queda_pu_possivel_evento"
+    assert w["net_return_pct"] is None
+
+
+def test_b_missing_month_is_reported_instead_of_shortening_the_window():
+    rows = debenture_rows(missing=8)
+    sec, _ = run([debenture_line()], {"portfolio_debenture_returns": [{"match": {}, "rows": rows}]})
+    w = one(sec)["windows"]["12m"]
+    assert w["status"] == "nao_avaliado" and w["reason_code"] == "mes_ausente"
+    assert w["missing_months"] == ["2026-04-01"]
 
 
 def test_c_pct_of_cdi_is_b3s_di_factor_at_the_printed_percentage():

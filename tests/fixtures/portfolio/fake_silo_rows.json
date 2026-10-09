@@ -12144,5 +12144,173 @@
     }
    ]
   }
+ ],
+ "portfolio_debenture_returns": [
+  {
+   "match": {
+    "p_tickers": [
+     "EXEM12"
+    ],
+    "p_max_monthly_drop_pct": null
+   },
+   "rows": [
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2025-09-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1000.0,
+     "factor": null,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2025-10-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1005.0,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2025-11-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1010.025,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2025-12-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1015.075125,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2026-01-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1020.150500625,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2026-02-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1025.2512531281,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2026-03-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1030.3775093938,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2026-04-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1035.5293969407,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2026-05-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1040.7070439254,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2026-06-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1045.9105791451,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2026-07-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1051.1401320408,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2026-08-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1056.395832701,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    },
+    {
+     "line_no": 1,
+     "input_ticker": "EXEM12",
+     "ticker": "EXEM12",
+     "month": "2026-09-01",
+     "n_fundos": 3,
+     "n_invalid_fundos": 0,
+     "median_pu": 1061.6778118645,
+     "factor": 1.005,
+     "month_flag": null,
+     "reason": "marcação mediana sintética de três fundos"
+    }
+   ]
+  }
  ]
 }

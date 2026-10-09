@@ -1,6 +1,6 @@
 -- Executed checks for the portfolio-diagnosis reads (31_api_portfolio.sql:
 -- api.portfolio_resolve, api.portfolio_fees, api.portfolio_lookthrough, catalog
--- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56; ETF cotistas and PL, v57; api.portfolio_instruments and api.portfolio_fund_terms, v61; the filed benchmark and api.portfolio_equivalents, v68; api.portfolio_credit_returns, v71). Regex tests pin the SQL text; this proves it DOES the right thing on
+-- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56; ETF cotistas and PL, v57; api.portfolio_instruments and api.portfolio_fund_terms, v61; the filed benchmark and api.portfolio_equivalents, v68; api.portfolio_credit_returns, v71; portfolio_debenture_returns, v72). Regex tests pin the SQL text; this proves it DOES the right thing on
 -- rows. Synthetic CNPJs, inside a transaction that is rolled back, so it runs
 -- on any database with the schema and the analytical layer applied (CI's
 -- sql-compile job, or a scratch copy):
@@ -1710,6 +1710,22 @@ SELECT instrument_type, cnpj_securit, codigo_identificacao, data_referencia, cla
 FROM cvm_securit_serie WHERE codigo_cetip = 'ZZCRV00001C' AND data_referencia = DATE '2026-08-01';
 UPDATE cvm_securit_serie SET versao = 0, valor_certificados = 1
 WHERE codigo_cetip = 'ZZCRV00001C' AND data_referencia = DATE '2026-08-01' AND occurrence = 1;
+
+-- Method B: three fund marks per month. The first median is 110 (marks 100,
+-- 110, 130); CUTI11 then compounds +0.5% monthly. ENAT11 has a 10% fall in
+-- 2026-01 and one missing month in 2026-04. No event cash flows are invented.
+INSERT INTO cvm_fi_cda_acoes
+    (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_ativo, qt_pos_final, vl_merc_pos_final, raw)
+SELECT lpad((80000000000000 + f)::text, 14, '0'), m::date, 'FI', 'Debêntures', 'Debêntures', s.ticker,
+       1000, (CASE f WHEN 1 THEN 100 WHEN 2 THEN 110 ELSE 130 END) * 1000
+            * CASE WHEN s.ticker = 'ENAT11' AND m = DATE '2026-01-01' THEN 0.9
+                   ELSE power(1.005, extract(year FROM age(m, DATE '2025-08-01')) * 12
+                                          + extract(month FROM age(m, DATE '2025-08-01'))) END,
+       '{}'
+FROM generate_series(1, 3) f,
+     generate_series(DATE '2025-08-01', DATE '2026-08-01', interval '1 month') m,
+     (VALUES ('CUTI11'), ('ENAT11')) s(ticker)
+WHERE NOT (s.ticker = 'ENAT11' AND m = DATE '2026-04-01');
 -- Two series under one code.
 INSERT INTO cvm_securit_serie
     (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, classe, numero_serie,
@@ -1784,6 +1800,38 @@ BEGIN
     IF n <> 13 THEN RAISE EXCEPTION 'anon cannot read credit returns'; END IF;
     RESET ROLE;
     RAISE NOTICE 'portfolio_credit_returns behavior OK';
+END $$;
+
+DO $$
+DECLARE r RECORD; n INT; ret NUMERIC;
+BEGIN
+    SELECT * INTO r FROM api.portfolio_debenture_returns(ARRAY['CUTI11'], DATE '2026-08-01', 2.0)
+    WHERE month = DATE '2025-08-01';
+    IF r.n_fundos <> 3 OR r.median_pu <> 110 OR r.month_flag IS NOT NULL THEN
+        RAISE EXCEPTION 'debenture fund median expected 110 from 3 funds: %', row_to_json(r);
+    END IF;
+    SELECT count(*) FILTER (WHERE month_flag IS NULL AND factor IS NOT NULL), exp(sum(ln(factor))) - 1
+      INTO n, ret
+    FROM api.portfolio_debenture_returns(ARRAY['CUTI11'], DATE '2026-08-01', 2.0);
+    IF n <> 12 OR ret NOT BETWEEN 0.061 AND 0.062 THEN
+        RAISE EXCEPTION 'debenture returns, clean series: % factors, return %', n, ret;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_debenture_returns(ARRAY['ENAT11'], DATE '2026-08-01', 2.0)
+    WHERE month = DATE '2026-01-01';
+    IF r.month_flag IS DISTINCT FROM 'queda_pu_possivel_evento' OR r.factor IS NOT NULL THEN
+        RAISE EXCEPTION 'debenture possible event should be unknown: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_debenture_returns(ARRAY['ENAT11'], DATE '2026-08-01', NULL)
+    WHERE month = DATE '2026-01-01';
+    IF r.month_flag IS DISTINCT FROM 'limite_pendente' THEN
+        RAISE EXCEPTION 'debenture pending owner threshold: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_debenture_returns(ARRAY['ENAT11'], DATE '2026-08-01', 2.0)
+    WHERE month = DATE '2026-04-01';
+    IF r.month_flag IS DISTINCT FROM 'mes_ausente' OR r.factor IS NOT NULL THEN
+        RAISE EXCEPTION 'debenture missing month should be unknown: %', row_to_json(r);
+    END IF;
+    RAISE NOTICE 'portfolio_debenture_returns behavior OK';
 END $$;
 
 

@@ -566,9 +566,7 @@ CREDIT_NA_CODES = ("credito_nao_cdi",)  # schema 2.1: direct credit on IPCA or p
 
 
 def _contracted_html(view: dict) -> str:
-    """Schema 2.1 (#766, method C): the contracted return of each bank credit line, apart from the measured table and
-    from every total: the rate the statement prints applied to the CDI or IPCA of the window. Annex only, until the
-    owner decided on 2026-10-08 (#766) it stays apart from the measured returns."""
+    """The 6-month detail for C; its 12-month figure is in the shared table, outside measured totals."""
     r = view.get("returns") or {}
     b = "returns"
     rows = []
@@ -581,10 +579,12 @@ def _contracted_html(view: dict) -> str:
         asset = (f"{v(view, f'{b}.lines[{i}].line_id')} {v(view, f'{b}.lines[{i}].instrument')}"
                  f"<br><span class=cit>taxa impressa: {v(view, f'{cq}.taxa_texto')}</span>")
         for j, w in enumerate(c.get("windows") or []):
+            if w.get("id") != "6m":
+                continue  # 12m is already in the shared body table
             wq = f"{cq}.windows[{j}]"
             label = e(WINDOW_LABEL.get(w.get("id"), w.get("id")))
             if w.get("status") != "avaliado":
-                rows.append([asset if j == 0 else "", label, f"<span class=cit>{v(view, f'{wq}.reason')}</span>", "—", "—"])
+                rows.append([asset, label, f"<span class=cit>{v(view, f'{wq}.reason')}</span>", "—", "—"])
                 continue
             label += f"<br><span class=cit>{v(view, f'{wq}.base_date')} a {v(view, f'{wq}.end_date')}</span>"
             acc = f"<span class=v>{v(view, f'{wq}.accrual_pct')}</span>"
@@ -595,7 +595,7 @@ def _contracted_html(view: dict) -> str:
                 vs += f"<br><span class=v>{v(view, f'{wq}.pct_of_cdi')}</span>"
             elif w.get("pct_of_cdi_reason_code") in CREDIT_NA_CODES:
                 vs, na = vs + "<br>n/a¹", True
-            rows.append([asset if j == 0 else "", label, acc, v(view, f"{wq}.cdi_pct"), vs])
+            rows.append([asset, label, acc, v(view, f"{wq}.cdi_pct"), vs])
     if not rows:
         return ""
     out = [f'<h3>Retorno contratado <span class="tag est">não é retorno medido</span></h3>',
@@ -639,40 +639,61 @@ def _contribution_html(view: dict, windows: tuple[str, ...] = ("12m", "6m")) -> 
 
 
 def _returns_summary(view: dict) -> str:
-    """Body table of the returns section (report restructure, stage 3): for each position with a 12-month return, the
-    net return, the CDI over the same dates and the difference, by the position's name. The windows, volatility,
-    drawdown, fee per point and the basis of each line are in the annex table. No total, mean or ranking."""
+    """One 12-month row per evaluated method, including C with an explicit contracted label; no combined return."""
     r = view.get("returns") or {}
     b = "returns"
     rows = []
     na_reasons: list[str] = []
     for i, ln in enumerate(r.get("lines") or []):
         w = next(((j, w) for j, w in enumerate(ln.get("windows") or []) if w.get("id") == "12m"), None)
-        if not w or w[1].get("status") != "avaliado":
-            continue
-        j, win = w
         q = f"{b}.lines[{i}]"
-        wq = f"{q}.windows[{j}]"
         name = v(view, f"{q}.instrument")
-        if ln.get("without_distributions"):
-            name += '<br><span class="tag unk">sem proventos</span>'
-        if ln.get("basis") == "curva_securitizadora":  # schema 2.1: method A, never a market price
-            name += '<br><span class="tag est">valor na curva</span>'
-        cdi = v(view, f"{wq}.cdi_pct") if win.get("cdi_pct") is not None else "—"
-        diff = v(view, f"{wq}.net_minus_cdi_pp") if win.get("cdi_pct") is not None else "—"
-        if win.get("pct_of_cdi") is not None:  # only for a fund whose filed benchmark is CDI or DI (engine 1.13)
-            pct_cdi = f"<span class=v>{v(view, f'{wq}.pct_of_cdi')}</span>"
-        else:  # #765: "n/a" in the cell; the engine's fixed reason is said once, in the footnote under the table
-            pct_cdi = "n/a"
-            reason = v(view, f"{wq}.pct_of_cdi_reason") if win.get("pct_of_cdi_reason") else "não calculado pelo motor"
-            if reason not in na_reasons:
-                na_reasons.append(reason)
-        rows.append([name, f"<span class=v>{v(view, f'{wq}.net_return_pct')}</span>", cdi, diff, pct_cdi])
+
+        if w and w[1].get("status") == "avaliado":
+            j, win = w
+            wq = f"{q}.windows[{j}]"
+            if ln.get("without_distributions"):
+                name += '<br><span class="tag unk">sem proventos</span>'
+            if ln.get("basis") == "curva_securitizadora":
+                name += '<br><span class="tag est">valor na curva</span>'
+            cdi = v(view, f"{wq}.cdi_pct") if win.get("cdi_pct") is not None else "—"
+            diff = v(view, f"{wq}.net_minus_cdi_pp") if win.get("cdi_pct") is not None else "—"
+            if win.get("pct_of_cdi") is not None:
+                pct_cdi = f"<span class=v>{v(view, f'{wq}.pct_of_cdi')}</span>"
+            else:
+                pct_cdi = "n/a"
+                reason = v(view, f"{wq}.pct_of_cdi_reason") if win.get("pct_of_cdi_reason") else "não calculado pelo motor"
+                if reason not in na_reasons:
+                    na_reasons.append(reason)
+            rows.append([name, v(view, f"{q}.method_label") or "—",
+                         f"<span class=v>{v(view, f'{wq}.net_return_pct')}</span>", cdi, diff, pct_cdi])
+
+        # Method C is kept in its own engine block, but the owner chose to show its 12m number in this table.
+        c = ln.get("contracted")
+        cw = next(((j, x) for j, x in enumerate(c.get("windows") or []) if x.get("id") == "12m"), None) if c else None
+        if cw and cw[1].get("status") == "avaliado":
+            j, win = cw
+            wq = f"{q}.contracted.windows[{j}]"
+            rate = v(view, f"{q}.contracted.taxa_texto")
+            name_c = name + (f'<br><span class="cit">taxa impressa: {rate}</span>' if rate != "—" else "")
+            cdi = v(view, f"{wq}.cdi_pct") if win.get("cdi_pct") is not None else "—"
+            diff = v(view, f"{wq}.net_minus_cdi_pp") if win.get("cdi_pct") is not None else "—"
+            if win.get("pct_of_cdi") is not None:
+                pct_cdi = f"<span class=v>{v(view, f'{wq}.pct_of_cdi')}</span>"
+            else:
+                pct_cdi = "n/a"
+                reason = v(view, f"{wq}.pct_of_cdi_reason") if win.get("pct_of_cdi_reason") else "não calculado pelo motor"
+                if reason not in na_reasons:
+                    na_reasons.append(reason)
+            value = f"<span class=v>{v(view, f'{wq}.accrual_pct')}</span>"
+            if win.get("approximation"):
+                value += f'<br><span class="cit">{v(view, f"{wq}.approximation")}</span>'
+            rows.append([name_c, "C · Retorno contratado", value, cdi, diff, pct_cdi])
     cov = next((i for i, c in enumerate(r.get("coverage") or []) if c.get("id") == "12m"), None)
     out = [f"<p class=cit>{v(view, f'{b}.note')}</p>"]
     if rows:
-        out.append(_table([("Posição", False), ("Retorno líquido em 12 meses", True), ("CDI nas mesmas datas", True),
-                           ("Líquido menos CDI", True), ("% do CDI", True)], rows)
+        out.append(_table([("Posição", False), ("Método", False), ("Retorno na janela de 12 meses", True),
+                           ("CDI nas mesmas datas", True), ("Retorno menos CDI (p.p.)", True), ("% do CDI", True)], rows)
                    .replace("<table>", '<table class="ret-cdi">', 1))
         if na_reasons:
             # a reason ends in "p.p." or a period: strip it, or the footnote reads "p.p.."
@@ -682,10 +703,11 @@ def _returns_summary(view: dict) -> str:
     if cov is not None:
         out.append(f"<p class=cit>Posições com retorno avaliado: {v(view, f'{b}.coverage[{cov}].n_evaluated')} de "
                    f"{v(view, f'{b}.n_lines')}, {v(view, f'{b}.coverage[{cov}].coverage_portfolio_value_pct')} do valor da carteira. "
-                   "As demais não têm série de preços ou cotas no SILO; o motivo de cada uma, a janela de 6 meses, a volatilidade e a queda "
+                   "Nas demais, a janela não atende aos critérios do método ou a série não existe; o motivo de cada uma, a janela de 6 meses, a volatilidade e a queda "
                    'máxima estão no <a href="#s-retorno-por-posicao-em-detalhe">anexo</a>.</p>')
-        if (r.get("coverage") or [])[cov].get("n_contracted"):  # schema 2.1: method C, counted apart
-            out.append(f"<p class=cit>Retorno contratado de crédito bancário, à parte e só no anexo (não é retorno medido): "
+        if (r.get("coverage") or [])[cov].get("n_contracted"):
+            out.append(f"<p class=cit>As linhas C aparecem nesta tabela como retorno contratado, não realizado nem marcado a mercado. "
+                       "Continuam fora da cobertura medida e da contribuição: "
                        f"{v(view, f'{b}.coverage[{cov}].n_contracted')} linha(s), "
                        f"{v(view, f'{b}.coverage[{cov}].contracted_coverage_portfolio_value_pct')} do valor da carteira.</p>")
     return "\n".join(out)

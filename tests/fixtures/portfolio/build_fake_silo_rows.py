@@ -532,5 +532,18 @@ def _curve(growth, coupon_month, coupon):
 
 canned["portfolio_credit_returns"] = [dict(match={"p_codes": ["0260000X"]}, rows=_curve(1.0105, _dt.date(2026, 4, 1), 61.5))]
 
+# Schema 2.2, method B: synthetic monthly median of three fund marks for the
+# demo debenture ticker EXEM12. It deliberately has no coupon/event month.
+_deb_rows, _pu = [], 1000.0
+for i, m in enumerate(RET_MONTHS):
+    factor = None if i == 0 else 1.005
+    if i:
+        _pu *= factor
+    _deb_rows.append(dict(line_no=1, input_ticker="EXEM12", ticker="EXEM12", month=m.isoformat(), n_fundos=3,
+                          n_invalid_fundos=0, median_pu=round(_pu, 10), factor=factor, month_flag=None,
+                          reason="marcação mediana sintética de três fundos"))
+canned["portfolio_debenture_returns"] = [dict(match={"p_tickers": ["EXEM12"], "p_max_monthly_drop_pct": None},
+                                                rows=_deb_rows)]
+
 json.dump(canned, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 print({k: len(v) for k, v in canned.items() if k != "_note"})

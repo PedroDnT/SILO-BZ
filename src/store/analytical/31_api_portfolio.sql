@@ -3152,5 +3152,150 @@ GRANT EXECUTE ON FUNCTION api.portfolio_credit_returns(TEXT[], DATE, INT[], TEXT
 COMMENT ON FUNCTION api.portfolio_credit_returns(TEXT[], DATE, INT[], TEXT[]) IS
     'The value ON THE CURVE of a CRA or CRI as its securitizer files it (catalog v71, #766): for each CETIP code (trimmed, upper-cased, a leading CRA- or CRI- stripped), the 13 month-ends p_end_month - 12 .. p_end_month from cvm_securit_serie, one row per (line, month), oldest first. The series is the one p_series / p_classes name (from portfolio_instruments) or the code''s only series in the window; two or more with none named is serie_ambigua. A month''s row is its informe (data_referencia = the month, the month-end value) at the highest versao. pu = valor_certificados / quantidade_certificados; paid_per_unit = (rendimentos + amortizacoes) / quantidade, NULL read as 0; factor = (pu + paid) / previous pu, 12 places, NULL on the first month or a flagged one: compound the 12 factors for the 12-month return. month_flag says why a month is unknown: serie_ambigua, mes_ausente, valor_invalido, quantidade_mudou, pu_repetido (the value of the month before carried over), queda_sem_evento_arquivado (the pu falls and nothing paid is filed: an unfiled coupon or amortization, never read as a loss), pagamento_acima_do_pu, pagamento_incompativel (a payment month whose return is outside 0.5 .. 1.5 times the median of the line''s months with no payment, or with fewer than 3 of them). A window with any flag has no return. rentabilidade is never read. It is the securitizer''s value on the curve, not a market price. At most 70 codes (13 rows each); otherwise RAISES 22023; one page, never trimmed.';
 
+-- ---------------------------------------------------------------------------
+-- portfolio_debenture_returns - median of the funds' filed marks, method B
+-- ---------------------------------------------------------------------------
+-- One set-based read for the complete set of statement tickers. Each fund gets
+-- one PU per month (its market value / quantity; duplicate rows in one fund
+-- are combined by value and quantity), then the monthly PU is the median over
+-- funds. It is not a trade price and does not include coupon or amortization
+-- cash flows: a sufficiently large fall is an unknown possible event, never a
+-- loss. The owner has not chosen the fall limit: NULL conservatively makes any
+-- fall unknown with 'limite_pendente'; no hidden cutoff is installed.
+CREATE OR REPLACE FUNCTION api.portfolio_debenture_returns(
+    p_tickers TEXT[],
+    p_end_month DATE,
+    p_max_monthly_drop_pct NUMERIC DEFAULT NULL
+)
+RETURNS TABLE (
+    line_no INT,
+    input_ticker TEXT,
+    ticker TEXT,
+    month DATE,
+    n_fundos INT,
+    n_invalid_fundos INT,
+    median_pu NUMERIC,
+    factor NUMERIC,
+    month_flag TEXT,
+    reason TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+#variable_conflict use_column
+DECLARE
+    v_n INT := COALESCE(cardinality(p_tickers), 0);
+    v_end DATE := date_trunc('month', p_end_month)::date;
+    v_start DATE;
+    v_tickers TEXT[];
+BEGIN
+    IF v_n = 0 THEN
+        RAISE EXCEPTION 'portfolio_debenture_returns needs p_tickers: there is nothing to read'
+            USING ERRCODE = '22023';
+    END IF;
+    IF v_n > 70 THEN
+        RAISE EXCEPTION
+            'portfolio_debenture_returns: refused, % tickers is more than 70. Each ticker returns 13 month rows; SILO never trims.', v_n
+            USING ERRCODE = '22023', HINT = 'Send at most 70 tickers per call.';
+    END IF;
+    IF v_end IS NULL THEN
+        RAISE EXCEPTION 'portfolio_debenture_returns needs p_end_month'
+            USING ERRCODE = '22023';
+    END IF;
+    IF p_max_monthly_drop_pct IS NOT NULL AND (p_max_monthly_drop_pct < 0 OR p_max_monthly_drop_pct > 100) THEN
+        RAISE EXCEPTION 'portfolio_debenture_returns: p_max_monthly_drop_pct must be between 0 and 100, or NULL pending owner decision'
+            USING ERRCODE = '22023';
+    END IF;
+    v_start := (v_end - interval '12 months')::date;
+    SELECT array_agg(DISTINCT z.t)
+      INTO v_tickers
+    FROM (SELECT NULLIF(upper(btrim(x)), '') AS t FROM unnest(p_tickers) AS u(x)) z
+    WHERE z.t IS NOT NULL;
+
+    RETURN QUERY
+    WITH lines AS (
+        SELECT g.i AS line_no, p_tickers[g.i] AS input_ticker,
+               NULLIF(upper(btrim(p_tickers[g.i])), '') AS ticker
+        FROM generate_series(1, v_n) AS g(i)
+    ),
+    months AS (
+        SELECT generate_series(v_start, v_end, interval '1 month')::date AS month
+    ),
+    raw AS (
+        SELECT a.cnpj, a.period, upper(btrim(a.cd_ativo)) AS ticker,
+               a.vl_merc_pos_final AS market_value, a.qt_pos_final AS quantity
+        FROM public.cvm_fi_cda_acoes a
+        WHERE a.cd_ativo = ANY(v_tickers)
+          AND a.period BETWEEN v_start AND v_end
+          AND a.tp_aplic = 'Debêntures'
+    ),
+    fund_marks AS (
+        SELECT r.ticker, r.period AS month, r.cnpj,
+               count(*) FILTER (WHERE r.market_value IS NULL OR r.market_value <= 0
+                                  OR r.quantity IS NULL OR r.quantity <= 0)::int AS invalid_rows,
+               CASE WHEN count(*) FILTER (WHERE r.market_value IS NULL OR r.market_value <= 0
+                                             OR r.quantity IS NULL OR r.quantity <= 0) = 0
+                    THEN sum(r.market_value) / NULLIF(sum(r.quantity), 0) END AS pu
+        FROM raw r
+        GROUP BY r.ticker, r.period, r.cnpj
+    ),
+    monthly AS (
+        SELECT l.line_no, l.input_ticker, l.ticker, m.month,
+               count(f.cnpj) FILTER (WHERE f.pu IS NOT NULL)::int AS n_fundos,
+               count(f.cnpj) FILTER (WHERE f.invalid_rows > 0)::int AS n_invalid_fundos,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY f.pu) FILTER (WHERE f.pu IS NOT NULL)::numeric AS median_pu
+        FROM lines l CROSS JOIN months m
+        LEFT JOIN fund_marks f ON f.ticker = l.ticker AND f.month = m.month
+        GROUP BY l.line_no, l.input_ticker, l.ticker, m.month
+    ),
+    lagged AS (
+        SELECT x.*, lag(x.median_pu) OVER (PARTITION BY x.line_no ORDER BY x.month) AS previous_pu,
+               row_number() OVER (PARTITION BY x.line_no ORDER BY x.month) AS month_no
+        FROM monthly x
+    ),
+    classified AS (
+        SELECT x.*,
+               CASE
+                   WHEN x.n_invalid_fundos > 0 THEN 'posicao_invalida'
+                   WHEN x.n_fundos = 0 THEN 'mes_ausente'
+                   WHEN x.n_fundos < 3 THEN 'fundos_insuficientes'
+                   WHEN x.month_no > 1 AND x.previous_pu IS NULL THEN 'mes_ausente'
+                   WHEN x.month_no > 1 AND x.median_pu < x.previous_pu
+                        AND p_max_monthly_drop_pct IS NULL THEN 'limite_pendente'
+                   WHEN x.month_no > 1 AND x.median_pu < x.previous_pu * (1 - p_max_monthly_drop_pct / 100)
+                        THEN 'queda_pu_possivel_evento'
+               END AS flag
+        FROM lagged x
+    ),
+    page AS (
+        SELECT x.line_no, x.input_ticker, x.ticker, x.month, x.n_fundos, x.n_invalid_fundos,
+               round(x.median_pu, 10) AS median_pu,
+               CASE WHEN x.flag IS NULL AND x.month_no > 1
+                    THEN round(x.median_pu / NULLIF(x.previous_pu, 0), 12) END AS factor,
+               x.flag AS month_flag,
+               CASE WHEN x.ticker IS NULL THEN 'linha sem ticker de debênture'
+                    ELSE 'mediana do PU por fundo em cvm_fi_cda_acoes (bloco 4; tp_aplic Debêntures); não inclui cupons nem amortizações' END AS reason
+        FROM classified x
+        ORDER BY x.line_no, x.month
+        LIMIT 1001
+    )
+    SELECT p.line_no, p.input_ticker, p.ticker, p.month, p.n_fundos, p.n_invalid_fundos,
+           p.median_pu, p.factor, p.month_flag, p.reason
+    FROM page p
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_debenture_returns')
+    ORDER BY p.line_no, p.month
+    LIMIT 1000;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.portfolio_debenture_returns(TEXT[], DATE, NUMERIC) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.portfolio_debenture_returns(TEXT[], DATE, NUMERIC) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.portfolio_debenture_returns(TEXT[], DATE, NUMERIC) TO silo_api;
+
+COMMENT ON FUNCTION api.portfolio_debenture_returns(TEXT[], DATE, NUMERIC) IS
+    'Method B: one call for up to 70 debenture tickers; 13 month-ends from cvm_fi_cda_acoes block 4, tp_aplic Debêntures. Per fund and month, PU = sum(vl_merc_pos_final) / sum(qt_pos_final), then median PU over funds (not pooled values); at least 3 funds are required. factor = median PU / previous month median. A decrease beyond p_max_monthly_drop_pct is flagged queda_pu_possivel_evento because CDA block 4 does not carry the debenture cash-flow events; it is never counted as a loss. NULL threshold (owner decision pending) flags every decrease as limite_pendente. Invalid values, a missing month, or fewer than 3 funds leave the window unevaluated. It is the funds'' marks, not a trade price, and includes no invented coupon or amortization. More than 70 tickers raises 22023; one page, never trimmed.';
+
 
 COMMIT;

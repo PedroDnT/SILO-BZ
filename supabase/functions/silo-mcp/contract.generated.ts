@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "72";
+export const CONTRACT_VERSION = "73";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -66,6 +66,7 @@ export const ENDPOINT_NAMES: string[] = [
   "option_history",
   "panel",
   "portfolio_credit_returns",
+  "portfolio_debenture_returns",
   "portfolio_equivalents",
   "portfolio_fee_peers",
   "portfolio_fees",
@@ -3528,6 +3529,48 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_codes",
+        "p_end_month"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_debenture_returns": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_debenture_returns",
+    "description": "Method B: one call for up to 70 debenture tickers; 13 month-ends from cvm_fi_cda_acoes block 4, tp_aplic Debêntures. Per fund and month, PU = sum(vl_merc_pos_final) / sum(qt_pos_final), then median PU over funds (not pooled values); at least 3 funds are required. factor = median PU / previous month median. A decrease beyond p_max_monthly_drop_pct is flagged queda_pu_possivel_evento because CDA block 4 does not carry the debenture cash-flow events; it is never counted as a loss. NULL threshold (owner decision pending) flags every decrease as limite_pendente. Invalid values, a missing month, or fewer than 3 funds leave the window unevaluated. It is the funds' marks, not a trade price, and includes no invented coupon or amortization. More than 70 tickers raises 22023; one page, never trimmed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_tickers": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_end_month": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "p_max_monthly_drop_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Defaults to `NULL::numeric`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_tickers",
         "p_end_month"
       ],
       "additionalProperties": false
