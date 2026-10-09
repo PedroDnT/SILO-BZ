@@ -129,7 +129,9 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:15
+        # AWS public mirror of the Docker official image. Docker Hub rate-limits
+        # anonymous pulls from shared runner IPs (runs 1354-1356, 2026-10-09).
+        image: public.ecr.aws/docker/library/postgres:15
         env:
           POSTGRES_PASSWORD: ci
           POSTGRES_DB: silo_ci

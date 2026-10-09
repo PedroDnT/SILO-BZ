@@ -2,6 +2,7 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+import time
 
 import numpy as np
 import pandas as pd
@@ -215,6 +216,13 @@ def test_snapshot_uses_real_filesystem_publication_time(snapshot_request, monkey
     for component in request['components'].values():
         for key in ('source_observed_at', 'read_started_at', 'read_finished_at'):
             component[key] = now.isoformat()
+    # Kernel ctime comes from a coarse clock that can trail datetime.now() by a few ms,
+    # so a publication inside the same tick as the commit reads as earlier than it.
+    original_link = snapshots.os.link
+    def link_after_clock_tick(source, target):
+        time.sleep(0.02)
+        original_link(source, target)
+    monkeypatch.setattr(snapshots.os, 'link', link_after_clock_tick)
     assert snapshots.archive(request, dest)['retention_verified']
     assert snapshots.verify(dest)['strict_pit_certified'] is False
 
