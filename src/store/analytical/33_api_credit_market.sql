@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION api.credit_market_history(
     p_code TEXT,
     p_from DATE DEFAULT (CURRENT_DATE - 365),
     p_to DATE DEFAULT CURRENT_DATE,
-    p_as_of TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    p_as_of TIMESTAMPTZ DEFAULT now()
 )
 RETURNS TABLE (
     instrument_code TEXT,
