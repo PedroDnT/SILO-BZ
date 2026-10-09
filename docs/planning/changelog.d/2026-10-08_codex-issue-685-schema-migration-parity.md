@@ -1,1 +1,1 @@
-| 2026-10-08 | Add an ephemeral PostgreSQL check that compares `schema.sql` with its full migration replay for public columns and constraint names. |
+| 2026-10-08 | codex/issue-685-schema-migration-parity | Add a PostgreSQL CI check that compares `schema.sql` with its migration replay for public table columns and constraint names. |
