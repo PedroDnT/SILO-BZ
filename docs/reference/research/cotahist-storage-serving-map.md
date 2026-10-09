@@ -29,6 +29,44 @@ The branch implementation is described separately below.
   2019-01-02 / 2026-10-05.** This is an observed span, not proof that every
   session or instrument was loaded. Pre-2019 is outside the census.
 
+## Historical field completeness spot audit (2026-10-09)
+
+This follow-up checked accepted landing rows in six bounded windows: January
+2019, January 2021, January 2023, January 2025, September 2026 and October
+1–9, 2026. Together they contain **1,104,667 rows**. The windows are samples,
+not a full archive-to-warehouse reconciliation.
+
+The parser maps all 25 variable source fields: 22 typed landing columns and
+`raw.indopc`, `raw.ptoexe`, `raw.dismes`. The five natural-key fields are
+required by the table constraint. In the sampled stored rows, all 19 nullable
+fields other than `data_vencimento` were populated. `data_vencimento` was null
+only for TPMERC 010, 017, 020, 021 and 030; it was populated in the sampled
+012, 013, 070 and 080 rows. This matches expiry being applicable to the sampled
+option/exercise markets, though it does not prove that each source line had a
+valid expiry value.
+
+The table and all mapped fields were present from the initial COTAHIST
+migration; no later field-addition migration was found. Daily ingestion
+re-fetches a trailing calendar window and upserts on the natural key. The
+yearly backfill uses the same key, writes one `cotahist_yearly` audit outcome
+per year, and is opt-in through `run_backfill.py --b3-only --b3-start-year
+<year> --end-year <year>`.
+
+**Finding:** these samples show no evidence of a field-specific historical
+gap, so a production backfill is not justified by this audit. They do not
+establish completeness of sessions or records against source archives. The
+parser does not retain original lines: blanks and malformed nullable values
+can both become null, and `99991231` is normalized to null for expiry. The
+JSON fields preserve only nonblank source values. Therefore source blanks,
+decode failures and source rows absent from storage cannot be separated from
+these warehouse samples alone.
+
+If a later archive comparison identifies a concrete missing or incorrect
+year, the smallest existing recovery path is to rerun that year with the
+yearly backfill command above. Its natural-key upsert is idempotent and its
+per-year audit is retained. This is a conditional plan only; no production
+backfill was run or authorized.
+
 ## Complete record-field map
 
 Landing table: `public.b3_cotahist`. Natural key:
