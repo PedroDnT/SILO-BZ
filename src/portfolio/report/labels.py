@@ -20,6 +20,15 @@ RETURN_BASIS = {
     "close_sem_proventos": "fechamento sem proventos (close): variação de preço",
     "last_price_etf_renda_fixa": "último preço do arquivo consolidado da B3 (last_price), sem proventos",
     "curva_securitizadora": "valor na curva informado pela securitizadora (informe mensal à CVM); não é preço de mercado",
+    "debenture_fundos_mediana": "marcação mediana mensal dos fundos (CDA bloco 4); sem fluxo de cupom ou amortização",
+}
+RETURN_METHOD = {
+    "cota_fundo": "Cota do fundo",
+    "close_total_return": "Preço com proventos",
+    "close_sem_proventos": "Preço sem proventos",
+    "last_price_etf_renda_fixa": "Último preço B3",
+    "curva_securitizadora": "A · Curva da securitizadora",
+    "debenture_fundos_mediana": "B · Mediana dos fundos",
 }
 GROSS_LABEL = "estimativa"
 

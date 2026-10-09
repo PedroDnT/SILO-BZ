@@ -204,6 +204,41 @@ FROM f LEFT JOIN fq USING (cnpj);
 -- 25853 | 21032 | 81.4 | 91.7 | 3148 | 1356 | 25 | 292 | 21324
 ```
 
+### Recheck after implementation resumed (2026-10-09)
+
+The owner explicitly resumed the plan after the MRV test failed. The exception is visible here: production
+`api.portfolio_credit_returns` still reports `queda_sem_evento_arquivado` for 24I1980390 in 2026-04 (PU
+1,071.48630 → 1,005.98531, −6.11%; no filed interest or amortization); its 12-month return stays unknown. No
+production migration was run. Method B's new function is local to this PR, so production verification used read-only
+source queries to `cvm_fi_cda_acoes`, not a claim that the new RPC is live. All queried periods are 2025-08..2026-08.
+The 2026-10-08 portfolio report provides the displayed values for the eight lines.
+
+| Paper | Method | Return in 12 months | % of CDI | Source months / reason |
+| --- | --- | ---: | ---: | --- |
+| CRA02500001 | A, securitizer curve | — | — | 13 source months; `pagamento_acima_do_pu` in 10 months and `pu_repetido` in 2026-01 and 2026-05 |
+| CRA0240066G | A, securitizer curve | — | — | 12 source months; `queda_sem_evento_arquivado` 2026-06; 2026-07 and 2026-08 `mes_ausente` |
+| CRA0260025T | A, securitizer curve | — | — | 4 source months (2026-05..2026-08); 9 months of the window absent |
+| CRA0250018H | A, securitizer curve | 14.54413% | 99.3817% | 13 source months, no monthly flag; `cvm_securit_serie`, exact code |
+| CRA02400AYL | A, securitizer curve | — | — | 13 source months; repeated PU in 2025-10 and 2025-11, then `queda_sem_evento_arquivado` in 2025-12 |
+| 24I1980390 | A, securitizer curve | — | — | 13 source months; `queda_sem_evento_arquivado` 2026-04, detailed above |
+| CUTI11 | B, median fund mark | — | — | 13 months in `cvm_fi_cda_acoes`; 91 distinct funds in the queried window; PU falls mean `limite_pendente` while the owner's cutoff is NULL |
+| ENAT11 | B, median fund mark | — | — | 13 months in `cvm_fi_cda_acoes`; 210 distinct funds in the queried window; PU falls mean `limite_pendente` while the owner's cutoff is NULL |
+
+For A, the live production RPC supplies monthly series, but the values above remain window-gated by the recorded flags.
+For B, the 13-month source marks are production data; `limite_pendente` is the local method contract applied to any
+decrease because the new RPC has not been deployed. No coupon or amortization was invented. `cvm_fi_cda_debentures`
+was not used to match: its `titulo_cetip` is a yes/no flag. B's evidence supports **1.9% only as a candidate** for
+future owner review: it would flag ENAT11's smallest observed event-month decline (−1.91%), while ordinary non-event
+falls include −2.30% and −8.66%. This cutoff is not selected or embedded.
+
+Coverage: before, 8.06% of R$1,056,638.06; measured after A, 10.6523% (R$112,556.44; Marfrig adds 2.59 percentage
+points). B adds zero evaluated value with a NULL cutoff. C remains a separate 18.4279% contracted share (R$194,716.68)
+and is now shown alongside A/B in the report table by owner decision; it is not measured coverage or a combined total.
+Thus the planning estimate of about 30% measured through A+B is corrected to 10.65%; C's observed contracted share
+is 18.43%, not an additional measured return. The fake-provider HTML was generated and the table checked: method,
+12-month return, CDI, p.p. difference and % CDI columns render; its synthetic demo exercises A and B. C's evaluated-row
+presentation is covered by a focused renderer test because this demo lacks the required initial date.
+
 ## 5. ETFs and the CDI
 
 **ETFs.** Of the 178 active ETFs in `cvm_etf_registry`, 106 have a cash-tape

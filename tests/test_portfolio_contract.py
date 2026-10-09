@@ -38,6 +38,7 @@ SIGNATURES = {
     "portfolio_fee_peers": "api.portfolio_fee_peers(TEXT[], DATE)",
     "portfolio_equivalents": "api.portfolio_equivalents(TEXT[], DATE)",
     "portfolio_credit_returns": "api.portfolio_credit_returns(TEXT[], DATE, INT[], TEXT[])",
+    "portfolio_debenture_returns": "api.portfolio_debenture_returns(TEXT[], DATE, NUMERIC)",
 }
 # api.class_return_distribution (v66) takes one class, not a set of CNPJs: its contract is
 # pinned in tests/test_portfolio_equivalents.py and executed in tests/sql/portfolio_behaviour.sql.
@@ -67,7 +68,7 @@ def test_exactly_the_ten_api_functions_are_created():
     assert created == [
         "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
         "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
-        "class_return_distribution", "portfolio_equivalents", "portfolio_credit_returns",
+        "class_return_distribution", "portfolio_equivalents", "portfolio_credit_returns", "portfolio_debenture_returns",
     ]
 
 
@@ -104,10 +105,11 @@ def test_calls_are_capped_and_refused_with_a_why_and_a_how():
     for name in SIGNATURES:
         body = _function(name)
         # v68: classes, not funds; v71: 13 month rows per code
-        cap = {"portfolio_equivalents": "more than 50", "portfolio_credit_returns": "more than 70"}.get(name, "more than 200")
+        cap = {"portfolio_equivalents": "more than 50", "portfolio_credit_returns": "more than 70",
+               "portfolio_debenture_returns": "more than 70"}.get(name, "more than 200")
         assert cap in body, f"{name} caps the call ({cap})"
     # The refusals the caller can fix carry both halves in the message itself.
-    assert body.count("To fix") >= 1
+    assert _function("portfolio_resolve").count("To fix") >= 1
     assert "To fix" in _function("portfolio_resolve") and "To fix" in _function("portfolio_fees")
 
 

@@ -51,8 +51,8 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - `mv_fund_name_history` (`31_api_portfolio.sql`) holds every name a fund ever
   filed (CDA and registry) behind a trigram index; `api.portfolio_resolve` reads
   it, rebuilt by the same apply. `portfolio_lookthrough` reads the CDA tables
-  only by CNPJ and one month; `portfolio_instruments` reads them only by
-  `cd_ativo` and one month, and `cvm_securit_serie` by CETIP code (migration 73).
+  only by CNPJ and one month; `portfolio_instruments` filters `cd_ativo` by
+  month, while debenture returns use exact tickers and median PU from 3+ funds.
 - `api.portfolio_fee_peers` (`31_api_portfolio.sql`) groups the latest FI Extrato
   fees of active funds by class, FUNDO_COTAS and scope (30-peer minimum), plus ETFs
   via `portfolio_class_index` (generated from a reviewed YAML) and

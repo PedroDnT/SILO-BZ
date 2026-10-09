@@ -3,6 +3,40 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-09 · codex/portfolio-credit-mrv-stop · resumed
+
+**Done.** Continued PR #784 after the owner asked to follow the plan despite the MRV acceptance case. Added method B
+as `api.portfolio_debenture_returns`: one bounded call, exact ticker from CDA block 4, monthly median of fund PU,
+minimum three funds, and no synthetic coupon/amortization. The owner deferred B's monthly fall cutoff, so the engine
+passes NULL and any PU decline makes the window unknown (`limite_pendente`). C's 12-month contracted figure now joins
+the same report table as A/B with an explicit method label, while remaining outside measured coverage and totals. The
+BTG PDF rate reader was already verified in the prior run and remains the gate for C.
+
+**Production check.** The previously rechecked production warehouse is current through 2026-08 for these sources.
+Existing A RPC rows and read-only CDA source queries for all eight requested tickers are summarized in
+`docs/reference/research/portfolio-return-coverage.md`. Production does not yet have the new B RPC; no migration or
+DDL was run there. Therefore B is production-source checked, not production-function checked. The MRV 24I1980390
+acceptance gate remains failed: April 2026 has a −6.11% PU fall and no filed cash flow; the API correctly keeps its
+12-month return unknown. Per the owner's explicit instruction, implementation continued and the case is carried into
+PR #784.
+
+**Verification.** Local ephemeral PostgreSQL applied the analytical SQL and passed
+`tests/sql/portfolio_behaviour.sql`, including B's 3-fund median, possible-event fall, pending NULL cutoff, missing
+month, and A's changing-quantity/missing-month cases. The full offline suite passed (4,270 passed, 25 skipped); focused portfolio, contract, MCP and OpenAPI tests also passed. The report built with `--provider fake`; its return table has method, return, CDI, p.p. gap and % CDI columns.
+OpenAPI, MCP contract and SDK contract were regenerated from the ephemeral catalog.
+
+**Decisions.** B cutoff remains unset pending the owner; 1.9% is documented only as a possible follow-up candidate
+because it catches the smallest observed ENAT11 event fall (−1.91%) while ordinary non-event marks can fall further.
+Owner, 2026-10-09: show C in the same table as A/B, clearly marked contracted. The measured result remains separate.
+
+**Coverage.** The measured result is 10.6523% of portfolio value (8.06% before, plus the 2.59 percentage points of
+Marfrig A); B adds no measured coverage with NULL cutoff. C adds 18.4279% as a separate contracted share. The
+planning estimate of about 30% evaluated by A+B is not met; this check shows 10.65% measured and 18.43% contracted.
+
+**Outside scope.** No production migration, deployment, merge, or PR comment. The first test attempt found a fixture
+fund-id mapping error; corrected and reran successfully. Existing unrelated local configuration in the main checkout
+was preserved.
+
 ## 2026-10-09 · codex/portfolio-credit-mrv-stop
 
 **Done.** Rechecked the live warehouse with read-only PostgreSQL (`transaction_read_only=on`). The production

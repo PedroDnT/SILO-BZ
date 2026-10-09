@@ -42,8 +42,8 @@ from src.portfolio.terms import attach_to_identification, fetch_fund_terms
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "2.1"
-ENGINE_VERSION = "0.1.0"
+SCHEMA_VERSION = "2.2"
+ENGINE_VERSION = "0.2.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
 FEE_LAG_MONTHS = 1

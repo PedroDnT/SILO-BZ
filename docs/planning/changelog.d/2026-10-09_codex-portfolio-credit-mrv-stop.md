@@ -1,2 +1,1 @@
-Recheck method A's MRV acceptance case against production and record that the
-2026-04 curve break remains unknown, so implementation stops at the requested gate.
+| 2026-10-09 | codex/portfolio-credit-mrv-stop | **Direct credit A/B/C return coverage.** Rechecked and retained MRV's unfiled 2026-04 cash flow as unknown after the owner resumed the plan. Added a bounded debenture median-mark RPC; declines stay `limite_pendente` because the PU-drop cutoff is deferred. C's contracted 12-month number shares the A/B table, outside measured coverage/totals. Regenerated catalog/OpenAPI/MCP/SDK. Production access remained read-only; no production migration, deployment or merge. |

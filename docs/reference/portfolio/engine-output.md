@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 2.1)
+# Portfolio engine output (schema 2.2)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -41,6 +41,18 @@ codes in `common.REASON_TEXT`: `retorno_debenture_metodo_pendente`, `serie_ambig
 `contratado_papel_mais_novo`, `contratado_vence_na_janela`, `contratado_ipca_indisponivel`, `metodo_fora_do_total`.
 The new calls (`portfolio_credit_returns`, and `inflation` when a contracted rate is on IPCA) come after the CDI call
 of the return block, so the call ids of later blocks move.
+
+2.2 (#766, owner 2026-10-09; catalog v72): method B now reads identified debenture tickers from
+`api.portfolio_debenture_returns` in one set-based call for the portfolio. Each `returns.lines[]` includes a 12-month
+and 6-month window from the monthly median `vl_merc_pos_final / qt_pos_final` across at least three funds in
+`cvm_fi_cda_acoes` (block 4, `tp_aplic='Debêntures'`). The line's `series` names the table and exact months, and each
+monthly mark carries `n_fundos`, `n_invalid_fundos` and `month_flag`. Missing months, invalid marks, fewer than three
+funds, or any PU decline while the owner-selected cutoff is pending make the window `nao_avaliado`; no coupon is
+imputed. Exact ticker only; `cvm_fi_cda_debentures.titulo_cetip` is not used as an identifier. The owner deferred the
+monthly PU-drop threshold, so the function receives NULL and flags every decline `limite_pendente` until a cutoff is
+approved. Method C remains an isolated `contracted` result, but its 12-month number is now shown in the same report
+table as methods A and B; it remains excluded from measured coverage and totals. Engine version 0.2.0, report view
+`report-view-2`.
 
 1.13 (#609 owner's resolution and #606 addendum Q36, 2026-10-05; catalog v68). Keys were added, none renamed, retyped
 or removed. A new top-level section `equivalents` (below), placed after `tax` and before `investigation` (1.12), with its `section_status` entry and the
@@ -944,7 +956,8 @@ still renders. The view's `sections` and `gaps` ("O que não foi possível avali
 
 ## Tools the engine calls
 
-`portfolio_credit_returns` (2.1, catalog v71; live once the analytical SQL and the MCP are deployed) and
+`portfolio_credit_returns` (2.1, catalog v71) and `portfolio_debenture_returns` (2.2, catalog v72; the latter is not
+yet deployed; see the PR's production-read boundary) and
 `inflation` (2.1, IPCA, only for a contracted rate on IPCA), `portfolio_equivalents` and `class_return_distribution` (1.13, catalog v68 and v66; live once the analytical SQL
 and the MCP are deployed), `fund_nav`, `quote_history`, `macro_series` and `trade_consolidated_history` (1.10, the return block; the last
 is catalog v65, merged in #632 and live once the analytical SQL and the MCP are deployed; until then its unknown-tool answer is the expected `etf_rf_sem_api`), `portfolio_instruments` and `portfolio_fund_terms` (catalog v62), `portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57, 3 in v68), `portfolio_lookthrough` (merged; the canned

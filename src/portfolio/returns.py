@@ -22,7 +22,10 @@ Series, routed by the line's type and identity (never a fallback from one source
   flag (not filed, repeated value, a fall with no payment filed, quantity changed...) makes the window "não avaliado";
 * a CDB, LCI, LCA or CDCA (schema 2.1, method C): no measured return; the rate the statement prints, applied to the
   CDI or IPCA of the window, is the "retorno contratado" in ``contracted``, apart from every measured figure and total;
-* everything else (Tesouro, debênture, a FIDC with no known tranche, a FIP, cash, an unidentified line): "não
+* a debênture with an identified CDA ticker (schema 2.2, method B): monthly median PU of the funds that file the
+  paper in ``cvm_fi_cda_acoes``. The return is unknown when fewer than 3 funds file it, a source value is invalid,
+  a month is missing, or a PU fall cannot be judged against the owner's still-pending limit;
+* everything else (Tesouro, a FIDC with no known tranche, a FIP, cash, an unidentified line): "não
   avaliado" with a fixed reason code.
 
 Windows end at the month of the position date when that date is the month's last calendar day, else at the month
@@ -85,9 +88,11 @@ TOTAL_RETURN = "close_total_return"
 CLOSE = "close_sem_proventos"
 FIXED_INCOME_ETF = "last_price_etf_renda_fixa"
 CURVE = "curva_securitizadora"  # schema 2.1 (#766), method A
+DEBENTURE = "debenture_fundos_mediana"  # schema 2.2, method B
 CONTRACTED = "retorno_contratado"  # schema 2.1 (#766), method C: never a line's basis, only its ``contracted`` block
+DEBENTURE_DROP_LIMIT_PCT: Decimal | None = None  # owner deferred the cutoff; NULL keeps every PU fall unknown
 # A month-end value whose day is not served: the CDI dates are the CDI calendar's month-ends.
-MONTH_BASES = (FUND, CURVE)
+MONTH_BASES = (FUND, CURVE, DEBENTURE)
 # The reader text of a status or a basis is the report's (src/portfolio/report/labels.py, engine 2.0).
 TOOLS = {
     FUND: "fund_nav",
@@ -95,6 +100,7 @@ TOOLS = {
     CLOSE: "quote_history",
     FIXED_INCOME_ETF: "trade_consolidated_history",
     CURVE: "portfolio_credit_returns",
+    DEBENTURE: "portfolio_debenture_returns",
 }
 VALUE_FIELD = {TOTAL_RETURN: "close_total_return", CLOSE: "close", FIXED_INCOME_ETF: "last_price"}
 
@@ -150,7 +156,6 @@ NO_SERIES_BY_TIPO = {
     "CDB": "retorno_contratado_anexo",
     "LCI": "retorno_contratado_anexo",
     "LCA": "retorno_contratado_anexo",
-    "debênture": "retorno_debenture_metodo_pendente",
     "caixa": "retorno_caixa",
     "FIDC": "retorno_fidc_sem_classe",
     "FIP": "retorno_fip_sem_serie",
@@ -171,6 +176,12 @@ REASONS = {
     "resposta_inconsistente": "resposta do SILO inconsistente; a linha não foi avaliada",
     "retorno_contratado_anexo": "crédito bancário sem série de preços: o retorno contratado está no anexo",
     "retorno_debenture_metodo_pendente": "debênture: método pendente (meses de cupom na marcação dos fundos)",
+    "retorno_debenture_sem_serie": "debênture sem ticker identificado para a série mensal dos fundos",
+    "mes_ausente": "falta a marcação mensal do ativo",
+    "fundos_insuficientes": "menos de três fundos informaram o ativo no mês",
+    "posicao_invalida": "há marcação sem PU válido entre os fundos do mês",
+    "limite_pendente": "há queda de PU e o limite para distinguir evento de mercado ainda aguarda decisão",
+    "queda_pu_possivel_evento": "queda de PU acima do limite: possível evento de cupom ou amortização sem fluxo arquivado",
 }
 # schema 2.1 (#766): the month flags of portfolio_credit_returns, as a window's reason code ('mes_ausente' is the
 # existing 'serie_incompleta')
@@ -209,6 +220,11 @@ NOTE_CURVE_COUPON = (
     "No mês do pagamento, o valor pago entra pelo valor de face, sem reinvestimento até o fim do mês: o retorno daquele "
     "mês fica um pouco abaixo do contratado."
 )
+NOTE_DEBENTURE = (
+    "Marcação mediana dos fundos (cvm_fi_cda_acoes, bloco 4): PU mensal = mediana do valor de mercado / quantidade "
+    "por fundo, exigidos ao menos três fundos. A CDA não traz os fluxos de cupom ou amortização; quedas acima do "
+    "limite são desconhecidas, nunca perdas. Sem limite aprovado, qualquer queda fica não avaliada."
+)
 
 
 def compute_returns(
@@ -226,6 +242,7 @@ def compute_returns(
     fee_by = {f["line_no"]: f for f in fees.get("lines", [])}
     cache: dict[str, tuple[dict[dt.date, dict[str, Any]] | None, Call | None, str | None]] = {}
     _curve_fetch(lines, client, end_month, cache, sec)  # schema 2.1: one call for every CRA / CRI line
+    _debenture_fetch(lines, client, end_month, cache, sec)  # schema 2.2: one set-based call for all debenture lines
     ipca = contracted.Ipca.fetch(lines, client, months, sec)  # schema 2.1: only when a contracted rate is on IPCA
 
     out = []
@@ -303,15 +320,16 @@ def compute_returns(
 # ---------------------------------------------------------------------------
 
 CONTRIBUTION_LABEL = "contribuição retroativa"
-# schema 2.1 (owner's rule, #766: never mix methods in a total): the securitizer's value on the curve is not a market
-# value, so a CRA / CRI line is listed in excluded_lines and stays out of the sum
-CONTRIBUTION_EXCLUDED = (CURVE,)
+# Direct-credit methods A and B have different source shapes from each other and from the other return bases; keep
+# them out of the retroactive aggregate. C is always separate and never enters this sum.
+CONTRIBUTION_EXCLUDED = (CURVE, DEBENTURE)
 NOTE_CONTRIBUTION = (
     "Contribuição retroativa: o extrato dá as posições em uma data e nenhum fluxo. O valor no início da janela de cada "
     "linha é o valor atual dividido por 1 mais o retorno líquido da janela; o peso é esse valor sobre a soma dos valores "
     "iniciais das linhas avaliadas; a contribuição é o peso vezes o retorno. Supõe que não houve aporte nem resgate. A "
-    "soma é o retorno só da parte avaliada, nunca da carteira inteira. CRA e CRI avaliados pelo valor na curva da "
-    "securitizadora ficam fora da soma: não é valor de mercado, e métodos diferentes não se somam."
+    "soma é o retorno só da parte avaliada, nunca da carteira inteira. Os métodos A (valor na curva) e B (marcação "
+    "mediana dos fundos) ficam fora da soma: suas bases diferem e métodos não se somam. C (retorno contratado) também "
+    "fica separado."
 )
 
 
@@ -462,6 +480,11 @@ def _last_weekday(month: dt.date) -> dt.date:
 def _route(li: LineId) -> tuple[str | None, str | None]:
     """(basis, None) for a line with a series, or (None, reason code) for one without."""
     tipo = li.position.tipo
+    if tipo == "debênture":  # schema 2.2: method B uses the exact CDA block-4 ticker only
+        credit = li.credit or {}
+        if li.status != "identified" or credit.get("match_kind") != "cda_ticker" or not credit.get("code"):
+            return None, "retorno_debenture_sem_serie"
+        return DEBENTURE, None
     if tipo in ("CRA", "CRI"):  # schema 2.1 (#766), method A: the CVM register's series the identification matched
         credit = li.credit or {}
         if li.status != "identified" or credit.get("match_kind") != "securit_cetip" or not credit.get("code"):
@@ -557,7 +580,7 @@ def _line(
         "tipo": p.tipo,
         "cnpj": li.cnpj if basis == FUND else None,
         "ticker": li.ticker if basis in (TOTAL_RETURN, CLOSE, FIXED_INCOME_ETF) else None,
-        "credit_code": (li.credit or {}).get("code") if basis == CURVE else None,  # schema 2.1: the CETIP code read
+        "credit_code": (li.credit or {}).get("code") if basis in (CURVE, DEBENTURE) else None,
         "name": li.name,
         "valor_brl": brl(p.valor),
         "basis": basis,
@@ -581,7 +604,7 @@ def _line(
     rec["notes"] = _basis_notes(basis, p.tipo)
     fee = _fee(li, basis, fee_line)
     rec["fee"] = fee
-    bench = _credit_benchmark(p.taxa_texto) if basis == CURVE else _benchmark(basis, fee_line)
+    bench = _credit_benchmark(p.taxa_texto) if basis in (CURVE, DEBENTURE) else _benchmark(basis, fee_line)
     rec["benchmark"] = bench
     rec["performance_fee_filed"] = bool(fee_line and _perf_filed(fee_line))
     if rec["performance_fee_filed"]:
@@ -589,6 +612,8 @@ def _line(
 
     if basis == CURVE:
         return _curve_line(rec, li, months, cdi, cache, fee, bench)
+    if basis == DEBENTURE:
+        return _debenture_line(rec, li, months, cdi, cache, fee, bench)
     points, call, err = _series(li.cnpj, li.ticker, li.line_no, basis, client, months, position_date, cache, sec)
     if call is not None:
         rec["sources"].append(call.src(_last_date(points) or position_date))
@@ -645,6 +670,8 @@ def _benchmark(basis: str, fee_line: dict[str, Any] | None) -> dict[str, Any]:
 def _basis_notes(basis: str, tipo: str) -> list[str]:
     if basis == CURVE:
         return [NOTE_CURVE, NOTE_CURVE_COUPON]
+    if basis == DEBENTURE:
+        return [NOTE_DEBENTURE]
     if basis == FUND:
         return [NOTE_FUND, NOTE_FUND_DATES]
     if basis == TOTAL_RETURN:
@@ -659,7 +686,7 @@ def _fee(li: LineId, basis: str, fee_line: dict[str, Any] | None) -> dict[str, A
     if basis == TOTAL_RETURN:
         return {"status": "nao_se_aplica", "reason_code": "taxa_nao_aplicavel", "rate_pct_year": None, "kind": None,
                 "origin": None, "as_of": None, "sources": []}
-    if basis == CURVE:  # schema 2.1: a CRA / CRI has no administration fee; its spread is not published
+    if basis in (CURVE, DEBENTURE):  # direct credit has no administration fee in this return method
         return {"status": "nao_se_aplica", "reason_code": "taxa_credito_sem_taxa_adm", "rate_pct_year": None,
                 "kind": None, "origin": None, "as_of": None, "sources": []}
     h = (fee_line or {}).get("headline") or {}
@@ -779,6 +806,42 @@ def _last_date(points: dict[dt.date, dict[str, Any]] | None) -> dt.date | None:
         return None
     dates = [v["date"] for v in points.values() if v.get("date")]
     return max(dates) if dates else None
+
+
+# ---------------------------------------------------------------------------
+# Method B: debenture fund marks (schema 2.2; cutoff awaits owner decision)
+# ---------------------------------------------------------------------------
+
+def _debenture_fetch(lines: list[LineId], client: SiloClient, end_month: dt.date, cache: dict,
+                    sec: Section) -> None:
+    group = [li for li in lines if _route(li)[0] == DEBENTURE]
+    if not group:
+        return
+    if len(group) > 70:
+        sec.degrade("portfolio_debenture_returns aceita até 70 códigos (13 meses por código); a chamada foi recusada sem reduzir a carteira.",
+                    code="consulta_falhou")
+        for li in group:
+            cache[("debenture", li.line_no)] = ([], None, "consulta_falhou")
+        return
+    args = {
+        "p_tickers": [str(li.credit["code"]) for li in group],
+        "p_end_month": end_month.isoformat(),
+        "p_max_monthly_drop_pct": str(DEBENTURE_DROP_LIMIT_PCT) if DEBENTURE_DROP_LIMIT_PCT is not None else None,
+    }
+    call = call_tool(client, TOOLS[DEBENTURE], args, sec.errors)
+    by_line: dict[int, list[dict]] = {}
+    bad = not call.ok
+    for row in call.rows or []:
+        k = row.get("line_no")
+        if not isinstance(k, int) or not 1 <= k <= len(group):
+            bad = True
+            break
+        by_line.setdefault(k, []).append(row)
+    if call.ok and bad:
+        sec.degrade("portfolio_debenture_returns devolveu resposta inconsistente.", code="resposta_inconsistente")
+    for k, li in enumerate(group, start=1):
+        err = "consulta_falhou" if not call.ok else ("resposta_inconsistente" if bad else None)
+        cache[("debenture", li.line_no)] = (by_line.get(k, []), call, err)
 
 
 # ---------------------------------------------------------------------------
@@ -916,6 +979,61 @@ def _curve_flags(wm: list[dt.date], by_month: dict[dt.date, dict]) -> list[dict[
     return out
 
 
+def _debenture_line(rec: dict[str, Any], li: LineId, months: list[dt.date], cdi: _Cdi, cache: dict,
+                    fee: dict[str, Any], bench: dict[str, Any]) -> dict[str, Any]:
+    rows, call, err = cache.get(("debenture", li.line_no), ([], None, "consulta_falhou"))
+    if call is not None:
+        rec["sources"].append(call.src(months[-1]))
+    by_month: dict[dt.date, dict] = {}
+    for row in rows:
+        month = as_date(row.get("month"))
+        if (err is None and (month is None or month in by_month or month not in months
+                             or str(row.get("ticker") or "").upper() != str((li.credit or {}).get("code") or "").upper())):
+            err = "resposta_inconsistente"
+        if month is not None:
+            by_month[month] = row
+    if err is None and set(by_month) != set(months):
+        err = "resposta_inconsistente"
+    if err is not None:
+        rec.update(reason_code=err, reason=REASONS[err])
+        rec["windows"] = {wid: _empty_window(err, REASONS[err]) for wid, *_ in WINDOWS}
+        return rec
+
+    rec["series"] = {"ticker": by_month[months[-1]].get("ticker"), "source_table": "cvm_fi_cda_acoes",
+                     "source_months": [iso(m) for m in months]}
+    rec["month_ends"] = [
+        {"month": iso(month), "date": None,
+         "value": ratio(dec(by_month[month].get("median_pu")), 8) if dec(by_month[month].get("median_pu")) is not None else None,
+         "n_fundos": by_month[month].get("n_fundos"),
+         "n_invalid_fundos": by_month[month].get("n_invalid_fundos"),
+         "month_flag": by_month[month].get("month_flag")}
+        for month in months
+    ]
+    for wid, n, frac, vol_note in WINDOWS:
+        wm = months[-(n + 1):]
+        flags = [{"month": iso(month), "flag": by_month[month].get("month_flag")}
+                 for month in wm if by_month[month].get("month_flag")]
+        if flags:
+            code = flags[0]["flag"]
+            reason = REASONS.get(code, REASONS["resposta_inconsistente"])
+            w = _empty_window(code, reason)
+            w.update(base_month=iso(wm[0]), end_month=iso(wm[-1]), month_flags=flags,
+                     missing_months=[x["month"] for x in flags if x["flag"] == "mes_ausente"],
+                     months_used=[iso(month) for month in wm])
+        else:
+            points = {month: {"date": None, "value": dec(by_month[month].get("median_pu"))} for month in wm}
+            w = _window(wm, n, frac, vol_note, points, DEBENTURE, fee, cdi, call, bench)
+            w["month_flags"] = []
+            w["months_used"] = [iso(month) for month in wm]
+        rec["windows"][wid] = w
+    if any(w["status"] == EVALUATED for w in rec["windows"].values()):
+        rec["status"] = EVALUATED
+    else:
+        first = rec["windows"]["12m"]
+        rec.update(reason_code=first["reason_code"], reason=first["reason"])
+    return rec
+
+
 # ---------------------------------------------------------------------------
 # One window
 # ---------------------------------------------------------------------------
@@ -1041,4 +1159,3 @@ def _max_drawdown(values: list[Decimal]) -> tuple[Decimal, int, int]:
         if fall > best:
             best, peak_i, trough_i = fall, run_peak_i, i
     return best, peak_i, trough_i
-
