@@ -1,3 +1,5 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PedroDnT/SILO-BZ)
+
 # SILO: Brazilian public financial data, ingested daily and served to people and AI agents
 
 SILO is a production system. A GitHub Actions cron pulls the day's filings from **CVM**, **BACEN**, **IBGE** and **B3**, validates them, upserts them into one Supabase Postgres warehouse, rebuilds the analytical layer and republishes the public dashboard. It keeps a verifiable record of **funds**, **listed companies** and **markets**, for researchers, AI agents and anyone checking a claim against what was actually filed.
