@@ -8,11 +8,12 @@ twenty slices, then the 07:35 health check reported the pipeline red for it.
 """
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
+import socket
+import urllib.error
 
 import pytest
+from scripts import check_cvm_reachable
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/check_cvm_reachable.py"
@@ -23,27 +24,35 @@ WATCHDOG = ROOT / ".github/workflows/watchdog.yml"
 yaml = pytest.importorskip("yaml")
 
 
-def _run(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, str(SCRIPT), *args],
-        capture_output=True, text=True, timeout=120,
-    )
-
-
 class TestClassification:
     """What counts as 'unreachable' is the whole subtlety here."""
 
-    def test_unresolvable_host_is_unreachable(self):
-        r = _run("--url", "https://cvm-does-not-resolve.invalid/x.zip",
-                 "--attempts", "1", "--timeout", "5")
-        assert r.returncode == 1, r.stdout + r.stderr
-        assert "UNREACHABLE" in r.stderr
+    def test_offline_guard_rejects_external_dns(self):
+        with pytest.raises(pytest.fail.Exception, match="external DNS lookup"):
+            socket.getaddrinfo("example.com", 443)
 
-    def test_it_names_the_recovery(self):
+    def test_unresolvable_host_is_unreachable(self, monkeypatch, capsys):
+        def fail_dns(*args, **kwargs):
+            raise urllib.error.URLError(socket.gaierror(socket.EAI_NONAME, "name not known"))
+
+        monkeypatch.setattr(check_cvm_reachable.urllib.request, "urlopen", fail_dns)
+        result = check_cvm_reachable.probe(
+            "https://cvm-does-not-resolve.invalid/x.zip", timeout=5, attempts=1,
+        )
+        captured = capsys.readouterr()
+        assert result == 1
+        assert "UNREACHABLE" in captured.err
+
+    def test_it_names_the_recovery(self, monkeypatch, capsys):
         """A red preflight must say what to do, not just that it is red."""
-        r = _run("--url", "https://cvm-does-not-resolve.invalid/x.zip",
-                 "--attempts", "1", "--timeout", "5")
-        assert "fresh runner IP" in r.stderr
+        def fail_dns(*args, **kwargs):
+            raise urllib.error.URLError(socket.gaierror(socket.EAI_NONAME, "name not known"))
+
+        monkeypatch.setattr(check_cvm_reachable.urllib.request, "urlopen", fail_dns)
+        check_cvm_reachable.probe(
+            "https://cvm-does-not-resolve.invalid/x.zip", timeout=5, attempts=1,
+        )
+        assert "fresh runner IP" in capsys.readouterr().err
 
 
 class TestWiring:
@@ -115,13 +124,18 @@ class TestWiring:
             "the fetcher stopped pinning IPv4; the probe must follow it"
         )
 
-    def test_ipv6_literal_is_unreachable_not_a_crash(self):
+    def test_ipv6_literal_is_unreachable_not_a_crash(self, monkeypatch, capsys):
         """With the pin, an IPv6-only target cannot be resolved into a
         connection at all — the probe must still classify that as unreachable
         and name the recovery, never raise."""
-        r = _run("--url", "https://[::1]:9/x.zip", "--attempts", "1", "--timeout", "5")
-        assert r.returncode == 1, r.stdout + r.stderr
-        assert "UNREACHABLE" in r.stderr and "IPv4" in r.stderr
+        def fail_ipv4_resolution(*args, **kwargs):
+            raise urllib.error.URLError(socket.gaierror(socket.EAI_NONAME, "IPv4 address unavailable"))
+
+        monkeypatch.setattr(check_cvm_reachable.urllib.request, "urlopen", fail_ipv4_resolution)
+        result = check_cvm_reachable.probe("https://[::1]:9/x.zip", timeout=5, attempts=1)
+        captured = capsys.readouterr()
+        assert result == 1
+        assert "UNREACHABLE" in captured.err and "IPv4" in captured.err
 
     def test_preflight_uses_only_the_standard_library(self):
         """It must not be the step that dies on a dependency while reporting
