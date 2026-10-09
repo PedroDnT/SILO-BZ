@@ -168,3 +168,13 @@ median fund returned 97.73% of the CDI. Weighted by the 1,031,484 holders filed
 on 2026-09-30, the return was 87.60%. The SQL, its output, the method and the
 public CVM and BACEN files that reproduce it are in the document. Read-only,
 measured 2026-10-08 (UTC-3).
+
+## Equity funds against the Ibovespa
+
+[`2026-10-09-equity-funds-vs-ibovespa.md`](2026-10-09-equity-funds-vs-ibovespa.md)
+applies the CDI study's method to equity funds whose declared benchmark is the
+Ibovespa, over 12, 36 and 60 months to 2026-09-30, in percentage points. Over 12
+months the median of 620 funds was 11.03 points behind the index and the
+holder-weighted figure 7.05 points. The code is
+`research_examples/equity_vs_ibov/study.py`, tested offline in
+`tests/test_equity_vs_ibov.py`. Read-only, measured 2026-10-09 (UTC-3).

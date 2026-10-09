@@ -414,6 +414,17 @@
     "p_end_month"
    ]
   },
+  "portfolio_debenture_returns": {
+   "params": [
+    "p_end_month",
+    "p_max_monthly_drop_pct",
+    "p_tickers"
+   ],
+   "required": [
+    "p_end_month",
+    "p_tickers"
+   ]
+  },
   "portfolio_equivalents": {
    "params": [
     "p_as_of",

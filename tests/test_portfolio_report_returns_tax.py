@@ -90,9 +90,9 @@ def test_returns_sources_are_named_and_dated(view):
 
 def test_lines_without_a_return_or_a_tax_rule_are_gaps_grouped_by_code(view):
     gaps = {(g["title"], g["text"]): g["line_ids"] for g in view["gaps"]}
-    # schema 2.1: the CDB and LCA point to the contracted return in the annex; the CRA is evaluated on the curve
+    # schema 2.2: the CDB/LCA contracted return is unavailable without start dates; the CRA is evaluated on the curve
     assert gaps[("Retorno por posição", REASON_TEXT["retorno_contratado_anexo"].rstrip(". "))] == ["L9", "L10"]
-    assert gaps[("Retorno por posição", REASON_TEXT["retorno_debenture_metodo_pendente"].rstrip(". "))] == ["L12"]
+    assert all("L12" not in ids for (title, _), ids in gaps.items() if title == "Retorno por posição")
     assert gaps[("Taxa e imposto por posição", REASON_TEXT["imposto_sem_regra"].rstrip(". "))] == ["L1", "L6"]
     assert all(g["value_brl"] is None for g in view["gaps"] if g["title"] in ("Retorno por posição", "Taxa e imposto por posição"))
     # the section-level code is the same lines again, so it is not printed twice
@@ -534,8 +534,8 @@ def test_the_body_risk_table_has_four_columns_and_only_atencao_and_moderado_rows
 def test_the_body_return_table_has_one_row_per_evaluated_position_and_no_total(view, built_demo):
     sec = built_demo.split("<h2>Retorno passado contra o CDI</h2>")[1].split("</section>")[0]
     first = sec.split("<table")[1].split("</table>")[0]
-    assert re.findall(r"<th[^>]*>([^<]*)</th>", first) == ["Posição", "Retorno líquido em 12 meses", "CDI nas mesmas datas",
-                                                           "Líquido menos CDI", "% do CDI"]
+    assert re.findall(r"<th[^>]*>([^<]*)</th>", first) == ["Posição", "Método", "Retorno na janela de 12 meses", "CDI nas mesmas datas",
+                                                           "Retorno menos CDI (p.p.)", "% do CDI"]
     evaluated = [ln for ln in view["returns"]["lines"] if ln["windows"][0]["status"] == "avaliado"]
     assert first.count("<tr>") - 1 == len(evaluated) and "retroativa" in sec and "6 meses" not in first
 
@@ -548,9 +548,9 @@ def test_the_body_return_table_shows_pct_of_cdi_or_the_engine_reason_never_zero_
     seen_value = seen_reason = False
     for w, row in zip(evaluated, rows):
         cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
-        assert len(cells) == 5
-        assert "p.p." in cells[3]  # the difference stays in percentage points, in its own column
-        pct = cells[4]
+        assert len(cells) == 6
+        assert "p.p." in cells[4]  # the difference stays in percentage points, in its own column
+        pct = cells[5]
         if w["pct_of_cdi"] is not None:
             assert values.format_value(w, "pct_of_cdi") in pct and "do CDI" in pct
             seen_value = True
@@ -561,6 +561,22 @@ def test_the_body_return_table_shows_pct_of_cdi_or_the_engine_reason_never_zero_
             assert reason not in rows[0] and sec.count(reason) == 1
             seen_reason = True
     assert seen_value and seen_reason
+
+
+def test_c_contracted_12m_joins_the_same_table_with_method_label_and_one_pct_cdi_note(view):
+    synthetic = copy.deepcopy(view)
+    line = next(ln for ln in synthetic["returns"]["lines"] if ln.get("contracted"))
+    w = next(w for w in line["contracted"]["windows"] if w["id"] == "12m")
+    w.update(status="avaliado", accrual_pct=10.0, cdi_pct=14.0, net_minus_cdi_pp=-4.0,
+             pct_of_cdi=None, pct_of_cdi_reason_code="credito_nao_cdi",
+             pct_of_cdi_reason="taxa impressa em IPCA: comparação em pontos percentuais")
+    coverage = next(x for x in synthetic["returns"]["coverage"] if x["id"] == "12m")
+    coverage.update(n_contracted=1, contracted_coverage_portfolio_value_pct=8.0)
+    sec = render._returns_summary(synthetic)
+    assert "C · Retorno contratado" in sec and "taxa impressa: 105,00% do CDI" in sec
+    assert "Retorno na janela de 12 meses" in sec and "10,00%" in sec
+    assert sec.count("n/a em % do CDI:") == 1
+    assert "fora da cobertura medida e da contribuição" in sec
 
 
 def test_the_contents_list_ends_with_the_annex(built_demo):

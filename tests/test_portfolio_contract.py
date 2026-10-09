@@ -38,6 +38,7 @@ SIGNATURES = {
     "portfolio_fee_peers": "api.portfolio_fee_peers(TEXT[], DATE)",
     "portfolio_equivalents": "api.portfolio_equivalents(TEXT[], DATE)",
     "portfolio_credit_returns": "api.portfolio_credit_returns(TEXT[], DATE, INT[], TEXT[])",
+    "portfolio_debenture_returns": "api.portfolio_debenture_returns(TEXT[], DATE, NUMERIC)",
 }
 # api.class_return_distribution (v66) takes one class, not a set of CNPJs: its contract is
 # pinned in tests/test_portfolio_equivalents.py and executed in tests/sql/portfolio_behaviour.sql.
@@ -67,7 +68,7 @@ def test_exactly_the_ten_api_functions_are_created():
     assert created == [
         "portfolio_resolve", "portfolio_fees", "portfolio_lookthrough", "portfolio_movement",
         "portfolio_instruments", "portfolio_fund_terms", "portfolio_fee_peers",
-        "class_return_distribution", "portfolio_equivalents", "portfolio_credit_returns",
+        "class_return_distribution", "portfolio_equivalents", "portfolio_credit_returns", "portfolio_debenture_returns",
     ]
 
 
@@ -104,10 +105,11 @@ def test_calls_are_capped_and_refused_with_a_why_and_a_how():
     for name in SIGNATURES:
         body = _function(name)
         # v68: classes, not funds; v71: 13 month rows per code
-        cap = {"portfolio_equivalents": "more than 50", "portfolio_credit_returns": "more than 70"}.get(name, "more than 200")
+        cap = {"portfolio_equivalents": "more than 50", "portfolio_credit_returns": "more than 70",
+               "portfolio_debenture_returns": "more than 70"}.get(name, "more than 200")
         assert cap in body, f"{name} caps the call ({cap})"
     # The refusals the caller can fix carry both halves in the message itself.
-    assert body.count("To fix") >= 1
+    assert _function("portfolio_resolve").count("To fix") >= 1
     assert "To fix" in _function("portfolio_resolve") and "To fix" in _function("portfolio_fees")
 
 
@@ -159,7 +161,7 @@ def test_resolver_normalises_case_and_accents_only_and_searches_the_history():
     for kind in ("'cnpj'", "'exact_current'", "'exact_history'", "'trigram'"):
         assert kind in fn
     assert "d.dt_comptc = l.qd" in fn, "the quota is read on its exact date, never carried"
-    assert "< 0.05" in fn and "<= 0.005" in fn
+    assert "< 0.05" in fn and "ELSE 0.005 END AS quota_tol" in fn
     assert "k.score >= 0.25" in fn
 
 
@@ -353,7 +355,7 @@ def test_v56_resolver_matches_an_etf_ticker_exactly_and_never_ambiguously():
     fn = _strip(_function("portfolio_resolve"))
     assert "'etf_ticker'" in fn
     assert "JOIN public.cvm_etf_registry e ON e.ticker = upper(btrim(l.input_name))" in fn
-    assert "WHEN r1.kind IN ('cnpj', 'etf_ticker') OR r1.n_cand = 1 THEN FALSE" in fn
+    assert "WHEN r1.kind IN ('cnpj', 'etf_ticker') THEN FALSE" in fn
     # exact and trigram skip a line the ETF registry matched
     assert fn.count("NOT EXISTS (SELECT 1 FROM by_etf b WHERE b.line_no = l.line_no)") == 2
 
@@ -447,3 +449,31 @@ def test_v68_equivalents_read_approved_pairs_only_and_rank_by_pl():
     assert "x.snapshot_date <= v_as_of" in body
     # never a name match: the registry index against the reviewed list only
     assert "fund_name ILIKE" not in body and "r.underlying_index = ANY (p.idx)" in body
+
+
+def test_v72_resolver_name_hint_is_added_behind_and_never_confident():
+    # #783: a name whose own score is below the floor is added as a candidate when the line without
+    # its fund-type abbreviations reaches it; it is capped, flagged, ranked behind and needs a quota.
+    body = _strip(SQL31)
+    core = body[body.index("FUNCTION public.fund_name_core"): body.index("COMMENT ON FUNCTION public.fund_name_core")]
+    assert "'firf'" in core and "'crpr'" in core, "the evidence: the two tokens of the real statement"
+    assert "< pg_catalog.cardinality(k.words)" in core, "NULL when nothing is dropped"
+    fn = _function("portfolio_resolve")
+    fn = _strip(fn)
+    assert "least(0.5, public.fund_name_score(l.nn_core, x.name_norm))" in fn, "the hint is capped at 0.5"
+    assert "public.fund_name_score(l.nn, x.name_norm) < 0.25" in fn, "a score that already counts is never changed"
+    assert "s.via_core ASC," in fn, "a hint ranks behind every candidate that scored on its own"
+    assert "WHEN r1.via_core THEN TRUE" in fn, "a hint is ambiguous unless a quota confirms it"
+    # hints tie at their cap: all of them reach the quota, and the cut to 5 per line is after the ranking
+    assert "WHERE z.via_core OR z.rn <= 5" in fn
+    assert "LEFT JOIN ranked r ON r.line_no = l.line_no AND r.rk <= 5" in fn
+    assert fn.index("WHEN r1.quota_ok AND NOT COALESCE(r2.quota_ok, FALSE) THEN FALSE") < fn.index("WHEN r1.via_core THEN TRUE")
+
+
+def test_v72_resolver_reads_the_fiagro_monthly_quota_only_on_a_month_end():
+    fn = _strip(_function("portfolio_resolve"))
+    assert "FROM public.cvm_fiagro_mensal m" in fn
+    assert "l.qd = (date_trunc('month', l.qd) + interval '1 month' - interval '1 day')::date" in fn
+    assert "WHERE qq.vl_quota IS NULL" in fn, "only for a candidate with no daily quota that day"
+    assert "0.0001 + 0.005 / qm.vl_quota" in fn, "half a cent of a two-decimal quota, plus 0.01%"
+    assert "cvm_fii_mensal" not in fn, "a FII's monthly figure is the patrimonial value, not a price"

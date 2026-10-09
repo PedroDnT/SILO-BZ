@@ -3,6 +3,74 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-09 · research/equity-vs-ibov (#786)
+
+**Done.** Study 2 after #776: equity funds against the Ibovespa, read-only, run 12:03 UTC-3 (15:03 UTC). Ibovespa from
+`b3_index_level` (IBOV, no divisor step since 1997); declared benchmark from `cvm_registro_classe.raw`
+`Indicador_Desempenho`. 12 months: 620 funds, Ibovespa 27.42%, median fund 16.40%, median −11.03 p.p., holder-weighted
+−7.05 p.p., PL-weighted −5.06 p.p. 36 and 60 months, annualized: medians −3.96 and −4.14 p.p. Offline test with a
+synthetic fund and index; three largest funds checked by hand.
+
+**Decisions.** Same rules as the CDI study for class, quota, holders and FICs. New, written in the document: the main
+classes, the excluded groups (the owner's five plus Mono Ação, Fundos Fechados and FMP-FGTS), the p.p. metric,
+annualization of both sides, the PL weighting and the closed-fund count.
+
+**Owner decisions, 2026-10-09.** IBrX stays out of the main number; the 12-month window goes to the site; long-short gets no separate number.
+
+**Outside scope.** None.
+## 2026-10-09 · codex/portfolio-credit-mrv-stop · resumed
+
+**Done.** Continued PR #784 after the owner asked to follow the plan despite the MRV acceptance case. Added method B
+as `api.portfolio_debenture_returns`: one bounded call, exact ticker from CDA block 4, monthly median of fund PU,
+minimum three funds, and no synthetic coupon/amortization. The owner deferred B's monthly fall cutoff, so the engine
+passes NULL and any PU decline makes the window unknown (`limite_pendente`). C's 12-month contracted figure now joins
+the same report table as A/B with an explicit method label, while remaining outside measured coverage and totals. The
+BTG PDF rate reader was already verified in the prior run and remains the gate for C.
+
+**Production check.** The previously rechecked production warehouse is current through 2026-08 for these sources.
+Existing A RPC rows and read-only CDA source queries for all eight requested tickers are summarized in
+`docs/reference/research/portfolio-return-coverage.md`. Production does not yet have the new B RPC; no migration or
+DDL was run there. Therefore B is production-source checked, not production-function checked. The MRV 24I1980390
+acceptance gate remains failed: April 2026 has a −6.11% PU fall and no filed cash flow; the API correctly keeps its
+12-month return unknown. Per the owner's explicit instruction, implementation continued and the case is carried into
+PR #784.
+
+**Verification.** Local ephemeral PostgreSQL applied the analytical SQL and passed
+`tests/sql/portfolio_behaviour.sql`, including B's 3-fund median, possible-event fall, pending NULL cutoff, missing
+month, and A's changing-quantity/missing-month cases. The full offline suite passed (4,273 passed, 25 skipped); focused portfolio, contract, MCP and OpenAPI tests also passed. The report built with `--provider fake`; its return table has method, return, CDI, p.p. gap and % CDI columns.
+OpenAPI, MCP contract and SDK contract were regenerated from the ephemeral catalog.
+
+**Decisions.** B cutoff remains unset pending the owner; 1.9% is documented only as a possible follow-up candidate
+because it catches the smallest observed ENAT11 event fall (−1.91%) while ordinary non-event marks can fall further.
+Owner, 2026-10-09: show C in the same table as A/B, clearly marked contracted. The measured result remains separate.
+
+**Coverage.** The measured result is 10.6523% of portfolio value (8.06% before, plus the 2.59 percentage points of
+Marfrig A); B adds no measured coverage with NULL cutoff. C adds 18.4279% as a separate contracted share. The
+planning estimate of about 30% evaluated by A+B is not met; this check shows 10.65% measured and 18.43% contracted.
+
+**Outside scope.** No production migration, deployment, merge, or PR comment. The first test attempt found a fixture
+fund-id mapping error; corrected and reran successfully. Existing unrelated local configuration in the main checkout
+was preserved.
+
+## 2026-10-09 · codex/portfolio-credit-mrv-stop
+
+**Done.** Rechecked the live warehouse with read-only PostgreSQL (`transaction_read_only=on`). The production
+`api.portfolio_credit_returns` response for MRV 24I1980390, ending 2026-08, still flags 2026-04
+`queda_sem_evento_arquivado`: PU 1,071.48630 to 1,005.98531 (−6.11%), with no filed interest or amortization.
+All 13 requested month-ends exist, but the guarded 12-month return is unknown. Per the brief's explicit stop
+condition, implementation did not proceed. Source coverage was checked: the six CRA/CRI codes have rows through
+2026-08 (CRA0260025T has four months); CUTI11 and ENAT11 each have 13 months through 2026-08, held by 91 and
+210 distinct funds respectively.
+
+**Decisions.** None. B's PU-drop threshold and C's placement were not decided or changed; no production migration
+was run.
+
+**Assumptions.** The 2026-10-08 report uses the 2026-08-31 portfolio snapshot, consistent with the tested
+2025-08..2026-08 window. No new position weights or report generation were inferred.
+
+**Outside scope.** Tests for B/C, the eight-paper run, and the fake-provider report were not run because method A's
+acceptance gate failed and the brief says to stop at that point.
+
 ## 2026-10-08 · research/cdi-holder-gap (#776)
 
 **Done.** Saved the CDI study the owner asked for: `docs/reference/research/cdi-fund-vs-holder-return.md`, one
@@ -50,6 +118,30 @@ checks, and the production rows of the six codes); it is not applied to producti
 semiannual payer. Register item 20.3 (B3 OTC prices) is the other route, not started. The Supabase MCP did not answer; production reads used `psql` in read-only mode. Seen, not fixed: the
 tax block could read the same 'Data inicial' (it reads only `data_aplicacao`). Fixed while merging main: a stray
 `||||||| d25f70ee` conflict marker main carried in this file.
+
+## 2026-10-09 · claude/resolve-ambiguous-funds (#783)
+
+**Done.** Register item 20, gap 1 (the owner chose it on 2026-10-09): the two `ambiguo` fund lines of the 2026-08-31
+real report, 19,55% of its value. Measured on the live database first, read-only: the proposed fix (the last quota on or
+before the date) would have resolved neither line. One line abbreviated the fund type (`FIRF`, `CrPr`), so the real fund
+was no candidate; the other had five FIAGRO, which file no daily quota. `api.portfolio_resolve` (catalog v72, same
+signature and columns) now adds a name-hint candidate (scored 0.5 at most, ranked behind candidates that scored on
+their own unless its quota matches, ambiguous unless its quota matches) and compares a FIAGRO's `cvm_fiagro_mensal` quota
+on a month-end date, with a half-cent tolerance.
+
+**Decisions.** A hint only adds names below the 0.25 floor; a score that already counts is never changed (line 14 of the
+real report, identified at 0.44, would have flipped to ambiguous otherwise). Every hint candidate reaches the quota
+before the cut to 5: the advisor's check on the live names showed nine tied at the cap and the real fund fourth by CNPJ,
+which a 2-slot cut dropped. FII is not read (its monthly figure is the patrimonial value, not a price).
+
+**Assumptions.** The monthly informe quota is the month-end quota; supported by one line (0.009% from the statement), not
+measured across funds. Token list of `fund_name_core` rests on two observed tokens plus six legal-form abbreviations.
+
+**Outside scope.** Acceptance replayed the report's six fund lines through the old and new resolver on a read-only copy of
+production's name history and 2026-08-31 and 2026-08 quotas (local scratch DBs, outside the repository): lines 13 and 17
+resolve with `ambiguous` false, lines 14, 15, 16 and 18 unchanged. Not applied to production: run `daily_ingest`
+`mode=analytics-only`, then `deploy_mcp.yml`, then resolve the two lines again. Seen, not fixed: `ship-api-change` and
+AGENTS.md do not name `scripts/gen_catalog_sql.py`, which `tests/test_api_contract_sql.py` requires after a catalog edit.
 
 ## 2026-10-08 · claude/report-v2-trace-audit (#765)
 

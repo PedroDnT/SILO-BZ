@@ -4,6 +4,8 @@ Pytest configuration and shared fixtures for Brazilian Financial Data Infrastruc
 
 import pytest
 import asyncio
+import ipaddress
+import socket
 import shutil
 import subprocess
 
@@ -52,6 +54,54 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "cvm: CVM API tests")
     config.addinivalue_line("markers", "validation: Data validation tests")
     config.addinivalue_line("markers", "parsing: CSV parsing tests")
+
+
+@pytest.fixture(autouse=True)
+def no_network_sockets(monkeypatch):
+    """Block external network access while allowing tests' loopback servers."""
+    real_getaddrinfo = socket.getaddrinfo
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+    real_sendto = socket.socket.sendto
+
+    def is_loopback(host):
+        try:
+            return ipaddress.ip_address(str(host).split("%", 1)[0]).is_loopback
+        except ValueError:
+            return False
+
+    def guarded_getaddrinfo(host, *args, **kwargs):
+        if str(host).lower() != "localhost" and not is_loopback(host):
+            pytest.fail(f"offline test attempted external DNS lookup: {host}")
+        results = real_getaddrinfo(host, *args, **kwargs)
+        if any(not is_loopback(result[4][0]) for result in results):
+            pytest.fail(f"offline test resolved a non-loopback address: {host}")
+        return results
+
+    def guarded_connect(sock, address):
+        host = address[0] if isinstance(address, tuple) else address
+        if not is_loopback(host):
+            pytest.fail(f"offline test attempted external socket connection: {host}")
+        return real_connect(sock, address)
+
+    def guarded_sendto(sock, data, *args):
+        address = args[-1] if len(args) > 1 else args[0]
+        host = address[0] if isinstance(address, tuple) else address
+        if not is_loopback(host):
+            pytest.fail(f"offline test attempted external socket send: {host}")
+        return real_sendto(sock, data, *args)
+
+    def guarded_connect_ex(sock, address):
+        host = address[0] if isinstance(address, tuple) else address
+        if not is_loopback(host):
+            pytest.fail(f"offline test attempted external socket connection: {host}")
+        return real_connect_ex(sock, address)
+
+    # Keep socketpair available: asyncio uses it for its event-loop wakeup pipe.
+    monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
+    monkeypatch.setattr(socket.socket, "sendto", guarded_sendto)
 
 # Async test support
 @pytest.fixture(scope="session")

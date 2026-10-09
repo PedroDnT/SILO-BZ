@@ -24,7 +24,7 @@ from src.portfolio.report import labels as reader_text
 from src.portfolio.sections import SCREEN_FAILED, dated_keys, report_gaps, sections_view
 from src.portfolio.sections import codes_text as _codes_text, reason_text
 
-VIEW_VERSION = "report-view-1"
+VIEW_VERSION = "report-view-2"
 SHARED_GROUPS_SHOWN = 12
 
 # The report names the source of each tool for its footer and the Revisor's citation rule.
@@ -794,8 +794,7 @@ RETURN_WINDOW_DROP = ("sources", "reason", "cdi_reason_code", "fee_reason_code",
 
 
 def _contracted_view(c: dict | None, order: list) -> dict | None:
-    """Schema 2.1, method C: the contracted return of a bank credit line, windows in the engine's order, reasons as
-    fixed texts. It is shown in the annex only, apart from every measured figure (owner, 2026-10-08, #766)."""
+    """Schema 2.2, method C: contracted return kept separate in the data model and clearly labelled in the report."""
     if not isinstance(c, dict):
         return None
     wins = []
@@ -852,6 +851,7 @@ def _returns_view(eng: dict) -> dict | None:
             "line_id": f"L{ln['line_no']}", "instrument": ln.get("linha_extrato"), "tipo": ln.get("tipo"),
             "cnpj": ln.get("cnpj"), "ticker": ln.get("ticker"), "name": ln.get("name"), "value_brl": ln.get("valor_brl"),
             "basis": ln.get("basis"), "basis_label": reader_text.RETURN_BASIS.get(ln.get("basis")),
+            "method_label": reader_text.RETURN_METHOD.get(ln.get("basis")),
             "without_distributions": ln.get("without_distributions"),
             "status": ln.get("status"), "status_label": reader_text.RETURN_STATUS.get(ln.get("status")),
             "reason_code": ln.get("reason_code"),
