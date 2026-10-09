@@ -588,7 +588,7 @@ __all__ = [
 # v73: #766. Add method B's set-based median fund mark series for debentures.
 # C's contracted result is displayed in the same report table by owner choice,
 # while staying outside measured coverage and all aggregates.
-CATALOG_VERSION = 73
+CATALOG_VERSION = 74
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -946,6 +946,7 @@ _CAPPED_FUNCTIONS: List[str] = [
     "portfolio_credit_returns",
     # v73: a set of debenture tickers, 13 rows each, one portfolio call.
     "portfolio_debenture_returns",
+    "credit_market_history",
 ]
 
 _NUMBER_WORDS = (
@@ -1079,6 +1080,7 @@ CONSTRAINTS = [
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "CIA, FII AND FOCUS HELD DATA. api.financial_statement_history returns raw CIA account lines across all stored filing versions for one required statement and company id; `financials` remains latest-version only. Filing header metadata is present only on an exact key match. Values are already scaled at ingest and remain in filed currency. api.fii_property_history filters one exact fund CNPJ and reference-date window; CVM publishes no stable property id, so row_hash identifies a source row, not a durable asset. Nullable measurements remain NULL. api.focus_expectations returns the weekly path across BCB survey dates for one exact endpoint and required forecast horizon, with an optional indicator. The stored key retains each date/horizon; `baseCalculo=0` is the trailing 30-day respondent sample and 12-month inflation is unsmoothed. It is not a vintage archive of corrected old reports, and migration 16-era missing horizons may await re-fetch. All three endpoints refuse above 1,000 rows.",
+    "DEBENTURE MARKET OBSERVATIONS: api.credit_market_history preserves instrument code, trade date, settlement date and trade classification, with nine nullable metrics, units, capture/raw/row hashes and actual observation/audit timestamps. Select complete successfully audited captures per trade date BEFORE filtering a code; a removed row stays removed. p_as_of filters both observation and audit completion, not original publication-time PIT. Group min/avg/max prices, quantity/count/volume differ from repeated instrument-wide last/reference prices; reference may be modeled and never substitutes for a trade. No summed repeated prices, inferred issuer CNPJ/stock ticker, yield, spread, outstanding or coupon-adjusted return. Known empty windows stay empty; unknown code at cutoff raises 22023. Narrow the dates above 1000 groups; no date-only paging. Coverage reports a held span, not gap-free trading history.",
     "Row caps — getting this wrong means silently analysing a TRUNCATED "
     "series, the exact fabrication this API exists to prevent. THE PAGE IS "
     "1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY "
@@ -1096,7 +1098,7 @@ CONSTRAINTS = [
     "fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, "
     "fund_restatements, fund_restatement_diff, company_events, macro_series, "
-    "ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, trade_consolidated_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers, class_return_distribution, portfolio_equivalents, portfolio_credit_returns, portfolio_debenture_returns and the "
+    "ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, trade_consolidated_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers, class_return_distribution, portfolio_equivalents, portfolio_credit_returns, portfolio_debenture_returns, credit_market_history and the "
     f"{_number_word(_N_SCREENS)} screen_* functions "
     "(`limits.page.all`). "
     f"{_number_word(len(_PAGED_CURSORS)).upper()} OF THEM PAGE with p_after: panel, quote_history, fund_nav, index_history and trade_consolidated_history. Send "
@@ -2012,6 +2014,7 @@ def catalog_payload() -> Dict[str, Any]:
             "panel": "GET /v1/panel",
             "lookup": "GET /v1/lookup?q=",
             "quotes": "GET /v1/quotes/{ticker}",
+            "credit_market_history": "GET /v1/credit/{code}/history",
             "funds": "GET /v1/funds/{cnpj}/nav",
             "coverage": "GET /v1/coverage",
             "metric_coverage": "GET /v1/metric-coverage",
@@ -2094,6 +2097,7 @@ def catalog_payload() -> Dict[str, Any]:
             "research_universe": "POST /rest/v1/rpc/research_universe",
             "index_history": "POST /rest/v1/rpc/index_history",
             "trade_consolidated_history": "POST /rest/v1/rpc/trade_consolidated_history",
+            "credit_market_history": "POST /rest/v1/rpc/credit_market_history",
             "portfolio_resolve": "POST /rest/v1/rpc/portfolio_resolve",
             "portfolio_fees": "POST /rest/v1/rpc/portfolio_fees",
             "portfolio_lookthrough": "POST /rest/v1/rpc/portfolio_lookthrough",

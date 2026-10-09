@@ -78,6 +78,17 @@
    "params": [],
    "required": []
   },
+  "credit_market_history": {
+   "params": [
+    "p_as_of",
+    "p_code",
+    "p_from",
+    "p_to"
+   ],
+   "required": [
+    "p_code"
+   ]
+  },
   "curve": {
    "params": [
     "p_curve",

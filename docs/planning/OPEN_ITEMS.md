@@ -678,7 +678,7 @@ Ranked by share of the portfolio against the work to close it.
 | # | Gap | Share | Smallest change that closes it | Work |
 | --- | --- | --- | --- | --- |
 | 1 | 2 funds ambiguous: "a cota não desempatou" | 19,55% | **Built in #783 (catalog v72), approved 2026-10-09.** Measured before building, the proposed fix (the last quota on or before the date) would have resolved neither line. One line abbreviated the fund type, so the real fund was no candidate (12,7%): a name hint now adds it, behind the candidates that scored on their own, ambiguous unless its quota matches. The other (6,0%) had five FIAGRO candidates, which file no daily quota: on a month-end date their `cvm_fiagro_mensal` quota is compared. Verify on the live database after `daily_ingest` `mode=analytics-only` by resolving the two lines again. | Done in #783 |
-| 2 | 2 Tesouro titles without a return | 9,07% | Tesouro Direto price history as a new public dataset (one fetcher, one table, one `api.*` function), then the returns block reads it like a quote. The public file and its terms are not checked yet. | New data, small |
+| 2 | 2 Tesouro titles without a return | 9,07% | **Measured 2026-10-09 (#802): would move this portfolio by 0 of the 9,07%.** The Treasury's public price file (ODbL, daily) has a `PU Base` for the NTN-B on every month-end of the window, but that title pays coupons, which the file does not carry; the LTN is not in the file. A build helps the coupon-free Direto titles, not this report. Needs the owner on three points (licence, a posted quote as a mark, coupon titles): `docs/reference/research/tesouro-direto-price-source.md`. | Measured, not built |
 | 3 | 2 debentures without a return | 8,03% | SILO already captures B3 OTC debenture prices (`b3_credit_observations`, migration 74). Grant a serving function and read it as the debenture's price series. | Rule over existing data |
 
 Not in the top three: 6 CRA and CRI without a return (21,52%), handled by #766 (the securitizer's curve in
@@ -688,3 +688,13 @@ unidentified (15,45%; no public bank-issuance registry is ingested; since #766 i
 statement prints, is in the annex, apart from the measured coverage). Item 3 uses B3's own OTC prices, not #766's method B (the median fund mark,
 which evaluates 0 of the 2 debentures). Two suspected join gaps to check before any build: 2 multimercado funds with
 no CDA for 2026-04 (6,99%) and the same 2 with 9 and 10 of 13 month-end quotas missing.
+
+
+## 21. Debenture observation serving (#789)
+
+Owner approved the observation-only plan. SQL read function and local rollback
+behavior tests implement capture selection before code filters, audit-aware
+cutoff, full settlement/classification grain and refusal above 1000 groups.
+Catalog/OpenAPI/HTTP/SDK/tool contracts are implemented and verified locally;
+CI and production rollout acceptance remain pending. #774 returns
+remain separate. Recurring capture remains disabled after its storage stop.
