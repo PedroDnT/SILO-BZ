@@ -270,9 +270,11 @@ with the engine's B3 factor convention, 2025-08-29 inclusive through 2026-08-31 
 
 Each “source months” figure counts rows with `data_referencia` (A) or monthly fund marks (B); “return factors” counts
 usable monthly factors before any 12-month result is admitted. The functions returned all 13 window rows, including
-explicit missing months. A falls without a filed flow and the 2026-04 MRV discrepancy remain unevaluated pending
-source investigation in [#798](https://github.com/PedroDnT/SILO-BZ/issues/798). Measured coverage remains 10.6523%; B
-adds no evaluated value with the owner's cutoff deferred. Contracted C remains a separate 18.4279% share.
+explicit missing months. The production 24I1980390 row remains unevaluated because the deployed API's series table has
+no April flow; the issuer workbook independently validates that coupon and the 12-month acceptance case below, but is
+not ingested. Issue [#798](https://github.com/PedroDnT/SILO-BZ/issues/798) tracks a governed source-to-warehouse path.
+Measured production coverage remains 10.6523%; B adds no evaluated value with the owner's cutoff deferred. Contracted
+C remains a separate 18.4279% share.
 
 #### MRV April 2026 source-file follow-up
 
