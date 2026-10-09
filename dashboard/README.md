@@ -1,4 +1,5 @@
-# iliquid dashboard
+# SILO Dashboard
+
 
 Evidence.dev analytics dashboard backed by the Supabase Postgres pipeline.
 
