@@ -53,6 +53,9 @@ after a run    publish_check  also runs when a Daily CVM Ingest run ends green, 
   with `rebuild_dashboard=true`.
 - Writers share the `supabase-ingest` concurrency group. Health and
   publish_check are read-only and may overlap.
+- Diagnosis trace storage is asynchronous: its response key is pending until
+  persistence completes. The Worker logs fixed outcome codes only, validates
+  referenced artifacts and writes the trace last; failures preserve the report.
 - Schema replay skips matching indexes and absent constraints.
 - DEB: daily/watchdog pass `vars.B3_CREDIT_ENABLED`; only `1` enables
   seven-day refresh with smaller-slice recovery.

@@ -1,0 +1,1 @@
+| 2026-10-10 | codex/audit-remediation | **Trace persistence (#831):** fixed sanitized outcome codes, full referenced-artifact validation and pending-key semantics preserve diagnosis responses and container cleanup on storage failure. |
