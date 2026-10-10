@@ -14,8 +14,8 @@
 //
 // Clients send the token as `x-demo-token` (the scheme of the first deploy) or
 // as `Authorization: Bearer`. It is compared as a SHA-256 digest with
-// timingSafeEqual. Nothing is logged: no console call, invocation logs off in
-// wrangler.jsonc, and the Container's onError is silenced.
+// timingSafeEqual. Invocation logs stay off in wrangler.jsonc. Persistence logs
+// contain only fixed status/reason codes; no request, exception or portfolio text.
 //
 // Storage (ADR 0003): the uploaded statement is never stored; its bytes are only
 // forwarded. After answering, each run's trace is written to the private R2
@@ -54,7 +54,7 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const TOKEN_HEADER = "x-demo-token";
 // The engine names each run's trace here; not passed through (not in PASS_HEADERS).
 const TRACE_HEADER = "x-silo-trace-id";
-// The Worker's own answer header: the R2 key it writes the run's trace to, for a link to /traces#<key>.
+// The intended R2 key, not confirmation of persistence. Background work publishes the trace last.
 // Reading that key still needs the token, which the caller of /diagnose already holds.
 const TRACE_KEY_HEADER = "x-silo-trace-key";
 const TRACE_ID = /^[0-9a-f]{32}$/;
@@ -229,13 +229,15 @@ async function diagnose(request: Request, env: Env, ctx: ExecutionContext): Prom
 	ctx.waitUntil(
 		(async () => {
 			try {
-				if (willStore) {
-					await storeTrace(env.TRACES, container, env.DEMO_ACCESS_TOKEN as string, traceId, day, isPdf ? out : null);
-				}
-			} catch {
-				// A lost trace never fails the answer; nothing is logged.
+				const outcome: PersistenceOutcome = willStore
+					? await storeTrace(env.TRACES, container, env.DEMO_ACCESS_TOKEN as string, traceId, day, isPdf ? out : null)
+					: { status: "skipped", reason: env.TRACES ? "trace_id_unavailable" : "bucket_unavailable" };
+				// Only fixed codes cross the log boundary. No key, token or exception.
+				console.info(JSON.stringify({ event: "trace_persistence", ...outcome }));
 			} finally {
-				await container.stop().catch(() => undefined);
+				await container.stop().catch(() => {
+					console.info(JSON.stringify({ event: "container_cleanup", status: "failed", reason: "stop_failed" }));
+				});
 			}
 		})(),
 	);
@@ -247,7 +249,10 @@ async function diagnose(request: Request, env: Env, ctx: ExecutionContext): Prom
 		const v = res.headers.get(name);
 		if (v) headers.set(name, v);
 	}
-	if (willStore) headers.set(TRACE_KEY_HEADER, `traces/${day}/${traceId}.json`);
+	if (willStore) {
+		headers.set(TRACE_KEY_HEADER, `traces/${day}/${traceId}.json`);
+		headers.set("x-silo-trace-storage", "pending");
+	}
 	return new Response(out, { status: res.status, headers });
 }
 
@@ -277,44 +282,85 @@ function rootAttribute(bundle: TraceBundle, key: string): string | null {
 	return typeof v === "string" ? v : null;
 }
 
-// One run's objects in R2 (ADR 0003). Each artifact is written under its own
-// SHA-256, computed here: a body that does not hash to its key is skipped.
-async function storeTrace(bucket: R2Bucket, container: { fetch: (r: Request) => Promise<Response> }, token: string, traceId: string, day: string, pdf: ArrayBuffer | null): Promise<void> {
-	const res = await container.fetch(
-		new Request(`http://container/trace/${traceId}`, { headers: { authorization: `Bearer ${token}` } }),
-	);
-	if (res.status !== 200) return;
-	const raw = await res.arrayBuffer();
-	const bundle = JSON.parse(new TextDecoder().decode(raw)) as TraceBundle;
-	if (bundle.trace_id !== traceId) return;
-	const puts: Promise<unknown>[] = [];
-	for (const [key, b64] of Object.entries(bundle.artifacts ?? {})) {
-		if (!SHA256_KEY.test(key)) continue;
-		const body = fromBase64(b64);
-		const ext = key.endsWith(".html") ? "html" : "json";
-		if (`artifacts/${await sha256Hex(body)}.${ext}` !== key) continue;
-		puts.push(bucket.put(key, body, { httpMetadata: { contentType: ext === "html" ? "text/html; charset=utf-8" : "application/json" } }));
+type PersistenceOutcome = {
+	status: "stored" | "failed" | "incomplete" | "skipped";
+	reason: "complete" | "trace_fetch_failed" | "trace_http_error" | "invalid_bundle" |
+		"trace_id_mismatch" | "invalid_key" | "invalid_hash" | "missing_artifact" |
+		"artifact_write_failed" | "trace_write_failed" | "trace_id_unavailable" | "bucket_unavailable";
+};
+
+// Validate the whole bundle before any put. A published trace means every
+// artifact it references was persisted. No exception text leaves this function.
+async function storeTrace(bucket: R2Bucket, container: { fetch: (r: Request) => Promise<Response> }, token: string, traceId: string, day: string, pdf: ArrayBuffer | null): Promise<PersistenceOutcome> {
+	let res: Response;
+	try {
+		res = await container.fetch(new Request(`http://container/trace/${traceId}`, {
+			headers: { authorization: `Bearer ${token}` },
+		}));
+	} catch {
+		return { status: "failed", reason: "trace_fetch_failed" };
 	}
-	for (const [key, b64] of Object.entries(bundle.documents ?? {})) {
-		const m = DOC_KEY.exec(key);
-		if (!m) continue;
-		const body = fromBase64(b64);
-		// A body that does not hash to its key is skipped, as for the artifacts.
-		if ((await sha256Hex(body)) !== m[2]) continue;
-		puts.push(bucket.put(key, body, { httpMetadata: { contentType: "text/plain; charset=utf-8" } }));
-	}
-	if (pdf) {
-		const sha = await sha256Hex(pdf);
-		// Only the PDF the engine traced: a different hash means a different body.
-		if (rootAttribute(bundle, "app.pdf.sha256") === sha) {
-			puts.push(bucket.put(`artifacts/${sha}.pdf`, pdf, { httpMetadata: { contentType: "application/pdf" } }));
+	if (res.status !== 200) return { status: "failed", reason: "trace_http_error" };
+	let bundle: TraceBundle;
+	const objects: { key: string; body: Uint8Array | ArrayBuffer; type: string }[] = [];
+	try {
+		bundle = await res.json() as TraceBundle;
+		if (!bundle || typeof bundle !== "object") return { status: "incomplete", reason: "invalid_bundle" };
+		if (bundle.trace_id !== traceId) return { status: "incomplete", reason: "trace_id_mismatch" };
+		const root = bundle.trace?.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
+		if (!root || !Array.isArray(root.attributes) || !bundle.artifacts ||
+			typeof bundle.artifacts !== "object" || Array.isArray(bundle.artifacts) ||
+			(bundle.documents !== undefined && (!bundle.documents || typeof bundle.documents !== "object" || Array.isArray(bundle.documents)))) {
+			return { status: "incomplete", reason: "invalid_bundle" };
 		}
+		for (const [key, b64] of Object.entries(bundle.artifacts)) {
+			if (!SHA256_KEY.test(key)) return { status: "incomplete", reason: "invalid_key" };
+			if (typeof b64 !== "string") return { status: "incomplete", reason: "invalid_bundle" };
+			const body = fromBase64(b64);
+			const ext = key.endsWith(".html") ? "html" : "json";
+			if (`artifacts/${await sha256Hex(body)}.${ext}` !== key) return { status: "incomplete", reason: "invalid_hash" };
+			objects.push({ key, body, type: ext === "html" ? "text/html; charset=utf-8" : "application/json" });
+		}
+		for (const [key, b64] of Object.entries(bundle.documents ?? {})) {
+			const m = DOC_KEY.exec(key);
+			if (!m) return { status: "incomplete", reason: "invalid_key" };
+			if (typeof b64 !== "string") return { status: "incomplete", reason: "invalid_bundle" };
+			const body = fromBase64(b64);
+			if ((await sha256Hex(body)) !== m[2]) return { status: "incomplete", reason: "invalid_hash" };
+			objects.push({ key, body, type: "text/plain; charset=utf-8" });
+		}
+		if (pdf) {
+			const sha = await sha256Hex(pdf);
+			if (rootAttribute(bundle, "app.pdf.sha256") !== sha) return { status: "incomplete", reason: "invalid_hash" };
+			objects.push({ key: `artifacts/${sha}.pdf`, body: pdf, type: "application/pdf" });
+		}
+		for (const [attr, ext] of [["app.engine_json.sha256", "json"], ["app.html.sha256", "html"], ["app.pdf.sha256", "pdf"]]) {
+			const entry = root.attributes.find((a) => a.key === attr);
+			if (!entry) continue; // a run failing before a stage has no artifact for it
+			const sha = rootAttribute(bundle, attr);
+			if (!sha || !SHA256.test(sha)) return { status: "incomplete", reason: "invalid_hash" };
+			if (!objects.some((o) => o.key === `artifacts/${sha}.${ext}`)) return { status: "incomplete", reason: "missing_artifact" };
+		}
+	} catch {
+		return { status: "incomplete", reason: "invalid_bundle" };
 	}
-	await Promise.all(puts);
-	// The trace last, so a trace in R2 means its artifacts are there too.
-	await bucket.put(`traces/${day}/${traceId}.json`, JSON.stringify(bundle.trace), {
-		httpMetadata: { contentType: "application/json" },
-	});
+	try {
+		// Await every attempted put even after a rejection: cleanup must not race
+		// remaining writes. Partial objects are left private; no trace is published.
+		const writes = await Promise.allSettled(objects.map((o) => Promise.resolve().then(() =>
+			bucket.put(o.key, o.body, { httpMetadata: { contentType: o.type } }))));
+		if (writes.some((w) => w.status === "rejected")) return { status: "failed", reason: "artifact_write_failed" };
+	} catch {
+		return { status: "failed", reason: "artifact_write_failed" };
+	}
+	try {
+		await bucket.put(`traces/${day}/${traceId}.json`, JSON.stringify(bundle.trace), {
+			httpMetadata: { contentType: "application/json" },
+		});
+	} catch {
+		return { status: "failed", reason: "trace_write_failed" };
+	}
+	return { status: "stored", reason: "complete" };
 }
 
 // Owner-only reads of the private bucket (ADR 0003), behind the same token as /diagnose. Nothing here
@@ -583,6 +629,7 @@ f.addEventListener("submit", async (e) => {
       const tl = document.getElementById("tracelink");
       tl.href = "/traces" + (traceKey ? "#" + traceKey : "");
       tl.hidden = false;
+      tl.textContent = traceKey ? "Ver execução (armazenamento em andamento; pode falhar)" : "Ver execuções";
       const frame = document.getElementById("report");
       frame.srcdoc = await r.text();
       frame.hidden = false;

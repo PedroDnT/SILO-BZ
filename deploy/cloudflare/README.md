@@ -34,6 +34,21 @@ health-only image of the first deploy, no longer referenced.
 
 ## Run traces in R2 (ADR 0003)
 
+`x-silo-trace-key` names the intended trace location, with
+`x-silo-trace-storage: pending`; the diagnosis response does not wait for storage.
+The upload page labels the link as storage in progress, which may fail. One
+`trace_persistence` log reports only fixed `status` and `reason` codes: `stored`,
+`failed`, `incomplete`, or `skipped`. No key, token, exception text, request,
+document or portfolio content is logged. Invocation logs remain disabled.
+
+The Worker validates every supplied object key and hash, and requires every
+artifact referenced by the trace root. An HTML-only run needs no PDF unless the
+trace references one. All artifact writes settle before the trace is published
+last; rejected writes never publish a complete trace. Partial artifact objects
+can remain private after a failed write. No retry or deletion is introduced.
+Storage failures preserve the diagnosis response and still attempt container
+cleanup; cleanup failure has its own fixed `container_cleanup` log code.
+
 The uploaded statement is never stored: its bytes are only forwarded to the
 Container. What is stored, in the private R2 bucket `silo-diagnosis-traces`
 (binding `TRACES`; only this Worker writes it, no public access, no lifecycle

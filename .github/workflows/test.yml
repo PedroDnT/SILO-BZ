@@ -91,6 +91,13 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Reject secrets in PR additions
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.sha }}
+        run: python scripts/check_secrets.py --base "refs/remotes/origin/$BASE_REF" --head "$HEAD_SHA"
+
       - name: Cache pytest
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

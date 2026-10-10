@@ -1,9 +1,9 @@
 # Dataset notes
 
 What is true about each dataset, for agents. The rules are in the root
-`AGENTS.md`; this file holds the detail that was too long to keep there. Claude
-Code loads it through `CLAUDE.md`. Any other agent reads it before touching these
-tables.
+`AGENTS.md`; this file holds the detail that was too long to keep there. Every
+agent reads it before touching these tables, through the root instruction and
+the `silo` skill. It is not imported into every unrelated session.
 
 Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (plus the
 `cia_*` and ETF tables and the `cvm_ingest_log` audit table). Trust `src/store/schema.sql`,

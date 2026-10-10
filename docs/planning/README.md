@@ -90,3 +90,9 @@ new dataset or PIT certification; the next-day heartbeat stays paused. Recurring
 weekly-window cost and the first three scheduled cash sessions remain unverified.
 
 Observation-only credit serving is tracked in [#789](https://github.com/PedroDnT/SILO-BZ/issues/789), with [implementation plan](../../tasks/plan.md) and [rollout acceptance](../reference/credit-market-serving-rollout.md).
+
+The approved four-finding audit remediation is tracked in
+[#828](https://github.com/PedroDnT/SILO-BZ/issues/828), with a separate
+[implementation plan](../../tasks/ai-firstify/plan.md). Secret protection, skills,
+trace outcomes and context reduction have separate task issues; deployment
+remains separately gated.

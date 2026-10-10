@@ -1,0 +1,50 @@
+# Cursor Cloud specific instructions
+
+### Environment layout
+
+- Python **3.12** in a virtualenv at `.venv/` (gitignored, persisted in the VM snapshot).
+  The startup update script (`python3 -m venv .venv` + `pip install -r requirements-dev.txt`)
+  keeps it fresh. Run Python via `.venv/bin/python` (or
+  `source .venv/bin/activate`); there is no global install of the project deps.
+- If `.venv/bin/pip` is missing, the snapshot venv is empty. Recreate it:
+  `sudo apt-get install -y python3.12-venv && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`.
+- `duckdb` is required by the offline verification scripts but is used only for local dev;
+  it is pinned in `requirements-dev.txt`, not in `requirements.txt` (#687).
+- Git hooks live in `.githooks/` (enabled with `bash scripts/install_hooks.sh`, which sets
+  `core.hooksPath`). Only a `pre-commit` hook exists (secret scan + `py_compile`/`bash -n`);
+  there is no git pre-push hook.
+- Claude Code's hooks do not run for Cursor or Codex. The "Every branch carries its
+  own docs" rule under "Commands" is yours to follow by hand before every push.
+
+There is **no ingest Flask**. Do not run `flask --app app` or revive `app.py` /
+`src/api/`. Ingest is GitHub Actions plus:
+
+```bash
+.venv/bin/python -m src.pipeline.run_daily
+.venv/bin/python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2024 --end-year 2024
+```
+
+### What runs without credentials (default dev/testing loop)
+
+No `POSTGRES_URL` / Supabase credentials are needed for the core loop:
+
+- Lint/syntax gate: `.venv/bin/python -m py_compile <changed .py files>` (what the
+  pre-commit hook runs). There is no ruff/flake8/black configured.
+- Tests: `.venv/bin/python -m pytest tests/ -q` — fully offline (DB + HTTP mocked).
+- End-to-end pipeline (fetch→parse→store) against **real CVM data over the network** into a
+  local DuckDB file: `.venv/bin/python scripts/seed_local_db.py --skip-fi` then
+  `.venv/bin/python scripts/run_analysis_local.py`. This is the self-contained way to prove
+  the pipeline works. Note: it downloads from the (slow) `dados.cvm.gov.br` server, so
+  `--skip-fi` realistically takes ~10–15 min here (the README's "~2 min" is optimistic).
+  It writes `.local_db/iliquid_local.duckdb` (~100 MB) — do not commit that file.
+
+### What needs secrets (not runnable in a fresh VM by default)
+
+- The live pipeline (`python -m src.pipeline.run_daily` / `run_backfill`), `scripts/apply_schema.py`,
+  and `scripts/verify_pipeline.py` require `POSTGRES_URL` (Supabase Postgres, `sslmode=require`)
+  via `.env` (copy from `.env.example`).
+- Read API: `.venv/bin/python -m serve.app` (binds `127.0.0.1:8080`). Needs `POSTGRES_URL`
+  or `SILO_API_DATABASE_URL`. This is not an ingest trigger.
+- The `dashboard/` and `webapp/` Evidence.dev apps (`npm install && npm run sources &&
+npm run dev`) are read-only consumers that need a populated Supabase to render data.
+- `etf_market_snapshot` ingestion self-skips unless `APIFY_TOKEN` is set.

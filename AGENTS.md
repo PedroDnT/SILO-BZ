@@ -371,33 +371,14 @@ Existing docs and CHANGELOG rows are not rewritten either.
 - On macOS, `date` is BSD date. Use `gdate`, or write tests that are portable across
   GNU and BSD `date`.
 
-## Consumers (read-only, query Supabase directly)
+## Consumers (read-only)
 
-Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources && npm run dev`
-→ localhost:3000; `npm run build` → `build/`). They connect to the same Supabase Postgres via
-`@evidence-dev/postgres` and only read — never write.
-
-- **`dashboard/`** — fund **and market** analytics at
-  [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/), 19
-  pages. Industry and backdrop: Overview (`/`), Industry Structure (`/industry`),
-  Macro Context (`/macro`), Rates and Curves (`/rates`), B3 Markets (`/markets`),
-  Short Monitor (`/short`), Follow the Money (`/flows`). By asset class: FI (`/fi`), FIDC Credit Monitor
-  (`/fidc`), FII Market (`/fii`), Securitization (`/securit`), ETF (`/etf`).
-  Granular: Managers (`/managers`), Fund Explorer (`/fund`), Fund Holdings
-  (`/holdings`), Performance (`/performance`), Suspicious Screens (`/suspicious`), Dormant Funds (`/dormant`).
-  Plus Pipeline Ops (`/ops`).
-  Evidence static snapshot (parquet at build). The Vercel project in team
-  `deloslabs` is named `silo-bz` (renamed from `silo` on 2026-09-17, so older
-  planning docs and changelog rows still say `silo`); that is the
-  GitHub/deploy-hook name, not the public URL. Also buildable as a static site
-  for any static host.
-- **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics over the
-  `cia_*` tables: Overview (`/`), Financials (`/financials`, consolidated ITR/DFP with
-  margins/ROE), Events (`/events`, IPE + Fato Relevante feed). Mind the data conventions
-  in `webapp/README.md` (accented `ÚLTIMO`, net income conta 3.11 **only** — no 3.09
-  fallback anywhere, because 3.09 is pre-statutory-participations profit, not net
-  income, and banks do generally file 3.11; equity by name). `setor` is the partition
-  key for peer comparisons — `/growth` ranks within sector for that reason.
+Read `docs/agents/consumers.md` before changing `dashboard/` or `webapp/`: page
+inventory, build commands and accounting conventions live there. Both query the
+same database and never write. Only `dashboard/` is deployed; `webapp/` has no
+hosting project. Listed-company net income uses conta 3.11 only, never a 3.09
+fallback; use accented `ÚLTIMO` and equity by name. Peer comparisons partition
+by `setor`.
 
 ## Deploy
 
@@ -434,56 +415,11 @@ or run `scripts/apply_schema.py` against Supabase. Idempotent via `CREATE TABLE 
 named UNIQUE constraints. Note CI applies schema with `psql -v ON_ERROR_STOP=1` (parses SQL
 comments correctly), so author migrations to be psql-clean.
 
-## Cursor Cloud specific instructions
+## Cursor Cloud entry point
 
-### Environment layout
-
-- Python **3.12** in a virtualenv at `.venv/` (gitignored, persisted in the VM snapshot).
-  The startup update script (`python3 -m venv .venv` + `pip install -r requirements-dev.txt`)
-  keeps it fresh. Run Python via `.venv/bin/python` (or
-  `source .venv/bin/activate`); there is no global install of the project deps.
-- If `.venv/bin/pip` is missing, the snapshot venv is empty. Recreate it:
-  `sudo apt-get install -y python3.12-venv && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`.
-- `duckdb` is required by the offline verification scripts but is used only for local dev;
-  it is pinned in `requirements-dev.txt`, not in `requirements.txt` (#687).
-- Git hooks live in `.githooks/` (enabled with `bash scripts/install_hooks.sh`, which sets
-  `core.hooksPath`). Only a `pre-commit` hook exists (secret scan + `py_compile`/`bash -n`);
-  there is no git pre-push hook.
-- Claude Code's hooks do not run for Cursor or Codex. The "Every branch carries its
-  own docs" rule under "Commands" is yours to follow by hand before every push.
-
-There is **no ingest Flask**. Do not run `flask --app app` or revive `app.py` /
-`src/api/`. Ingest is GitHub Actions plus:
-
-```bash
-.venv/bin/python -m src.pipeline.run_daily
-.venv/bin/python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2024 --end-year 2024
-```
-
-### What runs without credentials (default dev/testing loop)
-
-No `POSTGRES_URL` / Supabase credentials are needed for the core loop:
-
-- Lint/syntax gate: `.venv/bin/python -m py_compile <changed .py files>` (what the
-  pre-commit hook runs). There is no ruff/flake8/black configured.
-- Tests: `.venv/bin/python -m pytest tests/ -q` — fully offline (DB + HTTP mocked).
-- End-to-end pipeline (fetch→parse→store) against **real CVM data over the network** into a
-  local DuckDB file: `.venv/bin/python scripts/seed_local_db.py --skip-fi` then
-  `.venv/bin/python scripts/run_analysis_local.py`. This is the self-contained way to prove
-  the pipeline works. Note: it downloads from the (slow) `dados.cvm.gov.br` server, so
-  `--skip-fi` realistically takes ~10–15 min here (the README's "~2 min" is optimistic).
-  It writes `.local_db/iliquid_local.duckdb` (~100 MB) — do not commit that file.
-
-### What needs secrets (not runnable in a fresh VM by default)
-
-- The live pipeline (`python -m src.pipeline.run_daily` / `run_backfill`), `scripts/apply_schema.py`,
-  and `scripts/verify_pipeline.py` require `POSTGRES_URL` (Supabase Postgres, `sslmode=require`)
-  via `.env` (copy from `.env.example`).
-- Read API: `.venv/bin/python -m serve.app` (binds `127.0.0.1:8080`). Needs `POSTGRES_URL`
-  or `SILO_API_DATABASE_URL`. This is not an ingest trigger.
-- The `dashboard/` and `webapp/` Evidence.dev apps (`npm install && npm run sources &&
-npm run dev`) are read-only consumers that need a populated Supabase to render data.
-- `etf_market_snapshot` ingestion self-skips unless `APIFY_TOKEN` is set.
+Read `docs/agents/cursor-cloud.md` before your first command in Cursor Cloud.
+It holds VM/dependency setup, the offline loop and credential requirements.
+All integrity, approval and shared-checkout rules in this file still apply.
 
 ## Working beside other agents
 
