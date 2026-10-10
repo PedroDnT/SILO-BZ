@@ -18,7 +18,7 @@ lxml==6.1.0
 openpyxl==3.1.5
 
 # BACEN client
-python-bcb==0.3.0
+python-bcb==0.4.0
 requests==2.33.0
 
 # Storage
