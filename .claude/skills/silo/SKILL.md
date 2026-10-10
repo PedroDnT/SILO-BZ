@@ -11,7 +11,8 @@ description: >
 
 Headless CVM/BACEN/B3 ingest into Supabase. The product is a researcher panel
 `(id, date, metric, value)` via schema `api` + `serve/`. Full rules: `AGENTS.md`,
-`docs/planning/SERVING.md`, `docs/reference/API.md`.
+`docs/planning/SERVING.md`, `docs/reference/API.md`. Read
+`docs/agents/dataset-notes.md` before changing the tables it describes.
 
 ## Integrity (non-negotiable)
 

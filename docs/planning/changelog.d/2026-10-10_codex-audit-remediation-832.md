@@ -1,0 +1,1 @@
+| 2026-10-10 | codex/audit-remediation | **Context hygiene (#832):** reduce root instructions to 27,779 bytes, load dataset notes on demand, preserve mandatory rules and move complete setup/consumer references behind explicit entry points. |

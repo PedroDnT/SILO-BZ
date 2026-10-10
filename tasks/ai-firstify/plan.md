@@ -40,9 +40,9 @@ its unrelated settings and MCP changes are outside this plan.
 ## Checkpoints
 
 - [x] Owner approved this separate destination, plan and implementation.
-- [ ] After secret protection: rejection never echoes synthetic credentials,
+- [x] After secret protection: rejection never echoes synthetic credentials,
   local hook is active, and the PR guard uses the same detector.
-- [ ] After skills and traces: changed references resolve; executable tests
+- [x] After skills and traces: changed references resolve; executable tests
   cover persistence success, validation failures, storage failures and cleanup.
 - [ ] Complete: focused tests, required offline suite and CI pass; context is
   below 32 KiB with a target of 28 KiB; mandatory-rule inventory is reviewed;
@@ -64,5 +64,25 @@ merge and deployment are distinct evidence. No deployment is part of this work.
 
 ## Current state
 
-Implementation started after owner approval. No open questions block the four
-local fixes. Production rollout remains separately gated.
+All four local fixes are implemented. Secret regressions: 21 passed. Worker
+behavior/exposure/agent checks: 35 passed. The local hook is configured and
+executable. Full suite, independent review and remote CI are the final gate;
+production rollout remains separately gated.
+
+## Mandatory-rule inventory for context reduction
+
+| Original section | Current entry point | Preservation evidence |
+| --- | --- | --- |
+| Integrity, architecture, dataset/API additions | Root AGENTS.md | Entire sections unchanged |
+| Database safety and approval boundaries | Root AGENTS.md | Entire sections unchanged |
+| Claims, branch ownership and Coordinator | Root AGENTS.md | Entire sections unchanged |
+| Time rules, environment and deployment | Root AGENTS.md | Entire sections unchanged |
+| Graphify instructions added on current main | Root AGENTS.md | Entire managed block unchanged |
+| Cursor VM/dependency and offline setup | docs/agents/cursor-cloud.md | Original section copied verbatim except heading level; root requires reading before first command |
+| Consumer pages, build and accounting detail | docs/agents/consumers.md | Original section copied verbatim except heading level; root retains read-only, deployment and accounting boundaries |
+| Dataset notes | Root plus SILO entry skill | Existing read-before-table-change instruction retained; unconditional Claude import removed |
+
+Root instructions: 32,026 → 27,779 UTF-8 bytes; 4,989 bytes below the 32 KiB cap.
+The earlier audit branch supplied the on-demand-loading approach; moved Cursor
+content is copied from current main to preserve updated dependency facts. No
+settings/MCP hunks from that branch are included.
