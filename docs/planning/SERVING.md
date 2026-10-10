@@ -1,5 +1,11 @@
 # Serving data — user-driven requirements
 
+For current implementation status, use the status table at the end of this
+document and the contract in [API.md](../reference/API.md). The numbered
+requirements and their acceptance checklists preserve the original plan; an
+unchecked historical box does not mean that work is still open. Production
+reads use the native database HTTP surface; `serve/` remains a local adapter.
+
 The product is not “we ingested CVM and B3.” The product is: a researcher
 (human or agent) can resolve an identifier, fetch an honest panel of mixed
 market and fundamental series, and take that into a notebook without ever

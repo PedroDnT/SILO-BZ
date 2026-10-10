@@ -52,8 +52,10 @@ Known ticker, empty window → 200 empty series. Never a guessed last close.
    `api.catalog()` in `19_api_contract.sql`; never edit that block by hand)
 4. Offline test; keep `_PANEL_METRICS == tuple(METRICS)`
 
-Serving open: limits before `fetchall` (step 3), honest returns (4), lookup (5),
-`silo_api` role (6), HTTPS (7). Do not ship public HTTP until 3 and 6.
+Serving contract and current status: `docs/reference/API.md` and the status
+table in `docs/planning/SERVING.md`. The numbered requirements are historical
+acceptance criteria, not a current open-work list. Caps and privileges remain
+mandatory; `serve/` is a local adapter, not the production HTTP gateway.
 
 ## Reviewing `serve/` or `19_*.sql`
 
@@ -63,12 +65,14 @@ before Python `fetchall`. Catalog `meaning` must match the SQL.
 ## Shipping: merging to `main` deploys nothing
 
 - **API:** a merged `19_*.sql` or catalog change is live only after
-  `scripts/apply_analytical.sh` runs — the 06:00 UTC `daily_ingest`, or dispatch it
-  with `mode=analytics-only` and `rebuild_dashboard` **off** (~28 min). Then confirm
+  `scripts/apply_analytical.sh` runs — the 03:00 UTC-3 (06:00 UTC) `daily_ingest`,
+  or, after explicit production approval, dispatch it with `mode=analytics-only`
+  and `rebuild_dashboard` **off** (~28 min). Then confirm
   `api.catalog()` reports the new `CATALOG_VERSION`.
 - **Dashboard:** `git.deploymentEnabled.main = false`, so a merge builds nothing; the
   site rebuilds from the nightly deploy hook, or dispatch `daily_ingest` with
-  `rebuild_dashboard=true`. Then fetch the public URL and grep for the change.
+  `rebuild_dashboard=true` after explicit deployment approval. Then fetch
+  the public URL and check for the change.
 
 ## Commands
 
