@@ -44,9 +44,11 @@ its unrelated settings and MCP changes are outside this plan.
   local hook is active, and the PR guard uses the same detector.
 - [x] After skills and traces: changed references resolve; executable tests
   cover persistence success, validation failures, storage failures and cleanup.
-- [ ] Complete: focused tests, required offline suite and CI pass; context is
-  below 32 KiB with a target of 28 KiB; mandatory-rule inventory is reviewed;
-  four focused commits and required docs are present in a ready-for-review PR.
+- [x] Local acceptance: focused tests and required offline suite pass; context
+  is below 28 KiB; mandatory-rule inventory is reviewed; four focused commits
+  and required docs are present.
+- Remote acceptance: the linked PR's check runs are the authority for CI and
+  review state. Do not treat local acceptance as a remote pass or deployment.
 
 ## Risks and verification limits
 
@@ -64,10 +66,13 @@ merge and deployment are distinct evidence. No deployment is part of this work.
 
 ## Current state
 
-All four local fixes are implemented. Secret regressions: 21 passed. Worker
-behavior/exposure/agent checks: 35 passed. The local hook is configured and
-executable. Full suite, independent review and remote CI are the final gate;
-production rollout remains separately gated.
+All four local fixes are implemented. Secret regressions: 22 passed. Worker
+behavior/exposure/agent checks: 35 passed. Full offline suite: 4,345 passed,
+25 skipped (102 seconds). The local hook is configured and executable. The
+independent reviewer found a Git color-output bypass, corrected with plain
+output and standard diff markers plus a regression. The operations page was
+trimmed to its existing 4 KiB cap (4,089 bytes). Remote CI is checked on the
+ready-for-review PR; production rollout remains separately gated.
 
 ## Mandatory-rule inventory for context reduction
 

@@ -6,7 +6,8 @@
 
 Everything above this heading is imported: `AGENTS.md`, the source of truth for
 every agent in this repository. Dataset notes are loaded on demand through
-`AGENTS.md` and the `silo` skill before touching those tables. Add or change a rule in `AGENTS.md`, never here. This file
+`AGENTS.md` and the `silo` skill before touching those tables. Add or change a
+rule in `AGENTS.md`, never here. This file
 exists because Claude Code loads `CLAUDE.md` when both files are present, and it
 holds only what is specific to Claude Code.
 
