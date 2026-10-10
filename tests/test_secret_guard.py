@@ -84,6 +84,14 @@ def test_clean_staged_blob_is_not_rejected_for_unstaged_content(repo):
     assert run(repo, "--staged").returncode == 0
 
 
+def test_forced_git_color_and_custom_diff_markers_cannot_bypass_detection(repo):
+    git(repo, "config", "color.ui", "always")
+    git(repo, "config", "diff.outputIndicatorNew", "!")
+    scheme = "postgres"
+    stage(repo, "a.txt", f'{scheme}://user:{PASSWORD}@example.invalid/db\n')
+    assert run(repo, "--staged").returncode == 1
+
+
 def test_ci_detects_committed_secret_after_bypassing_hook(repo):
     base = git(repo, "rev-parse", "HEAD").decode().strip()
     scheme = "postgresql"

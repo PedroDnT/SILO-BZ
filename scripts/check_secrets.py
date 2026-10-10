@@ -70,7 +70,8 @@ def check(*, staged: bool, base: str | None = None, head: str = "HEAD") -> list[
     rules: list[str] = []
     if any(private_dotenv(path) for path in paths):
         rules.append("private-dotenv")
-    diff = git("diff", *selection, "--no-renames", "--no-ext-diff", "--no-textconv", "--text", "--unified=0", "--")
+    diff = git("diff", *selection, "--no-color", "--no-renames", "--no-ext-diff", "--no-textconv",
+               "--text", "--unified=0", "--output-indicator-new=+", "--output-indicator-old=-", "--")
     if contains_password(added_content(diff)):
         rules.append("embedded-db-credentials")
     return rules
