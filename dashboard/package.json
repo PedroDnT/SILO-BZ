@@ -17,7 +17,7 @@
 	},
 	"devDependencies": {
 		"@evidence-dev/plugin-connector": "^2.1.15",
-		"pg": "^8.23.0",
+		"pg": "^8.23.1",
 		"typescript": "7.0.2"
 	},
 	"overrides": {
