@@ -838,9 +838,9 @@ def _detail_rows(lines, diag: Diagnostics) -> list[DetailRow]:
             continue
         row = dict(zip(header, cells))
         try:
-            saldo = parse_br_number(row["saldobruto"]) if "saldobruto" in row and is_money(row["saldobruto"]) else None
+            saldo = _detail_money(row.get("saldobruto"))
             qtd = _opt_number(row.get("quantidade"))
-            preco = parse_br_number(row["preco"]) if "preco" in row and is_money(row["preco"]) else None
+            preco = _detail_money(row.get("preco"))
             venc = _opt_date(row.get("vencimento"))
             inicial = _opt_date(row.get("datainicial"))
         except (ValueError, InvalidOperation):
@@ -865,8 +865,11 @@ _HEADER_WORDS = ("aplicado", "preco", "valor", "medio")
 
 
 def _carteira_strategy(text: str) -> str | None:
-    k = key(split_row(text)[0])
-    return k[: -len("emcarteira")] if k.endswith("emcarteira") and k[: -len("emcarteira")] in STRATEGIES else None
+    m = re.fullmatch(r"\s*(.+?)\s+Em\s+cart\s*eira\s+\d+(?:,\d+)?%\s+R\$\s*(\S+)\s*", text, re.IGNORECASE)
+    if m is None or not is_money(m[2]):
+        return None
+    k = key(m[1])
+    return k if k in STRATEGIES else None
 
 
 def _is_header_context(text: str) -> bool:
@@ -889,7 +892,10 @@ def _detail_rows_blocks(section, diag: Diagnostics) -> list[DetailRow]:
     def flush() -> None:
         nonlocal block
         if block and header is not None:
-            row = _block_row(block, header, taxa_lo, strat)
+            try:
+                row = _block_row(block, header, taxa_lo, strat)
+            except (ValueError, InvalidOperation):
+                row = None
             if row is None:
                 diag.detail_lines_unread += len(block)
             else:
@@ -933,7 +939,8 @@ def _block_row(block: list[str], header: list[str], taxa_lo: int | None, strat: 
     toks = [(m.start(), m.group()) for m in re.finditer(r"\S+", block[vi])]
     r_at = [i for i, (_, t) in enumerate(toks) if t == "R$"]
     moneys = [toks[i + 1][1] for i in r_at if i + 1 < len(toks) and is_money(toks[i + 1][1])]
-    if not moneys:
+    # Do not promote a net/applied balance to gross when the preceding monetary cell is unreadable.
+    if not moneys or len(moneys) != len(r_at):
         return None
     before = toks[: r_at[0]]
     dates = [i for i, (_, t) in enumerate(before) if _DATE_TOKEN.match(t)]
@@ -942,7 +949,7 @@ def _block_row(block: list[str], header: list[str], taxa_lo: int | None, strat: 
         name_end = dates[0]
         inicial = _opt_date(before[dates[0]][1])
         nxt = before[dates[0] + 1][1] if dates[0] + 1 < len(before) else None
-        qtd = parse_br_number(nxt) if nxt is not None and is_money(nxt) else None
+        qtd = _opt_number(nxt)
         if "vencimento" in header and len(dates) > 1:
             venc = _opt_date(before[dates[1]][1])
     else:
@@ -969,10 +976,18 @@ def _block_row(block: list[str], header: list[str], taxa_lo: int | None, strat: 
         saldo_bruto=parse_br_number(moneys[0]),
         quantidade=qtd,
         vencimento=venc,
-        taxa=" ".join(taxa_parts) or None,
+        taxa=" ".join(taxa_parts) if taxa_parts and any(t != "-" for t in taxa_parts) else None,
         preco=preco,
         data_inicial=inicial,
     )
+
+
+def _detail_money(tok: str | None) -> Decimal | None:
+    """Only detail monetary cells accept the printed currency prefix; validation stays strict."""
+    if tok is None:
+        return None
+    tok = re.sub(r"^R\$\s*", "", tok.strip())
+    return parse_br_number(tok) if is_money(tok) else None
 
 
 def _opt_number(tok: str | None) -> Decimal | None:

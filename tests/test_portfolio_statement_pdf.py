@@ -554,3 +554,108 @@ def test_layout_2026_08_detail_blocks_join_every_position():
 def test_detail_header_accepts_a_last_column_cut_at_the_page_edge():
     assert sp._detail_header("At ivo  Dat a Inicial  Saldo br ut o  Def") == ["ativo", "datainicial", "saldobruto"]
     assert sp._detail_header("At ivo  Dat a Inicial  Saldo br ut o  Xy") is None
+
+
+def _issue_751_detail_lines():
+    header = _at((0, "Ativo"), (32, "Data Inicial"), (50, "Quantidade"), (70, "Resgate"),
+                 (84, "Vencimento"), (100, "Taxa"), (118, "Saldo bruto"), (138, "Preço médio"),
+                 (158, "Saldo líquido"), (178, "Valor aplicado"), (198, "Defasagem"), (214, "Projeção"))
+    return [
+        "Detalhamento dos Ativos",
+        "Pós-fixado    Em cart eira 66,67%    R$ 150.000,00", header, "",
+        "EMISSOR", _at((0, "EXEMPLO"), (100, "105,00%")),
+        _at((0, "- CRA-"), (32, "01/01/2025"), (50, "100,00"), (70, "-"), (84, "15/03/2027"),
+            (118, "R$ 100.000,00"), (138, "-"), (158, "R$ 99.000,00"), (178, "R$ 90.000,00")),
+        _at((0, "CRA0250001*"), (100, "do CDI")), "",
+        "FUNDO GAMA",
+        _at((0, "CRED"), (32, "01/01/2025"), (50, "25.000,000000"), (70, "D+1"), (84, "-"),
+            (118, "R$ 50.000,00"), (138, "-"), (158, "R$ 50.000,00"), (178, "R$ 40.000,00")),
+        _at((0, "FIC FIRF*"), (100, "-")), "",
+        "Pré-fixado    Em cart eira 33,33%    R$ 100.000,00", header, "",
+        _at((0, "OUTRA EMISSORA"), (100, "CDI +")),
+        _at((0, "- CRI-"), (32, "03/03/2024"), (50, "200,00"), (70, "-"), (84, "03/03/2033"),
+            (118, "R$ 100.000,00"), (138, "-"), (158, "R$ 99.000,00"), (178, "R$ 80.000,00")),
+        _at((0, "24I1980390*"), (100, "1,80%")), "",
+    ]
+
+
+def _details(lines):
+    diag = sp.Diagnostics()
+    return sp._detail_rows([(1, i, t) for i, t in enumerate(lines)], diag), diag
+
+
+def test_detail_2026_08_wrapped_cells_and_strategy():
+    details, diag = _details(_issue_751_detail_lines())
+    assert (diag.detail_rows, diag.detail_lines_unread) == (3, 0)
+    assert [(d.name, d.strategy_key, d.saldo_bruto, d.quantidade, d.vencimento, d.taxa) for d in details] == [
+        ("EMISSOR EXEMPLO - CRA-CRA0250001*", "posfixado", D("100000"), D("100"), dt.date(2027, 3, 15), "105,00% do CDI"),
+        ("FUNDO GAMA CRED FIC FIRF*", "posfixado", D("50000"), D("25000"), None, None),
+        ("OUTRA EMISSORA - CRI-24I1980390*", "prefixado", D("100000"), D("200"), dt.date(2033, 3, 3), "CDI + 1,80%"),
+    ]
+    # Independently declared positions; visit the equal balance in the opposite strategy first.
+    positions = [
+        sp.Row("OUTRA EMISSORA - CRI-24I1980390*", D("100000"), "Renda Fixa", "Pré-fixado", "p1:l1"),
+        sp.Row("EMISSOR EXEMPLO - CRA-CRA0250001*", D("100000"), "Renda Fixa", "Pós-fixado", "p1:l2"),
+        sp.Row("FUNDO GAMA CRED FIC FIRF*", D("50000"), "Fundo de Investimento", "Pós-fixado", "p1:l3"),
+    ]
+    assert sp._join_detail(sp.Row("X", D("100000"), "Renda Fixa", "Inflação", "p1:l0"), details) is None
+    got = [sp._position_from_row(r, dt.date(2026, 8, 31), i, details, diag) for i, r in enumerate(positions)]
+    assert [p.taxa_texto for p in got] == ["CDI + 1,80%", "105,00% do CDI", None]
+    assert got[2].preco_unitario == D("2.00000000") and got[2].preco_implicito
+    assert all(d.used for d in details) and diag.detail_joined == 3
+    assert all(sp._join_detail(r, details) is None for r in positions)
+
+
+@pytest.mark.parametrize("heading", [
+    "Inflação    Em cart eira 60,00%    R$ 120.000,00",
+    "Inflação Em carteira 60,00% R$ 120.000,00",
+])
+def test_detail_decorated_heading_spacing_preserves_reconciliation(heading):
+    pages = layout_2026_08_with_detail()
+    old = _at((0, "Inflação"), (100, "Em cart eira 60,00%"), (125, "R$ 120.000,00"))
+    baseline, _ = parse_pdf_pages(layout_2026_08_pages())
+    st, diag = parse_pdf_pages(edit(pages, -1, old, heading))
+    assert (diag.detail_rows, diag.detail_joined, diag.detail_unmatched, diag.detail_lines_unread) == (4, 4, 0, 0)
+    assert [(p.linha_extrato, p.valor) for p in st.positions] == [(p.linha_extrato, p.valor) for p in baseline.positions]
+    assert st.sum_of_lines == st.stated_total == baseline.stated_total
+    assert all(ok for _, ok, _ in diag.checks)
+
+
+def test_detail_currency_prefix_with_standalone_strategy():
+    details, diag = _details([
+        "Detalhamento dos Ativos", "Pós-fixado",
+        "Ativo  Data Inicial  Quantidade  Vencimento  Taxa  Saldo bruto  Preço",
+        "FUNDO TESTE  01/01/2025  50,00  -  -  R$ 100.000,00  R$ 2.000,00",
+    ])
+    assert diag.detail_lines_unread == 0 and len(details) == 1
+    assert details[0].saldo_bruto == D("100000") and details[0].preco == D("2000")
+    assert sp._join_detail(sp.Row("FUNDO TESTE", D("100000"), "Fundo de Investimento", "Pós-fixado", "p1:l1"), details)
+
+
+@pytest.mark.parametrize("text", [
+    "Pós-fixado Em carteira FUNDO TESTE", "Pós-fixado Em carteira",
+    "Pós-fixado Em carteira 10,00% R$ inválido", "Pós-fixado Em carteira 10,00% R$ 10,00 cauda",
+])
+def test_detail_heading_does_not_accept_asset_or_incomplete_heading(text):
+    assert sp._carteira_strategy(text) is None
+
+
+@pytest.mark.parametrize("damage", ["two_values", "no_values", "invalid_date", "invalid_gross"])
+def test_detail_ambiguous_or_incomplete_block_is_unread_without_enrichment(damage):
+    lines = _issue_751_detail_lines()
+    # Isolate the first logical row and damage it while keeping its printed position independent.
+    lines = lines[:9]
+    numeric = lines[6]
+    if damage == "two_values":
+        lines.insert(7, numeric.replace("- CRA-", "OUTRO"))
+    elif damage == "no_values":
+        lines.pop(6)
+    elif damage == "invalid_date":
+        lines[6] = numeric.replace("15/03/2027", "31/02/2027")
+    else:
+        lines[6] = numeric.replace("R$ 100.000,00", "R$ inválido  ")
+    details, diag = _details(lines)
+    assert not details and diag.detail_lines_unread > 0
+    pos = sp._position_from_row(sp.Row("EMISSOR EXEMPLO - CRA-CRA0250001*", D("100000"), "Renda Fixa", "Pós-fixado", "p1:l1"),
+                                dt.date(2026, 8, 31), 1, details, diag)
+    assert (pos.quantidade, pos.vencimento, pos.taxa_texto, pos.preco_unitario) == (None, None, None, None)

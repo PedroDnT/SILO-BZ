@@ -64,6 +64,10 @@ with `R$` holds the values, the name wraps above and below it at the left, and t
 `Taxa` column (`IPCA` / `+` / `6,20%`). The reader reads that block shape only when a table opens
 with `Em carteira`; the older layout keeps its line reader. The join to positions is unchanged
 (strategy and value). A row with no `Data Inicial` (a ticker) reads name, then quantity.
+The decorated heading must include a percentage and a valid monetary total. Detail monetary
+cells accept the optional `R$` prefix without changing the shared money validator; quantities
+retain their printed precision and a rate of `-` stays absent. Blocks with zero or multiple
+value lines, invalid dates or unreadable monetary cells are counted as unread, never enriched.
 
 Names keep no stray spaces (#756): `-layout` splits words next to `t`, `f` and `r` (`Marf rig`),
 while `pdftotext -raw` on the same bytes (STDIN again) prints them whole. A run of 2 to 4 name
