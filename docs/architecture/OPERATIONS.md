@@ -39,6 +39,8 @@ after a run    publish_check  also runs when a Daily CVM Ingest run ends green, 
 ## Changes
 
 - PR → `test.yml` (pytest, SQL compile on an ephemeral Postgres) → auto-merge.
+  The pre-commit hook and PR CI share a sanitized guard for private dotenv
+  files and password-bearing database URLs; CI checks additions since the merge base.
   A PR touching `src/portfolio/` or `deploy/cloudflare/engine/` also runs
   `engine_image.yml`: it builds and smokes the engine image, publishes nothing.
 - A merge deploys nothing to the database. Migrations apply on the next
