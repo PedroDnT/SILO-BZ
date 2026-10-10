@@ -47,7 +47,7 @@ after a run    publish_check  also runs when a Daily CVM Ingest run ends green, 
   (`deploy/cloudflare/`, Worker plus engine Container) needs
   `deploy_cloudflare.yml`, which ends with a paid end-to-end report.
 - Dashboard merges do not publish: `vercel.json` disables production Git deploys.
-  The deploy hook publishes after a scheduled successful apply or a dispatch
+  The deploy hook publishes after a weekday scheduled apply or a dispatch
   with `rebuild_dashboard=true`.
 - Writers share the `supabase-ingest` concurrency group. Health and
   publish_check are read-only and may overlap.
