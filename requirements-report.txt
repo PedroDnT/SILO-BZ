@@ -12,4 +12,4 @@ weasyprint==70.0
 # (pdftotext) is absent; reportlab only builds the synthetic PDFs of the offline tests, which skip
 # without it.
 pypdf>=4.0
-reportlab>=4.0
+reportlab>=5.0.1
