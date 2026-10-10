@@ -25,4 +25,3 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
   fallback anywhere, because 3.09 is pre-statutory-participations profit, not net
   income, and banks do generally file 3.11; equity by name). `setor` is the partition
   key for peer comparisons — `/growth` ranks within sector for that reason.
-

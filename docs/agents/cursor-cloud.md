@@ -48,4 +48,3 @@ No `POSTGRES_URL` / Supabase credentials are needed for the core loop:
 - The `dashboard/` and `webapp/` Evidence.dev apps (`npm install && npm run sources &&
 npm run dev`) are read-only consumers that need a populated Supabase to render data.
 - `etf_market_snapshot` ingestion self-skips unless `APIFY_TOKEN` is set.
-
