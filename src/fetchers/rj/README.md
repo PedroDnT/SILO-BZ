@@ -48,7 +48,7 @@ maintenance, TJPE needs a login, and no public registry was found for TJSC.
 | `case_page_example`    | One case page that was opened                                                                           |
 | `fetch_error`, `notes` | What failed, and anything an adapter author needs to know                                               |
 
-Measured 2026-10-12: 258 AJ sites. 163 are `html`, 19 `js`, 10 `login`, 36
+Measured 2026-10-12: 258 AJ sites. 164 are `html`, 18 `js`, 10 `login`, 36
 `none` and 30 `fetch_error`. 149 show document links on a case page. Four sites
 disallow the case path in `robots.txt`, and no adapter may read them. 26
 candidate sites turned out not to be AJ sites and are not listed.
@@ -62,7 +62,8 @@ candidate sites turned out not to be AJ sites and are not listed.
 3. Every firm in a registry that matched no known site was searched by name.
    A site counts only when the page or a search result ties it to the firm.
 4. Every site was fetched, and its `robots.txt` was read.
-5. A random sample of 25 sites was fetched again to verify the classes.
+5. A random sample of 25 sites was fetched again. Every case list loaded, and
+   23 of 25 classes matched; the two mismatches were corrected.
 
 ## Limits
 
