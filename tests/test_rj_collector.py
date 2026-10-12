@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
 import httpx
@@ -34,6 +35,10 @@ EXPECTED = {
     "mpbadmjudicial.com.br": (22, "10050354620228110041", 1),
     "lasproconsultores.com.br": (197, "10004845020238260306", 0),
     "administradorjudicial.adv.br": (25, "50029393220208240062", 117),
+    "tpaj.com.br": (11, "50130793820268240023", 1),
+    "costapaivasantiago.com.br": (5, "50037171620238130672", 12),
+    "administradorajudicial.adv.br": (25, "50233417120258210021", 17),
+    "mvbrecuperacoesjudiciais.com.br": (23, "08158040420238190021", 7),
 }
 
 
@@ -68,6 +73,10 @@ def test_cnj_numbers_printed_and_bare():
     ("Decisão que deferiu o processamento da Recuperação Judicial", "", "decisao_deferimento"),
     ("Sentença de concessão da recuperação judicial", "", "sentenca_concessao"),
     ("Balanço Patrimonial 2023", "", "demonstracoes_contabeis"),
+    ("Decisão deferimento RJ", "", "decisao_deferimento"),
+    ("Decisão de deferimento da Recuperação Judicial e nomeação da Administradora Judicial", "", "decisao_deferimento"),
+    ("Pedido de Recuperação Judicial", "", "peticao_inicial"),
+    ("Edital 5003717-16.2023.8.13.0672-Relacao Credores", "", "relacao_credores_devedor"),
     ("Despacho que determinou perícia prévia", "", "outros"),
 ])
 def test_classify_tipo(title, section, tipo):
@@ -79,7 +88,7 @@ def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
     links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern)
     assert len(links) == n_cases
-    assert all(link.startswith(f"https://{site.domain}/") for link in links)
+    assert all(urlsplit(link).netloc in (site.domain, f"www.{site.domain}") for link in links)
     cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern)
     assert cp.numero_processo == numero
     assert cp.devedor_nome

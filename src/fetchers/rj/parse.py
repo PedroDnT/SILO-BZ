@@ -60,12 +60,12 @@ _TIPO_RULES: Sequence[tuple] = (
     # Art. 7, §2 is the AJ's own list. Art. 7, §1 is only the habilitation
     # deadline, printed inside the debtor's art. 52 edital, so it does not count.
     ("relacao_credores_aj", r"(art(igo|\.)?\s*7o?\W{0,4}§\s*2|segundo edital|2o edital|relacao de credores do (administrador|aj))"),
-    ("relacao_credores_devedor", r"(art\.?\s*52|artigo\s*52|primeiro edital|1o edital|art\.?\s*51|relacao (nominal )?de credores|lista de credores)"),
+    ("relacao_credores_devedor", r"(art\.?\s*52|artigo\s*52|primeiro edital|1o edital|art\.?\s*51|relacao (nominal )?(de )?credores|lista de credores)"),
     ("qgc", r"\b(qgc|quadro geral)\b"),
     ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades)\b"),
-    ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|inicial)\b"),
+    ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|inicial|pedido de recuperacao judicial)\b"),
     ("plano", r"\bplano\b"),
-    ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"),
+    ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*|\bdecisao\b.*\bdeferimento\b"),
     ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
 )
@@ -116,7 +116,7 @@ def case_links(page_html: str, base_url: str, pattern: str) -> List[str]:
 
 
 def _debtor(tree) -> Optional[str]:
-    heads = [h for h in (_text(h) for h in tree.xpath("//h1|//h2|//h3|//h4|//h5")) if h]
+    heads = [h for h in (_text(h) for h in tree.xpath("//h1|//h2|//h3|//h4|//h5|//h6")) if h]
     folded = [fold(h) for h in heads]
     if "processo" in folded:
         heads, folded = heads[folded.index("processo") + 1:], folded[folded.index("processo") + 1:]
@@ -162,13 +162,21 @@ def parse_case_page(page_html: str, base_url: str, doc_pattern: str) -> CasePage
     numbers = cnj_numbers(tree.text_content())
     rx = re.compile(doc_pattern)
     docs: List[DocLink] = []
-    seen = set()
+    by_url = {}
     for a in tree.xpath("//a[@href]"):
         url = urljoin(base_url, a.get("href").strip())
-        if not rx.search(url) or url in seen:
+        if not rx.search(url):
             continue
-        seen.add(url)
-        docs.append(DocLink(url=url, titulo=_title_of(a, url), section=_section_of(a)))
+        titulo = _title_of(a, url)
+        if url in by_url:
+            # The same file linked twice: an empty first anchor (an icon) takes
+            # the title of a later one, so the row is not left without a title.
+            if not by_url[url].titulo and titulo:
+                by_url[url].titulo = titulo
+                by_url[url].section = _section_of(a)
+            continue
+        by_url[url] = DocLink(url=url, titulo=titulo, section=_section_of(a))
+        docs.append(by_url[url])
     return CasePage(
         numero_processo=numbers[0] if numbers else None,
         devedor_nome=_debtor(tree),

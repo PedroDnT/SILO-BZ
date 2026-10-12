@@ -61,3 +61,35 @@ SITES += (
          doc_pattern=r"^https://ajud-mm\.s3\.amazonaws\.com/arquivos/[^?#]+\.pdf$",
          platform="custom, documents on S3"),
 )
+
+SITES += (
+    # Next.js site (TPAJ): /processos/<cuid> case pages; PDFs on media.tpaj.com.br.
+    # The list mixes recuperações judiciais and falências (the filter is client-side).
+    # The canonical host is www; the apex redirects to it.
+    Site(domain="tpaj.com.br", aj_name="Tussi & Platchek Administração Judicial",
+         list_urls=("https://www.tpaj.com.br/processos",),
+         case_pattern=r"^https://www\.tpaj\.com\.br/processos/[^/?#]+$",
+         doc_pattern=r"^https://media\.tpaj\.com\.br/uploads/[^?#]+\.pdf$",
+         platform="Next.js (server-rendered)"),
+    # Static HTML site by Italic: /recuperacao-judicial-<slug>.html, PDFs in /assets/files/.
+    Site(domain="costapaivasantiago.com.br", aj_name="Costa Paiva Santiago Administração Judicial",
+         list_urls=("https://costapaivasantiago.com.br/recuperacoes-judiciais.html",),
+         case_pattern=r"^https://costapaivasantiago\.com\.br/recuperacao-judicial-[^/?#]+\.html$",
+         doc_pattern=r"^https://costapaivasantiago\.com\.br/assets/files/[^?#]+\.pdf$",
+         platform="static HTML (Italic)"),
+    # Sentinela: the WordPress main site mirrors the case app; case pages carry the PDFs.
+    # (The case app, www.app.administradorajudicial.adv.br, is not read: its documents
+    # sit behind /media/download/<id> and carry no titles.)
+    Site(domain="administradorajudicial.adv.br", aj_name="Sentinela Administradora Judicial",
+         list_urls=("https://administradorajudicial.adv.br/categoria/recuperacao-judicial/",),
+         case_pattern=r"^https://administradorajudicial\.adv\.br/recuperacao-judicial/[^/?#]+/$",
+         doc_pattern=r"^https://administradorajudicial\.adv\.br/wp-content/uploads/[^?#]+\.pdf$",
+         platform="WordPress (Betheme)"),
+    # Wix dynamic-item pages /recuperacaojudicial/<slug>, files on usrfiles.com. The list
+    # widget paginates in JavaScript, so only its first page is read.
+    Site(domain="mvbrecuperacoesjudiciais.com.br", aj_name="MVB Consultores",
+         list_urls=("https://www.mvbrecuperacoesjudiciais.com.br/recuperacaojudicial",),
+         case_pattern=r"^https://www\.mvbrecuperacoesjudiciais\.com\.br/recuperacaojudicial/[^/?#]+$",
+         doc_pattern=r"^https://[0-9a-f-]+\.usrfiles\.com/ugd/[^?#]+\.pdf$",
+         platform="Wix"),
+)
