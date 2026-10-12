@@ -13,6 +13,7 @@ Every request the RJ collector sends goes through ``PoliteClient``:
 
 from __future__ import annotations
 
+import codecs
 import time
 import urllib.robotparser
 from dataclasses import dataclass
@@ -23,6 +24,26 @@ import httpx
 
 USER_AGENT = "SILO-BZ RJ collector (+https://github.com/PedroDnT/SILO-BZ)"
 MIN_INTERVAL_S = 1.0
+
+
+def _percent_bytes(err: UnicodeDecodeError):
+    """Keep the bytes of an invalid UTF-8 sequence as %XX rather than U+FFFD.
+
+    Some sites print a file name in a legacy encoding inside a UTF-8 page. As %XX
+    the link is the exact bytes the site wrote and still opens; as U+FFFD it
+    would be a different, dead address.
+    """
+    return "".join(f"%{b:02X}" for b in err.object[err.start:err.end]), err.end
+
+
+codecs.register_error("rj_percent_bytes", _percent_bytes)
+
+
+def decode_body(resp: httpx.Response) -> str:
+    """The body as text: the declared charset when there is one, else UTF-8."""
+    if resp.charset_encoding:
+        return resp.text
+    return resp.content.decode("utf-8", errors="rj_percent_bytes")
 
 
 class FetchError(RuntimeError):
@@ -117,4 +138,4 @@ class PoliteClient:
         resp = self._get(url)
         if resp.status_code != 200:
             raise FetchError(url, resp.status_code)
-        return Page(url=str(resp.url), status=resp.status_code, text=resp.text)
+        return Page(url=str(resp.url), status=resp.status_code, text=decode_body(resp))

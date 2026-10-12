@@ -69,7 +69,7 @@ def harvest_site(site: Site, client: PoliteClient, seen_at: datetime) -> SiteHar
     urls: List[str] = []
     for list_url in site.list_urls:
         page = client.get(list_url)  # raises FetchError / RobotsDisallowed
-        for u in case_links(page.text, page.url, site.case_pattern):
+        for u in case_links(page.text, page.url, site.case_pattern, site.case_text):
             if u not in urls:
                 urls.append(u)
     for url in urls:
@@ -79,7 +79,7 @@ def harvest_site(site: Site, client: PoliteClient, seen_at: datetime) -> SiteHar
             out.failed_pages.append(f"{url} ({e})")
             continue
         out.case_pages += 1
-        cp = parse_case_page(page.text, page.url, site.doc_pattern)
+        cp = parse_case_page(page.text, page.url, site.doc_pattern, site.debtor_xpath)
         if not cp.numero_processo:
             out.without_number.append(page.url)
             continue

@@ -34,6 +34,15 @@ EXPECTED = {
     "mpbadmjudicial.com.br": (22, "10050354620228110041", 1),
     "lasproconsultores.com.br": (197, "10004845020238260306", 0),
     "administradorjudicial.adv.br": (25, "50029393220208240062", 117),
+    # Batch 1, read 2026-10-12. n2wbrasil lists 6 cases, 1 of them a recuperação judicial; cb2d lists
+    # 72, 30 of them recuperação judicial; trustdobrasil's list page holds 4 RJ cases.
+    "pmmadv.com.br": (14, "11559062020248260100", 17),
+    "n2wbrasil.com.br": (1, "10001656420258260354", 12),
+    "trustdobrasil.com.br": (4, "11155260420148260100", 29),
+    "cb2d.com.br": (30, "50038749820228210090", 24),
+    "integrarecuperacaojudicial.com.br": (17, "00198130520258172001", 2),
+    "valorizeadmjudicial.com.br": (18, "10435294320238110041", 10),
+    "jscadministracaojudicial.com.br": (6, "00147714320258272729", 2),
 }
 
 
@@ -69,6 +78,12 @@ def test_cnj_numbers_printed_and_bare():
     ("Sentença de concessão da recuperação judicial", "", "sentenca_concessao"),
     ("Balanço Patrimonial 2023", "", "demonstracoes_contabeis"),
     ("Despacho que determinou perícia prévia", "", "outros"),
+    ("Decisão de deferimento da recuperação judicial - 20.02.2024", "", "decisao_deferimento"),
+    ("Deferimento do pedido de Recuperação Judicial", "", "decisao_deferimento"),
+    ("Decisão de Processamento da RJ", "", "decisao_deferimento"),
+    ("Homologação do Plano de Recuperação Judicial, conforme art. 58 da Lei 11.101/05", "", "sentenca_concessao"),
+    ("Lista de Credores AJ - Comercial Mabruk Ltda.", "", "relacao_credores_aj"),
+    ("Decisão de deferimento da prorrogação do stay period da recuperação judicial", "", "outros"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo
@@ -77,10 +92,10 @@ def test_classify_tipo(title, section, tipo):
 @pytest.mark.parametrize("site", SITES, ids=lambda s: s.domain)
 def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
-    links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern)
+    links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text)
     assert len(links) == n_cases
-    assert all(link.startswith(f"https://{site.domain}/") for link in links)
-    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern)
+    assert all(link.startswith((f"https://{site.domain}/", f"https://www.{site.domain}/")) for link in links)
+    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern, site.debtor_xpath)
     assert cp.numero_processo == numero
     assert cp.devedor_nome
     assert len(cp.documents) == n_docs
@@ -259,3 +274,36 @@ def test_robots_follows_rfc_9309_on_errors():
     assert _client(routes_for(403)).get("https://s3.example/doc.pdf").text == "ok"
     with pytest.raises(RobotsDisallowed):
         _client(routes_for(503)).get("https://aj.example/processos")
+
+
+# ---------------------------------------------------------------------------
+# Batch 1 parsing rules (#845)
+# ---------------------------------------------------------------------------
+def test_relative_links_follow_base_href_and_drop_the_fragment():
+    page = ('<html><head><base href="https://www.aj.example/"></head><body>'
+            '<a href="processos/rj/alfa#topo">Alfa</a><a href="/menu">Menu</a></body></html>')
+    assert case_links(page, "http://aj.example/processos/rj", r"/processos/rj/[^/]+$") == [
+        "https://www.aj.example/processos/rj/alfa"]
+
+
+def test_download_links_take_their_title_from_the_text_before_them():
+    page = ('<p>:: Plano - <a href="/f/plano.pdf"><b>DOWNLOAD AQUI</b></a><br>'
+            ':: Edital - <a href="/f/edital.pdf">Baixar</a></p>')
+    cp = parse_case_page(page, "https://aj.example/c", r"/f/")
+    assert [d.titulo for d in cp.documents] == ["Plano", "Edital"]
+
+
+def test_a_utf8_page_with_a_legacy_encoded_file_name_keeps_the_bytes():
+    resp = httpx.Response(200, content=b'<a href="a-art-52-\xe2\xa71o.pdf">Edital \xc3\xa7</a>')
+    assert rj_client.decode_body(resp) == '<a href="a-art-52-%E2%A71o.pdf">Edital ç</a>'
+    trust = next(s for s in SITES if s.domain == "trustdobrasil.com.br")
+    cp = parse_case_page(_fixture(trust.domain, "case"), "https://www.trustdobrasil.com.br/x", trust.doc_pattern)
+    assert any("%E2%A71o" in d.url for d in cp.documents)
+    assert not any("�" in d.url for d in cp.documents)
+
+
+def test_mixed_lists_keep_only_the_case_type_the_site_names():
+    cb2d = next(s for s in SITES if s.domain == "cb2d.com.br")
+    page = _fixture(cb2d.domain, "list")
+    assert len(case_links(page, cb2d.list_urls[0], cb2d.case_pattern)) == 72
+    assert len(case_links(page, cb2d.list_urls[0], cb2d.case_pattern, cb2d.case_text)) == 30
