@@ -72,7 +72,7 @@ _TIPO_RULES: Sequence[tuple] = (
     ("plano", r"\bplano\b|^[\d\W]*prj$"),
     ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"
                             r"|\bdefer\w*\s+(d[aeo]s?\s+)?(pedido\s+(d[ea]\s+)?)?(recuperacao judicial|rj)\b"
-                            r"|\b(decisao|despacho)( de)? processamento d[ao] (rj|recuperacao judicial)\b|\bdef\b.*\bproc\b"),
+                            r"|\b(decisao|despacho)( de)? processamento d[ao] (rj|recuperacao judicial)\b|\bdecisao defer\w*\s+(a\s+)?recuperacao\s*$|\bdef\b.*\bproc\b"),
     ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*|conced\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
 )
@@ -259,6 +259,18 @@ def _context_title(a) -> str:
     return text if 0 < len(text) <= 200 else ""
 
 
+def _list_item_title(a) -> str:
+    """For a "Download" button inside a list item: the item's own text (its date
+    line, in <small>, left out). Empty when the item holds several links, so one
+    item never lends its text to more than one file."""
+    items = a.xpath("ancestor::li[1]")
+    if not items or len(items[0].xpath(".//a[@href]")) != 1:
+        return ""
+    parts = items[0].xpath(".//text()[not(ancestor::small) and not(ancestor::a)]")
+    text = re.sub(r"\s+", " ", " ".join(parts)).strip()
+    return text if 0 < len(text) <= 200 else ""
+
+
 def _title_of(a, url: str, title_xpath: str = "") -> str:
     nome = parse_qs(urlsplit(url).query).get("nome")
     if nome and nome[0].strip():
@@ -277,7 +289,7 @@ def _title_of(a, url: str, title_xpath: str = "") -> str:
         return kids[0]
     text = _text(a)
     if fold(text) in _GENERIC_LINK_TEXT or _GENERIC_LABEL.match(fold(text)):
-        found = (_xpath_title(a, title_xpath) if title_xpath else "") or _nearby_title(a) or _context_title(a)
+        found = (_xpath_title(a, title_xpath) if title_xpath else "") or _nearby_title(a) or _list_item_title(a) or _context_title(a)
         if found:
             return found
     if text:

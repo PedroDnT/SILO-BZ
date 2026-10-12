@@ -1,0 +1,335 @@
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="imgs/logozzvt.png" type="image/png">
+    <title>Recuperação Judicial e Falências | Escritório de Advocacia Zveiter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&amp;family=Tenor+Sans&amp;family=Montserrat:wght@300;400;500&amp;display=swap" rel="stylesheet">
+    </head>
+<body>
+
+    <!-- NAVBAR -->
+    <nav id="navbar">
+        <div class="nav-logo">
+            <a href="/">
+                <img src="imgs/novalogozvt.png" alt="Escritório de Advocacia Zveiter">
+            </a>
+        </div>
+
+        <ul class="nav-links">
+            <li><a href="/institucional">Institucional</a></li>
+            <li><a href="/profissionais">Profissionais</a></li>
+            <li class="has-dropdown">
+                <a class="nav-btn" href="/especialidades">Especialidades</a>
+                <div class="dropdown-panel wide">
+                    <a href="/especialidades#empresarial">Empresarial e Societário</a>
+                    <a href="/especialidades#imobiliario">Direito Imobiliário, Notarial e Registral</a>
+                    <a href="/especialidades#propriedade-intelectual">Comunicação e Propriedade Intelectual</a>
+                    <a href="/especialidades#sucessorio">Direito Sucessório e Família</a>
+                    <a href="/especialidades#ambiental">Direito Ambiental</a>
+                    <a href="/especialidades#saude-suplementar">Direito de Saúde Suplementar</a>
+                    <a href="/especialidades#desportivo">Direito Desportivo e do Entretenimento</a>
+                    <a href="/especialidades#recuperacao">Recuperação Judicial e Falência</a>
+                    <a href="/especialidades#tributario">Contencioso Tributário</a>
+                    <a href="/especialidades#administrativo">Direito Administrativo</a>
+                    <a href="/especialidades#arbitragem">Arbitragem e Mediação</a>
+                    <a href="/especialidades#consumidor">Direito do Consumidor</a>
+                    <a href="/especialidades#eleitoral">Direito Eleitoral</a>
+                    <a href="/especialidades#saneamento">Direito ao Saneamento Básico</a>
+                </div>
+            </li>
+            <li class="has-dropdown">
+                <a class="nav-btn active" href="/recuperacao">Recuperações</a>
+                <div class="dropdown-panel">
+                    <a href="/grppetro">Grupo Petrópolis</a>
+                    <a href="/americanas">Grupo Americanas</a>
+                    <a href="/mintucano">Mina Tucano</a>
+                    <a href="/gas">G.A.S. Consultoria</a>
+                    <a href="/transporte">Transporte Campo Grande &amp; Viação Penha</a>
+                    <a href="/transcarioca">Consórcio Transcarioca</a>
+                    <a href="/stcruz">Consórcio Santa Cruz</a>
+                    <a href="/airmix">Airmix — Falência</a>
+                    <a href="/kpfr">KPFR Empreendimentos</a>
+                    <a href="/rodopetro">Rodopetro</a>
+                    <a href="/qldtotal">Qualidade Total</a>
+                    <a href="/rnr">RNR Montagens</a>
+                    <a href="/canaamates">Canaã Mates — Falência</a>
+                    <a href="/txrx">TX RX — Falência</a>
+                    <a href="/costapereira">Costa Pereira Bokel</a>
+                </div>
+            </li>
+            <div class="nav-divider"></div>
+            <li><a href="/contato">Contato</a></li>
+        </ul>
+
+        <button class="hamburger" id="hamburger" aria-label="Menu">
+            <span></span><span></span><span></span>
+        </button>
+    </nav>
+
+    <!-- Mobile Menu -->
+    <div class="mobile-menu" id="mobileMenu">
+        <div class="menu-item">
+            <a href="/institucional">Institucional</a>
+        </div>
+        <div class="menu-item">
+            <a href="/profissionais">Profissionais</a>
+        </div>
+        <div class="menu-item" id="menuEspecialidades">
+            <button class="menu-toggle" onclick="toggleMenu('menuEspecialidades')">
+                Especialidades <span class="menu-toggle-icon">+</span>
+            </button>
+            <div class="sub-links">
+                <a href="/especialidades#empresarial">Empresarial e Societário</a>
+                <a href="/especialidades#imobiliario">Direito Imobiliário, Notarial e Registral</a>
+                <a href="/especialidades#propriedade-intelectual">Comunicação e Propriedade Intelectual</a>
+                <a href="/especialidades#sucessorio">Direito Sucessório e Família</a>
+                <a href="/especialidades#ambiental">Direito Ambiental</a>
+                <a href="/especialidades#saude-suplementar">Direito de Saúde Suplementar</a>
+                <a href="/especialidades#desportivo">Direito Desportivo e do Entretenimento</a>
+                <a href="/especialidades#recuperacao">Recuperação Judicial e Falência</a>
+                <a href="/especialidades#tributario">Contencioso Tributário</a>
+                <a href="/especialidades#administrativo">Direito Administrativo</a>
+                <a href="/especialidades#arbitragem">Arbitragem e Mediação</a>
+            </div>
+        </div>
+        <div class="menu-item" id="menuRecuperacoes">
+            <button class="menu-toggle" onclick="toggleMenu('menuRecuperacoes')">
+                Recuperações <span class="menu-toggle-icon">+</span>
+            </button>
+            <div class="sub-links">
+                <a href="/grppetro">Grupo Petrópolis</a>
+                <a href="/americanas">Grupo Americanas</a>
+                <a href="/mintucano">Mina Tucano</a>
+                <a href="/gas">G.A.S. Consultoria</a>
+                <a href="/transporte">Transporte Campo Grande &amp; Viação Penha</a>
+                <a href="/transcarioca">Consórcio Transcarioca</a>
+                <a href="/stcruz">Consórcio Santa Cruz</a>
+                <a href="/airmix">Airmix — Falência</a>
+                <a href="/kpfr">KPFR Empreendimentos</a>
+                <a href="/rodopetro">Rodopetro</a>
+                <a href="/qldtotal">Qualidade Total</a>
+                <a href="/rnr">RNR Montagens</a>
+                <a href="/canaamates">Canaã Mates — Falência</a>
+                <a href="/txrx">TX RX — Falência</a>
+                <a href="/costapereira">Costa Pereira Bokel</a>
+            </div>
+        </div>
+        <div class="menu-item">
+            <a href="/contato">Contato</a>
+        </div>
+    </div>
+
+    <!-- ========================
+         HERO
+    ======================== -->
+    <section class="hero" id="hero">
+        <div class="hero-slide active">
+            <img src="imgs/imgsitesala.jpeg" alt="Escritório Zveiter">
+        </div>
+        <div class="hero-slide">
+            <img src="imgs/IMG_4262-editada.JPG" alt="Escritório Zveiter">
+        </div>
+        <div class="hero-slide">
+            <img src="imgs/IMG_4384-editada.JPG" alt="Escritório Zveiter">
+        </div>
+
+        <div class="hero-overlay"></div>
+
+        <div class="hero-content">
+            <div class="hero-label">Escritório de Advocacia Zveiter</div>
+            <h1 class="hero-title">Recuperações<br><em>Judiciais e Falências</em></h1>
+        </div>
+    </section>
+
+    <!-- ========================
+         INTRO
+    ======================== -->
+    <section class="intro-section">
+        <div class="intro-sidebar">
+            <div class="intro-label">Nossa Atuação</div>
+            <h2 class="intro-heading">Expertise em<br>reestruturação<br><em>empresarial</em></h2>
+            <div class="intro-stat">15</div>
+            <div class="intro-stat-label">Casos representados</div>
+        </div>
+        <div>
+            <p class="intro-text">
+                O Escritório de Advocacia Zveiter possui vasta experiência na atuação em processos de Recuperação Judicial e Falência, representando credores, devedores e administradores judiciais nas mais complexas reestruturações empresariais do país. Nossa equipe atua com dedicação e estratégia para assegurar os interesses dos clientes em todas as fases do processo, desde a apresentação do plano de recuperação até o encerramento do procedimento concursal.
+            </p>
+        </div>
+    </section>
+
+    <!-- ========================
+         CASES
+    ======================== -->
+    <section class="cases-section">
+        <div class="section-rule"></div>
+
+        <!-- Recuperações Judiciais -->
+        <div class="cases-group">
+            <div class="cases-group-header">
+                <span class="cases-group-label">Recuperação Judicial</span>
+                <div class="cases-group-line"></div>
+            </div>
+            <div class="cases-grid">
+
+                <a class="case-card" href="/grppetro">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">Grupo Petrópolis</div>
+                    <div class="case-subtitle">Grupo Petrópolis S.A. e outras</div>
+                </a>
+
+                <a class="case-card" href="/americanas">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">Grupo Americanas</div>
+                    <div class="case-subtitle">Americanas S.A. e outras</div>
+                </a>
+
+                <a class="case-card" href="/mintucano">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">Mina Tucano</div>
+                    <div class="case-subtitle">Recuperação Judicial</div>
+                </a>
+
+                <a class="case-card" href="/kpfr">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">KPFR Empreendimentos</div>
+                    <div class="case-subtitle">KPFR Empreendimentos Ltda.</div>
+                </a>
+
+                <a class="case-card" href="/transporte">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">Transporte Campo Grande &amp; Viação Penha</div>
+                    <div class="case-subtitle">Transporte Campo Grande Ltda. e Viação Penha Rio Ltda.</div>
+                </a>
+
+                <a class="case-card" href="/transcarioca">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">Consórcio Transcarioca</div>
+                    <div class="case-subtitle">Consórcio Transcarioca de Transportes</div>
+                </a>
+
+                <a class="case-card" href="/stcruz">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">Consórcio Santa Cruz</div>
+                    <div class="case-subtitle">Consórcio Santa Cruz Transportes</div>
+                </a>
+
+                <a class="case-card" href="/rodopetro">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">Rodopetro</div>
+                    <div class="case-subtitle">Rodopetro Distribuidora de Petróleo Ltda.</div>
+                </a>
+
+                <a class="case-card" href="/rnr">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">RNR Montagens</div>
+                    <div class="case-subtitle">RNR Montagens Elétricas e Hidráulicas Ltda. — EPP</div>
+                </a>
+
+                <a class="case-card" href="/qldtotal">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">Qualidade Total</div>
+                    <div class="case-subtitle">Qualidade Total Operadora de Recursos Humanos Ltda.</div>
+                </a>
+
+                <a class="case-card" href="/costapereira">
+                    <div class="case-badge">Recuperação Judicial</div>
+                    <div class="case-name">Costa Pereira Bokel</div>
+                    <div class="case-subtitle">Costa Pereira Bokel Engenharia e Construções S.A.</div>
+                </a>
+
+            </div>
+        </div>
+
+        <!-- Falências -->
+        <div class="cases-group">
+            <div class="cases-group-header">
+                <span class="cases-group-label">Falência</span>
+                <div class="cases-group-line"></div>
+            </div>
+            <div class="cases-grid">
+
+                <a class="case-card" href="/airmix">
+                    <div class="case-badge">Falência Encerrada</div>
+                    <div class="case-name">Airmix</div>
+                    <div class="case-subtitle">Airmix Ar Condicionado Ltda.</div>
+                </a>
+
+                <a class="case-card" href="/txrx">
+                    <div class="case-badge">Falência</div>
+                    <div class="case-name">TX RX</div>
+                    <div class="case-subtitle">TX RX Global Communication Ltda. ME</div>
+                </a>
+
+                <a class="case-card" href="/canaamates">
+                    <div class="case-badge">Falência</div>
+                    <div class="case-name">Canaã Mates</div>
+                    <div class="case-subtitle">Canaã Mates Comércio de Alimentos Eireli</div>
+                </a>
+
+            </div>
+        </div>
+
+        <!-- Ação Civil Pública -->
+        <div class="cases-group">
+            <div class="cases-group-header">
+                <span class="cases-group-label">Ação Civil Pública / Tutela Cautelar / Falência</span>
+                <div class="cases-group-line"></div>
+            </div>
+            <div class="cases-grid">
+
+                <a class="case-card" href="/gas">
+                    <div class="case-badge">Ação Civil Pública · Tutela Cautelar · Falência</div>
+                    <div class="case-name">G.A.S. Consultoria</div>
+                    <div class="case-subtitle">G.A.S. Consultoria e Administração Ltda.</div>
+                </a>
+
+            </div>
+        </div>
+
+    </section>
+
+    <!-- ========================
+         FOOTER
+    ======================== -->
+    <footer>
+        <div class="footer-inner">
+            <div class="footer-top">
+                <div class="footer-brand">
+                    <img src="imgs/zveiterrodape.png" alt="Escritório de Advocacia Zveiter" style="height:28px; max-width:100%; opacity:0.85; margin-bottom:20px; display:block;">
+                    <p>Fundado em 1957, o Escritório Zveiter é referência em advocacia de excelência no Brasil.</p>
+                </div>
+                <div class="footer-address">
+                    <div class="footer-col-title">Rio de Janeiro</div>
+                    <strong>Sede Principal</strong>
+                    <p>Av. Presidente Antônio Carlos nº 51<br>19º e 20º andares, Centro<br>Rio de Janeiro — RJ</p>
+                    <p>Tel.: 55 (00) 0000-0000</p>
+                    <a href="https://maps.app.goo.gl/bw6XGbnmrtH9fzNT8" target="_blank">Ver no mapa →</a>
+                </div>
+                <div class="footer-address">
+                    <div class="footer-col-title">São Paulo</div>
+                    <strong>Escritório SP</strong>
+                    <p>Avenida Paulista, nº 777<br>Jardim Paulista, 7º andar<br>São Paulo — SP</p>
+                    <p>Tel.: 55 (00) 0000-0000</p>
+                </div>
+                <div class="footer-address">
+                    <div class="footer-col-title">Brasília</div>
+                    <strong>Escritório BSB</strong>
+                    <p>Tel.: 55 (00) 0000-0000</p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p class="footer-copy">© 2025 Escritório de Advocacia Zveiter. Todos os direitos reservados.</p>
+                <div class="footer-social">
+                    <a href="https://www.linkedin.com/company/escritoriodeadvocaciazveiter" target="_blank" rel="noopener" aria-label="LinkedIn">
+                        <svg viewbox="0 0 448 512"><path d="M100.28 448H7.4V148.9h92.88zM53.79 108.1C24.09 108.1 0 83.5 0 53.8a53.79 53.79 0 0 1 107.58 0c0 29.7-24.1 54.3-53.79 54.3zM447.9 448h-92.68V302.4c0-34.7-.7-79.2-48.29-79.2-48.29 0-55.69 37.7-55.69 76.7V448h-92.78V148.9h89.08v40.8h1.3c12.4-23.5 42.69-48.3 87.88-48.3 94 0 111.28 61.9 111.28 142.3V448z"></path></svg>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    </body>
+</html>
