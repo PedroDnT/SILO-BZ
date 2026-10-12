@@ -70,6 +70,10 @@ EXPECTED = {
     "rlg-aj.com.br": (13, "50114607620258210028", 18),
     "clesciogalvao.adv.br": (2, "50020627320188130384", 7),
     "fatorfiscal.com.br": (3, "00011573120188080017", 35),
+    # Batch 10, read 2026-10-12.
+    "calc.com.br": (12, "00223780920188160030", 11),
+    "ricardobiancardi.com.br": (7, "50486715820248080024", 34),
+    "adjud.com.br": (3, "00383283920138260100", 5),
 }
 
 
@@ -139,7 +143,8 @@ def test_classify_tipo(title, section, tipo):
 @pytest.mark.parametrize("site", SITES, ids=lambda s: s.domain)
 def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
-    links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text)
+    links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text,
+                       site.case_anchors_xpath)
     assert len(links) == n_cases
     hosts = {urlsplit(link).hostname for link in links}
     assert all(h == site.domain or h.endswith("." + site.domain) for h in hosts), hosts
@@ -375,3 +380,18 @@ def test_icon_only_links_are_titled_from_the_file_name_and_rows_can_be_links():
     site = next(s for s in SITES if s.domain == "fvsadmj.com.br")
     cp = parse_case_page(_fixture(site.domain, "case"), site.list_urls[0], site.doc_pattern)
     assert [d.titulo for d in cp.documents] == ["Deferimento recuperacao CHAMA", "LISTA DE CREDORES"]
+
+
+def test_adjud_reads_only_recuperacao_cards():
+    site = next(s for s in SITES if s.domain == "adjud.com.br")
+    page = _fixture(site.domain, "list")
+    every = case_links(page, site.list_urls[0], site.case_pattern)
+    kept = case_links(page, site.list_urls[0], site.case_pattern, site.case_text, site.case_anchors_xpath)
+    assert len(kept) == 3 and len(every) > 20 and set(kept) <= set(every)
+
+
+def test_title_debtor_accepts_an_en_dash_separator():
+    site = next(s for s in SITES if s.domain == "adjud.com.br")
+    cp = parse_case_page(_fixture(site.domain, "case"), "https://adjud.com.br/devedoras/interteck/",
+                         site.doc_pattern, debtor_from_title=True)
+    assert cp.devedor_nome == "Interteck"

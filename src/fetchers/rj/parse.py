@@ -132,18 +132,21 @@ def _same_host_https(page_url: str, url: str) -> str:
     return url
 
 
-def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = "") -> List[str]:
+def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = "",
+               anchors_xpath: str = "") -> List[str]:
     """Case page URLs on a list page: every anchor whose URL matches ``pattern``.
 
     ``text_pattern`` (optional) is a regex the anchor's folded text must also
     match, for lists that mix case types and print the type only in the card.
+    ``anchors_xpath`` (optional) narrows the anchors considered to those it selects,
+    for lists whose cards carry the type as a class on a container (ADJUD).
     """
     tree = lxml_html.fromstring(page_html)
     base = _base(tree, base_url)
     rx = re.compile(pattern)
     trx = re.compile(text_pattern) if text_pattern else None
     out: List[str] = []
-    for a in tree.xpath("//a[@href]"):
+    for a in tree.xpath(anchors_xpath or "//a[@href]"):
         url = _same_host_https(base_url, _absolute(base, a.get("href")))
         if trx is not None and not trx.search(fold(_text(a))):
             continue
@@ -276,9 +279,10 @@ def _nearby_title(a) -> str:
 
 
 def _debtor_from_title(tree) -> Optional[str]:
-    """The debtor as the page <title> names it: "<debtor> - <site name>"."""
+    """The debtor as the page <title> names it: "<debtor> - <site name>" (hyphen or en/em dash)."""
     title = _text(tree.xpath("//title")[0]) if tree.xpath("//title") else ""
-    name = title.rsplit(" - ", 1)[0].strip() if " - " in title else ""
+    parts = re.split(r"\s[-\u2013\u2014]\s", title)
+    name = " - ".join(parts[:-1]).strip() if len(parts) > 1 else ""
     return name or None
 
 
