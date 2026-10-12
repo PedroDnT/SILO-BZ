@@ -8,6 +8,7 @@ import csv
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -34,6 +35,11 @@ EXPECTED = {
     "mpbadmjudicial.com.br": (22, "10050354620228110041", 1),
     "lasproconsultores.com.br": (197, "10004845020238260306", 0),
     "administradorjudicial.adv.br": (25, "50029393220208240062", 117),
+    "fvsadmj.com.br": (3, "10398814220258260114", 2),
+    "excelia-aj.com.br": (27, "10124090620178260451", 64),
+    "expertisemais.com.br": (31, "10943620220228260100", 67),
+    "tapxure.com.br": (9, "10008254320258260359", 8),
+    "erikasantiago.adv.br": (10, "50010497720178130027", 4),
 }
 
 
@@ -69,6 +75,11 @@ def test_cnj_numbers_printed_and_bare():
     ("Sentença de concessão da recuperação judicial", "", "sentenca_concessao"),
     ("Balanço Patrimonial 2023", "", "demonstracoes_contabeis"),
     ("Despacho que determinou perícia prévia", "", "outros"),
+    ("Decisão de deferimento de Recuperação Judicial: 08.09.2022;", "", "decisao_deferimento"),
+    ("DECISAO - DEFERIMENTO RJ", "", "decisao_deferimento"),
+    ("CARLOS PERES DECISAO DEF PROC RJ E NOMEACAO TAPXURE", "", "decisao_deferimento"),
+    ("Decisão homologatória concedendo a recuperação judicial", "", "sentenca_concessao"),
+    ("Relatório Inicial da Administradora Judicial;", "", "outros"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo
@@ -79,7 +90,7 @@ def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
     links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern)
     assert len(links) == n_cases
-    assert all(link.startswith(f"https://{site.domain}/") for link in links)
+    assert all(urlsplit(link).hostname.removeprefix("www.") == site.domain for link in links)
     cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern)
     assert cp.numero_processo == numero
     assert cp.devedor_nome
@@ -259,3 +270,10 @@ def test_robots_follows_rfc_9309_on_errors():
     assert _client(routes_for(403)).get("https://s3.example/doc.pdf").text == "ok"
     with pytest.raises(RobotsDisallowed):
         _client(routes_for(503)).get("https://aj.example/processos")
+
+
+def test_icon_only_links_are_titled_from_the_file_name_and_rows_can_be_links():
+    # FVS: the case list rows carry the URL in onclick; the document anchors hold only an icon.
+    site = next(s for s in SITES if s.domain == "fvsadmj.com.br")
+    cp = parse_case_page(_fixture(site.domain, "case"), site.list_urls[0], site.doc_pattern)
+    assert [d.titulo for d in cp.documents] == ["Deferimento recuperacao CHAMA", "LISTA DE CREDORES"]

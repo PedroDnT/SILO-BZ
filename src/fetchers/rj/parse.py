@@ -12,7 +12,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
-from urllib.parse import parse_qs, urljoin, urlsplit
+from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 
 from lxml import html as lxml_html
 
@@ -63,10 +63,12 @@ _TIPO_RULES: Sequence[tuple] = (
     ("relacao_credores_devedor", r"(art\.?\s*52|artigo\s*52|primeiro edital|1o edital|art\.?\s*51|relacao (nominal )?de credores|lista de credores)"),
     ("qgc", r"\b(qgc|quadro geral)\b"),
     ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades)\b"),
-    ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|inicial)\b"),
+    # "Relatório Inicial" is the AJ's first report, not the debtor's petition.
+    ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|(?<!relatorio )inicial)\b"),
     ("plano", r"\bplano\b"),
-    ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"),
-    ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*)\b.*\brecuperacao\b"),
+    ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"
+                          r"|\bdeferimento\b.*\b(recuperacao|rj)\b|\b(recuperacao|rj)\b.*\bdeferimento\b|\bdef\b.*\bproc\b"),
+    ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*|conced\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
 )
 
@@ -99,6 +101,9 @@ class CasePage:
     other_numbers: List[str] = field(default_factory=list)
 
 
+_ONCLICK_URL = re.compile(r"""location(?:\.href)?\s*=\s*['"]([^'"]+)['"]""")
+
+
 def _text(el) -> str:
     return re.sub(r"\s+", " ", el.text_content() or "").strip()
 
@@ -112,6 +117,13 @@ def case_links(page_html: str, base_url: str, pattern: str) -> List[str]:
         url = urljoin(base_url, a.get("href").strip())
         if rx.search(url) and url not in out:
             out.append(url)
+    # Some sites make a table row the link: <tr onclick="window.location.href='URL'">.
+    for el in tree.xpath("//*[@onclick]"):
+        m = _ONCLICK_URL.search(el.get("onclick"))
+        if m:
+            url = urljoin(base_url, m.group(1).strip())
+            if rx.search(url) and url not in out:
+                out.append(url)
     return out
 
 
@@ -154,7 +166,12 @@ def _title_of(a, url: str) -> str:
         cells = [c for c in cells if c and fold(c) not in {"baixar", "download", "visualizar"}]
         if cells:
             return cells[0]
-    return _text(a)
+    text = _text(a)
+    if text:
+        return text
+    # An icon-only link: the file name is the only title the page gives.
+    stem = unquote(urlsplit(url).path.rsplit("/", 1)[-1]).rsplit(".", 1)[0]
+    return re.sub(r"[-_]+", " ", stem).strip()
 
 
 def parse_case_page(page_html: str, base_url: str, doc_pattern: str) -> CasePage:
