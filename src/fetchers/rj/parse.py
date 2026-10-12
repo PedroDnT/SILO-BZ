@@ -155,7 +155,7 @@ def _heading_above(el) -> str:
 
 def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = "",
                section_pattern: str = "", scope_xpath: str = "",
-               card: bool = False) -> List[str]:
+               card: bool = False, anchors_xpath: str = "") -> List[str]:
     """Case page URLs on a list page: every link whose URL matches ``pattern``.
 
     ``text_pattern`` (optional) is a regex the anchor's folded text must also
@@ -172,6 +172,8 @@ def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = 
     ``data-url="URL"``. With ``card`` the ``text_pattern`` is matched against the
     whole card around the link (its largest ancestor holding no other case link),
     for lists whose card prints the type in a sibling element rather than in the link.
+    ``anchors_xpath`` (optional) narrows the anchors considered to those it selects,
+    for lists whose cards carry the type as a class on a container (ADJUD).
     """
     tree = lxml_html.fromstring(page_html)
     base = _base(tree, base_url)
@@ -189,7 +191,7 @@ def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = 
             out.append(url)
 
     for root in roots:
-        for a in root.xpath(".//a[@href]"):
+        for a in root.xpath(anchors_xpath or ".//a[@href]"):
             url = resolve(a)
             if trx is not None and rx.search(url):
                 if not trx.search(fold(_card_text(a, resolve, rx) if card else _text(a))):
@@ -349,9 +351,10 @@ def _nearby_title(a) -> str:
 
 
 def _debtor_from_title(tree) -> Optional[str]:
-    """The debtor as the page <title> names it: "<debtor> - <site name>"."""
+    """The debtor as the page <title> names it: "<debtor> - <site name>" (hyphen or en/em dash)."""
     title = _text(tree.xpath("//title")[0]) if tree.xpath("//title") else ""
-    name = title.rsplit(" - ", 1)[0].strip() if " - " in title else ""
+    parts = re.split(r"\s[-\u2013\u2014]\s", title)
+    name = " - ".join(parts[:-1]).strip() if len(parts) > 1 else ""
     return name or None
 
 

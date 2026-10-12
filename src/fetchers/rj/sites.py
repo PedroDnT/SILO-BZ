@@ -31,6 +31,7 @@ class Site:
     case_section: str = ""         # optional regex the heading above a case link must match (lists grouped by type)
     case_scope: str = ""           # optional XPath of the elements the case links must sit inside
     doc_title_xpath: str = ""      # optional XPath, from a "Download" button, to the element holding its title
+    case_anchors_xpath: str = ""   # optional XPath narrowing the list anchors (type kept as a class on the card)
 
     @property
     def source(self) -> str:
@@ -466,4 +467,36 @@ SITES += (
              "institucional|portal-de-processos|habilitacao-e-divergencia|newsletters|contato|home|portal"),
          doc_pattern=r"^https://fattoonline\.com\.br" + WP_UPLOADS_PDF,
          platform="WordPress + Elementor"),
+)
+
+# --- Batch 10 -----------------------------------------------------------------
+# Not read, and why: trusteeaj.com.br (the list prints no case type and mixes
+# falências; the type filter runs in JavaScript), valejudicial.com.br and
+# veritasaj.com (HTTP 403 to the collector), tomazettepacheco.com.br (no RJ
+# case documents), kraft.adm.br (falências only), exladministracaojudicial.com.br
+# and compassojudicial.com.br (documents behind a login).
+SITES += (
+    # CALC: /processo/autos--rj-<slug> is a recuperação judicial; "fal-" and untyped slugs are not.
+    # Files sit under /plataforma//uploads/arquivo/ and the h2 holds "Autos: RJ <debtor>".
+    Site(domain="calc.com.br", aj_name="CALC Perícias e Administração Judicial Ltda",
+         list_urls=("https://calc.com.br/processos",),
+         case_pattern=r"^https://calc\.com\.br/processo/autos--rj-[^/?#]+$",
+         doc_pattern=r"^https://calc\.com\.br/plataforma//uploads/arquivo/",
+         platform="custom", debtor_xpath='//main//h2[contains(@class, "title")]'),
+    # Ricardo Biancardi: one blog post per case under /category/recuperacao-judicial/; the
+    # category also holds a notice about opening hours, which is not a case.
+    Site(domain="ricardobiancardi.com.br", aj_name="Ricardo Biancardi Fernandes Sociedade Individual de Advocacia",
+         list_urls=("https://ricardobiancardi.com.br/category/recuperacao-judicial/",),
+         case_pattern=r"^https://ricardobiancardi\.com\.br/20\d\d/\d\d/\d\d/(?!restricao-de-atendimento)[^/?#]+/$",
+         doc_pattern=WP_UPLOADS_PDF, platform="WordPress + WPBakery"),
+    # ADJUD: one portfolio holds every case; the card's class names the type, so only the
+    # recuperação and recuperação-extrajudicial cards are read. The page <title> names the debtor.
+    # central-surf is left out: its page prints no process number, only a decision PDF.
+    Site(domain="adjud.com.br", aj_name="ADJUD Administradores Judiciais Ltda",
+         list_urls=("https://adjud.com.br/",),
+         case_pattern=r"^https://adjud\.com\.br/devedoras/(?!central-surf/)[^/?#]+/$",
+         doc_pattern=WP_UPLOADS_PDF, platform="WordPress + WPBakery",
+         case_anchors_xpath=('//li[contains(@class, "category-recuperacoes") or '
+                             'contains(@class, "category-recuperacao-extra-judiciais")]//a[@href]'),
+         debtor_from_title=True),
 )
