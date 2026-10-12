@@ -187,3 +187,17 @@ and `22_b3_tape_matviews.sql`refreshes them in the same apply.
 Schema`api`is 19 (the contract,`catalog()`/`coverage()`, `api.assert_row_cap`),
 20–21 (short interest, lending participants), 23 (screens) and 24 (FNET). The row cap
 and what a new endpoint needs are in `AGENTS.md`, "Adding an API endpoint".
+
+**RJ case documents** (`rj_case`, `rj_document`, migration 75, epic #841) hold
+LINKS, never files, to the documents that administrador judicial (AJ) websites
+publish for recuperação judicial cases. `src/pipeline/ingest_rj.py` reads the
+sites in `src/fetchers/rj/sites.py`, which must be `html` with robots allowed in
+the #844 inventory `src/fetchers/rj/aj_sites.csv`. The key is the 20-digit CNJ
+number as the page prints it, with `source` (`aj_site:<domain>`) in `rj_case`'s
+key, so a case listed by two sources keeps both rows. A case page with no CNJ
+number yields no case. `first_seen_at` is set once by the DEFAULT, and
+`public.rj_document_new` is the new-document signal. `tipo` is a title rule
+(`parse.classify_tipo`); `titulo` is as published. `http_status` comes from a
+budgeted HEAD (`RJ_HEAD_BUDGET` per site per run), so NULL means not checked
+yet. A site that lists no case after it had cases fails the run. Never parse
+the documents for personal data: creditor lists carry CPFs.

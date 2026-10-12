@@ -16,6 +16,7 @@ Times in UTC-3, with UTC in parentheses.
 05:00 (08:00)  publish_check  public URL stale? promote; ERRORed → red
 after a run    publish_check  green daily run, or red with hook done: wait ≤45 min, promote
                               (no-op while Vercel auto-assigns; item 8)
+08:07 (11:07)  rj_collect     RJ links from AJ sites; red on a failed site
 ```
 
 ## A red day
@@ -23,13 +24,13 @@ after a run    publish_check  green daily run, or red with hook done: wait ≤45
 - Rows that landed stay landed.
 - After a failed `run_daily`, ANALYZE, the apply and deploy hook still run.
   Matviews, `api.panel` and the dashboard may be partly stale; the run stays red.
-  `landed_at` and `api.coverage()` identify freshness by source.
+  `landed_at` and `api.coverage()` show freshness by source.
 - Probe/schema/apply failures hold back publication until a successful run or
   `mode=analytics-only` with `rebuild_dashboard=true`.
-- Plain-view endpoints (quotes, short interest) show new data at once. Their
+- Plain views (quotes, short interest) show new data at once. Their
   matview-fed columns do not: `days_to_cover` joins `mv_b3_adtv_21`, and
   `fund_type` in `api.fund_quotas` falls back to `mv_b3_isin_subtype`.
-- A GitHub issue titled "Daily ingest is failing" is opened, or commented on.
+- An issue "Daily ingest is failing" is opened or commented on.
 - Watchdog heals data only; no analytical apply or deploy hook.
 - Health and the watchdog count errors only for slices the daily run re-reads
   (`src/pipeline/daily_window.py`). Older ones are backfill work.
@@ -60,10 +61,10 @@ after a run    publish_check  green daily run, or red with hook done: wait ≤45
 ## Not automated
 
 - `scripts/verify_pipeline.py` is run by hand.
-- DB Health checks matview lag on `fact_fund_monthly` only. The other matviews
-  are refreshed by the same apply, so they go stale together with it.
-- The Scout, Builder and Sentinel agents are defined in `.claude/agents/`, but
-  no workflow or routine schedules them (checked 2026-09-29).
+- DB Health checks matview lag on `fact_fund_monthly` only; the other matviews
+  refresh in the same apply and go stale with it.
+- No workflow or routine schedules the Scout, Builder and Sentinel agents
+  (`.claude/agents/`; checked 2026-09-29).
 
 Deeper: [database maintenance](../reference/DATABASE_MAINTENANCE.md),
 [Supabase operations](../reference/supabase_operations.md).
