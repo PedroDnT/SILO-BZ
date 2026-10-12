@@ -34,6 +34,8 @@ EXPECTED = {
     "mpbadmjudicial.com.br": (22, "10050354620228110041", 1),
     "lasproconsultores.com.br": (197, "10004845020238260306", 0),
     "administradorjudicial.adv.br": (25, "50029393220208240062", 117),
+    "recuperasolucoes.com": (8, "00099716220268172810", 5),
+    "pbbadvogados.com.br": (104, "00334388120158130251", 1),
 }
 
 
@@ -66,6 +68,9 @@ def test_cnj_numbers_printed_and_bare():
     ("Edital do art. 7º, §2º - Relação de Credores do Administrador Judicial", "", "relacao_credores_aj"),
     ("Relação de Credores", "", "relacao_credores_devedor"),
     ("Decisão que deferiu o processamento da Recuperação Judicial", "", "decisao_deferimento"),
+    ("2.- Decisão Deferimento RJ", "", "decisao_deferimento"),
+    ("3.- PRJ", "", "plano"),
+    ("Relatório de cumprimento do PRJ", "", "outros"),
     ("Sentença de concessão da recuperação judicial", "", "sentenca_concessao"),
     ("Balanço Patrimonial 2023", "", "demonstracoes_contabeis"),
     ("Despacho que determinou perícia prévia", "", "outros"),

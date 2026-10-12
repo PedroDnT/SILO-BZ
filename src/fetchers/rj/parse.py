@@ -64,8 +64,8 @@ _TIPO_RULES: Sequence[tuple] = (
     ("qgc", r"\b(qgc|quadro geral)\b"),
     ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades)\b"),
     ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|inicial)\b"),
-    ("plano", r"\bplano\b"),
-    ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"),
+    ("plano", r"\bplano\b|^[\d\W]*prj$"),
+    ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*|\bdeferimento (da |de )?(rj|recuperacao judicial)\b"),
     ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
 )
