@@ -289,6 +289,30 @@ operator half:
   `cia_aberta` / `ipe`), `macro_series` (`bacen` / `sgs`) and `ptax` (`bacen` /
   `ptax`).
 
+### RJ documents of listed companies (catalog v75)
+
+`api.rj_listed_documents(p_id, p_from, p_to, p_doc_type)` (`34_api_rj_listed.sql`,
+#842, epic #841) serves the recuperação judicial and extrajudicial documents that
+listed companies file with CVM IPE. It reads `cia_event` through the internal view
+`public.rj_listed_documents`, which has no client grant. No new fetch.
+
+- Two signals, named in `signal`: `categoria` is CVM's category "Informações de
+  Companhias em Recuperação Judicial ou Extrajudicial"; `fato_relevante` is a Fato
+  Relevante whose Assunto names a judicial or extrajudicial recovery or the
+  recuperandas. The category alone missed 49 such Fatos Relevantes in 2026.
+- One row per `protocolo` at its newest `versao`, as `company_events` serves it.
+- `cadastro_status` and `cadastro_status_since` are `cia_company.raw` `SIT_EMISSOR`
+  and `DT_INI_SIT_EMISSOR` as filed. The cadastro lags the filings, so it is a
+  second signal only.
+- `p_id` NULL means every company; otherwise `api.company_ref` resolves it, never
+  by name. The window is `delivery_date` (Data_Entrega); `reference_date` is not a
+  filing date. An unknown `p_doc_type` raises `22023` with the types held.
+- Grants follow `company_events`. Raise-only above one page. Measured 2026-10-12:
+  270 documents from 36 companies delivered in 2026 (221 from the category, from
+  33 companies).
+- Executed check: `tests/sql/rj_listed_documents_behaviour.sql` in CI's
+  `sql-compile` job.
+
 ### The research universe (catalog v43)
 
 `api.research_universe()` (`28_api_research.sql`; research-seam spec

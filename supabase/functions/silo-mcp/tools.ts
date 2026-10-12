@@ -92,6 +92,7 @@ export const TOOL_TITLES: ToolSpec[] = [
   t("balance_sheets", "Balance sheets"),
   t("cash_flow_statements", "Cash flow statements"),
   t("company_events", "Company IPE filings (fatos relevantes)"),
+  t("rj_listed_documents", "Listed companies' recuperação judicial documents filed with CVM (IPE RJ category and Fatos Relevantes)"),
   // Industry and macro.
   t("anbima_classes", "ANBIMA class aggregates"),
   t("inflation", "Inflation (BACEN SGS)"),

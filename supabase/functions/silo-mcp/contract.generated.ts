@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "74";
+export const CONTRACT_VERSION = "75";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -81,6 +81,7 @@ export const ENDPOINT_NAMES: string[] = [
   "quote_latest",
   "quotes",
   "research_universe",
+  "rj_listed_documents",
   "screen_captive_vehicles",
   "screen_delinquency_drivers",
   "screen_dormant_funds",
@@ -4100,6 +4101,55 @@ export const CONTRACT: Record<string, ContractEntry> = {
     "inputSchema": {
       "type": "object",
       "properties": {},
+      "additionalProperties": false
+    }
+  },
+  "rj_listed_documents": {
+    "kind": "rpc",
+    "path": "/rpc/rj_listed_documents",
+    "description": "Recuperação judicial and extrajudicial documents of LISTED companies, as filed with CVM IPE (cia_event): petição inicial, plano, contas demonstrativas mensais, sentenças, assembleia de credores and the rest, plus the Fatos Relevantes whose subject names the recovery (signal = categoria | fato_relevante). Newest delivery first, one row per protocol at its newest version, every text field as filed, source_url the document's link on CVM's RAD. Each row also carries the company's CVM cadastro situation (cadastro_status, cadastro_status_since), a second signal that lags the filings. p_id NULL = every company; otherwise resolved exactly as api.financials resolves it (ticker through CVM's FCA map, 14-digit CNPJ or CVM code, never a name); an id that resolves to nothing returns no rows. Window = delivery date, default the 12 months before p_to or today; reference_date is not a filing date. p_doc_type matches CVM's Tipo exactly and an unknown one raises 22023 listing the types held. Falência documents are not here (api.company_events serves them). Private companies are not here. More than 1000 rows RAISES 22023 (never trimmed): narrow the window, pin p_id or p_doc_type.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_doc_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "examples": [
+            "itr",
+            "dfp"
+          ]
+        }
+      },
       "additionalProperties": false
     }
   },
