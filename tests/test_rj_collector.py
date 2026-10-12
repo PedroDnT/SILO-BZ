@@ -82,6 +82,14 @@ EXPECTED = {
     "ecconsultoria.com.br": (2, "10004707320248260260", 3),
     "gomesdemattos.com.br": (3, "30147645820258190001", 36),
     "costatellesadjud.com.br": (6, "10075371820248260510", 2),
+    # Batch 8, read 2026-10-12. Diligence lists 47 cards, 26 of them recuperação judicial (one is the
+    # site's template); LRF lists 78, 51 of them recuperação judicial or extrajudicial; stenius reads
+    # only the /rj-<name>/ posts of its first page.
+    "julianamorais.com.br": (25, "00909041720168130342", 12),
+    "stenius.com.br": (8, "57759089220258090014", 3),
+    "diligence.adm.br": (26, "01089231520258172001", 19),
+    "lrflideres.com.br": (51, "00007422920178173090", 76),
+    "inova-aj.com.br": (16, "00122399620218190001", 110),
 }
 
 
@@ -157,7 +165,8 @@ def test_classify_tipo(title, section, tipo):
 @pytest.mark.parametrize("site", SITES, ids=lambda s: s.domain)
 def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
-    links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text, site.case_section, site.case_scope)
+    links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text, site.case_section, site.case_scope,
+                       card=site.case_card)
     assert len(links) == n_cases
     hosts = {urlsplit(link).hostname for link in links}
     assert all(h == site.domain or h.endswith("." + site.domain) for h in hosts), hosts
