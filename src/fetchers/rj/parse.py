@@ -12,7 +12,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
-from urllib.parse import parse_qs, urljoin, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 from lxml import html as lxml_html
 
@@ -26,7 +26,11 @@ _SECTION_HEADINGS = {
     "processo", "processos", "contato", "newsletter", "institucional", "links",
     "administracao judicial", "recuperacao judicial", "recuperacoes judiciais",
     "falencia", "falencias", "areas de atuacao", "documentos", "menu",
+    "busca", "buscar", "fale conosco",
 }
+
+
+_GENERIC_LABELS = {"download", "baixar", "clique aqui", "visualizar", "abrir"}
 
 
 def fold(text: str) -> str:
@@ -59,13 +63,14 @@ _TIPO_RULES: Sequence[tuple] = (
     ("edital_agc", r"\bedital\b.*\b(assembleia|agc|convocacao)\b|\bconvocacao\b.*\b(assembleia|agc)\b"),
     # Art. 7, §2 is the AJ's own list. Art. 7, §1 is only the habilitation
     # deadline, printed inside the debtor's art. 52 edital, so it does not count.
-    ("relacao_credores_aj", r"(art(igo|\.)?\s*7o?\W{0,4}§\s*2|segundo edital|2o edital|relacao de credores do (administrador|aj))"),
-    ("relacao_credores_devedor", r"(art\.?\s*52|artigo\s*52|primeiro edital|1o edital|art\.?\s*51|relacao (nominal )?de credores|lista de credores)"),
+    ("relacao_credores_aj", r"(art(igo|\.)?\s*7o?\W{0,4}§\s*2|segundo edital|2[o°] edital|relacao de credores do (administrador|aj))"),
+    ("relacao_credores_devedor", r"(art\.?\s*52|artigo\s*52|primeiro edital|1[o°] edital|art\.?\s*51|relacao (nominal )?de credores|lista de credores)"),
     ("qgc", r"\b(qgc|quadro geral)\b"),
     ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades)\b"),
     ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|inicial)\b"),
     ("plano", r"\bplano\b"),
     ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"),
+    ("decisao_deferimento", r"\bdecisao\b.*\bdeferiment\w*\b.*\b(rj|recuperacao judicial)\b"),
     ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
 )
@@ -107,9 +112,15 @@ def case_links(page_html: str, base_url: str, pattern: str) -> List[str]:
     """Case page URLs on a list page: every anchor whose URL matches ``pattern``."""
     tree = lxml_html.fromstring(page_html)
     rx = re.compile(pattern)
+    base = urlsplit(base_url)
     out: List[str] = []
     for a in tree.xpath("//a[@href]"):
         url = urljoin(base_url, a.get("href").strip())
+        parts = urlsplit(url)
+        # A page served over https that links its own pages as http:// (a
+        # leftover from before the move to https) lists the same case twice.
+        if base.scheme == "https" and parts.scheme == "http" and parts.netloc == base.netloc:
+            url = urlunsplit(parts._replace(scheme="https"))
         if rx.search(url) and url not in out:
             out.append(url)
     return out
@@ -157,7 +168,16 @@ def _title_of(a, url: str) -> str:
     return _text(a)
 
 
-def parse_case_page(page_html: str, base_url: str, doc_pattern: str) -> CasePage:
+def _debtor_from_title(tree) -> Optional[str]:
+    """The debtor as the page <title> names it: "<debtor> - <site name>"."""
+    title = _text(tree.xpath("//title")[0]) if tree.xpath("//title") else ""
+    name = title.rsplit(" - ", 1)[0].strip() if " - " in title else ""
+    return name or None
+
+
+def parse_case_page(page_html: str, base_url: str, doc_pattern: str,
+                    debtor_from_title: bool = False) -> CasePage:
+    """``debtor_from_title`` for sites whose headings are document titles, not the debtor."""
     tree = lxml_html.fromstring(page_html)
     numbers = cnj_numbers(tree.text_content())
     rx = re.compile(doc_pattern)
@@ -168,10 +188,14 @@ def parse_case_page(page_html: str, base_url: str, doc_pattern: str) -> CasePage
         if not rx.search(url) or url in seen:
             continue
         seen.add(url)
-        docs.append(DocLink(url=url, titulo=_title_of(a, url), section=_section_of(a)))
+        titulo, section = _title_of(a, url), _section_of(a)
+        # A bare "Download" button under the document's own heading: the heading is the title.
+        if fold(titulo) in _GENERIC_LABELS and section:
+            titulo = section
+        docs.append(DocLink(url=url, titulo=titulo, section=section))
     return CasePage(
         numero_processo=numbers[0] if numbers else None,
-        devedor_nome=_debtor(tree),
+        devedor_nome=_debtor_from_title(tree) if debtor_from_title else _debtor(tree),
         vara=_vara(tree),
         documents=docs,
         other_numbers=numbers[1:],

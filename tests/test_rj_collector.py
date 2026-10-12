@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
 import httpx
@@ -34,6 +35,14 @@ EXPECTED = {
     "mpbadmjudicial.com.br": (22, "10050354620228110041", 1),
     "lasproconsultores.com.br": (197, "10004845020238260306", 0),
     "administradorjudicial.adv.br": (25, "50029393220208240062", 117),
+    "k2consultoria.com": (27, "00214130320198190001", 11),
+    "bbsadvogados.com.br": (57, "00015183120238160185", 29),
+    "madgav.com.br": (2, "10026767720268130672", 15),
+    "rroadvogados.adv.br": (1, "09649089620248190001", 29),
+    "fraj.com.br": (85, "10081715320188260565", 9),
+    "rlg-aj.com.br": (13, "50114607620258210028", 18),
+    "clesciogalvao.adv.br": (2, "50020627320188130384", 7),
+    "fatorfiscal.com.br": (3, "00011573120188080017", 35),
 }
 
 
@@ -65,6 +74,9 @@ def test_cnj_numbers_printed_and_bare():
     ("Edital do art. 52, §1º e art. 7, §1º da Lei 11.101/2005", "", "relacao_credores_devedor"),
     ("Edital do art. 7º, §2º - Relação de Credores do Administrador Judicial", "", "relacao_credores_aj"),
     ("Relação de Credores", "", "relacao_credores_devedor"),
+    ("1° Edital de Credores", "", "relacao_credores_devedor"),
+    ("2° Edital de Credores Retificado", "", "relacao_credores_aj"),
+    ("Decisão Deferimento RJ AFA Plásticos", "", "decisao_deferimento"),
     ("Decisão que deferiu o processamento da Recuperação Judicial", "", "decisao_deferimento"),
     ("Sentença de concessão da recuperação judicial", "", "sentenca_concessao"),
     ("Balanço Patrimonial 2023", "", "demonstracoes_contabeis"),
@@ -79,8 +91,9 @@ def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
     links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern)
     assert len(links) == n_cases
-    assert all(link.startswith(f"https://{site.domain}/") for link in links)
-    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern)
+    assert all(urlsplit(link).netloc == site.domain or urlsplit(link).netloc.endswith("." + site.domain)
+               for link in links)
+    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern, site.debtor_from_title)
     assert cp.numero_processo == numero
     assert cp.devedor_nome
     assert len(cp.documents) == n_docs
