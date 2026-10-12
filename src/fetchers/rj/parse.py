@@ -8,6 +8,7 @@ anchor on a page that was fetched.
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -60,10 +61,10 @@ _TIPO_RULES: Sequence[tuple] = (
     ("edital_agc", r"\bedital\b.*\b(assembleia|agc|convocacao)\b|\bconvocacao\b.*\b(assembleia|agc)\b"),
     # Art. 7, §2 is the AJ's own list. Art. 7, §1 is only the habilitation
     # deadline, printed inside the debtor's art. 52 edital, so it does not count.
-    ("relacao_credores_aj", r"(art(igo|\.)?\s*7o?\W{0,4}(§\s*2|par\.?\s*segundo|paragrafo\s*(2|segundo))|segundo edital|2[o°] edital|relacao de credores do (administrador|aj)|\b(lista|relacao) de credores (do |da )?(aj\b|administrador))"),
+    ("relacao_credores_aj", r"(art(igo|\.)?\s*7o?\W{0,4}(§\s*2|par\.?\s*segundo|paragrafo\s*(2|segundo))|segundo edital|2[o°] edital|relacao de credores do (administrador|aj)|\b(lista|relacao) de credores (do |da )?(aj\b|administrador)|§\s*2o?\s+do\s+art(igo|\.)?\s*7)"),
     ("relacao_credores_devedor", r"(art\.?\s*52|artigo\s*52|primeiro edital|1[o°] edital|art\.?\s*51|relacao (nominal )?(de )?credores|lista de credores)"),
     ("qgc", r"\b(qgc|quadro geral)\b"),
-    ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades|relatorio inicial de atividades)\b"),
+    ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades|relatorio inicial d[ea]s? atividades)\b"),
     # "Relatório Inicial" is the AJ's first report, not the debtor's petition.
     ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|(?<!relatorio )inicial)\b|^pedido de recuperacao judicial\b"),
     # Homologating the plan is the decision that grants the recuperação (art. 58).
@@ -71,7 +72,7 @@ _TIPO_RULES: Sequence[tuple] = (
     ("plano", r"\bplano\b|^[\d\W]*prj$"),
     ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"
                             r"|\bdefer\w*\s+(d[aeo]s?\s+)?(pedido\s+(d[ea]\s+)?)?(recuperacao judicial|rj)\b"
-                            r"|\bdecisao de processamento d[ao] (rj|recuperacao judicial)\b|\bdef\b.*\bproc\b"),
+                            r"|\b(decisao|despacho)( de)? processamento d[ao] (rj|recuperacao judicial)\b|\bdef\b.*\bproc\b"),
     ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*|conced\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
 )
@@ -132,30 +133,61 @@ def _same_host_https(page_url: str, url: str) -> str:
     return url
 
 
-def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = "") -> List[str]:
-    """Case page URLs on a list page: every anchor whose URL matches ``pattern``.
+def _heading_above(el) -> str:
+    """The folded text of the nearest h1-h4 heading before the element."""
+    heads = el.xpath("preceding::*[self::h1 or self::h2 or self::h3 or self::h4][1]")
+    return fold(_text(heads[0])) if heads else ""
+
+
+def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = "",
+               section_pattern: str = "", scope_xpath: str = "") -> List[str]:
+    """Case page URLs on a list page: every link whose URL matches ``pattern``.
 
     ``text_pattern`` (optional) is a regex the anchor's folded text must also
     match, for lists that mix case types and print the type only in the card.
+    ``section_pattern`` (optional) is a regex the folded text of the heading
+    above the link must match, for lists that group the cases under a heading
+    per type ("Recuperação Judicial", "Falência"). ``scope_xpath`` (optional)
+    selects the elements the case links must sit inside, for pages that print
+    other links of the same shape (articles, menus) outside the case list.
+
+    Besides anchors, three forms of a clickable container are read: a table row
+    ``onclick="window.location.href='URL'"``, an Elementor Happy Addons
+    ``data-ha-element-link='{"url": "..."}'`` and a JetEngine listing item
+    ``data-url="URL"``.
     """
     tree = lxml_html.fromstring(page_html)
     base = _base(tree, base_url)
     rx = re.compile(pattern)
     trx = re.compile(text_pattern) if text_pattern else None
+    srx = re.compile(section_pattern) if section_pattern else None
     out: List[str] = []
-    for a in tree.xpath("//a[@href]"):
-        url = _same_host_https(base_url, _absolute(base, a.get("href")))
-        if trx is not None and not trx.search(fold(_text(a))):
-            continue
-        if rx.search(url) and url not in out:
+    roots = tree.xpath(scope_xpath) if scope_xpath else [tree]
+
+    def keep(url: str, el) -> None:
+        if rx.search(url) and url not in out and (srx is None or srx.search(_heading_above(el))):
             out.append(url)
-    # Some sites make a table row the link: <tr onclick="window.location.href='URL'">.
-    for el in tree.xpath("//*[@onclick]"):
-        m = _ONCLICK_URL.search(el.get("onclick"))
-        if m:
-            url = urljoin(base_url, m.group(1).strip())
-            if rx.search(url) and url not in out:
-                out.append(url)
+
+    for root in roots:
+        for a in root.xpath(".//a[@href]"):
+            url = _same_host_https(base_url, _absolute(base, a.get("href")))
+            if trx is not None and not trx.search(fold(_text(a))):
+                continue
+            keep(url, a)
+        for el in root.xpath(".//*[@onclick]"):
+            m = _ONCLICK_URL.search(el.get("onclick"))
+            if m:
+                keep(urljoin(base_url, m.group(1).strip()), el)
+        for el in root.xpath(".//*[@data-ha-element-link]"):
+            try:
+                href = json.loads(el.get("data-ha-element-link")).get("url") or ""
+            except ValueError:
+                continue
+            if href.strip():
+                keep(_same_host_https(base_url, urljoin(base_url, href.strip())), el)
+        for el in root.xpath(".//*[@data-url]"):
+            if (el.get("data-url") or "").strip():
+                keep(_same_host_https(base_url, urljoin(base_url, el.get("data-url").strip())), el)
     return out
 
 
@@ -227,7 +259,7 @@ def _context_title(a) -> str:
     return text if 0 < len(text) <= 200 else ""
 
 
-def _title_of(a, url: str) -> str:
+def _title_of(a, url: str, title_xpath: str = "") -> str:
     nome = parse_qs(urlsplit(url).query).get("nome")
     if nome and nome[0].strip():
         return nome[0].strip()
@@ -245,7 +277,7 @@ def _title_of(a, url: str) -> str:
         return kids[0]
     text = _text(a)
     if fold(text) in _GENERIC_LINK_TEXT or _GENERIC_LABEL.match(fold(text)):
-        found = _nearby_title(a) or _context_title(a)
+        found = (_xpath_title(a, title_xpath) if title_xpath else "") or _nearby_title(a) or _context_title(a)
         if found:
             return found
     if text:
@@ -257,6 +289,12 @@ def _title_of(a, url: str) -> str:
 
 # Link texts that name the action, not the document.
 _GENERIC_LINK_TEXT = {"", "baixar", "download", "dowload", "visualizar", "abrir", "ver"}
+
+
+def _xpath_title(a, xpath: str) -> str:
+    """The text of the first element the site's ``doc_title_xpath`` finds from the link."""
+    found = a.xpath(xpath)
+    return _text(found[0]) if found else ""
 
 
 def _nearby_title(a) -> str:
@@ -283,29 +321,36 @@ def _debtor_from_title(tree) -> Optional[str]:
 
 
 def parse_case_page(page_html: str, base_url: str, doc_pattern: str, debtor_xpath: str = "",
-                    debtor_from_title: bool = False) -> CasePage:
-    """``debtor_from_title`` for sites whose headings are document titles, not the debtor."""
+                    debtor_from_title: bool = False, doc_title_xpath: str = "") -> CasePage:
+    """``debtor_from_title`` for sites whose headings are document titles, not the debtor.
+    ``doc_title_xpath`` (relative to the link) finds the title of a bare "Download" button."""
     tree = lxml_html.fromstring(page_html)
     numbers = cnj_numbers(tree.text_content())
     base = _base(tree, base_url)
     rx = re.compile(doc_pattern)
     docs: List[DocLink] = []
     by_url = {}
+    textless = set()
     for a in tree.xpath("//a[@href]"):
         url = _absolute(base, a.get("href"))
         if not rx.search(url):
             continue
-        titulo, section = _title_of(a, url), _section_of(a)
+        titulo, section = _title_of(a, url, doc_title_xpath), _section_of(a)
         # A bare "Download" button under the document's own heading: the heading is the title.
         if fold(titulo) in _GENERIC_LINK_TEXT and section:
             titulo = section
         if url in by_url:
             # The same file linked twice: an empty first anchor (an icon) takes
             # the title of a later one, so the row is not left without a title.
-            if not by_url[url].titulo and titulo:
+            # That includes a first anchor with no text of its own, whose title is
+            # only the file name or a neighbouring line, when a later one has text.
+            if (not by_url[url].titulo or (url in textless and _text(a))) and titulo:
                 by_url[url].titulo = titulo
                 by_url[url].section = section
+                textless.discard(url)
             continue
+        if not _text(a):
+            textless.add(url)
         by_url[url] = DocLink(url=url, titulo=titulo, section=section)
         docs.append(by_url[url])
     return CasePage(
