@@ -90,6 +90,12 @@ EXPECTED = {
     "diligence.adm.br": (26, "01089231520258172001", 19),
     "lrflideres.com.br": (51, "00007422920178173090", 76),
     "inova-aj.com.br": (16, "00122399620218190001", 110),
+    # Batch 9, read 2026-10-12. ajudd lists 38 cards, 23 of them recuperação judicial by slug.
+    "ajudd.com.br": (23, "10677914920268130024", 13),
+    "chaves-soletti.adv.br": (2, "70056261320198220005", 77),
+    "curyconsultores.com.br": (32, "08707760820258120001", 6),
+    "faccioadministracoes.com.br": (5, "00369971720168260100", 9),
+    "fattoonline.com.br": (9, "00015738320248160140", 73),
 }
 
 
@@ -157,6 +163,8 @@ def test_cnj_numbers_printed_and_bare():
     ("EDITAL EM CUMPRIMENTO AO DISPOSTO NO § 2º DO ARTIGO 7º", "", "relacao_credores_aj"),
     ("PDF — Decisão Deferindo Recuperação", "", "decisao_deferimento"),
     ("Decisão Deferindo a Antecipação da Tutela Recursal", "", "outros"),
+    ("3. Decisão determinando Emenda à Inicial mov. 21.1", "", "outros"),
+    ("03. Decisão. Processamento da RJ", "", "decisao_deferimento"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo
@@ -184,6 +192,13 @@ def test_actionaj_second_list_page_adds_five_more_cases():
     first = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern)
     second = case_links(_fixture(site.domain, "list2"), site.list_urls[1], site.case_pattern)
     assert len(second) == 5 and not set(first) & set(second)
+
+
+def test_faccio_inactive_list_adds_three_more_cases():
+    site = next(s for s in SITES if s.domain == "faccioadministracoes.com.br")
+    first = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern)
+    second = case_links(_fixture(site.domain, "list2"), site.list_urls[1], site.case_pattern)
+    assert len(second) == 3 and not set(first) & set(second)
 
 
 def test_download_button_takes_the_title_printed_beside_it():

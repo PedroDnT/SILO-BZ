@@ -67,13 +67,13 @@ _TIPO_RULES: Sequence[tuple] = (
     ("qgc", r"\b(qgc|quadro geral)\b"),
     ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades|relatorio inicial d[ea]s? atividades)\b"),
     # "Relatório Inicial" is the AJ's first report, not the debtor's petition.
-    ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|(?<!relatorio )inicial)\b|^pedido de recuperacao judicial\b"),
+    ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|(?<!relatorio )(?<!emenda a )inicial)\b|^pedido de recuperacao judicial\b"),
     # Homologating the plan is the decision that grants the recuperação (art. 58).
     ("sentenca_concessao", r"\bhomologacao do plano\b"),
     ("plano", r"\bplano\b|^[\d\W]*prj$"),
     ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"
                             r"|\bdefer\w*\s+(d[aeo]s?\s+)?(pedido\s+(d[ea]\s+)?)?(recuperacao judicial|rj)\b"
-                            r"|\b(decisao|despacho)( de)? processamento d[ao] (rj|recuperacao judicial)\b|\bdecisao defer\w*\s+(a\s+)?recuperacao\s*$|\bdef\b.*\bproc\b"),
+                            r"|\b(decisao|despacho)\W+(?:de\W+)?processamento d[ao] (rj|recuperacao judicial)\b|\bdecisao defer\w*\s+(a\s+)?recuperacao\s*$|\bdef\b.*\bproc\b"),
     ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*|conced\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
 )

@@ -423,3 +423,47 @@ SITES += (
          case_pattern=r"^https://inova-aj\.com\.br/recuperacao-judicial/(?!page/)[^/?#]+/?$",
          doc_pattern=r"/wp-content/uploads/[^?#]+\.(?i:pdf)$", platform="WordPress (attorna theme)"),
 )
+
+# --- Batch 9: WordPress sites -------------------------------------------------
+# Documents are PDFs in /wp-content/uploads/. Credibilità (cases link out to a
+# microsite for documents), CSH (no process number on the case pages), Wald (generic
+# document links, most of them on sub-pages) and Campi (falências filed under the same
+# /recuperacoes/ folder as RJ cases, type only in free text) are not read.
+SITES += (
+    # AJUDD: cards for RJ, falência, espólio and insolvência civil share one list;
+    # the RJ ones carry "recuperacao-judicial" in the slug.
+    Site(domain="ajudd.com.br", aj_name="Victor Barbosa Dutra",
+         list_urls=("https://www.ajudd.com.br/recuperacao-judicial-e-falencia/",),
+         case_pattern=r"^https://www\.ajudd\.com\.br/recuperacao-judicial-e-falencia/[^/?#]*recuperacao-judicial[^/?#]*/$",
+         doc_pattern=r"^https://www\.ajudd\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor", debtor_from_title=True),
+    Site(domain="chaves-soletti.adv.br", aj_name="Chaves & Soletti Advogados",
+         list_urls=("https://chaves-soletti.adv.br/recuperacao-judicial/",),
+         case_pattern=r"^https://chaves-soletti\.adv\.br/atuacao/recuperacao-judicial/[^/?#]+/$",
+         doc_pattern=r"^https://chaves-soletti\.adv\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor"),
+    # Cury: the page prints the main process first and its RMA incident second.
+    Site(domain="curyconsultores.com.br", aj_name="Cury Administradora Judicial",
+         list_urls=("https://curyconsultores.com.br/recuperacao-judicial/",),
+         case_pattern=r"^https://curyconsultores\.com\.br/credor/[^/?#]+/$",
+         doc_pattern=r"^https://curyconsultores\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor"),
+    # Faccio: cases at the root; the active and the inactive RJ lists.
+    Site(domain="faccioadministracoes.com.br", aj_name="Faccio Administrações Judiciais",
+         list_urls=("https://faccioadministracoes.com.br/recuperacoes-judiciais-ativas/",
+                    "https://faccioadministracoes.com.br/recuperacoes-judiciais-inativas/"),
+         case_pattern=_root_cases(
+             "faccioadministracoes.com.br",
+             "quem-somos|falencias(?:-ativas|-encerradas)?|recuperacoes-judiciais(?:-ativas|-inativas)?|"
+             "contato|politica-de-privacidade(?:-2)?"),
+         doc_pattern=r"^https://faccioadministracoes\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor"),
+    # Fatto: cases at the root; the RJ portal page only (falência and extrajudicial are other portals).
+    Site(domain="fattoonline.com.br", aj_name="Fatto Administração Judicial",
+         list_urls=("https://fattoonline.com.br/portal-de-processos/recuperacao-judicial/",),
+         case_pattern=_root_cases(
+             "fattoonline.com.br",
+             "institucional|portal-de-processos|habilitacao-e-divergencia|newsletters|contato|home|portal"),
+         doc_pattern=r"^https://fattoonline\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor"),
+)
