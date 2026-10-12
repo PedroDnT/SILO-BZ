@@ -40,6 +40,9 @@ EXPECTED = {
     # Batch 1, read 2026-10-12. n2wbrasil lists 6 cases, 1 of them a recuperação judicial; cb2d lists
     # 72, 30 of them recuperação judicial; trustdobrasil's list page holds 4 RJ cases.
     "pmmadv.com.br": (14, "11559062020248260100", 17),
+    # Batch 12, read 2026-10-12. zveiter's menu lists 14 cases; the pattern names the 7 recuperação ones that print a CNJ number.
+    "mcaa.adv.br": (34, "00036176120188190024", 38),
+    "zveiter.com.br": (7, "09477725220258190001", 14),
     "n2wbrasil.com.br": (1, "10001656420258260354", 12),
     "trustdobrasil.com.br": (4, "11155260420148260100", 29),
     "cb2d.com.br": (30, "50038749820228210090", 24),
@@ -131,6 +134,8 @@ def test_cnj_numbers_printed_and_bare():
     ("CARLOS PERES DECISAO DEF PROC RJ E NOMEACAO TAPXURE", "", "decisao_deferimento"),
     ("Decisão homologatória concedendo a recuperação judicial", "", "sentenca_concessao"),
     ("Relatório Inicial da Administradora Judicial;", "", "outros"),
+    ("PDF — Decisão Deferindo Recuperação", "", "decisao_deferimento"),
+    ("Decisão Deferindo a Antecipação da Tutela Recursal", "", "outros"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo

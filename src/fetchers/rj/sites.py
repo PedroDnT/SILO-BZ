@@ -296,3 +296,24 @@ SITES += (
          doc_pattern=r"^https://drive\.google\.com/file/d/[^/]+/view(?:\?usp=(?:sharing|drive_link))?$",
          platform="WordPress + Elementor, documents on Google Drive"),
 )
+
+# --- Batch 12: custom sites ----------------------------------------------------
+SITES += (
+    # Matuch de Carvalho: a Rails app. The RJ list is a table whose rows carry
+    # onclick="window.location='/processo/<id>'"; falências have their own /falencia list.
+    # Each document is a /admin/reports/<id>/download_all link, titled in the list item.
+    Site(domain="mcaa.adv.br", aj_name="Matuch de Carvalho Advogados Associados",
+         list_urls=("https://www.mcaa.adv.br/recuperacao-judicial",),
+         case_pattern=r"^https://www\.mcaa\.adv\.br/processo/[A-Za-z0-9]+$",
+         doc_pattern=r"^https://www\.mcaa\.adv\.br/admin/reports/[A-Za-z0-9]+/download_all$",
+         platform="custom Rails app"),
+    # Zveiter: the "Recuperações" menu lists every case, falências too (airmix, canaamates, txrx,
+    # gas), and the type is only on the case page, so the pattern names the recuperação slugs.
+    # grppetro, americanas, transporte and costapereira print no CNJ number in the page text
+    # (only in file names), so they yield no case and are left out. Document links are relative PDFs.
+    Site(domain="zveiter.com.br", aj_name="Escritório de Advocacia Zveiter",
+         list_urls=("https://zveiter.com.br/recuperacao",),
+         case_pattern=(r"^https://zveiter\.com\.br/(?:mintucano|transcarioca|stcruz|kpfr|rodopetro|qldtotal|rnr)$"),
+         doc_pattern=r"^https://zveiter\.com\.br/assets/pdfs/[^?#]+\.(?i:pdf)$",
+         platform="custom static site", debtor_xpath="//h1[contains(@class, 'page-hero-title')]"),
+)
