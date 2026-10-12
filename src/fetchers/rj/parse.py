@@ -40,11 +40,12 @@ def fold(text: str) -> str:
 def cnj_numbers(text: str) -> List[str]:
     """Every CNJ process number in the text, as 20 digits, first seen first."""
     found: List[str] = []
-    for m in _CNJ_PRINTED.finditer(text or ""):
+    text = re.sub(r"[\u2010-\u2015]", "-", text or "")  # typographic hyphens, as some sites print them
+    for m in _CNJ_PRINTED.finditer(text):
         n = "".join(m.groups())
         if n not in found:
             found.append(n)
-    for m in _CNJ_BARE.finditer(text or ""):
+    for m in _CNJ_BARE.finditer(text):
         if m.group(1) not in found:
             found.append(m.group(1))
     return found
@@ -132,21 +133,41 @@ def _same_host_https(page_url: str, url: str) -> str:
     return url
 
 
-def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = "") -> List[str]:
+def _card_text(a, resolve, rx) -> str:
+    """The text of the card around an anchor: its largest ancestor that holds no
+    other case link. For lists whose card prints the case type outside the link."""
+    own = resolve(a)
+    card = a
+    for anc in a.iterancestors():
+        others = {resolve(x) for x in anc.xpath(".//a[@href]")} - {own}
+        if any(rx.search(u) for u in others):
+            break
+        card = anc
+    return _text(card)
+
+
+def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = "",
+               card: bool = False) -> List[str]:
     """Case page URLs on a list page: every anchor whose URL matches ``pattern``.
 
     ``text_pattern`` (optional) is a regex the anchor's folded text must also
     match, for lists that mix case types and print the type only in the card.
+    With ``card`` the text is the whole card around the link, for lists whose
+    card prints the type in a sibling element rather than in the link.
     """
     tree = lxml_html.fromstring(page_html)
     base = _base(tree, base_url)
     rx = re.compile(pattern)
     trx = re.compile(text_pattern) if text_pattern else None
     out: List[str] = []
+    def resolve(el) -> str:
+        return _same_host_https(base_url, _absolute(base, el.get("href")))
+
     for a in tree.xpath("//a[@href]"):
-        url = _same_host_https(base_url, _absolute(base, a.get("href")))
-        if trx is not None and not trx.search(fold(_text(a))):
-            continue
+        url = resolve(a)
+        if trx is not None and rx.search(url):
+            if not trx.search(fold(_card_text(a, resolve, rx) if card else _text(a))):
+                continue
         if rx.search(url) and url not in out:
             out.append(url)
     # Some sites make a table row the link: <tr onclick="window.location.href='URL'">.
@@ -207,7 +228,7 @@ def _section_of(a) -> str:
 _GENERIC_LABEL = re.compile(r"^(download|baixar|clique|aqui|visualizar|abrir|ver arquivo)\b")
 
 
-def _context_title(a) -> str:
+def _context_title(a, headings: bool = False) -> str:
     """For a "DOWNLOAD" link: the text just before it, back to the previous line break,
     else the closest paragraph above it. Empty when neither is a short label."""
     parts, node = [], a
@@ -222,7 +243,9 @@ def _context_title(a) -> str:
     before = re.sub(r"\s+", " ", "".join(reversed(parts))).strip(" :-\u2013\u00b7")
     if before and len(before) <= 200:
         return before
-    above = a.xpath("preceding::p[normalize-space()][1]")
+    # With ``headings`` (a button labelled "Download"), a heading closer than any paragraph is the title.
+    kinds = "p[normalize-space()] or self::h2 or self::h3 or self::h4 or self::h5" if headings else "p[normalize-space()]"
+    above = a.xpath(f"preceding::*[self::{kinds}][1]")
     text = _text(above[0]) if above else ""
     return text if 0 < len(text) <= 200 else ""
 
@@ -245,7 +268,7 @@ def _title_of(a, url: str) -> str:
         return kids[0]
     text = _text(a)
     if fold(text) in _GENERIC_LINK_TEXT or _GENERIC_LABEL.match(fold(text)):
-        found = _nearby_title(a) or _context_title(a)
+        found = _nearby_title(a) or _context_title(a, headings=bool(text))
         if found:
             return found
     if text:
@@ -282,6 +305,14 @@ def _debtor_from_title(tree) -> Optional[str]:
     return name or None
 
 
+_PROCESS_TAIL = re.compile(r"\s*[-\u2010-\u2015]\s*processo\s*n\S*\s.*$", re.I)
+
+
+def _trim_process(name: Optional[str]) -> Optional[str]:
+    """A heading that prints "<debtor> – Processo nº ..." names the debtor before the dash."""
+    return (_PROCESS_TAIL.sub("", name).strip() or None) if name else name
+
+
 def parse_case_page(page_html: str, base_url: str, doc_pattern: str, debtor_xpath: str = "",
                     debtor_from_title: bool = False) -> CasePage:
     """``debtor_from_title`` for sites whose headings are document titles, not the debtor."""
@@ -310,9 +341,10 @@ def parse_case_page(page_html: str, base_url: str, doc_pattern: str, debtor_xpat
         docs.append(by_url[url])
     return CasePage(
         numero_processo=numbers[0] if numbers else None,
-        devedor_nome=((_debtor_at(tree, debtor_xpath) if debtor_xpath else None)
-                      or (_debtor_from_title(tree) if debtor_from_title else None)
-                      or _debtor(tree)),
+        devedor_nome=_trim_process(
+            (_debtor_at(tree, debtor_xpath) if debtor_xpath else None)
+            or (_debtor_from_title(tree) if debtor_from_title else None)
+            or _debtor(tree)),
         vara=_vara(tree),
         documents=docs,
         other_numbers=numbers[1:],

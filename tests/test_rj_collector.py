@@ -70,6 +70,14 @@ EXPECTED = {
     "rlg-aj.com.br": (13, "50114607620258210028", 18),
     "clesciogalvao.adv.br": (2, "50020627320188130384", 7),
     "fatorfiscal.com.br": (3, "00011573120188080017", 35),
+    # Batch 8, read 2026-10-12. Diligence lists 47 cards, 26 of them recuperação judicial (one is the
+    # site's template); LRF lists 78, 51 of them recuperação judicial or extrajudicial; stenius reads
+    # only the /rj-<name>/ posts of its first page.
+    "julianamorais.com.br": (25, "00909041720168130342", 12),
+    "stenius.com.br": (8, "57759089220258090014", 3),
+    "diligence.adm.br": (26, "01089231520258172001", 19),
+    "lrflideres.com.br": (51, "00007422920178173090", 76),
+    "inova-aj.com.br": (16, "00122399620218190001", 110),
 }
 
 
@@ -139,7 +147,7 @@ def test_classify_tipo(title, section, tipo):
 @pytest.mark.parametrize("site", SITES, ids=lambda s: s.domain)
 def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
-    links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text)
+    links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text, site.case_card)
     assert len(links) == n_cases
     hosts = {urlsplit(link).hostname for link in links}
     assert all(h == site.domain or h.endswith("." + site.domain) for h in hosts), hosts
@@ -375,3 +383,30 @@ def test_icon_only_links_are_titled_from_the_file_name_and_rows_can_be_links():
     site = next(s for s in SITES if s.domain == "fvsadmj.com.br")
     cp = parse_case_page(_fixture(site.domain, "case"), site.list_urls[0], site.doc_pattern)
     assert [d.titulo for d in cp.documents] == ["Deferimento recuperacao CHAMA", "LISTA DE CREDORES"]
+
+
+def test_batch8_card_text_keeps_the_recuperacao_cards_and_second_page_adds_more():
+    dil = next(s for s in SITES if s.domain == "diligence.adm.br")
+    page = _fixture(dil.domain, "list")
+    assert len(case_links(page, dil.list_urls[0], r"^https://diligence\.adm\.br/processos/[a-z0-9-]+/$")) == 47
+    assert len(case_links(page, dil.list_urls[0], dil.case_pattern, dil.case_text, dil.case_card)) == 26
+    # Without ``card`` the link text (empty on these cards) cannot tell the types apart.
+    assert case_links(page, dil.list_urls[0], dil.case_pattern, dil.case_text) == []
+    st = next(s for s in SITES if s.domain == "stenius.com.br")
+    first = case_links(_fixture(st.domain, "list"), st.list_urls[0], st.case_pattern)
+    second = case_links(_fixture(st.domain, "list2"), st.list_urls[1], st.case_pattern)
+    assert len(second) == 5 and not set(first) & set(second)
+
+
+def test_batch8_parse_rules():
+    # A typographic hyphen inside the process number (Inova prints it so).
+    assert cnj_numbers("Processo nº 0012239\u201096.2021.8.19.0001") == ["00122399620218190001"]
+    # A "Download" button takes the heading above it, not a paragraph from the page header.
+    site = next(s for s in SITES if s.domain == "julianamorais.com.br")
+    cp = parse_case_page(_fixture(site.domain, "case"), site.list_urls[0], site.doc_pattern, site.debtor_xpath)
+    assert cp.devedor_nome == "Auto Center"
+    assert cp.documents[0].titulo == "Pedido de Recuperação Judicial"
+    inova = next(s for s in SITES if s.domain == "inova-aj.com.br")
+    cp = parse_case_page(_fixture(inova.domain, "case"), inova.list_urls[0], inova.doc_pattern)
+    assert cp.devedor_nome == "Cimento Tupi"
+
