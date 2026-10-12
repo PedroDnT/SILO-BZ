@@ -545,6 +545,15 @@
    "params": [],
    "required": []
   },
+  "rj_listed_documents": {
+   "params": [
+    "p_doc_type",
+    "p_from",
+    "p_id",
+    "p_to"
+   ],
+   "required": []
+  },
   "screen_captive_vehicles": {
    "params": [
     "p_lookback_months",
