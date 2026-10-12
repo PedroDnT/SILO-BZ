@@ -43,6 +43,8 @@ EXPECTED = {
     "integrarecuperacaojudicial.com.br": (17, "00198130520258172001", 2),
     "valorizeadmjudicial.com.br": (18, "10435294320238110041", 10),
     "jscadministracaojudicial.com.br": (6, "00147714320258272729", 2),
+    "recuperasolucoes.com": (8, "00099716220268172810", 5),
+    "pbbadvogados.com.br": (104, "00334388120158130251", 1),
 }
 
 
@@ -75,6 +77,9 @@ def test_cnj_numbers_printed_and_bare():
     ("Edital do art. 7º, §2º - Relação de Credores do Administrador Judicial", "", "relacao_credores_aj"),
     ("Relação de Credores", "", "relacao_credores_devedor"),
     ("Decisão que deferiu o processamento da Recuperação Judicial", "", "decisao_deferimento"),
+    ("2.- Decisão Deferimento RJ", "", "decisao_deferimento"),
+    ("3.- PRJ", "", "plano"),
+    ("Relatório de cumprimento do PRJ", "", "outros"),
     ("Sentença de concessão da recuperação judicial", "", "sentenca_concessao"),
     ("Balanço Patrimonial 2023", "", "demonstracoes_contabeis"),
     ("Despacho que determinou perícia prévia", "", "outros"),

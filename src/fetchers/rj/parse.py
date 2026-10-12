@@ -66,7 +66,7 @@ _TIPO_RULES: Sequence[tuple] = (
     ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|inicial)\b"),
     # Homologating the plan is the decision that grants the recuperação (art. 58).
     ("sentenca_concessao", r"\bhomologacao do plano\b"),
-    ("plano", r"\bplano\b"),
+    ("plano", r"\bplano\b|^[\d\W]*prj$"),
     ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"
                             r"|\bdefer\w*\s+(d[ao]s?\s+)?(pedido\s+(d[ea]\s+)?)?(recuperacao judicial|rj)\b"
                             r"|\bdecisao de processamento d[ao] (rj|recuperacao judicial)\b"),

@@ -110,3 +110,22 @@ SITES += (
          doc_pattern=r"^https://cdn\.jscadministracaojudicial\.com\.br/uploads/[^?#]+\.pdf$",
          platform="Next.js"),
 )
+
+# WordPress sites whose case pages are a custom post type listed on one page.
+SITES += (
+    # Recupera Soluções: /processos/<slug>/ is a case, except the "falencia-" and
+    # "autofalencia-" slugs, which are bankruptcies and not RJ. Documents come
+    # through the Download Attachments plugin (download.php?id=N).
+    Site(domain="recuperasolucoes.com", aj_name="Recupera Soluções Empresariais",
+         list_urls=("https://recuperasolucoes.com/processos/",),
+         case_pattern=r"^https://recuperasolucoes\.com/processos/(?!falencia-|autofalencia-)[^/?#]+/$",
+         doc_pattern=r"/wp-content/plugins/download-attachments/includes/download\.php\?id=\d+$",
+         platform="WordPress, Download Attachments"),
+    # Paoli Balbino & Balbino: /cliente/<slug>/ is a case; the only document
+    # link on a case page is the Google Drive folder that holds its main acts.
+    Site(domain="pbbadvogados.com.br", aj_name="Paoli Balbino & Balbino Sociedade de Advogados",
+         list_urls=("https://pbbadvogados.com.br/recuperacoes-judiciais/",),
+         case_pattern=r"^https://pbbadvogados\.com\.br/cliente/[^/?#]+/$",
+         doc_pattern=r"^https://drive\.google\.com/drive/(?:u/\d+/)?folders/",
+         platform="WordPress, Google Drive folders"),
+)
