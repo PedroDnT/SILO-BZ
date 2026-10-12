@@ -12,7 +12,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
-from urllib.parse import parse_qs, urldefrag, urljoin, urlsplit
+from urllib.parse import parse_qs, unquote, urldefrag, urljoin, urlsplit
 
 from lxml import html as lxml_html
 
@@ -63,14 +63,15 @@ _TIPO_RULES: Sequence[tuple] = (
     ("relacao_credores_devedor", r"(art\.?\s*52|artigo\s*52|primeiro edital|1o edital|art\.?\s*51|relacao (nominal )?(de )?credores|lista de credores)"),
     ("qgc", r"\b(qgc|quadro geral)\b"),
     ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades|relatorio inicial de atividades)\b"),
-    ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|inicial)\b|^pedido de recuperacao judicial\b"),
+    # "Relatório Inicial" is the AJ's first report, not the debtor's petition.
+    ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|(?<!relatorio )inicial)\b|^pedido de recuperacao judicial\b"),
     # Homologating the plan is the decision that grants the recuperação (art. 58).
     ("sentenca_concessao", r"\bhomologacao do plano\b"),
     ("plano", r"\bplano\b|^[\d\W]*prj$"),
     ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"
-                            r"|\bdefer\w*\s+(d[ao]s?\s+)?(pedido\s+(d[ea]\s+)?)?(recuperacao judicial|rj)\b"
-                            r"|\bdecisao de processamento d[ao] (rj|recuperacao judicial)\b"),
-    ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*)\b.*\brecuperacao\b"),
+                            r"|\bdefer\w*\s+(d[aeo]s?\s+)?(pedido\s+(d[ea]\s+)?)?(recuperacao judicial|rj)\b"
+                            r"|\bdecisao de processamento d[ao] (rj|recuperacao judicial)\b|\bdef\b.*\bproc\b"),
+    ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*|conced\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
 )
 
@@ -101,6 +102,9 @@ class CasePage:
     vara: Optional[str]
     documents: List[DocLink] = field(default_factory=list)
     other_numbers: List[str] = field(default_factory=list)
+
+
+_ONCLICK_URL = re.compile(r"""location(?:\.href)?\s*=\s*['"]([^'"]+)['"]""")
 
 
 def _text(el) -> str:
@@ -135,6 +139,13 @@ def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = 
             continue
         if rx.search(url) and url not in out:
             out.append(url)
+    # Some sites make a table row the link: <tr onclick="window.location.href='URL'">.
+    for el in tree.xpath("//*[@onclick]"):
+        m = _ONCLICK_URL.search(el.get("onclick"))
+        if m:
+            url = urljoin(base_url, m.group(1).strip())
+            if rx.search(url) and url not in out:
+                out.append(url)
     return out
 
 
@@ -224,8 +235,14 @@ def _title_of(a, url: str) -> str:
         return kids[0]
     text = _text(a)
     if fold(text) in _GENERIC_LINK_TEXT or _GENERIC_LABEL.match(fold(text)):
-        return _nearby_title(a) or _context_title(a) or text
-    return text
+        found = _nearby_title(a) or _context_title(a)
+        if found:
+            return found
+    if text:
+        return text
+    # An icon-only link with nothing printed beside it: the file name is the only title.
+    stem = unquote(urlsplit(url).path.rsplit("/", 1)[-1]).rsplit(".", 1)[0]
+    return re.sub(r"[-_]+", " ", stem).strip()
 
 
 # Link texts that name the action, not the document.

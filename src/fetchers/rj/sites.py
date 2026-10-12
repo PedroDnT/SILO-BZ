@@ -191,3 +191,44 @@ SITES += (
          case_pattern=r"^https://actionaj\.com\.br/processos/[^/?#]+/$",
          doc_pattern=WP_UPLOADS_PDF, platform="WordPress"),
 )
+# WordPress sites with a custom post type per case. Each has its own slug, so
+# each carries its own patterns; documents are PDFs in wp-content/uploads
+# (icon-only links, titled from the file name) or Google Drive file links.
+WP_UPLOADS_PDF = r"/wp-content/uploads/[^?#]+\.pdf$"
+
+SITES += (
+    # FVS: the list is a table whose rows carry the case URL in onclick.
+    Site(domain="fvsadmj.com.br", aj_name="FVS Administração e Gestão Judicial Ltda",
+         list_urls=("https://fvsadmj.com.br/recuperacoes/",),
+         case_pattern=r"^https://fvsadmj\.com\.br/recuperacao/[^/?#]+/?$",
+         doc_pattern=r"^https://fvsadmj\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress, custom post type"),
+    Site(domain="excelia-aj.com.br", aj_name="Excelia Consultoria, Gestão e Negócios Ltda.",
+         list_urls=("https://excelia-aj.com.br/recuperacoes-judiciais/",),
+         case_pattern=r"^https://excelia-aj\.com\.br/recuperacao-judicial/[^/?#]+/?$",
+         doc_pattern=r"^https?://excelia-aj\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress, custom post type"),
+    # Expertisemais: documents are Google Drive files. Two list entries sit
+    # under /recuperacoes-judiciais-2/; the ?page_id=..&preview=true drafts
+    # on the list are not published case pages and are not matched.
+    Site(domain="expertisemais.com.br", aj_name="Expertisemais Serviços Contábeis e Administrativos",
+         list_urls=("https://expertisemais.com.br/recuperacoes-judiciais/",),
+         case_pattern=r"^https://expertisemais\.com\.br/recuperacoes-judiciais(?:-2)?/[^/?#]+/?$",
+         doc_pattern=r"^https://drive\.google\.com/file/d/",
+         platform="WordPress, Google Drive documents"),
+    # Tapxure & Severino: three list pages (RJ and falência cases mixed); the
+    # cartilha on the list is a guide, not a case.
+    Site(domain="tapxure.com.br", aj_name="Tapxure & Severino Sociedade de Advogados",
+         list_urls=("https://www.tapxure.com.br/processos/",
+                    "https://www.tapxure.com.br/processos/page/2/",
+                    "https://www.tapxure.com.br/processos/page/3/"),
+         case_pattern=r"^https://www\.tapxure\.com\.br/processos/(?!cartilha|page/)[^/?#]+/?$",
+         doc_pattern=r"^https://www\.tapxure\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress, custom post type"),
+    # Érika Santiago: documents come through the Download Attachments plugin.
+    Site(domain="erikasantiago.adv.br", aj_name="Erika Santiago Sociedade Individual de Advocacia",
+         list_urls=("http://erikasantiago.adv.br/portfolio-group/recuperacoes-judiciais/",),
+         case_pattern=r"^http://erikasantiago\.adv\.br/portfolio-item/[^/?#]+/?$",
+         doc_pattern=r"/wp-content/plugins/download-attachments/includes/download\.php\?id=\d+",
+         platform="WordPress, Download Attachments"),
+)
