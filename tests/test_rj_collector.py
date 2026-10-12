@@ -100,6 +100,13 @@ EXPECTED = {
     "calc.com.br": (12, "00223780920188160030", 11),
     "ricardobiancardi.com.br": (7, "50486715820248080024", 34),
     "adjud.com.br": (3, "00383283920138260100", 5),
+    # Batch 11, read 2026-10-12. cabezon lists 4 recuperações on its home page (more load by AJAX).
+    "wfsp.com.br": (145, "00141171420128260248", 4),
+    "ajcabezon.com.br": (4, "40015071620268260260", 1),
+    "safirajud.com.br": (11, "10097931720248110003", 4),
+    "ativosajce.com.br": (25, "41537157720268260100", 10),
+    "innovareadministradora.com.br": (47, "50942334920248240023", 3),
+    "guerreiroadmjudicial.com.br": (24, "50455104920258210022", 12),
 }
 
 
@@ -169,6 +176,8 @@ def test_cnj_numbers_printed_and_bare():
     ("Decisão Deferindo a Antecipação da Tutela Recursal", "", "outros"),
     ("3. Decisão determinando Emenda à Inicial mov. 21.1", "", "outros"),
     ("03. Decisão. Processamento da RJ", "", "decisao_deferimento"),
+    ("Deferimento da Recuperação", "", "decisao_deferimento"),
+    ("Nomeação Administrador Judicial", "", "outros"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo

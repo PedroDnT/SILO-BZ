@@ -500,3 +500,47 @@ SITES += (
                              'contains(@class, "category-recuperacao-extra-judiciais")]//a[@href]'),
          debtor_from_title=True),
 )
+
+# --- Batch 11: custom PHP portals ---------------------------------------------
+SITES += (
+    # WFSP: /processos/<id>; the case page's <base href> is the site root, so its files are /uploads/arquivos/.
+    Site(domain="wfsp.com.br", aj_name="WFSP Administração Empresarial Ltda.",
+         list_urls=("https://www.wfsp.com.br/recuperacao-judicial",),
+         case_pattern=r"^https://www\.wfsp\.com\.br/processos/\d+$",
+         doc_pattern=r"^https://www\.wfsp\.com\.br/uploads/arquivos/[^?#]+\.(?i:pdf)$",
+         platform="custom PHP"),
+    # Cabezón: /<tipo>/<id>/<slug>, the home page lists falências, recuperações and
+    # execuções; only /recuperacao/ is read. The "carregar mais" button loads more by
+    # AJAX, so only the cases the home page prints are read.
+    Site(domain="ajcabezon.com.br", aj_name="Cabezón Administração Judicial",
+         list_urls=("https://www.ajcabezon.com.br/home",),
+         case_pattern=r"^https://www\.ajcabezon\.com\.br/recuperacao/\d+/[^/?#]+$",
+         doc_pattern=r"^https://www\.ajcabezon\.com\.br/uploads/downloads/[^?#]+\.(?i:pdf)$",
+         platform="custom PHP (Agencia Kombi)"),
+    # Safira: the list rows are <div onclick="window.location.href = '.../empresas/<id>'">;
+    # /recuperacoes-judiciais/1 is the recuperações tab (the falências tab is /2).
+    Site(domain="safirajud.com.br", aj_name="Safira Auditoria e Administração Judicial Ltda",
+         list_urls=("https://safirajud.com.br/recuperacoes-judiciais/1",),
+         case_pattern=r"^https://safirajud\.com\.br/recuperacoes-judiciais/empresas/\d+$",
+         doc_pattern=r"^https://safirajud\.com\.br/recuperacoes-judiciais/assets/uploads/[^?#]+\.(?i:pdf)$",
+         platform="custom PHP", debtor_xpath='//section[@id="capa"]//strong'),
+    # Ativos: /processo?c=<id> on the recuperações list (natureza=1); same download.php as DoubleOne.
+    Site(domain="ativosajce.com.br", aj_name="Ativos Administração Judicial e Consultoria",
+         list_urls=("https://ativosajce.com.br/processos?natureza=1",),
+         case_pattern=r"^https://ativosajce\.com\.br/processo\?c=\d+$",
+         doc_pattern=DOUBLEONE_DOC, platform="custom PHP",
+         debtor_xpath='//h4'),
+    # Innovare: cliente_r.php?id=N; the page prints the debtor in the first bold line and
+    # the process number with no punctuation after "Número do Processo".
+    Site(domain="innovareadministradora.com.br", aj_name="Innovare Administradora",
+         list_urls=("https://www.innovareadministradora.com.br/site/recuperacao.php",),
+         case_pattern=r"^https://www\.innovareadministradora\.com\.br/site/cliente_r\.php\?id=\d+$",
+         doc_pattern=r"^https://www\.innovareadministradora\.com\.br/site/download4\.php\?arq=",
+         platform="custom PHP", debtor_xpath='//div[contains(@class, "services")]//p/b'),
+    # Guerreiro (Qodde): the download is a <button data-file="URL"> inside a document card.
+    Site(domain="guerreiroadmjudicial.com.br", aj_name="Guerreiro Administração Judicial Ltda",
+         list_urls=("https://guerreiroadmjudicial.com.br/recuperacao",),
+         case_pattern=r"^https://guerreiroadmjudicial\.com\.br/recuperacao/detalhe/\d+/[^/?#]+$",
+         doc_pattern=r"^https://guerreiroadmjudicial\.com\.br/upload/documentos_recuperacao/[^?#]+\.(?i:pdf)$",
+         platform="custom PHP (Qodde)"),
+)
