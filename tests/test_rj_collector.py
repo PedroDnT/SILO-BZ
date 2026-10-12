@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
 import httpx
@@ -45,6 +46,10 @@ EXPECTED = {
     "jscadministracaojudicial.com.br": (6, "00147714320258272729", 2),
     "recuperasolucoes.com": (8, "00099716220268172810", 5),
     "pbbadvogados.com.br": (104, "00334388120158130251", 1),
+    "tpaj.com.br": (11, "50130793820268240023", 1),
+    "costapaivasantiago.com.br": (5, "50037171620238130672", 12),
+    "administradorajudicial.adv.br": (25, "50233417120258210021", 17),
+    "mvbrecuperacoesjudiciais.com.br": (23, "08158040420238190021", 7),
 }
 
 
@@ -82,6 +87,10 @@ def test_cnj_numbers_printed_and_bare():
     ("Relatório de cumprimento do PRJ", "", "outros"),
     ("Sentença de concessão da recuperação judicial", "", "sentenca_concessao"),
     ("Balanço Patrimonial 2023", "", "demonstracoes_contabeis"),
+    ("Decisão deferimento RJ", "", "decisao_deferimento"),
+    ("Decisão de deferimento da Recuperação Judicial e nomeação da Administradora Judicial", "", "decisao_deferimento"),
+    ("Pedido de Recuperação Judicial", "", "peticao_inicial"),
+    ("Edital 5003717-16.2023.8.13.0672-Relacao Credores", "", "relacao_credores_devedor"),
     ("Despacho que determinou perícia prévia", "", "outros"),
     ("Decisão de deferimento da recuperação judicial - 20.02.2024", "", "decisao_deferimento"),
     ("Deferimento do pedido de Recuperação Judicial", "", "decisao_deferimento"),
@@ -101,6 +110,8 @@ def test_fixture_pages_parse(site):
     assert len(links) == n_cases
     assert all(link.startswith((f"https://{site.domain}/", f"https://www.{site.domain}/")) for link in links)
     cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern, site.debtor_xpath)
+    assert all(urlsplit(link).netloc in (site.domain, f"www.{site.domain}") for link in links)
+    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern)
     assert cp.numero_processo == numero
     assert cp.devedor_nome
     assert len(cp.documents) == n_docs
