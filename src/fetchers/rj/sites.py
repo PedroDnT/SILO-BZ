@@ -160,3 +160,34 @@ SITES += (
          doc_pattern=r"^https://[0-9a-f-]+\.usrfiles\.com/ugd/[^?#]+\.pdf$",
          platform="Wix"),
 )
+# Batch 3. WordPress sites whose case pages are plain posts and whose documents
+# are PDFs under wp-content/uploads.
+WP_UPLOADS_PDF = r"/wp-content/uploads/[^?#]+\.pdf$"
+
+SITES += (
+    # Case pages are /recuperacao-judicial/<slug>/ (the falencias list is a separate page).
+    Site(domain="fontanaexperts.com.br", aj_name="Fontana Experts Consultoria, Administração Judicial e Perícias",
+         list_urls=("https://fontanaexperts.com.br/recuperacoes/",),
+         case_pattern=r"^https://fontanaexperts\.com\.br/recuperacao-judicial/[^/?#]+/$",
+         doc_pattern=WP_UPLOADS_PDF, platform="WordPress"),
+    # Case pages are /processo/<slug>/; the list carries both RJ and falencia cases.
+    Site(domain="scalzilliedias.com.br", aj_name="Scalzilli & Dias Administração Judicial",
+         list_urls=("https://scalzilliedias.com.br/processos-page/",),
+         case_pattern=r"^https://scalzilliedias\.com\.br/processo/[^/?#]+/$",
+         doc_pattern=WP_UPLOADS_PDF, platform="WordPress"),
+    # Case pages sit at the root, beside the menu pages, so the menu slugs are excluded.
+    # Documents are WordPress Download Manager links.
+    Site(domain="atrioconsultores.com.br", aj_name="Átrio Consultores",
+         list_urls=("https://atrioconsultores.com.br/recuperacao-judicial/",),
+         case_pattern=(r"^https://atrioconsultores\.com\.br/"
+                       r"(?!(?:sobre|habilitacoes-e-divergencias|recuperacao-judicial|falencia|"
+                       r"penhora-de-faturamento|contato)/)[a-z0-9-]+/$"),
+         doc_pattern=r"/download/[^/?#]+/\?wpdmdl=\d+", platform="WordPress + Download Manager"),
+    # The list is a Search & Filter view, five cases a page; ?_sft_tipo= keeps only RJ
+    # (the unfiltered list mixes in falencias) and sf_paged= pages through it.
+    Site(domain="actionaj.com.br", aj_name="Action Administração Judicial",
+         list_urls=("https://actionaj.com.br/todos-os-processos/?_sft_tipo=recuperacao-judicial",
+                    "https://actionaj.com.br/todos-os-processos/?_sft_tipo=recuperacao-judicial&sf_paged=2"),
+         case_pattern=r"^https://actionaj\.com\.br/processos/[^/?#]+/$",
+         doc_pattern=WP_UPLOADS_PDF, platform="WordPress"),
+)

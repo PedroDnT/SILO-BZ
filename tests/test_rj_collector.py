@@ -50,6 +50,10 @@ EXPECTED = {
     "costapaivasantiago.com.br": (5, "50037171620238130672", 12),
     "administradorajudicial.adv.br": (25, "50233417120258210021", 17),
     "mvbrecuperacoesjudiciais.com.br": (23, "08158040420238190021", 7),
+    "fontanaexperts.com.br": (8, "40984543020268260100", 7),
+    "scalzilliedias.com.br": (10, "07200514920268020001", 12),
+    "atrioconsultores.com.br": (3, "08022340820248180032", 14),
+    "actionaj.com.br": (5, "40000604220268260373", 15),
 }
 
 
@@ -98,6 +102,11 @@ def test_cnj_numbers_printed_and_bare():
     ("Homologação do Plano de Recuperação Judicial, conforme art. 58 da Lei 11.101/05", "", "sentenca_concessao"),
     ("Lista de Credores AJ - Comercial Mabruk Ltda.", "", "relacao_credores_aj"),
     ("Decisão de deferimento da prorrogação do stay period da recuperação judicial", "", "outros"),
+    ("1. Relatorio inicial de atividades", "", "rma"),
+    ("3. Edital art. 7, par. segundo", "", "relacao_credores_aj"),
+    ("1. Edital art. 52, par. primeiro", "", "relacao_credores_devedor"),
+    ("Decisão - Deferimento da Recuperação Judicial e Nomeação FEX", "", "decisao_deferimento"),
+    ("Decisão - Deferimento de Tutela Cautelar", "", "outros"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo
@@ -117,6 +126,20 @@ def test_fixture_pages_parse(site):
     assert len(cp.documents) == n_docs
     assert len({d.url for d in cp.documents}) == n_docs  # one row per link
     assert all(d.titulo for d in cp.documents)
+
+
+def test_actionaj_second_list_page_adds_five_more_cases():
+    site = next(s for s in SITES if s.domain == "actionaj.com.br")
+    first = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern)
+    second = case_links(_fixture(site.domain, "list2"), site.list_urls[1], site.case_pattern)
+    assert len(second) == 5 and not set(first) & set(second)
+
+
+def test_download_button_takes_the_title_printed_beside_it():
+    site = next(s for s in SITES if s.domain == "scalzilliedias.com.br")
+    cp = parse_case_page(_fixture(site.domain, "case"), "https://scalzilliedias.com.br/processo/x/", site.doc_pattern)
+    assert "Petição inicial" in {d.titulo for d in cp.documents}
+    assert not any(d.titulo == "Download" for d in cp.documents)
 
 
 def test_doubleone_title_comes_from_the_download_name():

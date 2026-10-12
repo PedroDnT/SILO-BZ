@@ -59,10 +59,10 @@ _TIPO_RULES: Sequence[tuple] = (
     ("edital_agc", r"\bedital\b.*\b(assembleia|agc|convocacao)\b|\bconvocacao\b.*\b(assembleia|agc)\b"),
     # Art. 7, §2 is the AJ's own list. Art. 7, §1 is only the habilitation
     # deadline, printed inside the debtor's art. 52 edital, so it does not count.
-    ("relacao_credores_aj", r"(art(igo|\.)?\s*7o?\W{0,4}§\s*2|segundo edital|2o edital|relacao de credores do (administrador|aj)|\b(lista|relacao) de credores (do |da )?(aj\b|administrador))"),
+    ("relacao_credores_aj", r"(art(igo|\.)?\s*7o?\W{0,4}(§\s*2|par\.?\s*segundo|paragrafo\s*(2|segundo))|segundo edital|2o edital|relacao de credores do (administrador|aj)|\b(lista|relacao) de credores (do |da )?(aj\b|administrador))"),
     ("relacao_credores_devedor", r"(art\.?\s*52|artigo\s*52|primeiro edital|1o edital|art\.?\s*51|relacao (nominal )?(de )?credores|lista de credores)"),
     ("qgc", r"\b(qgc|quadro geral)\b"),
-    ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades)\b"),
+    ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades|relatorio inicial de atividades)\b"),
     ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|inicial)\b|^pedido de recuperacao judicial\b"),
     # Homologating the plan is the decision that grants the recuperação (art. 58).
     ("sentenca_concessao", r"\bhomologacao do plano\b"),
@@ -223,9 +223,29 @@ def _title_of(a, url: str) -> str:
     if len(kids) >= 2:  # a title and then a size / "Baixar": the title is the first
         return kids[0]
     text = _text(a)
-    if _GENERIC_LABEL.match(fold(text)):
-        return _context_title(a) or text
+    if fold(text) in _GENERIC_LINK_TEXT or _GENERIC_LABEL.match(fold(text)):
+        return _nearby_title(a) or _context_title(a) or text
     return text
+
+
+# Link texts that name the action, not the document.
+_GENERIC_LINK_TEXT = {"", "baixar", "download", "dowload", "visualizar", "abrir", "ver"}
+
+
+def _nearby_title(a) -> str:
+    """The title printed next to a "Download" button or an image-only link.
+
+    The nearest paragraph or heading before the link, but only inside the
+    link's own parent block, so a link with no title of its own never borrows
+    the previous document's.
+    """
+    parent = a.getparent()
+    if parent is None:
+        return ""
+    prev = a.xpath("preceding::*[self::p or self::h4 or self::h5 or self::h6][1]")
+    if prev and parent in prev[0].iterancestors():
+        return _text(prev[0])
+    return ""
 
 
 def parse_case_page(page_html: str, base_url: str, doc_pattern: str, debtor_xpath: str = "") -> CasePage:
