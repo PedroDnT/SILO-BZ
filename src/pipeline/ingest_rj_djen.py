@@ -12,6 +12,9 @@ Per tribunal and day, every communication of class 129 / 128 becomes:
   division and the class. ``devedor_nome`` stays NULL: DJEN's polo ativo mixes
   the recuperanda with partners, rural producers and lawyers, so it does not
   name the debtor. The debtor comes from the AJ site or the resolver.
+  ``aj_name`` is set only when the acts name exactly one AJ of the #844
+  inventory, by its domain or an inventoried name (``aj_index``); it is the
+  inventory's spelling, never a name read from the act.
 * an ``rj_document`` row for the act itself (DJEN's ``link``), ``titulo`` =
   "<tipoComunicacao>: <tipoDocumento>", ``found_on`` = its certidão URL and
   ``data_publicacao`` = the day DJEN made it available. ``tipo`` comes from the
@@ -33,6 +36,7 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
+from src.fetchers.rj.aj_index import aj_named_in
 from src.fetchers.rj.djen import STATE_COURTS, DjenClient, DjenItem, certidao_url
 from src.fetchers.rj.parse import classify_tipo
 from src.pipeline.ingest_log import Outcome, audited
@@ -52,12 +56,16 @@ def rows_for(items: Sequence[DjenItem], seen_at: datetime) -> tuple[List[Dict[st
     """rj_case and rj_document rows for one tribunal's items. Pure, so it is tested offline."""
     cases: Dict[str, Dict[str, Any]] = {}
     docs: List[Dict[str, Any]] = []
+    named: Dict[str, set] = {}
     for it in items:
         case = cases.setdefault(it.numero_processo, {
             "numero_processo": it.numero_processo, "source": SOURCE, "tribunal": it.tribunal,
             "vara": it.orgao, "classe": it.classe, "devedor_nome": None,
             "aj_name": None, "aj_case_url": None, "last_seen_at": seen_at,
         })
+        aj = aj_named_in(it.texto)
+        if aj:
+            named.setdefault(it.numero_processo, set()).add(aj.name)
         if not (it.link and it.link.startswith(("http://", "https://")) and it.hash):
             continue  # an act without its own link is a case signal only, never a document
         titulo = ": ".join(p for p in (it.tipo_comunicacao, it.tipo_documento) if p)
@@ -68,6 +76,9 @@ def rows_for(items: Sequence[DjenItem], seen_at: datetime) -> tuple[List[Dict[st
             "data_publicacao": (it.data_disponibilizacao or "")[:10] or None,
             "last_seen_at": seen_at,
         })
+    for numero, names in named.items():
+        if len(names) == 1:  # two acts naming different AJs name none
+            cases[numero]["aj_name"] = names.pop()
     return list(cases.values()), docs
 
 
