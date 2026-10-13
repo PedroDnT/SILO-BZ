@@ -545,3 +545,72 @@ SITES += (
          doc_pattern=r"^https://guerreiroadmjudicial\.com\.br/upload/documentos_recuperacao/[^?#]+\.(?i:pdf)$",
          platform="custom PHP (Qodde)"),
 )
+
+# --- Inline batch A (#845) ----------------------------------------------------
+# No page per case: the list page holds every case, one block each, read with
+# ``inline_blocks_xpath``. Only the recuperação judicial / extrajudicial blocks
+# are selected where the page also lists falências (by the heading of their
+# section or tab). Not read: brasiltrustee.com.br (HTTP 403 browser-check page to
+# the collector, robots.txt included) and hamt.com.br (each case is a run of
+# sibling paragraphs under a heading, unevenly nested in groups, so no element
+# holds one case and only that case).
+SITES += (
+    # Drupal view: one accordion row per case under the "Recuperações Extrajudiciais"
+    # and "Recuperações Judiciais" headers; the "Falências" view is left out.
+    Site(domain="ajruiz.com.br", aj_name="AJ Ruiz Administração Judicial",
+         list_urls=("https://www.ajruiz.com.br/processos",),
+         case_pattern="",
+         doc_pattern=r"^https://www\.ajruiz\.com\.br/sites/default/files/public/arquivos-processos/",
+         platform="Drupal",
+         debtor_xpath="//div[contains(@class, 'views-field-title')]",
+         inline_blocks_xpath="//header/h2[starts-with(normalize-space(), 'Recupera')]/ancestor::div[1]"
+                             "//div[@class='views-row'][div[contains(@class, 'views-accordion-header')]]"),
+    # A page of recuperações judiciais only; one .tab-item per case. One debtor is
+    # listed twice (an empty block and a full one) with the same process number.
+    Site(domain="vonsaltiel.com.br", aj_name="Von Saltiel Serviços e Soluções Empresariais",
+         list_urls=("https://vonsaltiel.com.br/recuperacao-judicial/",),
+         case_pattern="",
+         doc_pattern=r"^https://vonsaltiel\.com\.br/wp-content/uploads/",
+         platform="WordPress",
+         debtor_xpath="//div[@class='tab-title']",
+         inline_blocks_xpath="//div[@class='list-posts']/div[@class='tab-item']"),
+    # Home page: Elementor nested accordions under "Processos de Falência",
+    # "... de Recuperação Judicial" and "... de Recuperação Extrajudicial" headings.
+    Site(domain="gatekeeperaj.com.br", aj_name="Gatekeeper Administração Judicial",
+         list_urls=("https://gatekeeperaj.com.br/",),
+         case_pattern="",
+         doc_pattern=r"^https://gatekeeperaj\.com\.br/wp-content/uploads/",
+         platform="WordPress + Elementor",
+         debtor_xpath="//summary",
+         inline_blocks_xpath="//details[contains(@class, 'e-n-accordion-item')]"
+                             "[preceding::h2[starts-with(normalize-space(), 'Processos de')][1][contains(., 'Recupera')]]"),
+    # One accordion of recuperações judiciais (#item1..); links read "1 - <title> Visualizar".
+    Site(domain="vwadvogados.com.br", aj_name="VW Advogados",
+         list_urls=("https://www.vwadvogados.com.br/administracaojudicial/",),
+         case_pattern="",
+         doc_pattern=r"^https://www\.vwadvogados\.com\.br/administracaojudicial/wp-content/uploads/",
+         platform="WordPress (custom theme)",
+         inline_blocks_xpath="//div[@id='accordion']/div[@class='panel']"),
+    # Elementor tabs (Recuperações Extrajudiciais, Recuperações Judiciais, Falências, ...);
+    # each case is a toggle item in a "Recupera..." tab.
+    Site(domain="arzadministradorajudicial.com.br", aj_name="ARZ Rodrigues & Zanchetta Administração Judicial",
+         list_urls=("https://arzadministradorajudicial.com.br/processos/",),
+         case_pattern="",
+         doc_pattern=r"^https://arzadministradorajudicial\.com\.br/wp-content/uploads/",
+         platform="WordPress + Elementor",
+         debtor_xpath="//*[contains(@class, 'elementor-toggle-title')]",
+         inline_blocks_xpath="//div[@role='tabpanel'][@aria-labelledby = //*[@role='tab']"
+                             "[starts-with(normalize-space(), 'Recupera')]/@id]"
+                             "//div[contains(concat(' ', @class, ' '), ' elementor-toggle-item ')]"),
+    # Elementor nested accordions under section headings; the RCE, falência and
+    # intervenção judicial sections are left out.
+    Site(domain="carapetcovaj.com.br", aj_name="Carapetcov Administração Judicial",
+         list_urls=("https://carapetcovaj.com.br/processos/",),
+         case_pattern="",
+         doc_pattern=r"^https://carapetcovaj\.com\.br/wp-content/uploads/",
+         platform="WordPress + Elementor",
+         debtor_xpath="//summary",
+         inline_blocks_xpath="//details[contains(@class, 'e-n-accordion-item')]"
+                             "[contains(translate(preceding::h2[1], 'abcdefghijklmnopqrstuvwxyzçã', "
+                             "'ABCDEFGHIJKLMNOPQRSTUVWXYZÇÃ'), 'RECUPERA')]"),
+)
