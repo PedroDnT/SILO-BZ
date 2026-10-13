@@ -4,6 +4,7 @@ and the per-site harvest. Offline: saved HTML fixtures and httpx.MockTransport.
 
 from __future__ import annotations
 
+import asyncio
 import csv
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,8 +19,8 @@ import pytest
 from src.fetchers.rj import client as rj_client
 from src.fetchers.rj.client import FetchError, PoliteClient, RobotsDisallowed
 from src.fetchers.rj.parse import case_blocks, case_links, classify_tipo, cnj_numbers, parse_case_page
-from src.fetchers.rj.sites import SITES
-from src.pipeline import ingest_rj
+from src.fetchers.rj.sites import KNOWN_DEAD, SITES
+from src.pipeline import ingest_log, ingest_rj
 from src.pipeline.ingest_rj import EmptySiteError, RJIngestor, harvest_site
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -622,3 +623,82 @@ def test_inline_batch_a_selects_only_recuperacao_blocks():
         assert falida in cnj_numbers(page)
         numbers = {n for b in case_blocks(page, site.inline_blocks_xpath) for n in cnj_numbers(b)}
         assert falida not in numbers, domain
+
+
+# ---------------------------------------------------------------------------
+# Known-dead sites and dropped connections (#943)
+# ---------------------------------------------------------------------------
+def test_known_dead_sites_are_inventoried_and_not_collected():
+    with open(ROOT / "src/fetchers/rj/aj_sites.csv", encoding="utf-8", newline="") as fh:
+        inventory = {r["domain"] for r in csv.DictReader(fh)}
+    assert KNOWN_DEAD and set(KNOWN_DEAD) <= inventory
+    assert not set(KNOWN_DEAD) & {s.domain for s in SITES}
+    assert all("#943" in reason for reason in KNOWN_DEAD.values())
+
+
+def test_a_known_dead_site_logs_skipped_with_its_reason_and_is_not_a_failure():
+    logged = []
+
+    def fake_finish(client, run_id, entity, doc_type, *, status, rows, error, **_):
+        logged.append((entity, doc_type, status, rows, error))
+
+    class NoRequests:
+        def get(self, url):
+            raise AssertionError(f"a known-dead site must get no request: {url}")
+
+    ing = _Ingestor(stored=5, client=NoRequests())
+    with patch.object(ingest_log, "start", lambda *a, **k: None), \
+            patch.object(ingest_log, "finish", fake_finish), \
+            patch.object(ingest_rj, "upsert_rows", side_effect=AssertionError("must not write")):
+        out = asyncio.run(ing.collect([], {"dead.example": "known dead: HTTP 403 (#943)"}))
+    assert out == {"dead.example": 0}
+    assert logged == [("rj", "aj_site:dead.example", "skipped", 0, "known dead: HTTP 403 (#943)")]
+
+
+def test_main_logs_a_known_dead_site_named_with_site_instead_of_rejecting_it():
+    seen = {}
+
+    class Fake:
+        async def collect(self, sites, dead):
+            seen["sites"], seen["dead"] = list(sites), dict(dead)
+            return {}
+
+    domain = next(iter(KNOWN_DEAD))
+    with patch.object(ingest_rj, "RJIngestor", Fake):
+        assert ingest_rj.main(["--site", domain]) == 0
+    assert seen == {"sites": [], "dead": {domain: KNOWN_DEAD[domain]}}
+
+
+def _flaky_client(drops: int, status: int = 200):
+    calls = {"page": 0}
+
+    def routes(req):
+        if req.url.path == "/robots.txt":
+            return httpx.Response(404)
+        calls["page"] += 1
+        if calls["page"] <= drops:
+            raise httpx.RemoteProtocolError(
+                "peer closed connection without sending complete message body", request=req)
+        return httpx.Response(status, text="caso")
+    return _client(routes), calls
+
+
+def test_a_dropped_connection_is_retried_once():
+    c, calls = _flaky_client(drops=1)
+    assert c.get("https://aj.example/processo/1").text == "caso"
+    assert calls["page"] == 2
+
+
+def test_a_second_dropped_connection_raises():
+    c, calls = _flaky_client(drops=2)
+    with pytest.raises(FetchError) as e:
+        c.get("https://aj.example/processo/1")
+    assert e.value.status is None and "RemoteProtocolError" in str(e.value)
+    assert calls["page"] == 2
+
+
+def test_an_http_error_status_is_not_retried():
+    c, calls = _flaky_client(drops=0, status=403)
+    with pytest.raises(FetchError) as e:
+        c.get("https://aj.example/processo/1")
+    assert e.value.status == 403 and calls["page"] == 1
