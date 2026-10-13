@@ -3,11 +3,11 @@
 Times in UTC-3, with UTC in parentheses.
 
 ```
-03:00 (06:00)  daily_ingest ─┬─ probe CVM ─────────── unreachable → skip ingest
+03:00 (06:00)  daily_ingest ─┬─ probe CVM ─────────── unreachable → skip CVM, run red
                              ├─ apply schema + migrations
                              ├─ run_daily: CVM → BACEN → IBGE → ANBIMA → B3 → BDI → ETF
                              │       source failed → exit 1/red; next three still run
-                             ├─ ANALYZE               skipped only if the probe or schema apply failed
+                             ├─ ANALYZE               skipped only if the schema apply failed
                              ├─ apply_analytical.sh   refresh matviews/api; smoke guards
                              ├─ Vercel deploy hook    dashboard build, 17 to 45 min; needs the apply green
                              └─ B3 events · rates/market · FNET register · fnet-diff   (run even after a failure)
@@ -25,7 +25,7 @@ after a run    publish_check  green daily run, or red with hook done: wait ≤45
 - After a failed `run_daily`, ANALYZE, the apply and deploy hook still run.
   Matviews, `api.panel` and the dashboard may be partly stale; the run stays red.
   `landed_at` and `api.coverage()` show freshness by source.
-- Probe/schema/apply failures hold back publication until a successful run or
+- Schema/apply failures hold back publication until a successful run or
   `mode=analytics-only` with `rebuild_dashboard=true`.
 - Plain views (quotes, short interest) show new data at once. Their
   matview-fed columns do not: `days_to_cover` joins `mv_b3_adtv_21`, and

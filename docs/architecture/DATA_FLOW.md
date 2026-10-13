@@ -19,7 +19,8 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 
 ## Ingest
 
-- A **slice** is (source, doc_type, period): `ok`, `skipped` (unpublished), or `error`.
+- A **slice** is (source, doc_type, period): `ok`, `skipped` (unpublished; CVM
+  probe down: `daily_scope`), or `error`.
 - Daily windows heal late publication: CVM 4 months (gap-aware), the four CDA
   blocks every month through M+5 (CVM completes them about 90 days late), last
   year's FII files from January to March, COTAHIST and
@@ -29,10 +30,9 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - A re-read CDA month replaces the rows of each fund in the file, so a
   dropped or re-filed position goes (`cvm_ingest_log.rows_deleted`). Funds
   missing from the file keep theirs.
-- The B3 BDI group (lending, investor flow) has no backfill. See the ratchet in
-  [SYSTEM](SYSTEM.md).
+- B3 BDI (lending, investor flow) is a ratchet, no backfill ([SYSTEM](SYSTEM.md)).
 - OTC DEB (migration 74): `b3_credit_capture` saves raw CSV and knowledge time;
-  `fact_credit_market` stores long metrics. Missing sessions/drops fail the slice.
+  `fact_credit_market` stores long metrics; missing sessions/drops fail it.
   Daily capture is opt-in; history uses weekly slices.
 
 ## Analytical

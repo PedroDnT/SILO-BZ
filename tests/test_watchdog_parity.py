@@ -33,13 +33,18 @@ TWINS = {
     "Refresh B3 corporate events and cash dividends (recovery)": (
         "Refresh B3 corporate events and cash dividends"
     ),
+    # The CVM probe's alarm (#866): the probe stays green, this fails the run.
+    "Fail the run when CVM was unreachable": "Fail the run when CVM was unreachable",
 }
 
 # Step keys that may differ between twins, each with its reason.
 ALLOWED_KEY_DIFFS = {
     "name": "the watchdog marks its steps '(recovery)'.",
     "if": "the watchdog gates on staleness or force; the daily run on schedule or mode.",
-    "id": "daily ids feed its later ANALYZE / analytical / deploy gates (#473); the watchdog has none.",
+    "id": (
+        "daily ids feed its later ANALYZE / analytical / deploy gates (#473); "
+        "the watchdog has only the probe and schema ids its recovery reads (#866)."
+    ),
 }
 
 # (watchdog step, key) -> reason, for a difference only one pair may have.

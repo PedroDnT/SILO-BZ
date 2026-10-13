@@ -92,9 +92,23 @@ jobs:
       # response (including 404) passes; only a connect-level failure fails.
       # analytics-only / b3-backfill / b3-cash-dividends / b3-trade-consolidated
       # never touch CVM, so they skip this.
+      #
+      # The probe gates the CVM scope only, not the run (#866, owner decision
+      # 2026-10-13). The step stays green and records cvm_ok; run_daily reads
+      # it as CVM_REACHABLE and skips only the CVM entities (one `skipped`
+      # audit row each), so the schema apply, BACEN, IBGE, ANBIMA, B3 and the
+      # BDI ratchet still run. "Fail the run when CVM was unreachable", the
+      # job's last step, keeps the run red.
       - name: Probe dados.cvm.gov.br
+        id: cvm_probe
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
-        run: python scripts/check_cvm_reachable.py
+        run: |
+          if python scripts/check_cvm_reachable.py; then
+            echo "cvm_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cvm_ok=false" >> "$GITHUB_OUTPUT"
+            echo "::error title=CVM unreachable::the CVM scope is skipped; the other sources still run and the last step fails the job"
+          fi
 
       - name: Cache apt packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -124,9 +138,15 @@ jobs:
       # and still run after it fails (issue #473). Rows that landed are committed
       # per slice, so the warehouse they refresh is as fresh as the sources that
       # did land.
+      #
+      # !cancelled(): it runs whatever the CVM probe said (#866); CVM_REACHABLE
+      # tells run_daily whether to attempt CVM. The schema gate is kept from
+      # the old implicit success(): no ingest against a failed migration.
       - name: Run daily update
         id: daily
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
+        if: ${{ !cancelled() && steps.schema.outcome == 'success' && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+        env:
+          CVM_REACHABLE: ${{ steps.cvm_probe.outputs.cvm_ok }}
         run: python -m src.pipeline.run_daily
 
       - name: Run B3 COTAHIST yearly backfill
@@ -199,7 +219,7 @@ jobs:
       # Gate (issue #473): it runs after a FAILED `Run daily update` too, so one
       # red source no longer skips ANALYZE, the analytical apply and the deploy
       # hook. `steps.schema.outcome == 'success'` keeps it off when the schema
-      # apply failed (a CVM probe failure skips the schema step too).
+      # apply failed (a CVM probe failure no longer skips it, #866).
       # `steps.daily.outcome == 'failure' || success()` lets exactly one earlier
       # failure through, the daily update; a failed backfill step (the other
       # modes) still skips it, as before.
@@ -370,6 +390,17 @@ jobs:
         if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
         timeout-minutes: 60
         run: python -m src.pipeline.fnet_pipeline
+
+      # The CVM probe's alarm (#866). The probe step stays green so the schema
+      # apply and run_daily's non-CVM sources run; this step turns the run red
+      # (and files the tracking issue) when CVM was unreachable. Last, so it
+      # cannot skip ANALYZE, the analytical apply or the deploy hook, whose
+      # conditions read success(). An empty cvm_ok (probe not run) never fires.
+      - name: Fail the run when CVM was unreachable
+        if: ${{ !cancelled() && steps.cvm_probe.outputs.cvm_ok == 'false' }}
+        run: |
+          echo "::error title=CVM unreachable::dados.cvm.gov.br refused this runner; the CVM scope was skipped (one skipped row per entity in cvm_ingest_log). Re-dispatch to draw a fresh runner IP."
+          exit 1
 
   # FNET restatement diffs (backlog B4, docs/planning/DOCUMENTS.md): for each
   # re-filed FIDC informe mensal, download it and its predecessor from FNET and

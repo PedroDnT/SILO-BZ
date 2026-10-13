@@ -736,12 +736,12 @@ a decision first.
 
 **Data-loss risks (urgent)**
 
-- **The CVM probe gates the whole daily run.** "Run daily update"
-  (`daily_ingest.yml:129`) runs only when the probe passed, so a CVM outage also
-  skips BACEN, IBGE, ANBIMA, COTAHIST and the BDI ratchet (about 21 business days
-  of retention). Watchdog recovery uses the same gate. Make the probe gate the CVM
-  scope only. Adding `!cancelled()` alone brings back the 40-minute
-  connect-refusal loop of 2026-08-29. **owner** (design choice).
+- **The CVM probe gates the whole daily run.** Fixed on branch
+  `orchestrator/866-cvm-probe-scope` (#866, owner's design of 2026-10-13): the
+  probe records `cvm_ok`, "Run daily update" and watchdog recovery run under
+  `!cancelled()` with `CVM_REACHABLE`, `run_daily` skips only the CVM entities
+  (one `skipped` row each, doc_type `daily_scope`), and a last step keeps the run
+  red. Gate files: the owner merges.
 - **The 2027 partition rollover.** Shipped (#867): migration 76 creates the
   `_2027` partitions and re-bounds `_future` from 2028; `health.yml` check 4d fails
   while any `_future` partition holds rows. It goes live on the next daily apply
