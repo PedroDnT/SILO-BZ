@@ -107,6 +107,14 @@ EXPECTED = {
     "ativosajce.com.br": (25, "41537157720268260100", 10),
     "innovareadministradora.com.br": (47, "50942334920248240023", 3),
     "guerreiroadmjudicial.com.br": (24, "50455104920258210022", 12),
+    # Inline batch B, read 2026-10-13: (blocks on the list page, the first block's number, its documents).
+    # atlaspartnersaj lists 3 cases, 1 of them recuperação judicial; salgadorocha lists 6, 5 of them
+    # falências; swotglobal lists 3 without their type (falências and recuperações together).
+    "atlaspartnersaj.com.br": (1, "10010394920258260354", 28),
+    "salgadorocha.com.br": (1, "50389210320228080024", 3),
+    "flyrec.com.br": (2, "10023989320238260260", 1),
+    "joanamelloadvogados.com": (1, "51218351120258090051", 2),
+    "swotglobal.com": (3, "10030030520248260260", 2),
 }
 
 
@@ -180,6 +188,7 @@ def test_cnj_numbers_printed_and_bare():
     ("03. Decisão. Processamento da RJ", "", "decisao_deferimento"),
     ("Deferimento da Recuperação", "", "decisao_deferimento"),
     ("Nomeação Administrador Judicial", "", "outros"),
+    ("Decisão - Homologação do PRJ", "", "sentenca_concessao"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo
@@ -237,6 +246,16 @@ def test_doubleone_title_comes_from_the_download_name():
                          site.doc_pattern)
     first = cp.documents[0]
     assert first.titulo == "Petição Inicial" and classify_tipo(first.titulo, first.section) == "peticao_inicial"
+
+
+def test_arquivo_para_download_takes_the_case_paragraph_as_title():
+    site = next(s for s in SITES if s.domain == "flyrec.com.br")
+    block = case_blocks(_fixture(site.domain, "list"), site.inline_blocks_xpath)[0]
+    cp = parse_case_page(block, site.list_urls[0], site.doc_pattern, site.debtor_xpath,
+                         site.debtor_from_title, site.doc_title_xpath)
+    (doc,) = cp.documents
+    assert "Relação de Credores Elaborada pela Administradora Judicial" in doc.titulo
+    assert classify_tipo(doc.titulo, doc.section) == "relacao_credores_aj"
 
 
 def test_every_site_is_html_and_allowed_by_the_inventory():

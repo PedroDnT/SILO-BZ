@@ -69,7 +69,7 @@ _TIPO_RULES: Sequence[tuple] = (
     # "Relatório Inicial" is the AJ's first report, not the debtor's petition.
     ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|(?<!relatorio )(?<!emenda a )inicial)\b|^pedido de recuperacao judicial\b"),
     # Homologating the plan is the decision that grants the recuperação (art. 58).
-    ("sentenca_concessao", r"\bhomologacao do plano\b"),
+    ("sentenca_concessao", r"\bhomologacao do (plano|prj)\b"),
     ("plano", r"\bplano\b|^[\d\W]*prj$"),
     ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"
                             r"|\bdefer\w*\s+(d[aeo]s?\s+)?(pedido\s+(d[ea]\s+)?)?(recuperacao judicial|rj)\b"
@@ -329,7 +329,7 @@ def _title_of(a, url: str, title_xpath: str = "") -> str:
 
 
 # Link texts that name the action, not the document.
-_GENERIC_LINK_TEXT = {"", "baixar", "download", "dowload", "visualizar", "abrir", "ver"}
+_GENERIC_LINK_TEXT = {"", "baixar", "download", "dowload", "visualizar", "abrir", "ver", "arquivo para download"}
 
 
 def _xpath_title(a, xpath: str) -> str:
