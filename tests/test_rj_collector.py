@@ -202,6 +202,17 @@ def test_cnj_numbers_printed_and_bare():
     ("3ª RMAs junho e julho de 2025", "", "rma"),
     ("Relatório sobre o PRJ (fls. 267/287)", "", "outros"),
     ("Decisão - Homologação do PRJ", "", "sentenca_concessao"),
+    # Titles that fell to "outros" before 2026-10-13.
+    ("RELATÓRIO DE DIVERGÊNCIA E HABILITAÇÃO", "", "relacao_credores_aj"),
+    ("Relatório da Fase Administrativa", "", "relacao_credores_aj"),
+    ("1 - Relatório de Verificação de Créditos", "", "relacao_credores_aj"),
+    ("Parecer Habilitações e Divergências de Crédito", "", "relacao_credores_aj"),
+    ("2. DEFERIMENTO", "", "decisao_deferimento"),
+    ("4. DECISÃO DE PROCESSAMENTO", "", "decisao_deferimento"),
+    ("Decisão que deferiu o pedido de Recuperação Judicial", "", "decisao_deferimento"),
+    ("EDITAL DE PROCESSAMENTO DA RECUPERAÇÃO JUDICIAL", "", "relacao_credores_devedor"),
+    ("Termo de Compromisso", "", "outros"),  # no category of its own (yet)
+    ("Indeferimento do pedido de tutela", "", "outros"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo

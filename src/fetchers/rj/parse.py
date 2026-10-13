@@ -80,6 +80,14 @@ _TIPO_RULES: Sequence[tuple] = (
     ("decisao_deferimento", r"\bdefir\w*\s+(o\s+)?(pedido\s+de\s+)?processamento\b"),
     ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*|conced\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
+    # Titles that only fell to "outros" (measured on the stored AJ titles, 2026-10-13).
+    # The AJ's verification of credits, which ends in its art. 7, §2 list.
+    ("relacao_credores_aj", r"\brelatorio\b.*\b(verificacao (de|dos) creditos|fase administrativa)\b"
+                            r"|\b(relacao|parecer|analise|relatorio)\b.*\bhabilitac\w*\b.*\bdivergenc\w*"
+                            r"|\bdivergenc\w*\b.*\bhabilitac\w*"),
+    ("decisao_deferimento", r"^[\d\W]*deferimento[\W]*$|\bdecisao (de|do) processamento\b|\bdecisao que defer\w*\b"),
+    # The edital that publishes the processing decision is the art. 52 edital.
+    ("relacao_credores_devedor", r"\bedital de processamento\b"),
 )
 
 
