@@ -290,7 +290,7 @@ The per-asset performance attribution (owner, 2026-10-06) is the retroactive con
 total.
 
 **Superseded by map #510 (2026-10-03).** #340 and #341–#345 were closed as not
-planned on 2026-09-30. The demo is now map #510 (label `demo-diagnostico`),
+planned on 2026-09-30. The demo is now map #510 (its tickets say `Part of #510`; the `demo-diagnostico` label was retired 2026-10-13),
 built on the Phase 0 note `docs/reference/research/portfolio-diagnosis-phase0.md`.
 The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 
