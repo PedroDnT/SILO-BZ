@@ -1,0 +1,11 @@
+CNPJ_Companhia;Data_Referencia;Versao;ID_Documento;Nome_Empresarial;Valor_Mobiliario;Sigla_Classe_Acao_Preferencial;Classe_Acao_Preferencial;Codigo_Negociacao;Composicao_BDR_Unit;Mercado;Sigla_Entidade_Administradora;Entidade_Administradora;Data_Inicio_Negociacao;Data_Fim_Negociacao;Segmento;Data_Inicio_Listagem;Data_Fim_Listagem
+00.000.000/0001-91;2026-01-01;3;160576;BCO BRASIL S.A.;Ações Ordinárias;;;BBAS3;;Bolsa;B3;B3 S.A. - Brasil, Bolsa, Balcão.;2006-05-31;;Novo Mercado;1977-07-20;
+00.000.208/0001-00;2026-01-01;1;154896;BRB BANCO DE BRASILIA S.A.;Ações Ordinárias;;;BSLI3;;Bolsa;B3;B3 S.A. - Brasil, Bolsa, Balcão.;2010-01-01;;Básico;1993-09-24;
+00.000.208/0001-00;2026-01-01;1;154896;BRB BANCO DE BRASILIA S.A.;Ações Preferenciais;;;BSLI4;;Bolsa;B3;B3 S.A. - Brasil, Bolsa, Balcão.;2010-01-01;;Básico;1993-09-24;
+00.001.180/0001-26;2026-01-01;4;159987;AXIA Energia S.A.;Ações Ordinárias;;;AXIA3;;Bolsa;B3;B3 S.A. - Brasil, Bolsa, Balcão.;1971-09-07;;Novo Mercado;1971-09-07;
+00.001.180/0001-26;2026-01-01;4;159987;AXIA Energia S.A.;Debêntures;;;;;Balcão Organizado;B3;B3 S.A. - Brasil, Bolsa, Balcão.;2024-10-17;;Básico;2024-09-15;
+00.001.180/0001-26;2026-01-01;4;159987;AXIA Energia S.A.;Ações Preferenciais;PNC;Preferencial Classe C;AXIA7;;Bolsa;B3;B3 S.A. - Brasil, Bolsa, Balcão.;2025-12-22;;Novo Mercado;2025-12-22;
+00.070.698/0001-11;2026-01-01;2;157038;COMPANHIA ENERGÉTICA DE BRASÍLIA - CEB;Ações Ordinárias;;;CEBR3;;Bolsa;B3;B3 S.A. - Brasil, Bolsa, Balcão.;1994-07-04;;Básico;1994-07-04;
+00.070.698/0001-11;2026-01-01;2;157038;COMPANHIA ENERGÉTICA DE BRASÍLIA - CEB;Ações Preferenciais;PNB;Preferencial Classe B;CEBR6;;Bolsa;B3;B3 S.A. - Brasil, Bolsa, Balcão.;1994-07-04;;Básico;1994-07-04;
+00.070.698/0001-11;2026-01-01;2;157038;COMPANHIA ENERGÉTICA DE BRASÍLIA - CEB;Ações Preferenciais;PNA;Preferencial Classe A;CEBR5;;Bolsa;B3;B3 S.A. - Brasil, Bolsa, Balcão.;1994-07-04;;Básico;1994-07-04;
+00.080.671/0001-00;2026-01-01;2;161521;CARAMURU ALIMENTOS S.A.;Ações Ordinárias;;;;;;;;;;;;
