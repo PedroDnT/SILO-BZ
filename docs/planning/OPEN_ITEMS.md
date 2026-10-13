@@ -750,8 +750,11 @@ a decision first.
 - Move the Apify ETF scrape (1,145 s measured) after the deploy hook.
 - Fix the apt cache key (it hashes `requirements.txt`); drop the dead
   `CVM_FI_CONCURRENCY` from the daily env; align `CVM_DAILY_CONCURRENCY=8` with
-  pool 4.
+  pool 4. Partly shipped (#869): the apt cache is keyed on the schema action,
+  which skips the install when `psql` exists, and the variable is gone. The pool
+  still waits for a measurement.
 - ANALYZE only the tables a run changed; fix the "of 20" message (27 tables).
+  Shipped (#869): tables with `n_mod_since_analyze > 0`, one psql session.
 - Run DB Health and the watchdog on `workflow_run` of the daily run, not fixed
   clocks.
 - Print per-file timings in `scripts/apply_analytical.sh`.
