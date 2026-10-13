@@ -8,7 +8,9 @@ import csv
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
+from urllib.parse import urlsplit
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -54,6 +56,11 @@ EXPECTED = {
     "scalzilliedias.com.br": (10, "07200514920268020001", 12),
     "atrioconsultores.com.br": (3, "08022340820248180032", 14),
     "actionaj.com.br": (5, "40000604220268260373", 15),
+    "fvsadmj.com.br": (3, "10398814220258260114", 2),
+    "excelia-aj.com.br": (27, "10124090620178260451", 64),
+    "expertisemais.com.br": (31, "10943620220228260100", 67),
+    "tapxure.com.br": (9, "10008254320258260359", 8),
+    "erikasantiago.adv.br": (10, "50010497720178130027", 4),
 }
 
 
@@ -107,6 +114,11 @@ def test_cnj_numbers_printed_and_bare():
     ("1. Edital art. 52, par. primeiro", "", "relacao_credores_devedor"),
     ("Decisão - Deferimento da Recuperação Judicial e Nomeação FEX", "", "decisao_deferimento"),
     ("Decisão - Deferimento de Tutela Cautelar", "", "outros"),
+    ("Decisão de deferimento de Recuperação Judicial: 08.09.2022;", "", "decisao_deferimento"),
+    ("DECISAO - DEFERIMENTO RJ", "", "decisao_deferimento"),
+    ("CARLOS PERES DECISAO DEF PROC RJ E NOMEACAO TAPXURE", "", "decisao_deferimento"),
+    ("Decisão homologatória concedendo a recuperação judicial", "", "sentenca_concessao"),
+    ("Relatório Inicial da Administradora Judicial;", "", "outros"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo
@@ -117,9 +129,11 @@ def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
     links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text)
     assert len(links) == n_cases
-    assert all(link.startswith((f"https://{site.domain}/", f"https://www.{site.domain}/")) for link in links)
+    hosts = {urlsplit(link).hostname for link in links}
+    assert all(h == site.domain or h.endswith("." + site.domain) for h in hosts), hosts
     cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern, site.debtor_xpath)
     assert all(urlsplit(link).netloc in (site.domain, f"www.{site.domain}") for link in links)
+    assert all(urlsplit(link).hostname.removeprefix("www.") == site.domain for link in links)
     cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern)
     assert cp.numero_processo == numero
     assert cp.devedor_nome
@@ -346,3 +360,8 @@ def test_mixed_lists_keep_only_the_case_type_the_site_names():
     page = _fixture(cb2d.domain, "list")
     assert len(case_links(page, cb2d.list_urls[0], cb2d.case_pattern)) == 72
     assert len(case_links(page, cb2d.list_urls[0], cb2d.case_pattern, cb2d.case_text)) == 30
+def test_icon_only_links_are_titled_from_the_file_name_and_rows_can_be_links():
+    # FVS: the case list rows carry the URL in onclick; the document anchors hold only an icon.
+    site = next(s for s in SITES if s.domain == "fvsadmj.com.br")
+    cp = parse_case_page(_fixture(site.domain, "case"), site.list_urls[0], site.doc_pattern)
+    assert [d.titulo for d in cp.documents] == ["Deferimento recuperacao CHAMA", "LISTA DE CREDORES"]
