@@ -49,7 +49,10 @@ additional `/v1` routes. Discover them through `POST /rest/v1/rpc/catalog`.
   above 1,000 rows. This is not a vintage archive of later corrections to an
   old survey date. The daily pipeline refreshes the trailing 30 days; older
   corrections are not guaranteed to be captured, and some pre-migration-16
-  history may lack horizons lost to the earlier natural key.
+  history may lack horizons lost to the earlier natural key. On
+  `ExpectativasMercadoSelic` the horizon is the COPOM meeting as BACEN writes
+  it (`R6/2028`), stored since #945. Selic rows stored before #945 have a NULL
+  horizon and no `p_horizon` matches them until the history is re-fetched.
 
 ## Why the adapter exists
 
