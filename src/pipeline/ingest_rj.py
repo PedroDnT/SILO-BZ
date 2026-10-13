@@ -79,7 +79,7 @@ def harvest_site(site: Site, client: PoliteClient, seen_at: datetime) -> SiteHar
             out.failed_pages.append(f"{url} ({e})")
             continue
         out.case_pages += 1
-        cp = parse_case_page(page.text, page.url, site.doc_pattern, site.debtor_xpath)
+        cp = parse_case_page(page.text, page.url, site.doc_pattern, site.debtor_xpath, site.debtor_from_title)
         if not cp.numero_processo:
             out.without_number.append(page.url)
             continue

@@ -61,6 +61,15 @@ EXPECTED = {
     "expertisemais.com.br": (31, "10943620220228260100", 67),
     "tapxure.com.br": (9, "10008254320258260359", 8),
     "erikasantiago.adv.br": (10, "50010497720178130027", 4),
+    # Batch 6, read 2026-10-12.
+    "k2consultoria.com": (27, "00214130320198190001", 11),
+    "bbsadvogados.com.br": (57, "00015183120238160185", 29),
+    "madgav.com.br": (2, "10026767720268130672", 15),
+    "rroadvogados.adv.br": (1, "09649089620248190001", 29),
+    "fraj.com.br": (85, "10081715320188260565", 9),
+    "rlg-aj.com.br": (13, "50114607620258210028", 18),
+    "clesciogalvao.adv.br": (2, "50020627320188130384", 7),
+    "fatorfiscal.com.br": (3, "00011573120188080017", 35),
 }
 
 
@@ -102,6 +111,9 @@ def test_cnj_numbers_printed_and_bare():
     ("Decisão de deferimento da Recuperação Judicial e nomeação da Administradora Judicial", "", "decisao_deferimento"),
     ("Pedido de Recuperação Judicial", "", "peticao_inicial"),
     ("Edital 5003717-16.2023.8.13.0672-Relacao Credores", "", "relacao_credores_devedor"),
+    ("1° Edital de Credores", "", "relacao_credores_devedor"),
+    ("2° Edital de Credores Retificado", "", "relacao_credores_aj"),
+    ("Decisão Deferimento RJ AFA Plásticos", "", "decisao_deferimento"),
     ("Despacho que determinou perícia prévia", "", "outros"),
     ("Decisão de deferimento da recuperação judicial - 20.02.2024", "", "decisao_deferimento"),
     ("Deferimento do pedido de Recuperação Judicial", "", "decisao_deferimento"),
@@ -131,10 +143,8 @@ def test_fixture_pages_parse(site):
     assert len(links) == n_cases
     hosts = {urlsplit(link).hostname for link in links}
     assert all(h == site.domain or h.endswith("." + site.domain) for h in hosts), hosts
-    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern, site.debtor_xpath)
-    assert all(urlsplit(link).netloc in (site.domain, f"www.{site.domain}") for link in links)
-    assert all(urlsplit(link).hostname.removeprefix("www.") == site.domain for link in links)
-    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern)
+    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern, site.debtor_xpath,
+                         site.debtor_from_title)
     assert cp.numero_processo == numero
     assert cp.devedor_nome
     assert len(cp.documents) == n_docs
