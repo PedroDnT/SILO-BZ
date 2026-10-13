@@ -1,12 +1,13 @@
 # Labels
 
-The repo keeps **12 labels** (owner decision, 2026-10-13). Do not create a label
-outside this set. Before that date there were 38, from six sources, and only five
-had a written meaning.
+The repo keeps **16 labels** (owner decision, 2026-10-13; the four priority labels
+returned the same day). Do not create a label outside this set. Before that date
+there were 39, from six sources, and only five had a written meaning.
 
-## Issue labels (7)
+## Issue labels (11)
 
-Each open issue has **exactly one status** label. The type labels are optional.
+Each open issue has **exactly one status** label. A `ready-for-agent` issue also has
+**one priority** label. The type labels are optional.
 
 | Label             | Kind   | Meaning                                                        | Does it start work?                                    |
 | ----------------- | ------ | -------------------------------------------------------------- | ------------------------------------------------------ |
@@ -17,6 +18,14 @@ Each open issue has **exactly one status** label. The type labels are optional.
 | `bug`             | type   | Something is wrong, including wrong data.                      | No                                                     |
 | `tech-debt`       | type   | A cleanup with no new feature.                                 | No                                                     |
 | `epic`            | type   | A parent issue that lists child tickets (a map).               | No                                                     |
+| `P0-critical`     | priority | Do first: data loss, a broken pipeline or a blocked agent.   | No                                                     |
+| `P1-next`         | priority | Do next.                                                     | No                                                     |
+| `P2-later`        | priority | Do after P1.                                                 | No                                                     |
+| `P3-parked`       | priority | Not planned now. Agents skip it; revisit or close.           | No                                                     |
+
+**Order of work.** An agent takes `ready-for-agent` issues by priority: `P0-critical`,
+then `P1-next`, then `P2-later`, then issues with no priority. Within one priority it
+takes the oldest first. It never takes `P3-parked`. The owner sets the priority.
 
 A question for the reporter goes in a comment, and the issue keeps `needs-triage`.
 A child ticket links to its `epic` with `Part of #<n>`. The tech-debt phase is the
