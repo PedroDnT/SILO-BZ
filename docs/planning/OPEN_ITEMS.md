@@ -810,9 +810,10 @@ a decision first.
   endpoint stores one meeting per survey date (its horizon key is NULL).
 - An instrument explorer (quotes, index history, corporate actions); lending
   trades on `/short`.
-- Text fixes: `flows.md` ANBIMA claim, ~~`macro.md` "25-code" (26)~~ (done, #885), README "fifteen
+- ~~Text fixes: `flows.md` ANBIMA claim, `macro.md` "25-code" (26) (done, #885), README "fifteen
   pages" and `npm install`, `vercel_should_build.sh` "~90 queries" (144), the
-  `/ops` entity list without fnet, ibge, market, etf_market and rj.
+  `/ops` entity list without fnet, ibge, market, etf_market and rj.~~ Done on
+  branch `orchestrator/887-dashboard-text-fixes` (#887).
 
 **Federal sources (owner; each is its own decision)**
 

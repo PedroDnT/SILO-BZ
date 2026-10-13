@@ -245,6 +245,6 @@ rows for past months at the source, so this table grows one month per run.
 ## Fluxos ANBIMA
 
 > The fund-industry side of the same question — net subscriptions and
-> redemptions by ANBIMA class — lives on [Industry](/industry), sourced from
-> `anbima_class_monthly`. Unlike everything above it, that series has full
-> history: ANBIMA publishes an archive, B3 does not.
+> redemptions by ANBIMA class — is not on this dashboard: no page reads ANBIMA's
+> fund-class series. The one ANBIMA series shown is ETF net assets and flows, on
+> [ETF](/etf).
