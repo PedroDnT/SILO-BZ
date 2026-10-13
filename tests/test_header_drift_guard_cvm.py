@@ -36,7 +36,7 @@ from src.parsers.field_maps import (
 )
 from src.parsers.mapping import FieldMapMismatch, map_coverage
 from src.pipeline import ingest_cia, ingest_etf, ingest_fi, ingest_fidc, ingest_fii, ingest_misc
-from tests.test_raw_file_fixtures_cvm import FX, _fetch, _payload
+from tests.test_raw_file_fixtures_cvm import FX, _fetch, _ingest, _payload
 
 
 def _rename(rows: List[Dict[str, Any]], old: str) -> List[Dict[str, Any]]:
@@ -197,3 +197,21 @@ def test_cia_account_raises_before_any_member_lands():
     _assert_renamed_away(dre.rows, renamed, "CD_CONTA", cia_account.FIELD_MAP, "cd_conta")
     members[1] = dataclasses.replace(dre, rows=renamed)
     _expect_raise(ingest_cia, lambda: ingest_cia.ingest_cia_account(object(), members, "itr"))
+
+
+def test_etf_registry_still_enriches_after_a_case_only_cnpj_rename():
+    """#905: the guard matches headers case-insensitively, so the index must too.
+
+    A case-only rename (CNPJ_FUNDO -> cnpj_fundo) passes the guard; the cad_fi
+    index has to find the CNPJ the same way, or every ETF row loses its
+    enrichment without an error.
+    """
+    rows = _cad()
+    assert "CNPJ_FUNDO" in _header(rows)
+    renamed = [{("cnpj_fundo" if k == "CNPJ_FUNDO" else k): v for k, v in r.items()} for r in rows]
+    assert "CNPJ_FUNDO" not in _header(renamed)
+    _, cap = _ingest(ingest_etf, ingest_etf.ingest_etf_registry, ingest_etf.load_etf_seed(), renamed)
+    recs = {r["ticker"]: r for r in cap["cvm_etf_registry"]}
+    enriched = {t for t, r in recs.items() if r["dt_reg"] is not None}
+    assert enriched == {"GOVE11", "URET11", "GURU11"}
+    assert recs["URET11"]["admin"] == "BANCO BNP PARIBAS BRASIL S/A"

@@ -52,10 +52,14 @@ def load_etf_seed(path: str = SEED_PATH) -> List[Dict[str, str]]:
         return list(csv.DictReader(fh))
 
 
-# The CNPJ that matches a cad_fi row to the seed, plus the enrichment fields:
-# only for the header-drift guard (the index reads the CNPJ itself below).
+# The CNPJ that matches a cad_fi row to the seed. The index reads it through
+# apply_map, so it matches the header case-insensitively, as the guard does: a
+# case-only rename (Cnpj_Fundo) cannot pass the guard and then empty the index.
+_CAD_CNPJ_MAP = {"cnpj": (["CNPJ_FUNDO", "CNPJ_FUNDO_CLASSE"], "cnpj")}
+
+# The CNPJ plus the enrichment fields, for the header-drift guard.
 _CAD_GUARD_MAP = {
-    "cnpj": (["CNPJ_FUNDO", "CNPJ_FUNDO_CLASSE"], "cnpj"),
+    **_CAD_CNPJ_MAP,
     **_CAD_ENRICH_MAP,
 }
 
@@ -66,7 +70,7 @@ def _build_cad_index(cad_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]
     assert_map_matches(cad_rows, _CAD_GUARD_MAP, dataset="etf/cad_fi", required=("cnpj",))
     index: Dict[str, Dict[str, Any]] = {}
     for row in cad_rows:
-        cnpj = coerce(row.get("CNPJ_FUNDO") or row.get("CNPJ_FUNDO_CLASSE"), "cnpj")
+        cnpj = apply_map(row, _CAD_CNPJ_MAP)[0]["cnpj"]
         if not cnpj:
             continue
         typed, _ = apply_map(row, _CAD_ENRICH_MAP)
