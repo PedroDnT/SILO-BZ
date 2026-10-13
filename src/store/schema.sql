@@ -1750,6 +1750,23 @@ CREATE TABLE IF NOT EXISTS anbima_class_monthly (
         PRIMARY KEY (reference_date, anbima_category, anbima_type_name, metric, level)
 );
 
+-- Named natural key (AGENTS.md rule 5; migration 77, #880). Added by ALTER, not
+-- inline: CREATE TABLE silently drops a UNIQUE whose columns match the primary
+-- key, while ALTER TABLE ADD CONSTRAINT keeps it. Guarded, so a replay is a no-op.
+DO $anbima_uq$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'public.anbima_class_monthly'::regclass
+           AND conname  = 'uq_anbima_class_monthly'
+    ) THEN
+        ALTER TABLE public.anbima_class_monthly
+            ADD CONSTRAINT uq_anbima_class_monthly
+            UNIQUE (reference_date, anbima_category, anbima_type_name, metric, level);
+    END IF;
+END
+$anbima_uq$;
+
 CREATE INDEX IF NOT EXISTS idx_anbima_class_cat_type_metric
     ON anbima_class_monthly (anbima_category, anbima_type_name, metric, reference_date DESC);
 CREATE INDEX IF NOT EXISTS idx_anbima_class_metric_date
