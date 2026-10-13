@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-List every schema / table / row-count / column in a Postgres database.
+List every schema / table / estimated row count (pg_class.reltuples) / column
+in a Postgres database.
 
 Usage:
     python scripts/list_tables.py                  # uses POSTGRES_URL (or DATABASE_URL) from .env
@@ -86,11 +87,15 @@ def main() -> None:
         if r["schema"] != current:
             current = r["schema"]
             print(f"=== schema: {current} ===")
-        # exact count (est_rows is stale for never-analyzed tables)
-        cur.execute(f'SELECT COUNT(*) FROM "{r["schema"]}"."{r["table"]}"')
-        n = cur.fetchone()[0]
-        flag = "✓" if n else "(empty)"
-        print(f"  {r['table']:<42} {n:>12,} {flag}")
+        # pg_class.reltuples estimate, never a COUNT(*) (AGENTS.md, #947):
+        # -1 means never analyzed; a partitioned parent holds 0 and its
+        # partitions are listed on their own rows.
+        n = r["est_rows"]
+        if n < 0:
+            print(f"  {r['table']:<42} {'?':>12} (never analyzed)")
+        else:
+            flag = "✓" if n else "(empty)"
+            print(f"  {r['table']:<42} {n:>12,} {flag}")
         if args.columns:
             cur.execute(
                 """
