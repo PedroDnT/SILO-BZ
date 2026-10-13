@@ -435,6 +435,40 @@ jobs:
             echo "- ✅ bacen_sgs fresh ($sgs_age days, CDI/Selic)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+          # 4d. Yearly partitions — every `_future` catch-all must be EMPTY.
+          #
+          # cvm_fi_diario, cia_account and b3_cotahist are partitioned by year
+          # with a `_future` catch-all (b3_lending_trade too). A row there means
+          # its year has no partition of its own: it still lands, so nothing
+          # fails, but partition pruning is lost and _future grows without
+          # bound. Migration 76 (#867) added the 2027 partitions; the next
+          # rollover is the same move for 2028 (DATABASE_MAINTENANCE.md §6).
+          # Each partition is probed with LIMIT 1, never a full count. Fewer
+          # than 4 answering partitions means the query no longer sees them,
+          # and the guard fails rather than passing.
+          future=$(q "SELECT count(*) || ':' || coalesce(string_agg(p.relname, ',' ORDER BY p.relname) FILTER (WHERE p.has_rows), '')
+                        FROM (SELECT c.relname,
+                                     (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM (SELECT 1 FROM %s LIMIT 1) s', c.oid::regclass), false, true, '')))[1]::text::int > 0 AS has_rows
+                                FROM pg_inherits i
+                                JOIN pg_class c ON c.oid = i.inhrelid
+                                JOIN pg_namespace ns ON ns.oid = c.relnamespace
+                               WHERE ns.nspname = 'public' AND c.relkind = 'r'
+                                 AND c.relname LIKE '%\_future') p")
+          future_n=${future%%:*}
+          future_rows=${future#*:}
+          echo "_future partitions: ${future_n:-<none>} probed; holding rows: ${future_rows:-none}"
+          if ! printf '%s' "${future_n:-}" | grep -Eq '^[0-9]+$' || [ "$future_n" -lt 4 ]; then
+            echo "FAIL: the _future partition probe did not answer ('$future')" >&2
+            echo "- ❌ _future partition probe failed" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          elif [ -n "$future_rows" ]; then
+            echo "FAIL: rows in $future_rows — a year has no partition of its own; add it before more lands (docs/reference/DATABASE_MAINTENANCE.md §6)" >&2
+            echo "- ❌ _future partitions hold rows: $future_rows" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          else
+            echo "- ✅ all $future_n _future partitions empty" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
           # 5. Disk. Supabase bills on database size; the plan allowance is a
           #    workflow input because Postgres cannot see it.
           bytes=$(q "SELECT pg_database_size(current_database())")

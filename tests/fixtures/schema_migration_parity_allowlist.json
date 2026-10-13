@@ -15,6 +15,10 @@
     {
       "objects": ["cvm_etf_registry"],
       "reason": "Migration 06 owns the ETF registry and its derived materialized views."
+    },
+    {
+      "objects": ["b3_cotahist_2027", "cia_account_2027", "cvm_fi_diario_2027"],
+      "reason": "Migration 76 creates the 2027 year partitions by detaching and re-bounding _future. schema.sql cannot create them: it is applied before the migrations, and on the live database _future still covers 2027, so a CREATE there would overlap it (#867)."
     }
   ],
   "columns_only_in_schema": [],
