@@ -20,6 +20,12 @@ import scripts.check_staleness as cs
 _BASE_MONDAY = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def _no_github_output(monkeypatch):
+    """main() appends heal_* flags to $GITHUB_OUTPUT; keep CI's own file clean."""
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+
+
 def _fixed_now(weekday: int) -> datetime:
     return _BASE_MONDAY + timedelta(days=weekday)
 
