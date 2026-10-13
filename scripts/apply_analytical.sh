@@ -57,24 +57,52 @@ fi
 failed=()
 warned=()
 applied=0
+timings=()   # "<tenths of a second><TAB><file>", sorted for the summary (#871)
+
+# Wall-clock microseconds. EPOCHREALTIME is bash 5+; macOS's bash 3.2 lacks it,
+# so fall back to whole seconds there. Timing only prints; it never decides.
+_now_us() {
+  if [ -n "${EPOCHREALTIME:-}" ]; then
+    local t="${EPOCHREALTIME/[.,]/}"
+    echo "$((10#$t))"
+  else
+    echo "$(( $(date +%s) * 1000000 ))"
+  fi
+}
+# Tenths of a second -> "12.3s".
+_fmt_tenths() { printf '%d.%ds' "$(( $1 / 10 ))" "$(( $1 % 10 ))"; }
 
 for f in src/store/analytical/[0-9][0-9]_*.sql; do
   [ -f "$f" ] || continue
   base="$(basename "$f")"
+  t0="$(_now_us)"
   out="$("$PSQL" "$POSTGRES_URL" -v ON_ERROR_STOP=1 -q -f "$f" 2>&1)"
   rc=$?
+  tenths=$(( ($(_now_us) - t0) / 100000 ))
+  timings+=("${tenths}"$'\t'"${base}")
+  took="$(_fmt_tenths "$tenths")"
   if [ $rc -eq 0 ]; then
     applied=$((applied + 1))
-    echo "  ok   $base"
+    echo "  ok   $base  ($took)"
   elif [ "$base" = "08_cron_schedules.sql" ] && grep -qi "pg_cron" <<<"$out"; then
     warned+=("$base")
-    echo "  warn $base — pg_cron not enabled (Dashboard → Database → Extensions); skipped"
+    echo "  warn $base  ($took) — pg_cron not enabled (Dashboard → Database → Extensions); skipped"
   else
     failed+=("$base")
-    echo "  FAIL $base"
+    echo "  FAIL $base  ($took)"
     sed 's/^/         /' <<<"$out" | tail -6
   fi
 done
+
+echo
+echo "Timing, slowest first:"
+total=0
+while IFS=$'\t' read -r tenths base; do
+  [ -n "$base" ] || continue
+  total=$((total + tenths))
+  printf '  %9s  %s\n' "$(_fmt_tenths "$tenths")" "$base"
+done < <(printf '%s\n' "${timings[@]+"${timings[@]}"}" | sort -t $'\t' -k1,1nr -k2,2)
+printf '  %9s  %s\n' "$(_fmt_tenths "$total")" "total"
 
 echo
 echo "Applied: $applied   Warnings: ${#warned[@]}   Failures: ${#failed[@]}"
