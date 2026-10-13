@@ -1,6 +1,6 @@
 """Resolve DJEN cases on their AJ's own website (#846, the resolver's second step).
 
-    python -m src.pipeline.resolve_rj            # up to RJ_RESOLVE_BUDGET cases (default 60)
+    python -m src.pipeline.resolve_rj            # up to RJ_RESOLVE_BUDGET cases (default 150)
 
 A DJEN case whose acts name an inventoried administrador judicial (``rj_case.aj_name``,
 set by ``aj_index``) but that has no row from that AJ's site is searched for on that
@@ -61,17 +61,36 @@ def _same_domain(url: str, domain: str) -> bool:
     return host == domain or host.endswith("." + domain)
 
 
+# Where search results sit, best first: result titles, then whole results, then the main area.
+_RESULT_XPATHS = (
+    "//article//*[self::h1 or self::h2 or self::h3 or self::h4]//a[@href]",
+    "//article//a[@href]",
+    "//main//a[@href]",
+    "//*[contains(@class, 'search')]//a[@href]",
+)
+# The site's chrome: menus, header and footer repeat on every page and are never results.
+_CHROME_XPATH = ("//nav//a[@href] | //footer//a[@href] | //header[not(ancestor::article)]//a[@href]"
+                 " | //*[contains(@class, 'menu')]//a[@href]")
+
+
 def candidates(search_html: str, base_url: str, domain: str) -> List[str]:
-    """Same-domain links on a search result page, in page order, without the site's chrome."""
+    """Same-domain result links on a search page, best first, without the site's chrome.
+
+    Measured 2026-10-13 on acfb.com.br: its whole content area has a "search" class,
+    so page order put eleven menu links before the one result inside <article>.
+    """
     tree = lxml_html.fromstring(search_html)
     tree.make_links_absolute(base_url)
+    chrome = {a.get("href").split("#")[0] for a in tree.xpath(_CHROME_XPATH)}
     out: List[str] = []
-    for a in tree.xpath("//main//a[@href] | //article//a[@href] | //*[contains(@class,'search')]//a[@href]"):
-        url = a.get("href").split("#")[0]
-        path = urlsplit(url).path
-        if (_same_domain(url, domain) and url not in out and path not in ("", "/")
-                and not re.search(r"[?&](s|p|page_id)=|/(page|tag|category|author|feed)/|\.(pdf|jpe?g|png)$", url)):
-            out.append(url)
+    for xpath in _RESULT_XPATHS:
+        for a in tree.xpath(xpath):
+            url = a.get("href").split("#")[0]
+            path = urlsplit(url).path
+            if (_same_domain(url, domain) and url not in out and url not in chrome and path not in ("", "/")
+                    and not re.search(r"[?&](s|p|page_id)=|/(page|tag|category|author|feed|search)/"
+                                      r"|\.(pdf|jpe?g|png)$", url)):
+                out.append(url)
     return out
 
 
@@ -115,7 +134,7 @@ class Resolver:
     def __init__(self, pg: Any = None, client_factory=PoliteClient) -> None:
         self._pg = pg or get_pg_client()
         self._client_factory = client_factory
-        self._budget = max(int(os.environ.get("RJ_RESOLVE_BUDGET", "60") or 60), 0)
+        self._budget = max(int(os.environ.get("RJ_RESOLVE_BUDGET", "150") or 150), 0)
 
     def _pending(self) -> List[tuple]:
         """DJEN cases naming an inventoried AJ with no row from any AJ site yet, at random."""
