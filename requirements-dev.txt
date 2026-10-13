@@ -9,7 +9,7 @@
 # requirements-report.txt (the engine image's file); keep them equal when
 # that file moves. WeasyPrint is not here: its tests skip without it.
 pydantic==2.13.4
-openai==3.26.0
+openai==3.28.0
 
 # tests/test_research_agent_eval.py
 openai-agents==0.22.3
