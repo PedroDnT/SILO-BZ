@@ -34,5 +34,8 @@ jobs:
       id-token: write
       actions: read
     uses: PedroDnT/agent-triage-conventions/.github/workflows/agent.yml@v1
+    with:
+      # Set the repo variable CLAUDE_AGENT_DEBUG to true to see the full output of a failed run.
+      debug: ${{ vars.CLAUDE_AGENT_DEBUG == 'true' }}
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

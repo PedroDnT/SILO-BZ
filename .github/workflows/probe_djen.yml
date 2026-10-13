@@ -1,0 +1,68 @@
+name: Probe DJEN
+
+# Read-only spike for issue #843 (epic #841): can a GitHub-hosted runner reach
+# DJEN, CNJ's Diário de Justiça Eletrônico Nacional, and can it isolate RJ
+# editais? DJEN answered CloudFront 403 "blocked from your country" to a cloud
+# session on 2026-10-12; a GitHub runner was not tested.
+#
+# scripts/probe_djen.py prints the HTTP status, counts and field names only,
+# never party names or texts, because this log is public. Nothing is stored.
+# No secrets, no POSTGRES_URL, no database, contents: read. Dispatch only;
+# nothing schedules it. A blocked runner fails the job with the status code.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "reach = one small query; sample = counts per tribunal over a window"
+        required: true
+        default: reach
+        type: choice
+        options: [reach, sample]
+      start:
+        description: "sample: first day (YYYY-MM-DD)"
+        required: false
+        default: "2026-09-01"
+        type: string
+      end:
+        description: "sample: last day (YYYY-MM-DD)"
+        required: false
+        default: "2026-09-30"
+        type: string
+      tribunals:
+        description: "sample: space-separated siglas"
+        required: false
+        default: "TJSP TJRJ TJMG TJRS TJPR TJSC"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe-djen-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Runner egress
+        run: curl -sS --max-time 20 https://ipinfo.io/country || echo "(country lookup unavailable)"
+      - name: Probe DJEN
+        env:
+          MODE: ${{ inputs.mode }}
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+          TRIBUNALS: ${{ inputs.tribunals }}
+        run: |
+          if [ "$MODE" = "sample" ]; then
+            # shellcheck disable=SC2086  # TRIBUNALS is a word list on purpose
+            python -u scripts/probe_djen.py sample --start "$START" --end "$END" --tribunals $TRIBUNALS
+          else
+            python -u scripts/probe_djen.py reach
+          fi
