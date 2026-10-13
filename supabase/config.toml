@@ -15,3 +15,9 @@ project_id = "SILO-BZ"
 [functions.silo-mcp]
 enabled = true
 verify_jwt = false
+
+# DJEN relay for the RJ collector (#846): runs in sa-east-1 because DJEN refuses
+# non-Brazilian egress. Its own shared-token check replaces the JWT check.
+[functions.djen-relay]
+enabled = true
+verify_jwt = false

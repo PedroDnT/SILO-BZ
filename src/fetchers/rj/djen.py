@@ -2,8 +2,14 @@
 
 DJEN answers HTTP 403 outside Brazil (#843: a GitHub runner and a cloud session
 were both refused; an egress in São Paulo got HTTP 200). Every request here goes
-through the Brazilian proxy in ``BR_PROXY_URL``; without it the client refuses
-to start, so a run can never look like an empty day.
+out from Brazil, by one of two routes:
+
+* ``DJEN_RELAY_URL`` + ``DJEN_RELAY_TOKEN``: our Edge Function
+  ``supabase/functions/djen-relay``, invoked in ``sa-east-1`` (preferred);
+* ``BR_PROXY_URL``: a Brazilian HTTP proxy.
+
+With neither set the client refuses to start, so a run can never look like an
+empty day.
 
 The consult API (``GET /api/v1/comunicacao``, documented by third parties, its
 shape measured on 2026-10-13) returns at most 100 items a page and reports a
@@ -31,6 +37,7 @@ USER_AGENT = "SILO-BZ RJ collector (+https://github.com/PedroDnT/SILO-BZ)"
 PAGE_SIZE = 100
 COUNT_CAP = 10_000
 MIN_INTERVAL_S = 1.0
+RELAY_REGION = "sa-east-1"
 RJ_CLASSES = {"129", "128"}
 SEARCH_TEXT = "recuperação judicial"
 
@@ -95,10 +102,19 @@ def certidao_url(item_hash: str) -> str:
 
 class DjenClient:
     def __init__(self, proxy: Optional[str] = None, transport: Optional[httpx.BaseTransport] = None,
-                 sleep: Callable[[float], None] = time.sleep) -> None:
+                 sleep: Callable[[float], None] = time.sleep, relay_url: Optional[str] = None,
+                 relay_token: Optional[str] = None) -> None:
+        relay_url = (relay_url if relay_url is not None else os.environ.get("DJEN_RELAY_URL", "")).strip()
+        relay_token = (relay_token if relay_token is not None else os.environ.get("DJEN_RELAY_TOKEN", "")).strip()
         proxy = proxy if proxy is not None else os.environ.get("BR_PROXY_URL", "").strip()
-        if not proxy and transport is None:
-            raise DjenError("BR_PROXY_URL is not set: DJEN refuses non-Brazilian egress (#843)")
+        use_relay = bool(relay_url and relay_token)
+        if not (use_relay or proxy) and transport is None:
+            raise DjenError("no Brazilian route: set DJEN_RELAY_URL with DJEN_RELAY_TOKEN, or BR_PROXY_URL "
+                            "(DJEN refuses non-Brazilian egress, #843)")
+        self._base, self._relay_headers = BASE, {}
+        if use_relay:  # the relay runs in São Paulo; the act links are fetched directly
+            self._base, proxy = relay_url, ""
+            self._relay_headers = {"x-relay-token": relay_token, "x-region": RELAY_REGION}
         self._http = httpx.Client(proxy=proxy or None, transport=transport, timeout=60,
                                   headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
         self._sleep = sleep
@@ -113,7 +129,7 @@ class DjenClient:
             self._sleep(wait)
         self._last = time.monotonic()
         try:
-            resp = self._http.get(BASE, params=params)
+            resp = self._http.get(self._base, params=params, headers=self._relay_headers)
         except httpx.HTTPError as e:
             raise DjenError(f"DJEN unreachable: {type(e).__name__}: {e}") from e
         if resp.status_code != 200:

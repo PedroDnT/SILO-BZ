@@ -9,16 +9,18 @@ name: Probe DJEN
 # never party names or texts, because this log is public. Nothing is stored.
 # No secrets, no POSTGRES_URL, no database, contents: read. Dispatch only;
 # nothing schedules it. A blocked runner fails the job with the status code.
+# mode=proxies tries published free Brazilian proxies (TLS verified end to end)
+# and fails the job when none answers HTTP 200 in every round.
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "reach = one small query; sample = counts per tribunal over a window"
+        description: "reach = one small query; sample = counts per tribunal over a window; proxies = try free BR proxies"
         required: true
         default: reach
         type: choice
-        options: [reach, sample]
+        options: [reach, sample, proxies]
       start:
         description: "sample: first day (YYYY-MM-DD)"
         required: false
@@ -60,7 +62,9 @@ jobs:
           END: ${{ inputs.end }}
           TRIBUNALS: ${{ inputs.tribunals }}
         run: |
-          if [ "$MODE" = "sample" ]; then
+          if [ "$MODE" = "proxies" ]; then
+            python -u scripts/probe_djen.py proxies --rounds 3
+          elif [ "$MODE" = "sample" ]; then
             # shellcheck disable=SC2086  # TRIBUNALS is a word list on purpose
             python -u scripts/probe_djen.py sample --start "$START" --end "$END" --tribunals $TRIBUNALS
           else

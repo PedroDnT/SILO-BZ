@@ -205,7 +205,10 @@ DJEN (#846, `src/pipeline/ingest_rj_djen.py`) is the discovery source: the
 same tables with `source = 'djen'`, classes 129 / 128 only, `devedor_nome` =
 the polo ativo names as DJEN prints them, one `rj_document` per act with its own
 `link` (`found_on` is the act's certidão). DJEN refuses non-Brazilian egress,
-so the client needs `BR_PROXY_URL` and refuses to start without it. A day whose
+so the client calls it through the Edge Function `djen-relay` invoked in
+`sa-east-1` (`DJEN_RELAY_URL` + the shared token `DJEN_RELAY_TOKEN`, set both in
+the function's secrets and in GitHub), or through `BR_PROXY_URL`; with neither it
+refuses to start. The act links' HEAD checks go direct, without the token. A day whose
 `count` reaches 10,000 raises instead of paging past the cap.
 `public.rj_coverage` gives, per tribunal (read from the CNJ number) and source,
 the share of cases with at least one administrador judicial document link.

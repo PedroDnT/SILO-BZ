@@ -38,7 +38,7 @@ Every change is held to these (`AGENTS.md`) by the offline test suite.
 | Macro                             | BACEN, IBGE        | SGS series (SELIC, CDI, IPCA, IGP-M), PTAX, Focus; IPCA item tree (SIDRA)                                                      | daily / monthly                                                               |
 | Global backdrop                   | Treasury, EIA, OFR | UST par curve, Brent, OFR Financial Stress Index (dashboard only, not served by the API)                                       | daily                                                                         |
 | Fund documents                    | B3 FNET            | document register (metadata only), including FIDC restatements                                                                 | daily                                                                         |
-| Recuperação judicial documents    | CVM IPE, AJ sites, DJEN | links (never files) to RJ case documents: listed companies' IPE filings (`api.rj_listed_documents`), the case pages of administrador judicial websites, and the RJ cases and acts DJEN publishes (needs `BR_PROXY_URL`) (`rj_case`, `rj_document`, not served yet) | per filing / daily                                                            |
+| Recuperação judicial documents    | CVM IPE, AJ sites, DJEN | links (never files) to RJ case documents: listed companies' IPE filings (`api.rj_listed_documents`), the case pages of administrador judicial websites, and the RJ cases and acts DJEN publishes (read through a São Paulo Edge Function; needs `DJEN_RELAY_TOKEN`) (`rj_case`, `rj_document`, not served yet) | per filing / daily                                                            |
 | Class benchmarks and ETF snapshot | ANBIMA, Apify      | monthly class figures; scraped ETF NAV and price (gated on `APIFY_TOKEN`)                                                      | monthly / daily                                                               |
 
 Where each dataset lands, at what grain and what is ingested but not yet served: [api-docs/data-inventory.mdx](api-docs/data-inventory.mdx) and [docs/reference/DATA_INVENTORY.md](docs/reference/DATA_INVENTORY.md). The schema is `src/store/schema.sql` plus the append-only `src/store/migrations/`.
@@ -50,7 +50,7 @@ Fetch (`src/fetchers/`, HTTP only), parse (`src/parsers/`, validated rows), stor
 - **03:00 UTC-3 (06:00 UTC), `daily_ingest.yml`:** schema and migrations, `run_daily`, `ANALYZE`, analytical rebuild, dashboard deploy hook. If a source fails the run goes red, but the last three steps still run; only a failed probe, schema apply or analytical apply holds them back.
 - **04:30 UTC-3 (07:30 UTC), `health.yml`:** reads the audit log and the tables, fails loudly when they disagree.
 - **05:00 UTC-3 (08:00 UTC), `watchdog.yml` and `publish_check.yml`:** re-run stale slices; confirm the public URL serves the new build.
-- **08:07 UTC-3 (11:07 UTC), `rj_collect.yml`:** judicial-recovery cases from administrator sites and the DJEN court notices (DJEN needs the `BR_PROXY_URL` secret).
+- **08:07 UTC-3 (11:07 UTC), `rj_collect.yml`:** judicial-recovery cases from administrator sites and the DJEN court notices (DJEN goes through the `djen-relay` Edge Function and needs the `DJEN_RELAY_TOKEN` secret).
 - **On demand, `backfill.yml`:** one entity and year range at a time.
 
 The system in four short pages, in `docs/architecture/`:
