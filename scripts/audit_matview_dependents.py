@@ -19,7 +19,8 @@ import os
 import sys
 from typing import Any, Iterable, List, Sequence, Tuple
 
-import psycopg2
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.store import pg_client  # noqa: E402
 
 LIST_MATVIEWS_SQL = """
 SELECT n.nspname, c.relname
@@ -83,7 +84,7 @@ def main() -> int:
     if not url:
         print("POSTGRES_URL is not set", file=sys.stderr)
         return 2
-    conn = psycopg2.connect("".join(url.split()))
+    conn = pg_client.connect("".join(url.split()))
     conn.set_session(readonly=True, autocommit=True)
     with conn.cursor() as cur:
         targets = list_matviews(cur)

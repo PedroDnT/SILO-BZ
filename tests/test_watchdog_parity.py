@@ -59,6 +59,8 @@ NOT_RECOVERED = {
     "Run B3 COTAHIST yearly backfill": "dispatch-only mode b3-backfill, not part of a daily run.",
     "Run B3 cash-dividend history backfill": "dispatch-only mode b3-cash-dividends.",
     "Run B3 consolidated trades backfill": "dispatch-only mode b3-trade-consolidated.",
+    "Run B3 OTC credit backfill": "dispatch-only mode b3-credit, one owner-approved slice.",
+    "Run B3 corporate-event full sweep": "dispatch-only mode b3-corporate-events-full.",
     "Build balancete summary from stored months": "dispatch-only mode balancete-summary.",
     "Move the CDA fund name out of raw": "dispatch-only mode cda-fund-name.",
     "Rewrite the CDA tables (VACUUM FULL)": "dispatch-only mode cda-vacuum-full.",

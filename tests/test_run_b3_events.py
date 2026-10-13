@@ -198,3 +198,33 @@ async def test_consolidated_trades_run_before_the_corporate_event_sweep():
     with patch.object(rb, "B3Ingestor", return_value=ing):
         await rb.main()
     assert order[:2] == ["trades", "events"]
+
+
+async def test_the_full_corporate_event_sweep_runs_alone_on_the_same_path():
+    """#882: run_backfill --b3-corporate-events-full calls the nightly method
+    with full=True, and nothing else (no CVM, no other B3 source)."""
+    import argparse
+
+    from src.pipeline import run_backfill as backfill
+
+    ing = MagicMock()
+    ing.ingest_corporate_events = AsyncMock(return_value=12)
+    args = argparse.Namespace(doc_type=None, b3_corporate_events_full=True)
+    with patch.object(backfill, "B3Ingestor", return_value=ing), \
+         patch.object(backfill, "CVMIngestor", side_effect=AssertionError("must run alone")):
+        await backfill.main(args)
+    ing.ingest_corporate_events.assert_awaited_once_with(full=True)
+    assert not ing.ingest_cash_dividends.called
+
+
+async def test_a_full_sweep_that_lands_nothing_exits_red():
+    import argparse
+
+    from src.pipeline import run_backfill as backfill
+
+    ing = MagicMock()
+    ing.ingest_corporate_events = AsyncMock(return_value=0)
+    args = argparse.Namespace(doc_type=None, b3_corporate_events_full=True)
+    with patch.object(backfill, "B3Ingestor", return_value=ing):
+        with pytest.raises(SystemExit):
+            await backfill.main(args)

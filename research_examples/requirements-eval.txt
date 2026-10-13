@@ -1,2 +1,2 @@
 -e ../sdk
-openai-agents==0.22.3
+openai-agents==0.23.1

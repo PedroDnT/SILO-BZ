@@ -74,6 +74,38 @@ def test_cash_dividend_history_is_a_dispatch_mode_that_uses_the_secret():
     assert "mode == 'b3-cash-dividends'" not in _condition("Run daily update")
 
 
+# --- #882: B3 OTC credit and the corporate-event full sweep -----------------------
+
+
+@pytest.mark.parametrize("mode,step,flag", [
+    ("b3-credit", "Run B3 OTC credit backfill", "--b3-credit-start"),
+    ("b3-corporate-events-full", "Run B3 corporate-event full sweep",
+     "--b3-corporate-events-full"),
+])
+def test_b3_backfill_paths_are_dispatch_modes(mode, step, flag):
+    """Dispatch-only, after the schema apply, never part of the daily run."""
+    spec = yaml.safe_load(DAILY.read_text())
+    assert mode in spec[True]["workflow_dispatch"]["inputs"]["mode"]["options"]
+    names = [s.get("name") for s in spec["jobs"]["ingest"]["steps"]]
+    assert names.index("Apply schema + migrations") < names.index(step)
+    assert f"mode == '{mode}'" in _condition(step)
+    assert flag in _step(step)["run"]
+    assert f"mode == '{mode}'" not in _condition("Run daily update")
+    assert f"mode == '{mode}'" in _condition("Analyze tables post-ingest")
+
+
+def test_credit_window_reaches_the_shell_through_env_not_interpolation():
+    """Free-text dates: never `${{ inputs.* }}` inside run (script injection)."""
+    spec = yaml.safe_load(DAILY.read_text())
+    inputs = spec[True]["workflow_dispatch"]["inputs"]
+    assert inputs["credit_start"]["default"] == "" and inputs["credit_end"]["default"] == ""
+    assert "item 18" in inputs["credit_start"]["description"]
+    step = _step("Run B3 OTC credit backfill")
+    assert "${{" not in step["run"]
+    assert step["env"] == {"CREDIT_START": "${{ inputs.credit_start }}",
+                           "CREDIT_END": "${{ inputs.credit_end }}"}
+
+
 # --- #473: a red source must not block analytics and publish --------------------
 
 _SCHEMA = "Apply schema + migrations"

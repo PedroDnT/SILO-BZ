@@ -36,6 +36,10 @@ Usage:
     # B3 cash-distribution history (opt-in, alone; every issuer that printed
     # since --b3-start-year, delisted ones by the name the tape printed)
     python -m src.pipeline.run_backfill --b3-cash-dividends-only --b3-start-year 2019
+    # B3 corporate events: every issuer once (opt-in, alone; about 45 min)
+    python -m src.pipeline.run_backfill --b3-corporate-events-full
+    # B3 OTC debentures: one owner-approved slice of at most 7 days (alone)
+    python -m src.pipeline.run_backfill --b3-credit-start 2026-07-01 --b3-credit-end 2026-07-07
     # FNET document register (opt-in, and alone: one delivery day per request)
     python -m src.pipeline.run_backfill --fnet-only --fnet-start 2026-08-01 --fnet-end 2026-08-31
     # ... and link every FII/FIDC in the registry to its documents (~1.5 s a fund)
@@ -106,16 +110,29 @@ async def main(args: argparse.Namespace) -> None:
 
     credit_start = getattr(args, "b3_credit_start", None)
     credit_end = getattr(args, "b3_credit_end", None)
-    if credit_start or credit_end:
+    # `is not None`, not truthiness: the daily_ingest mode passes an empty
+    # string when the operator leaves a date blank, and that must stop here,
+    # not fall through to a default full backfill.
+    if credit_start is not None or credit_end is not None:
         if not (credit_start and credit_end):
             raise SystemExit("--b3-credit-start and --b3-credit-end are both required")
         from src.pipeline.b3_credit_pipeline import B3CreditIngestor
 
+        start, end = date.fromisoformat(credit_start), date.fromisoformat(credit_end)
+        validate_credit_window(start, end)
         # Alone, bounded weekly requests; an incomplete slice stops with a red
         # audit. Zero DEB rows is valid when all sessions contain other assets.
-        await B3CreditIngestor().backfill(
-            date.fromisoformat(credit_start), date.fromisoformat(credit_end)
-        )
+        await B3CreditIngestor().backfill(start, end)
+        return
+
+    # Every issuer's corporate events, once (#882). The nightly sweep in
+    # run_b3_events is incremental: a share or unit issuer that printed since
+    # its proof, plus a rotating 1/14 of everyone else. This is the same code
+    # path with full=True. It ran 2,597 issuers in 44 minutes on 2026-10-01.
+    if getattr(args, "b3_corporate_events_full", False):
+        logger.info("Starting B3 corporate-event full sweep: every issuer since the tape start")
+        n = await B3Ingestor().ingest_corporate_events(full=True)
+        ensure_rows_landed(n)
         return
 
     # FNET runs alone: it is paced at one request a second against an
@@ -241,6 +258,24 @@ async def main(args: argparse.Namespace) -> None:
     )
     ensure_rows_landed(total_rows, skips=cvm_skips, failures=cvm_failures)
     ensure_no_failed_slices(cvm_failures)
+
+
+# One B3 credit backfill dispatch is one recovery slice. OPEN_ITEMS item 18:
+# the owner approves each slice on its own (13 weekly slices for 01/07 to
+# 29/09/2026; one week of raw CSV measured 82.13 MB), and no annual backfill.
+CREDIT_BACKFILL_MAX_DAYS = 7
+
+
+def validate_credit_window(start: date, end: date) -> None:
+    """Refuse an empty or over-wide B3 credit window. Never trim it."""
+    if end < start:
+        raise SystemExit(f"B3 credit window is empty: end {end} is before start {start}")
+    days = (end - start).days + 1
+    if days > CREDIT_BACKFILL_MAX_DAYS:
+        raise SystemExit(
+            f"B3 credit window is {days} days; one dispatch takes at most "
+            f"{CREDIT_BACKFILL_MAX_DAYS} (one owner-approved slice, OPEN_ITEMS item 18)"
+        )
 
 
 def ensure_rows_landed(
@@ -475,7 +510,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--b3-credit-end", default=None,
-        help="Last completed day for --b3-credit-start; does not assume M-18 is available"
+        help="Last completed day for --b3-credit-start; does not assume M-18 is available. "
+             "The window is at most 7 days: one owner-approved slice (OPEN_ITEMS item 18)"
+    )
+    parser.add_argument(
+        "--b3-corporate-events-full", action="store_true",
+        help="Skip everything else; sweep every issuer's B3 corporate events once "
+             "(the nightly run sweeps a rotating 1/14)"
     )
     return parser.parse_args()
 

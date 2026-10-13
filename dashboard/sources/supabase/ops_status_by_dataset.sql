@@ -2,8 +2,9 @@
 -- ingest_log_summary() RPC (src/store/analytical/09_analytical_functions.sql).
 --
 -- The literal entity list is the row driver — these are the entity labels the
--- pipeline actually writes to cvm_ingest_log (src/pipeline/cvm_pipeline.py and
--- anbima_pipeline.py), NOT the API dispatch keys, which differ (the log
+-- pipeline actually writes to cvm_ingest_log (src/pipeline/cvm_pipeline.py,
+-- anbima_pipeline.py and the LOG_ENTITY / ENTITY constants of the other
+-- pipeline modules), NOT the API dispatch keys, which differ (the log
 -- records e.g. doc_type 'inf_diario' where dispatch calls it 'diario'). With
 -- LEFT JOIN LATERAL, an entity that produced no runs at all still comes back as
 -- one row with NULL counts, so the source can never be empty — a 0-row source
@@ -15,7 +16,8 @@
 with entities (entity) as (
   values ('fi'), ('fidc'), ('fiagro'), ('fii'), ('fip'),
          ('securit'), ('etf'), ('cia_aberta'), ('anbima_etf'),
-         ('b3'), ('bacen')
+         ('b3'), ('bacen'), ('fnet'), ('ibge'), ('market'),
+         ('etf_market'), ('rj')
 )
 select
   e.entity,

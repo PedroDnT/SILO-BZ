@@ -17,8 +17,10 @@ import os
 import re
 import sys
 
-import asyncpg
 from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.store import pg_client  # noqa: E402
 
 # Supabase project from the pasted connection string.
 SUPABASE_HOST = "db.zcjbtpxuhdekpwcxmepn.supabase.co"
@@ -55,7 +57,7 @@ async def main() -> None:
     safe = re.sub(r"://([^:]+):[^@]+@", r"://\1:***@", url)
     print(f"Connecting -> {safe}")
     try:
-        conn = await asyncpg.connect(url, timeout=20)
+        conn = await pg_client.connect_async(url, timeout=20)
     except Exception as exc:
         sys.exit(f"CONNECTION FAILED: {exc!r}")
     print("Connection: OK\n")

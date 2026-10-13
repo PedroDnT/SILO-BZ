@@ -14,7 +14,8 @@ import sys
 from contextlib import closing
 from pathlib import Path
 
-import psycopg2
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.store import pg_client  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,8 +63,8 @@ def _constraints(conn) -> set[tuple[str, str]]:
 
 
 def _actual_differences(schema_url: str, migrated_url: str) -> dict[str, set[tuple[str, ...]]]:
-    with closing(psycopg2.connect(schema_url)) as schema_conn, closing(
-        psycopg2.connect(migrated_url)
+    with closing(pg_client.connect(schema_url)) as schema_conn, closing(
+        pg_client.connect(migrated_url)
     ) as migrated_conn:
         schema_tables = _tables(schema_conn)
         migrated_tables = _tables(migrated_conn)

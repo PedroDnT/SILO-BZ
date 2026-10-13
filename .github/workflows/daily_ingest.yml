@@ -17,6 +17,8 @@ on:
           - b3-backfill
           - b3-cash-dividends
           - b3-trade-consolidated
+          - b3-credit
+          - b3-corporate-events-full
           - balancete-summary
           - cda-fund-name
           - cda-vacuum-full
@@ -28,6 +30,14 @@ on:
         description: "Last year of B3 COTAHIST yearly zips (mode=b3-backfill)."
         required: false
         default: "2026"
+      credit_start:
+        description: "mode=b3-credit only: first day of the B3 OTC debenture window (YYYY-MM-DD). Run one owner-approved recovery slice per dispatch (OPEN_ITEMS item 18). The window is at most 7 days. A blank date, an end before the start or a wider window is refused, not trimmed."
+        required: false
+        default: ""
+      credit_end:
+        description: "mode=b3-credit only: last completed day of the window (YYYY-MM-DD). B3 keeps about 18 months of ConsolidatedRecords."
+        required: false
+        default: ""
       rebuild_dashboard:
         description: "Also fire the Vercel deploy hook after this manual run (every scheduled run whose analytical apply succeeded fires it on its own). Publishes a PRODUCTION deployment of the dashboard at silo-bz-deloslabs.vercel.app — a 25–45 min Evidence build of SELECTs against the same Postgres — so leave it off for re-runs and experiments."
         type: boolean
@@ -182,6 +192,30 @@ jobs:
           python -m src.pipeline.run_backfill \
             --b3-trade-consolidated-start ${{ inputs.start_year }}-01-01
 
+      # B3 OTC debentures (#662, #882): one recovery slice of ConsolidatedRecords
+      # into b3_credit_capture and fact_credit_market. OPEN_ITEMS item 18: the
+      # owner approves each slice on its own, so run_backfill refuses a blank
+      # date, an end before the start or a window over 7 days. The dates come
+      # through env, never interpolated into the shell.
+      - name: Run B3 OTC credit backfill
+        if: ${{ github.event.inputs && github.event.inputs.mode == 'b3-credit' }}
+        env:
+          CREDIT_START: ${{ inputs.credit_start }}
+          CREDIT_END: ${{ inputs.credit_end }}
+        run: |
+          python -m src.pipeline.run_backfill \
+            --b3-credit-start "$CREDIT_START" \
+            --b3-credit-end "$CREDIT_END"
+
+      # Every issuer's corporate events once (#882), the same code path as the
+      # nightly sweep with full=True. The nightly run sweeps the share and unit
+      # issuers due plus a rotating 1/14 of the rest. 2,597 issuers took 44
+      # minutes on 2026-10-01. It holds supabase-ingest meanwhile, so do not
+      # dispatch it near 03:00 UTC-3 (06:00 UTC).
+      - name: Run B3 corporate-event full sweep
+        if: ${{ github.event.inputs && github.event.inputs.mode == 'b3-corporate-events-full' }}
+        run: python -m src.pipeline.run_backfill --b3-corporate-events-full
+
       # cvm_fi_balancete_resumo (migration 59) from the stored balancete, one
       # month per statement, 2019 to this month. SQL only, nothing is fetched
       # from CVM; idempotent. Prints rows upserted and balance-identity breaks
@@ -239,7 +273,7 @@ jobs:
       # but their modification counters stay above zero, so the next run picks
       # them up again.
       - name: Analyze tables post-ingest
-        if: ${{ !cancelled() && steps.schema.outcome == 'success' && (steps.daily.outcome == 'failure' || success()) && (github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill' || github.event.inputs.mode == 'b3-cash-dividends' || github.event.inputs.mode == 'b3-trade-consolidated'))) }}
+        if: ${{ !cancelled() && steps.schema.outcome == 'success' && (steps.daily.outcome == 'failure' || success()) && (github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill' || github.event.inputs.mode == 'b3-cash-dividends' || github.event.inputs.mode == 'b3-trade-consolidated' || github.event.inputs.mode == 'b3-credit' || github.event.inputs.mode == 'b3-corporate-events-full'))) }}
         continue-on-error: true  # a killed ANALYZE only skips a stats refresh; no row changes
         run: |
           set +e

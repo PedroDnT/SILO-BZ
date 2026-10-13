@@ -14,8 +14,10 @@ import os
 import re
 import sys
 
-import psycopg2
 from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.store import pg_client  # noqa: E402
 
 PROJECT_REF = "zcjbtpxuhdekpwcxmepn"
 DIRECT_HOST = f"db.{PROJECT_REF}.supabase.co"
@@ -43,7 +45,7 @@ def main() -> None:
     conn = last_err = None
     for cand in candidate_urls(url):
         try:
-            conn = psycopg2.connect(cand, connect_timeout=20)
+            conn = pg_client.connect(cand, connect_timeout=20)
             safe = re.sub(r":[^:@/]+@", ":***@", cand)
             print(f"Connection OK -> {safe}")
             break
