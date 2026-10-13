@@ -28,6 +28,10 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
+    # Evidence 40 pins typescript 5.4.2 as a peer; a bump breaks `npm ci`
+    # on every dashboard build (#930, after #819). Move it with Evidence.
+    ignore:
+      - dependency-name: typescript
   - package-ecosystem: npm
     directory: /webapp
     labels: ["dependencies"]
