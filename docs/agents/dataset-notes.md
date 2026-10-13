@@ -204,8 +204,9 @@ budgeted HEAD (`RJ_HEAD_BUDGET` per site per run), so NULL means not checked
 yet. A site that lists no case after it had cases fails the run. Never parse
 the documents for personal data: creditor lists carry CPFs.
 DJEN (#846, `src/pipeline/ingest_rj_djen.py`) is the discovery source: the
-same tables with `source = 'djen'`, classes 129 / 128 only, `devedor_nome` =
-the polo ativo names as DJEN prints them, one `rj_document` per act with its own
+same tables with `source = 'djen'`, classes 129 / 128 only, `devedor_nome` NULL
+(DJEN's polo ativo mixes the debtor with partners, rural producers and lawyers,
+so party names are not read), one `rj_document` per act with its own
 `link` (`found_on` is the act's certidão). DJEN refuses non-Brazilian egress,
 so the client calls it through the Edge Function `djen-relay` invoked in
 `sa-east-1` (`DJEN_RELAY_URL` + the shared token `DJEN_RELAY_TOKEN`, set both in

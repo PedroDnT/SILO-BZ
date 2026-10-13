@@ -42,9 +42,12 @@ def test_only_rj_classes_with_a_cnj_number_are_kept():
     assert parse_item(_item(numero="123")) is None
 
 
-def test_debtor_is_polo_ativo_as_printed():
-    it = parse_item(_item(polos=(("A", "EMPRESA A LTDA"), ("A", "EMPRESA B LTDA"), ("P", "CREDOR"))))
-    assert it.polo_ativo == ["EMPRESA A LTDA", "EMPRESA B LTDA"]
+def test_party_names_are_never_read_into_the_case():
+    # Polo ativo mixes the debtor with partners, rural producers and lawyers (2026-10-13).
+    items = [parse_item(_item(polos=(("A", "PESSOA FISICA"), ("A", "EMPRESA B LTDA"), ("P", "CREDOR"))))]
+    assert not hasattr(items[0], "polo_ativo")
+    cases, _ = rows_for(items, SEEN)
+    assert cases[0]["devedor_nome"] is None
 
 
 def test_client_refuses_without_a_brazilian_route(monkeypatch):
@@ -120,7 +123,7 @@ def test_rows_case_per_process_and_one_document_per_linked_act():
     cases, docs = rows_for(items, SEEN)
     assert len(cases) == 1
     case = cases[0]
-    assert case["source"] == "djen" and case["devedor_nome"] == "EMPRESA FICTICIA LTDA"
+    assert case["source"] == "djen" and case["devedor_nome"] is None
     assert case["aj_name"] is None and "first_seen_at" not in case
     assert len(docs) == 2  # the act with no link is a case signal only
     assert {d["tipo"] for d in docs} == {"decisao_deferimento", "relacao_credores_devedor"}
