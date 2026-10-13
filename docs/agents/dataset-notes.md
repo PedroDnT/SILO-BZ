@@ -208,7 +208,8 @@ same tables with `source = 'djen'`, classes 129 / 128 only, `devedor_nome` NULL
 (DJEN's polo ativo mixes the debtor with partners, rural producers and lawyers,
 so party names are not read), `aj_name` only when the acts name exactly one AJ
 of the inventory by domain or name (`src/fetchers/rj/aj_index.py`, the inventory's
-spelling), one `rj_document` per act with its own
+spelling; `src/pipeline/resolve_rj.py` then searches that AJ's own site for the case
+and keeps a page only when it prints the case number), one `rj_document` per act with its own
 `link` (`found_on` is the act's certidão). DJEN refuses non-Brazilian egress,
 so the client calls it through the Edge Function `djen-relay` invoked in
 `sa-east-1` (`DJEN_RELAY_URL` + the shared token `DJEN_RELAY_TOKEN`, set both in

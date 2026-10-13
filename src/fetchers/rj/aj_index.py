@@ -68,6 +68,13 @@ def _index() -> Tuple[Dict[str, AJ], Dict[str, AJ]]:
     return by_domain, {k: v for k, v in by_name.items() if v is not None}
 
 
+def aj_by_name(name: str) -> Optional[AJ]:
+    """The inventory row whose first listed name is ``name`` (what ``rj_case.aj_name`` holds)."""
+    by_domain, _ = _index()
+    hits = [aj for aj in by_domain.values() if aj.name == name]
+    return hits[0] if len(hits) == 1 else None
+
+
 def aj_named_in(text: str) -> Optional[AJ]:
     """The one inventoried AJ the text names, or None (none named, or more than one)."""
     folded = fold(text)

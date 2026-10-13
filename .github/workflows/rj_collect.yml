@@ -21,7 +21,7 @@ on:
         default: ""
         type: string
       only:
-        description: "Run one part only: sites, djen, or both (empty)"
+        description: "Run one part only: sites, djen or resolve; empty = all three"
         required: false
         default: ""
         type: string
@@ -70,7 +70,7 @@ jobs:
           postgres-url: ${{ secrets.POSTGRES_URL }}
 
       - name: Collect
-        if: ${{ inputs.only != 'djen' }}
+        if: ${{ !inputs.only || inputs.only == 'sites' }}
         env:
           SITES: ${{ inputs.sites }}
         run: |
@@ -84,7 +84,7 @@ jobs:
       # start and this step is red: a missing egress is never an empty day. It
       # runs even when the AJ step failed.
       - name: Discover RJ cases on DJEN
-        if: ${{ !cancelled() && inputs.only != 'sites' }}
+        if: ${{ !cancelled() && (!inputs.only || inputs.only == 'djen') }}
         env:
           DJEN_RELAY_URL: https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/djen-relay
           DJEN_RELAY_TOKEN: ${{ secrets.DJEN_RELAY_TOKEN }}
@@ -96,3 +96,9 @@ jobs:
           [ -n "$DJEN_START" ] && args+=(--start "$DJEN_START")
           [ -n "$DJEN_END" ] && args+=(--end "$DJEN_END")
           python -m src.pipeline.ingest_rj_djen "${args[@]}"
+
+      # Resolver (#846): a DJEN case whose acts name an inventoried AJ is searched
+      # for on that AJ's own site; a page counts only if it prints the case number.
+      - name: Resolve DJEN cases on their AJ sites
+        if: ${{ !cancelled() && (!inputs.only || inputs.only == 'resolve') }}
+        run: python -m src.pipeline.resolve_rj
