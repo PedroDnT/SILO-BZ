@@ -8,8 +8,9 @@ name: Dashboard Publish Check
 # public hostnames had simply stopped taking production deployments, so four
 # READY builds published nothing. Nobody noticed because the only things checked
 # were build-log row counts and deployment state — both true, neither the site.
-# See docs/planning/OPEN_ITEMS.md item 8 for the measurements, including the
-# part that is still undiagnosed: WHY auto-assignment stopped.
+# The cause was found on 2026-10-05 (#559): a manual promote to an older build
+# turns off Vercel's auto-assignment, and the next promote turns it back on.
+# Measurements: docs/archive/OPEN_ITEMS_DONE.md item 8.
 #
 # TIMING: daily_ingest fires the deploy hook at the end of ingest (~06:56 UTC
 # measured) and the Evidence build runs 17-45 min, so 08:00 UTC sits after the
@@ -18,11 +19,10 @@ name: Dashboard Publish Check
 #
 # Read-only against Postgres (it never touches it), so it may overlap anything.
 
-# INTERIM (OPEN_ITEMS item 8): the workflow_run trigger below publishes a build
-# made by a manual dispatch (rebuild_dashboard=true) without waiting for the
-# next 08:00 UTC run. It is a stopgap for the undiagnosed auto-assignment
-# failure, not the fix: the durable fix is whatever makes Vercel assign the
-# project domains to a production build again, after which this trigger goes.
+# The workflow_run trigger below checks a build made by a manual dispatch
+# (rebuild_dashboard=true) without waiting for the next 08:00 UTC run. It
+# stays: while Vercel auto-assigns the domains its promote is a no-op, and
+# after a rollback it is what turns auto-assignment back on (item 8, done).
 on:
   schedule:
     - cron: "0 8 * * *" # 08:00 UTC — after the 06:00 ingest's deploy-hook build
