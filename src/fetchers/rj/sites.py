@@ -27,6 +27,9 @@ class Site:
     case_text: str = ""            # optional regex the case anchor's folded text must match (mixed lists)
     debtor_xpath: str = ""         # optional XPath of the element holding the debtor name
     debtor_from_title: bool = False  # the page <title> names the debtor; its headings are document titles
+    case_section: str = ""         # optional regex the heading above a case link must match (lists grouped by type)
+    case_scope: str = ""           # optional XPath of the elements the case links must sit inside
+    doc_title_xpath: str = ""      # optional XPath, from a "Download" button, to the element holding its title
 
     @property
     def source(self) -> str:
@@ -295,4 +298,82 @@ SITES += (
              "recuperacoes-judiciais|falencias|habilitacoes-e-divergencias|leiloes|legislacao|contact-2"),
          doc_pattern=r"^https://drive\.google\.com/file/d/[^/]+/view(?:\?usp=(?:sharing|drive_link))?$",
          platform="WordPress + Elementor, documents on Google Drive"),
+)
+
+# --- Batch 7: WordPress + Elementor sites ---------------------------------------
+# Documents are PDFs in /wp-content/uploads/ unless the site says otherwise.
+SITES += (
+    # Case pages are /processo/<slug>/ (the falência list is /falencia/).
+    Site(domain="mdse.com.br", aj_name="MD Serviços Empresariais Ltda",
+         list_urls=("https://mdse.com.br/recuperacao-judicial/",),
+         case_pattern=r"^https://mdse\.com\.br/processo/[^/?#]+/$",
+         doc_pattern=WP_UPLOADS_PDF, platform="WordPress + Elementor"),
+    # The case rows are clickable Elementor containers (data-ha-element-link), not anchors.
+    Site(domain="administracaojudicialrs.com.br", aj_name="Albarello & Schmitz Administração Judicial",
+         list_urls=("https://administracaojudicialrs.com.br/casos/",),
+         case_pattern=r"^https://administracaojudicialrs\.com\.br/caso/[^/?#]+/$",
+         # Newer cases link the PDFs in uploads, older ones /download/<id>/?tmstv=... redirects.
+         doc_pattern=r"^https://administracaojudicialrs\.com\.br(?:/download/\d+/|/wp-content/uploads/[^?#]+\.(?i:pdf)$)",
+         platform="WordPress + Elementor, custom post type"),
+    # Case pages sit at the root, beside the menu pages and four articles; the cases are
+    # the icon-list links (the falências are pop-ups). The
+    # <title> is "<debtor> - Cleverson Neves". The footer holds four creditor-form
+    # templates ("Modelo"), which are not case documents.
+    Site(domain="cleversonneves.com.br", aj_name="Cleverson Neves Advogados & Consultores",
+         list_urls=("https://www.cleversonneves.com.br/adm-judicial/",),
+         case_pattern=r"^https://www\.cleversonneves\.com\.br/(?!(?:adm-judicial|conteudos?|contato|equipe)/?$)[a-z0-9][a-z0-9-]*/$",
+         case_scope='//li[contains(@class, "elementor-icon-list-item")]', debtor_from_title=True,
+         doc_pattern=r"^https://www\.cleversonneves\.com\.br/wp-content/uploads/(?![^?#]*Modelo)[^?#]+\.(?i:pdf)$",
+         platform="WordPress + Elementor, cases at /<slug>"),
+    # Sibling lists /extrajudicial/ and /falencia/ are separate pages.
+    Site(domain="vtladm.com.br", aj_name="VTL Consultoria Empresarial Ltda",
+         list_urls=("https://vtladm.com.br/recuperacao-judicial/",),
+         case_pattern=r"^https://vtladm\.com\.br/recuperacao-judicial/[^/?#]+/$",
+         doc_pattern=WP_UPLOADS_PDF, platform="WordPress + Elementor"),
+    # Documents are WordPress Download Manager links /download/<slug>/ with no text; the
+    # title is the slug. The list also links a staging host by IP, which the pattern leaves out.
+    Site(domain="ecconsultoria.com.br", aj_name="EC Consultoria e Administração Ltda",
+         list_urls=("https://www.ecconsultoria.com.br/recuperacoes-judiciais/",),
+         case_pattern=(r"^https://www\.ecconsultoria\.com\.br/"
+                       r"(?!(?:duvidas|falencias|recuperacoes-judiciais|contato|download)/)[a-z0-9-]+/$"),
+         doc_pattern=r"^https://www\.ecconsultoria\.com\.br/download/[^/?#]+/?$",
+         platform="WordPress + Elementor + Download Manager"),
+    # One list page groups the cases under "Recuperação Judicial", "Falência" and
+    # "Insolvência Civil"; each item is a JetEngine container (data-url).
+    Site(domain="gomesdemattos.com.br", aj_name="Gomes de Mattos Advogados Associados",
+         list_urls=("https://gomesdemattos.com.br/admjudicial/processos/",),
+         case_pattern=r"^https://gomesdemattos\.com\.br/admjudicial/lista-de-processos/[^/?#]+/$",
+         case_section=r"^recuperacao judicial$",
+         # Each document is a row of fields (date, title, "Download" button): the title is the
+         # nearest non-empty field before the button.
+         doc_title_xpath='preceding::div[contains(@class, "jet-listing-dynamic-field__content")][normalize-space()][1]',
+         doc_pattern=r"^https://gomesdemattos\.com\.br/admjudicial" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor + JetEngine"),
+    # The recuperações judiciais list is separate from the falência and extrajudicial lists.
+    Site(domain="costatellesadjud.com.br", aj_name="Costa Telles Administração Judicial Ltda",
+         list_urls=("https://costatellesadjud.com.br/processos/recuperaoes-judiciais/",),
+         case_pattern=r"^https://costatellesadjud\.com\.br/recuperacao-judicial/[^/?#]+/$",
+         doc_pattern=r"^https://costatellesadjud\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor, custom post type"),
+)
+
+# --- Batch 12: custom sites ----------------------------------------------------
+SITES += (
+    # Matuch de Carvalho: a Rails app. The RJ list is a table whose rows carry
+    # onclick="window.location='/processo/<id>'"; falências have their own /falencia list.
+    # Each document is a /admin/reports/<id>/download_all link, titled in the list item.
+    Site(domain="mcaa.adv.br", aj_name="Matuch de Carvalho Advogados Associados",
+         list_urls=("https://www.mcaa.adv.br/recuperacao-judicial",),
+         case_pattern=r"^https://www\.mcaa\.adv\.br/processo/[A-Za-z0-9]+$",
+         doc_pattern=r"^https://www\.mcaa\.adv\.br/admin/reports/[A-Za-z0-9]+/download_all$",
+         platform="custom Rails app"),
+    # Zveiter: the "Recuperações" menu lists every case, falências too (airmix, canaamates, txrx,
+    # gas), and the type is only on the case page, so the pattern names the recuperação slugs.
+    # grppetro, americanas, transporte and costapereira print no CNJ number in the page text
+    # (only in file names), so they yield no case and are left out. Document links are relative PDFs.
+    Site(domain="zveiter.com.br", aj_name="Escritório de Advocacia Zveiter",
+         list_urls=("https://zveiter.com.br/recuperacao",),
+         case_pattern=(r"^https://zveiter\.com\.br/(?:mintucano|transcarioca|stcruz|kpfr|rodopetro|qldtotal|rnr)$"),
+         doc_pattern=r"^https://zveiter\.com\.br/assets/pdfs/[^?#]+\.(?i:pdf)$",
+         platform="custom static site", debtor_xpath="//h1[contains(@class, 'page-hero-title')]"),
 )
