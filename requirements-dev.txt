@@ -8,7 +8,7 @@
 # SILO_LLM_PROVIDER=openai, the openai SDK. The pins are copied from
 # requirements-report.txt (the engine image's file); keep them equal when
 # that file moves. WeasyPrint is not here: its tests skip without it.
-pydantic==2.13.4
+pydantic==2.14.0
 openai==3.26.0
 
 # tests/test_research_agent_eval.py
