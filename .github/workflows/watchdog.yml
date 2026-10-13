@@ -71,7 +71,6 @@ jobs:
       CVM_DAILY_SCOPE: "all"
       CVM_UPSERT_CHUNK_SIZE: "5000"
       CVM_INGEST_CONCURRENCY: "6"
-      CVM_FI_CONCURRENCY: "3"
       CVM_DAILY_CONCURRENCY: "8"
       TZ: "America/Sao_Paulo"
 
