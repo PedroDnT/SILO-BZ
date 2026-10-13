@@ -796,11 +796,13 @@ a decision first.
 
 - A listed-companies page: statements, events, RJ filings (item 3).
 - A filings page: the FNET register, late and silent filers, restatement diffs.
-- A federal macro section: the IPCA item tree and its history, IPCA-15, the EX2
-  and MA cores, GDP, the Focus monthly and Selic paths.
+- ~~A federal macro section: the IPCA item tree and its history, IPCA-15, the EX2
+  and MA cores, GDP, the Focus monthly and Selic paths.~~ Done (#885) on
+  `/macro`; the Selic path is the Anuais year-end path, because the per-meeting
+  endpoint stores one meeting per survey date (its horizon key is NULL).
 - An instrument explorer (quotes, index history, corporate actions); lending
   trades on `/short`.
-- Text fixes: `flows.md` ANBIMA claim, `macro.md` "25-code" (26), README "fifteen
+- Text fixes: `flows.md` ANBIMA claim, ~~`macro.md` "25-code" (26)~~ (done, #885), README "fifteen
   pages" and `npm install`, `vercel_should_build.sh` "~90 queries" (144), the
   `/ops` entity list without fnet, ibge, market, etf_market and rj.
 
