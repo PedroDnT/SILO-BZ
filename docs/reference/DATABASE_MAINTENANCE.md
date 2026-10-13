@@ -400,10 +400,13 @@ COMMIT;
    applied again on every run (`.github/actions/apply-schema`). Wrap the sequence in a
    `DO` block that does nothing when `to_regclass('public.cvm_fi_diario_2027')` is
    not null.
-2. **In `schema.sql`, change only the `_future` lower bound to `2028-01-01`.** Leave
-   out a plain `_2027` CREATE there. `schema.sql` runs before the migrations, so that
-   CREATE would hit the overlap on the live database. `IF NOT EXISTS` on `_future`
-   means the new bound only matters on a fresh database.
+2. **In `schema.sql`, change only the two `_future` lower bounds there
+   (`cvm_fi_diario`, `b3_cotahist`) to `2028-01-01`.** `cia_account_future` is
+   created in `migrations/04_cia.sql`, a historical migration: leave it, the guarded
+   migration re-attaches it from 2028 on a fresh database too. Leave out a plain
+   `_2027` CREATE in `schema.sql`. It runs before the migrations, so that CREATE
+   would hit the overlap on the live database. `IF NOT EXISTS` on `_future` means
+   the new bound only matters on a fresh database.
 3. **Run the check above again afterwards.** It must return `0` for every table.
 
 ---
