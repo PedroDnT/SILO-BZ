@@ -57,7 +57,8 @@ def cnj_numbers(text: str) -> List[str]:
 # the specific ones come first. "outros" when nothing matches.
 # ---------------------------------------------------------------------------
 _TIPO_RULES: Sequence[tuple] = (
-    ("aditivo_plano", r"\b(aditivo|aditamento|modificativ\w*|modificacao)\b.*\bplano\b|\bplano\b.*\b(aditivo|aditamento|modificativ\w*)\b"),
+    ("aditivo_plano", r"\b(aditivo|aditamento|modificativ\w*|modificacao)\b.*\bplano\b|\bplano\b.*\b(aditivo|aditamento|modificativ\w*)\b"
+                      r"|\b(aditivo|aditamento|modificativ\w*)\b.*\bprj\b"),
     ("ata_agc", r"\bata\b.*\b(assembleia|agc)\b|\b(assembleia|agc)\b.*\bata\b"),
     ("edital_agc", r"\bedital\b.*\b(assembleia|agc|convocacao)\b|\bconvocacao\b.*\b(assembleia|agc)\b"),
     # Art. 7, §2 is the AJ's own list. Art. 7, §1 is only the habilitation
@@ -65,11 +66,11 @@ _TIPO_RULES: Sequence[tuple] = (
     ("relacao_credores_aj", r"(art(igo|\.)?\s*7o?\W{0,4}(§\s*2|par\.?\s*segundo|paragrafo\s*(2|segundo))|segundo edital|2[o°] edital|relacao de credores do (administrador|aj)|\b(lista|relacao) de credores (do |da )?(aj\b|administrador)|§\s*2o?\s+do\s+art(igo|\.)?\s*7)"),
     ("relacao_credores_devedor", r"(art\.?\s*52|artigo\s*52|primeiro edital|1[o°] edital|art\.?\s*51|relacao (nominal )?(de )?credores|lista de credores)"),
     ("qgc", r"\b(qgc|quadro geral)\b"),
-    ("rma", r"\b(rma|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades|relatorio inicial d[ea]s? atividades)\b"),
+    ("rma", r"\b(rmas?|relatorio mensal|relatorios mensais|relatorio de atividades|relatorio mensal de atividades|relatorio inicial d[ea]s? atividades)\b"),
     # "Relatório Inicial" is the AJ's first report, not the debtor's petition.
     ("peticao_inicial", r"\b(peticao inicial|pet\.? inicial|(?<!relatorio )(?<!emenda a )inicial)\b|^pedido de recuperacao judicial\b"),
     # Homologating the plan is the decision that grants the recuperação (art. 58).
-    ("sentenca_concessao", r"\bhomologacao do plano\b"),
+    ("sentenca_concessao", r"\bhomologacao do (plano|prj)\b|\bsentenca homologatoria do (plano|prj)\b"),
     ("plano", r"\bplano\b|^[\d\W]*prj$"),
     ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"
                             r"|\bdefer\w*\s+(d[aeo]s?\s+)?(pedido\s+(d[ea]\s+)?)?(recuperacao judicial|rj)\b"
@@ -259,11 +260,25 @@ def _section_of(a) -> str:
     if th:
         return _text(th[0])
     heads = a.xpath("preceding::*[self::h2 or self::h3 or self::h4 or self::h5][1]")
-    return _text(heads[0]) if heads else ""
+    if not heads:
+        return ""
+    near = _text(heads[0])
+    if _YEAR.match(near):
+        # A year sub-heading ("2023") under the section heading ("Relatórios Mensais"):
+        # the section is the nearest heading above that is not a year, with the year.
+        for h in reversed(a.xpath("preceding::*[self::h2 or self::h3 or self::h4 or self::h5]")):
+            if not _YEAR.match(_text(h)):
+                return f"{_text(h)} {near}"
+    return near
+
+
+_YEAR = re.compile(r"^(19|20)\d\d\s*:?$")
 
 
 # Link texts that name the action, not the document.
 _GENERIC_LABEL = re.compile(r"^(download|baixar|clique|aqui|visualizar|abrir|ver arquivo)\b")
+# A list number printed inside the link: "1 -", "12.", "3)".
+_NUMBERING = re.compile(r"^\d{1,3}\s*[-–.)]?$")
 
 
 def _context_title(a, headings: bool = False) -> str:
@@ -315,6 +330,11 @@ def _title_of(a, url: str, title_xpath: str = "") -> str:
         return label
     kids = [_text(c) for c in a if isinstance(c.tag, str) and _text(c)]
     if len(kids) >= 2:  # a title and then a size / "Baixar": the title is the first
+        # Unless the elements are only a list number and an action label ("1 -",
+        # "Visualizar"): then the title is the text the link holds between them.
+        own = re.sub(r"\s+", " ", "".join(a.xpath("text()"))).strip()
+        if own and all(_NUMBERING.match(k) or _GENERIC_LABEL.match(fold(k)) for k in kids):
+            return own
         return kids[0]
     text = _text(a)
     if fold(text) in _GENERIC_LINK_TEXT or _GENERIC_LABEL.match(fold(text)):
@@ -329,7 +349,7 @@ def _title_of(a, url: str, title_xpath: str = "") -> str:
 
 
 # Link texts that name the action, not the document.
-_GENERIC_LINK_TEXT = {"", "baixar", "download", "dowload", "visualizar", "abrir", "ver"}
+_GENERIC_LINK_TEXT = {"", "baixar", "download", "dowload", "visualizar", "abrir", "ver", "arquivo para download"}
 
 
 def _xpath_title(a, xpath: str) -> str:
@@ -381,6 +401,21 @@ _PROCESS_TAIL = re.compile(r"\s*[-\u2010-\u2015]\s*processo\s*n\S*\s.*$", re.I)
 def _trim_process(name: Optional[str]) -> Optional[str]:
     """A heading that prints "<debtor> – Processo nº ..." names the debtor before the dash."""
     return (_PROCESS_TAIL.sub("", name).strip() or None) if name else name
+
+
+def case_blocks(page_html: str, xpath: str) -> List[str]:
+    """The HTML of each element ``xpath`` selects: one case block on an inline list page.
+
+    Some AJ sites have no page per case: one page holds every case, each in its own
+    block (an accordion item, a table row, a section) with the CNJ number and the
+    document links. Each block is then read like a case page by ``parse_case_page``.
+    The page's <base>, if any, is kept so relative links resolve as on the page.
+    """
+    tree = lxml_html.fromstring(page_html)
+    base = tree.xpath("//base[@href]")
+    head = lxml_html.tostring(base[0], encoding="unicode") if base else ""
+    return [f"<html><head>{head}</head><body>{lxml_html.tostring(el, encoding='unicode')}</body></html>"
+            for el in tree.xpath(xpath)]
 
 
 def parse_case_page(page_html: str, base_url: str, doc_pattern: str, debtor_xpath: str = "",

@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from src.fetchers.rj.client import FetchError, PoliteClient, RobotsDisallowed
-from src.fetchers.rj.parse import case_links, classify_tipo, parse_case_page
+from src.fetchers.rj.parse import case_blocks, case_links, classify_tipo, parse_case_page
 from src.fetchers.rj.sites import SITES, Site
 from src.pipeline.ingest_log import Outcome, audited
 from src.store.pg_client import get_pg_client, upsert_rows
@@ -63,12 +63,49 @@ class SiteHarvest:
     without_number: List[str] = field(default_factory=list)
 
 
+def _read_case(out: SiteHarvest, site: Site, html: str, page_url: str, seen_at: datetime) -> None:
+    """One case page, or one case block of an inline list page (``page_url`` is that list page)."""
+    cp = parse_case_page(html, page_url, site.doc_pattern, site.debtor_xpath, site.debtor_from_title,
+                         site.doc_title_xpath)
+    if not cp.numero_processo:
+        out.without_number.append(page_url)
+        return
+    out.cases.append({
+        "numero_processo": cp.numero_processo,
+        "source": site.source,
+        "vara": cp.vara,
+        "devedor_nome": cp.devedor_nome,
+        "aj_name": site.aj_name,
+        "aj_case_url": page_url,
+        "last_seen_at": seen_at,
+    })
+    for d in cp.documents:
+        out.documents.append({
+            "numero_processo": cp.numero_processo,
+            "url": d.url,
+            "tipo": classify_tipo(d.titulo, d.section),
+            "titulo": d.titulo or None,
+            "source": site.source,
+            "found_on": page_url,
+            "last_seen_at": seen_at,
+        })
+
+
 def harvest_site(site: Site, client: PoliteClient, seen_at: datetime) -> SiteHarvest:
-    """Read one site. Raises if a list page fails; counts case pages that fail."""
+    """Read one site. Raises if a list page fails; counts case pages that fail.
+
+    A site with ``inline_blocks_xpath`` has no page per case: each block on the list
+    page is read as a case, and the list page is its ``aj_case_url`` and ``found_on``.
+    """
     out = SiteHarvest()
     urls: List[str] = []
     for list_url in site.list_urls:
         page = client.get(list_url)  # raises FetchError / RobotsDisallowed
+        if site.inline_blocks_xpath:
+            for block in case_blocks(page.text, site.inline_blocks_xpath):
+                out.case_pages += 1
+                _read_case(out, site, block, page.url, seen_at)
+            continue
         for u in case_links(page.text, page.url, site.case_pattern, site.case_text,
                           site.case_section, site.case_scope, site.case_card,
                           site.case_anchors_xpath):
@@ -81,30 +118,7 @@ def harvest_site(site: Site, client: PoliteClient, seen_at: datetime) -> SiteHar
             out.failed_pages.append(f"{url} ({e})")
             continue
         out.case_pages += 1
-        cp = parse_case_page(page.text, page.url, site.doc_pattern, site.debtor_xpath, site.debtor_from_title,
-                              site.doc_title_xpath)
-        if not cp.numero_processo:
-            out.without_number.append(page.url)
-            continue
-        out.cases.append({
-            "numero_processo": cp.numero_processo,
-            "source": site.source,
-            "vara": cp.vara,
-            "devedor_nome": cp.devedor_nome,
-            "aj_name": site.aj_name,
-            "aj_case_url": page.url,
-            "last_seen_at": seen_at,
-        })
-        for d in cp.documents:
-            out.documents.append({
-                "numero_processo": cp.numero_processo,
-                "url": d.url,
-                "tipo": classify_tipo(d.titulo, d.section),
-                "titulo": d.titulo or None,
-                "source": site.source,
-                "found_on": page.url,
-                "last_seen_at": seen_at,
-            })
+        _read_case(out, site, page.text, page.url, seen_at)
     return out
 
 
