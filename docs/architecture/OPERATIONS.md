@@ -16,7 +16,7 @@ Times in UTC-3, with UTC in parentheses.
 05:00 (08:00)  publish_check  public URL stale? promote; ERRORed → red
 after a run    publish_check  green daily run, or red with hook done: wait ≤45 min, promote
                               (no-op while Vercel auto-assigns; item 8)
-08:07 (11:07)  rj_collect     RJ: AJ sites + DJEN (BR proxy); red on failure
+08:07 (11:07)  rj_collect     RJ: AJ sites + DJEN (BR relay); red on failure
 ```
 
 ## A red day

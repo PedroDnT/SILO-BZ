@@ -78,13 +78,16 @@ jobs:
           for s in $SITES; do args+=(--site "$s"); done
           python -m src.pipeline.ingest_rj "${args[@]}"
 
-      # DJEN (#846) answers 403 outside Brazil (#843), so it goes through the
-      # Brazilian proxy in the BR_PROXY_URL secret. Without the secret the
-      # client refuses to start and this step is red: a missing egress is never
-      # an empty day. It runs even when the AJ step failed.
+      # DJEN (#846) answers 403 outside Brazil (#843), so it goes out from
+      # Brazil: through supabase/functions/djen-relay (sa-east-1), or the
+      # BR_PROXY_URL proxy as a fallback. With neither the client refuses to
+      # start and this step is red: a missing egress is never an empty day. It
+      # runs even when the AJ step failed.
       - name: Discover RJ cases on DJEN
         if: ${{ !cancelled() && inputs.only != 'sites' }}
         env:
+          DJEN_RELAY_URL: https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/djen-relay
+          DJEN_RELAY_TOKEN: ${{ secrets.DJEN_RELAY_TOKEN }}
           BR_PROXY_URL: ${{ secrets.BR_PROXY_URL }}
           DJEN_START: ${{ inputs.djen_start }}
           DJEN_END: ${{ inputs.djen_end }}

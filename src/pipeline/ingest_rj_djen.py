@@ -3,7 +3,8 @@
     python -m src.pipeline.ingest_rj_djen                       # the last RJ_DJEN_DAYS days, 27 state courts
     python -m src.pipeline.ingest_rj_djen --start 2026-09-01 --end 2026-09-30 --tribunal TJSC
 
-Needs ``BR_PROXY_URL`` (DJEN refuses non-Brazilian egress, #843).
+Needs a Brazilian route, ``DJEN_RELAY_URL`` + ``DJEN_RELAY_TOKEN`` or ``BR_PROXY_URL``
+(DJEN refuses non-Brazilian egress, #843; see ``src/fetchers/rj/djen.py``).
 
 Per tribunal and day, every communication of class 129 / 128 becomes:
 
@@ -114,7 +115,7 @@ class DjenIngestor:
         seen_at = datetime.now(timezone.utc)
         results: Dict[str, int] = {}
         failures: List[str] = []
-        for t in tribunals:  # one tribunal at a time: one Brazilian proxy, one request a second
+        for t in tribunals:  # one tribunal at a time: one Brazilian route, one request a second
             try:
                 results[t] = await audited(
                     self._pg, ENTITY, f"{SOURCE}:{t}",
