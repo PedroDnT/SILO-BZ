@@ -15,11 +15,20 @@ inputs:
 runs:
   using: composite
   steps:
+    # GitHub's ubuntu runner images ship psql, so the apt round trip (an
+    # `apt-get update` on every run of every workflow that ingests) runs only
+    # when it is missing (#869). Any psql client speaks to the server; the log
+    # line says which path the run took.
     - name: Install PostgreSQL client
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y postgresql-client
+        if command -v psql >/dev/null 2>&1; then
+          echo "psql present, install skipped: $(psql --version)"
+        else
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          echo "psql installed: $(psql --version)"
+        fi
 
     # Do NOT DROP etf_daily / etf_latest here. Migration 01 already drops them
     # inside the DO block that actually retypes cvm_fi_diario, and 06/10

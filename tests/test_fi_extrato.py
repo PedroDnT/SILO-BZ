@@ -203,9 +203,11 @@ class TestWiring:
             r'IngestTask\(\s*"cvm_fi_extrato",\s*"fi/extrato",\s*self\.ingest_fi_extrato\(\),', src
         )
 
-    def test_the_extrato_job_is_in_the_analyze_list_and_the_coverage_audit(self):
+    def test_the_extrato_table_is_analyzed_and_in_the_coverage_audit(self):
+        # Since #869 the daily ANALYZE picks every public table Postgres counts
+        # as changed, so a new landing table needs no entry in a fixed list.
         daily = (ROOT / ".github/workflows/daily_ingest.yml").read_text()
-        assert "cvm_fi_extrato" in daily
+        assert "n_mod_since_analyze > 0" in daily
         audit = (ROOT / "scripts/audit_coverage.py").read_text()
         assert '("cvm_fi_extrato",' in audit
 

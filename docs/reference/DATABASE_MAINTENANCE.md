@@ -173,9 +173,10 @@ table came from a machine with more cores than the Supabase instance, so treat
 the shape (diminishing past 4) as the transferable part, not the absolute
 numbers.
 
-Pool size and task concurrency are different knobs: `CVM_FI_CONCURRENCY`
-controls how many slices are in flight, `CVM_DB_POOL_SIZE` how many can write at
-once. Raising one without the other does nothing.
+Pool size and task concurrency are different knobs: `CVM_DAILY_CONCURRENCY`
+(the daily run) and `CVM_FI_CONCURRENCY` (backfill) control how many slices are
+in flight, `CVM_DB_POOL_SIZE` how many can write at once. Raising one without
+the other does nothing.
 
 ## 4. Healing gaps (backfill)
 
