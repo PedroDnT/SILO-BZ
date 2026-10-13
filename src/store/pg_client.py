@@ -185,18 +185,6 @@ def connect(dsn: str, **connect_kwargs: Any) -> Any:
     return psycopg2.connect(dsn, **{**KEEPALIVES, **connect_kwargs})
 
 
-async def connect_async(dsn: str, **connect_kwargs: Any) -> Any:
-    """Open ONE asyncpg connection, for the few scripts that use asyncpg.
-
-    asyncpg is not an ingest dependency, so it is imported here, lazily.
-    It does not speak libpq's keepalive parameters, so ``KEEPALIVES`` is not
-    applied; ``connect_kwargs`` (e.g. ``timeout=20``) pass through as-is.
-    """
-    import asyncpg  # type: ignore
-
-    return await asyncpg.connect(dsn, **connect_kwargs)
-
-
 class _PgClient:
     """Pooled Postgres client for the ingest pipeline.
 
