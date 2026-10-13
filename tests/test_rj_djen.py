@@ -47,10 +47,37 @@ def test_debtor_is_polo_ativo_as_printed():
     assert it.polo_ativo == ["EMPRESA A LTDA", "EMPRESA B LTDA"]
 
 
-def test_client_refuses_without_the_brazilian_proxy(monkeypatch):
-    monkeypatch.delenv("BR_PROXY_URL", raising=False)
-    with pytest.raises(DjenError, match="BR_PROXY_URL"):
+def test_client_refuses_without_a_brazilian_route(monkeypatch):
+    for var in ("BR_PROXY_URL", "DJEN_RELAY_URL", "DJEN_RELAY_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    with pytest.raises(DjenError, match="no Brazilian route"):
         DjenClient()
+    monkeypatch.setenv("DJEN_RELAY_URL", "https://relay.example/djen-relay")
+    with pytest.raises(DjenError, match="no Brazilian route"):  # a URL without its token is no route
+        DjenClient()
+    monkeypatch.setenv("BR_PROXY_URL", "http://proxy.example:3128")
+    DjenClient().close()  # the proxy still works when the relay token is missing
+
+
+def test_relay_mode_sends_the_token_to_the_relay_only():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.host == "relay.example":
+            return httpx.Response(200, json={"status": "success", "count": 1, "items": [_item()]})
+        return httpx.Response(200)
+
+    client = DjenClient(relay_url="https://relay.example/djen-relay", relay_token="s3cret",
+                        transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    items = client.day("TJSC", date(2026, 9, 15))
+    assert [i.numero_processo for i in items] == ["50247401420268240023"]
+    relay = seen[0]
+    assert relay.url.path == "/djen-relay" and relay.url.params["siglaTribunal"] == "TJSC"
+    assert relay.headers["x-relay-token"] == "s3cret" and relay.headers["x-region"] == "sa-east-1"
+    assert client.status("https://eproc.example.jus.br/doc?id=1") == 200
+    act = seen[-1]
+    assert act.url.host == "eproc.example.jus.br" and "x-relay-token" not in act.headers
 
 
 def _client(pages, counts=None):
@@ -128,8 +155,10 @@ def test_a_failed_tribunal_is_an_error_row_and_the_run_is_red():
     assert statuses == [("djen:TJSP", "error"), ("djen:TJSC", "error")]
 
 
-def test_the_workflow_passes_the_proxy_secret_to_the_djen_step():
+def test_the_workflow_passes_the_relay_and_proxy_to_the_djen_step():
     wf = (ROOT / ".github/workflows/rj_collect.yml").read_text()
     step = wf[wf.index("- name: Discover RJ cases on DJEN"):]
+    assert "DJEN_RELAY_URL: https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/djen-relay" in step
+    assert "DJEN_RELAY_TOKEN: ${{ secrets.DJEN_RELAY_TOKEN }}" in step
     assert "BR_PROXY_URL: ${{ secrets.BR_PROXY_URL }}" in step
     assert "python -m src.pipeline.ingest_rj_djen" in step

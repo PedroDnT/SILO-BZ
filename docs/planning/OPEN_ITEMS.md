@@ -699,10 +699,14 @@ Catalog/OpenAPI/HTTP/SDK/tool contracts are implemented and verified locally;
 CI and production rollout acceptance remain pending. #774 returns
 remain separate. Recurring capture remains disabled after its storage stop.
 
-## 22. RJ discovery from DJEN needs the `BR_PROXY_URL` secret (#846)
+## 22. RJ discovery from DJEN needs the `DJEN_RELAY_TOKEN` secret (#846)
 
 **Blocked on the owner:** DJEN answers HTTP 403 outside Brazil (#843), so the DJEN step of
-`rj_collect.yml` reads it through a Brazilian proxy. Add the repo secret `BR_PROXY_URL`
-(`http://user:password@host:port`). Until then that step fails red and stores nothing; the AJ
-site step is not affected. After the secret is set, dispatch `rj_collect` with `only=djen` and
-read `public.rj_coverage` for the per-tribunal coverage that #847 needs.
+`rj_collect.yml` reads it through the Edge Function `djen-relay`, deployed in `sa-east-1` on
+2026-10-13 (the owner chose it over a paid or a free public proxy). The relay refuses every
+call until it has a token. Generate one random string and set it twice, with the same value:
+as the Edge Function secret `DJEN_RELAY_TOKEN` (Supabase dashboard, Edge Functions, Secrets)
+and as the GitHub repo secret `DJEN_RELAY_TOKEN`. Until then the DJEN step fails red and
+stores nothing; the AJ site step is not affected. Then dispatch `rj_collect` with
+`only=djen` and read `public.rj_coverage` for the per-tribunal coverage that #847 needs.
+`BR_PROXY_URL` stays as an optional fallback.
