@@ -12,7 +12,6 @@ The pooled Supabase URL uses port 6543; introspection works fine on either, but 
 rewrite :6543 -> :5432 (session mode) to be safe for ad-hoc queries.
 """
 import argparse
-import asyncio
 import os
 import re
 import sys
@@ -44,7 +43,7 @@ def resolve_url(args) -> str:
     return url
 
 
-async def main() -> None:
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", help="explicit postgres URL")
     ap.add_argument("--supabase", action="store_true", help="build URL for the Supabase project")
@@ -57,12 +56,13 @@ async def main() -> None:
     safe = re.sub(r"://([^:]+):[^@]+@", r"://\1:***@", url)
     print(f"Connecting -> {safe}")
     try:
-        conn = await pg_client.connect_async(url, timeout=20)
+        conn = pg_client.connect(url, connect_timeout=20)
     except Exception as exc:
         sys.exit(f"CONNECTION FAILED: {exc!r}")
     print("Connection: OK\n")
 
-    rows = await conn.fetch(
+    cur = conn.cursor()
+    cur.execute(
         """
         SELECT n.nspname AS schema, c.relname AS table,
                COALESCE(c.reltuples::bigint, 0) AS est_rows
@@ -74,10 +74,11 @@ async def main() -> None:
         ORDER BY n.nspname, c.relname
         """
     )
+    rows = [dict(zip(("schema", "table", "est_rows"), r)) for r in cur.fetchall()]
 
     if not rows:
         print("No user tables found in any non-system schema.")
-        await conn.close()
+        conn.close()
         return
 
     current = None
@@ -86,26 +87,27 @@ async def main() -> None:
             current = r["schema"]
             print(f"=== schema: {current} ===")
         # exact count (est_rows is stale for never-analyzed tables)
-        n = await conn.fetchval(f'SELECT COUNT(*) FROM "{r["schema"]}"."{r["table"]}"')
+        cur.execute(f'SELECT COUNT(*) FROM "{r["schema"]}"."{r["table"]}"')
+        n = cur.fetchone()[0]
         flag = "✓" if n else "(empty)"
         print(f"  {r['table']:<42} {n:>12,} {flag}")
         if args.columns:
-            cols = await conn.fetch(
+            cur.execute(
                 """
                 SELECT column_name, data_type, is_nullable
                 FROM information_schema.columns
-                WHERE table_schema = $1 AND table_name = $2
+                WHERE table_schema = %s AND table_name = %s
                 ORDER BY ordinal_position
                 """,
-                r["schema"], r["table"],
+                (r["schema"], r["table"]),
             )
-            for c in cols:
-                null = "" if c["is_nullable"] == "YES" else " NOT NULL"
-                print(f"        - {c['column_name']:<30} {c['data_type']}{null}")
+            for column_name, data_type, is_nullable in cur.fetchall():
+                null = "" if is_nullable == "YES" else " NOT NULL"
+                print(f"        - {column_name:<30} {data_type}{null}")
 
-    await conn.close()
+    conn.close()
     print(f"\nDone. {len(rows)} table(s).")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
