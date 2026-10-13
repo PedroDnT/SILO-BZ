@@ -822,8 +822,9 @@ a decision first.
 - A test that pins the endpoint list in `docs/reference/API.md` to the catalog
   (87 SQL functions, 81 MCP tools, 68 SDK calls, 46 named in API.md).
 - Route the 9 scripts that open their own DB connection through `pg_client`.
-- Extend the map in `.claude/hooks/pre-push-docs.sh` to `src/portfolio/`,
-  `deploy/cloudflare/` and new landing-table prefixes.
+- Done (#891): the map in `.claude/hooks/pre-push-docs.sh` covers `src/portfolio/`
+  and `deploy/cloudflare/`, and a migration that adds a table holds the push until
+  `DATA_FLOW.md` is edited.
 - A rate limit on the Cloudflare upload Worker (the `ratelimits` binding); it
   calls a paid LLM behind one shared token. **owner**.
 - Stale code comments: `03_fact_bacen_monthly.sql` ("nothing in `api` reads a
