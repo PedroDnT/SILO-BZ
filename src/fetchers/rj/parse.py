@@ -88,6 +88,14 @@ _TIPO_RULES: Sequence[tuple] = (
     ("decisao_deferimento", r"^[\d\W]*deferimento[\W]*$|\bdecisao (de|do) processamento\b|\bdecisao que defer\w*\b"),
     # The edital that publishes the processing decision is the art. 52 edital.
     ("relacao_credores_devedor", r"\bedital de processamento\b"),
+    # The four types of migration 78 (measured on the stored AJ titles, 2026-10-13).
+    ("termo_compromisso", r"\btermo de compromisso\b"),
+    # The court-ordered check before processing (art. 51-A): the order and the report.
+    ("constatacao_previa", r"\bconstatacao\b|\bpericia previa\b"),
+    ("nomeacao_aj", r"\bnomea\w*\b"),
+    # Closing the case. Not the closing of a phase, an assembly or a refused request.
+    ("sentenca_encerramento", r"^(?!.*(fase administrativa|assembleia|indefer)).*"
+                              r"\b(sentenca|setenca|decisao|despacho|decreto|edital)\b.*\bencerramento\b"),
 )
 
 
