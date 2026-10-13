@@ -783,8 +783,10 @@ a decision first.
 - ~~Add `assert_map_matches` to the ingests without it: CDA blocks 1/2/4/6,
   `cad_fi`, FIDC tranche and tranche flows, FIP, FII `anual` and `dfin`, all CIA,
   the ETF registry.~~ Done (#879).
-- Give `cvm_etf_registry`, `cia_company`, `anbima_class_monthly` and
-  `b3_credit_capture` a named `uq_` constraint (rule 5).
+- ~~Give `cvm_etf_registry`, `cia_company`, `anbima_class_monthly` and
+  `b3_credit_capture` a named `uq_` constraint (rule 5).~~ Done (#880): migration
+  77 adds the first three; `b3_credit_capture` keeps its run UUID as the natural
+  key, recorded in the migration header.
 - Add raw-file fixtures for the CVM, CIA, BACEN, IBGE, ANBIMA, COTAHIST and B3
   events tests, which use inline rows only.
 - A workflow input for the B3 OTC backfill (CLI only today); a backfill path for
