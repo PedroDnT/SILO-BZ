@@ -508,11 +508,36 @@ def test_a_new_materialized_view_is_held_but_a_plain_view_is_not(repo):
     assert "DATA_FLOW.md is not updated" in denied(run_hook(repo))
 
 
+def test_a_migration_that_adds_a_table_is_held(repo):
+    commit(repo, {"src/store/migrations/76_x.sql":
+                  "CREATE TABLE IF NOT EXISTS rj_x (id int);\n", **READY})
+    reason = denied(run_hook(repo))
+    assert "DATA_FLOW.md is not updated" in reason and "(a new table)" in reason
+    commit(repo, {"docs/architecture/DATA_FLOW.md": "# Data flow\nrj_x lands.\n"})
+    assert run_hook(repo) is None
+
+
+@pytest.mark.parametrize("sql", [
+    "ALTER TABLE t ADD COLUMN c int;\n",
+    "-- Mirrored in schema.sql (CREATE TABLE body plus the same ALTER).\n",
+    "CREATE TABLE IF NOT EXISTS t_2027 PARTITION OF t FOR VALUES FROM (1) TO (2);\n",
+])
+def test_a_migration_that_adds_no_table_is_not_held(repo, sql):
+    commit(repo, {"src/store/migrations/76_x.sql": sql, **READY})
+    assert run_hook(repo) is None
+
+
+def test_a_new_table_outside_the_migrations_is_not_held(repo):
+    commit(repo, {"src/store/analytical/31_z.sql": "CREATE TABLE z (id int);\n", **READY})
+    assert run_hook(repo) is None
+
+
 @pytest.mark.parametrize("path,page", [
     ("src/store/pg_client.py", "SYSTEM"), ("supabase/functions/silo-mcp/tools.ts", "SYSTEM"),
     ("serve/app.py", "DATA_FLOW"), ("scripts/apply_analytical.sh", "DATA_FLOW"),
     ("vercel.json", "OPERATIONS"), ("scripts/promote_dashboard.sh", "OPERATIONS"),
     ("docs/adr/0002-x.md", "DECISIONS"),
+    ("src/portfolio/engine.py", "SYSTEM"), ("deploy/cloudflare/worker/src/index.ts", "SYSTEM"),
 ])
 def test_each_page_owns_its_files(repo, path, page):
     commit(repo, {path: "x\n", **READY})

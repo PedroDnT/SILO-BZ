@@ -116,7 +116,7 @@ while IFS= read -r f; do
       if wf_structural "$f" || grep -qxF "$f" <<<"$workflows_added_or_removed"; then p=OPERATIONS; else continue; fi ;;
     vercel.json | scripts/promote_dashboard.sh | scripts/vercel_should_build.sh | scripts/verify_pipeline.py) p=OPERATIONS ;;
     src/pipeline/run_daily.py | src/pipeline/run_backfill.py | src/pipeline/ingest_log.py | scripts/apply_analytical.sh | src/store/analytical/08_cron_schedules.sql | serve/*) p=DATA_FLOW ;;
-    src/store/pg_client.py | supabase/functions/* | docs/reference/security/* | src/store/analytical/12_grants_and_rls.sql) p=SYSTEM ;;
+    src/store/pg_client.py | supabase/functions/* | docs/reference/security/* | src/store/analytical/12_grants_and_rls.sql | src/portfolio/* | deploy/cloudflare/*) p=SYSTEM ;;
     docs/adr/*) p=DECISIONS ;;
     *) continue ;;
   esac
@@ -126,6 +126,15 @@ done <<<"$edited_files"
 if git diff -U0 "$base" HEAD -- src/store | grep -qE '^\+([^+].*)?CREATE[[:space:]]+MATERIALIZED[[:space:]]+VIEW'; then
   hits="${hits:+$hits
 }DATA_FLOW src/store (a new materialized view)"
+fi
+# A migration that adds a table adds a landing table DATA_FLOW names (migration
+# 75's RJ tables reached main unnamed, #891). A comment line, or a new partition
+# (`PARTITION OF`) of a table that exists already, adds none.
+if git diff -U0 "$base" HEAD -- src/store/migrations |
+  grep -iE '^\+([^+].*)?CREATE[[:space:]]+TABLE' | grep -vE '^\+[[:space:]]*--' |
+  grep -qviE 'PARTITION[[:space:]]+OF'; then
+  hits="${hits:+$hits
+}DATA_FLOW src/store/migrations (a new table)"
 fi
 owns_SYSTEM="the infrastructure, the products and the boundaries"
 owns_DATA_FLOW="the stages, the refresh windows, the matviews and the serving paths"
