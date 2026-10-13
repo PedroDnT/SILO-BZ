@@ -1,6 +1,9 @@
 # Dependabot moves the SHA-pinned actions in .github/workflows/ (#686).
 # Each `uses:` line is pinned to a full commit SHA with its tag in a comment;
 # Dependabot updates both in one PR.
+# Auto-merge: .github/workflows/dependabot_automerge.yml turns it on for pip and
+# github-actions PRs that move a patch or minor version; the required check
+# `pytest (offline)` still gates the merge. Majors and npm PRs wait for the owner.
 # One label for every Dependabot PR: the repo keeps 12 labels
 # (docs/agents/triage-labels.md), so no python/javascript/github_actions.
 version: 2
