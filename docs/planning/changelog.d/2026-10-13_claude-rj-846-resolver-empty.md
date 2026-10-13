@@ -1,0 +1,1 @@
+| 2026-10-13 | claude/rj-846-resolver-empty | **RJ resolver: an empty page is "not found" (#846):** a search or case page that answers 200 with an empty body (behrmannratis.com, 2026-10-13) made lxml raise "Document is empty" and ended the whole run before it wrote anything. `resolve_case` now treats that page as no match and moves on. |

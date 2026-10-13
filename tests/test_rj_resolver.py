@@ -92,6 +92,16 @@ def test_robots_disallowing_the_search_stops_quietly(block):
     assert site.calls == [f"https://aj.example.com.br/?s={masked(NUMERO)}"]
 
 
+def test_an_empty_page_is_not_found_and_does_not_stop_the_run():
+    # behrmannratis.com, 2026-10-13: the search answered 200 with an empty body, and
+    # lxml's "Document is empty" ended the whole run before it wrote anything.
+    search = f"https://aj.example.com.br/?s={masked(NUMERO)}"
+    assert not resolve_case(_Site({search: ""}), NUMERO, "aj.example.com.br", "AJ", SEEN, Resolution())
+    site = _Site({search: SEARCH, "https://aj.example.com.br/processos/empresa-x/": "",
+                  "https://aj.example.com.br/processos/empresa-y/": CASE_Y})
+    assert resolve_case(site, NUMERO, "aj.example.com.br", "AJ", SEEN, Resolution())
+
+
 def test_the_workflow_runs_the_resolver_after_djen():
     from pathlib import Path
     wf = (Path(__file__).resolve().parents[1] / ".github/workflows/rj_collect.yml").read_text()
