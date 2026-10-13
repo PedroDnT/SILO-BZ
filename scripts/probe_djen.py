@@ -39,6 +39,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+import urllib.robotparser
 from collections import Counter
 from typing import Any, Iterable
 
@@ -217,6 +218,49 @@ def cmd_proxies(args: argparse.Namespace) -> int:
     return 0 if alive else 1
 
 
+# State RJ lists for #846 that do not answer a cloud session (2026-10-13): TJRJ fails
+# TLS at the session's egress, TJMT RecuperaJud answered 503 "em manutenção".
+STATE_LIST_URLS = (
+    "https://www.tjrj.jus.br/consultas/relacao-nominal-de-credores",
+    "https://www.tjrj.jus.br/consultas/relacao-nominal-de-credores/3-vara-empresarial",
+    "https://recuperajud.tjmt.jus.br/consulta-judicial",
+)
+_CNJ = re.compile(r"\b\d{7}-\d{2}\.\d{4}\.8\.\d{2}\.\d{4}\b")
+_PDF_LINK = re.compile(r"""href=["'][^"']+\.pdf(?:[?#][^"']*)?["']""", re.I)
+
+
+def page_counts(body: str) -> dict[str, int]:
+    """What a list page holds, as counts only: no names reach the public log."""
+    return {"bytes": len(body), "cnj_numbers": len(set(_CNJ.findall(body))),
+            "pdf_links": len(_PDF_LINK.findall(body))}
+
+
+def cmd_urls(args: argparse.Namespace) -> int:
+    ok = 0
+    for url in args.urls:
+        time.sleep(MIN_INTERVAL_S)
+        robots = urllib.robotparser.RobotFileParser(urllib.parse.urljoin(url, "/robots.txt"))
+        try:
+            robots.read()
+        except (urllib.error.URLError, OSError) as e:
+            print(f"{url}: robots.txt unreachable ({e!r})")
+            continue
+        if not robots.can_fetch(USER_AGENT, url):
+            print(f"{url}: disallowed by robots.txt")
+            continue
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                counts = page_counts(resp.read().decode("utf-8", "replace"))
+                print(f"{url}: HTTP {resp.status} {counts}")
+                ok += resp.status == 200
+        except urllib.error.HTTPError as e:
+            print(f"{url}: HTTP {e.code}")
+        except urllib.error.URLError as e:
+            print(f"{url}: unreachable ({e.reason!r})")
+    return 0 if ok == len(args.urls) else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -231,9 +275,12 @@ def main(argv: list[str] | None = None) -> int:
     prox.add_argument("--rounds", type=int, default=3)
     prox.add_argument("--pause", type=float, default=60.0, help="seconds between rounds")
     prox.add_argument("--workers", type=int, default=40)
+    urls = sub.add_parser("urls", help="status and counts of state RJ list pages (#846)")
+    urls.add_argument("urls", nargs="*", default=list(STATE_LIST_URLS))
     args = parser.parse_args(argv)
     try:
-        return {"reach": cmd_reach, "sample": cmd_sample, "proxies": cmd_proxies}[args.cmd](args)
+        return {"reach": cmd_reach, "sample": cmd_sample, "proxies": cmd_proxies,
+                "urls": cmd_urls}[args.cmd](args)
     except ProbeError as e:
         print(f"reachable: no ({e})", file=sys.stderr)
         return 1
