@@ -35,9 +35,14 @@ function sameToken(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export async function handle(req: Request, token = Deno.env.get("DJEN_RELAY_TOKEN") ?? ""): Promise<Response> {
+export async function handle(req: Request, token = (Deno.env.get("DJEN_RELAY_TOKEN") ?? "").trim()): Promise<Response> {
   if (!token) return refuse(503, "relay not configured: DJEN_RELAY_TOKEN is unset");
-  if (!sameToken(req.headers.get("x-relay-token") ?? "", token)) return refuse(401, "bad or missing x-relay-token");
+  // Trimmed on both sides: a secret pasted with a trailing newline is the same secret.
+  const given = (req.headers.get("x-relay-token") ?? "").trim();
+  if (!sameToken(given, token)) {
+    console.warn(`token mismatch: received ${given.length} chars, expected ${token.length}`); // lengths only
+    return refuse(401, "bad or missing x-relay-token");
+  }
   if (req.method !== "GET") return refuse(405, "GET only");
   const out = new URLSearchParams();
   for (const [k, v] of new URL(req.url).searchParams) {
