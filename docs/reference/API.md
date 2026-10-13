@@ -1106,3 +1106,102 @@ without trimming: narrow the date window. There is no date-only cursor because
 several groups can share a date. Raw captures and fact tables stay private.
 
 Rollout and evidence checklist: [credit serving acceptance](credit-market-serving-rollout.md).
+
+## Endpoint index
+
+Every route in the `postgrest` section of `api.catalog()` (`serve/catalog.py`),
+the same set as the MCP's `ENDPOINT_NAMES` less `catalog` itself, which is
+`POST /rest/v1/rpc/catalog` and returns this map. `tests/test_api_md_index.py`
+fails while a route in that section is missing here, so a new endpoint ships
+with its line. The prose above covers a subset in depth; the catalog's own
+entry is the description of record.
+
+Functions (67), called with `POST`:
+
+```
+POST /rest/v1/rpc/anbima_classes
+POST /rest/v1/rpc/balance_sheets
+POST /rest/v1/rpc/cash_flow_statements
+POST /rest/v1/rpc/class_return_distribution
+POST /rest/v1/rpc/company_events
+POST /rest/v1/rpc/company_financials
+POST /rest/v1/rpc/coverage
+POST /rest/v1/rpc/credit_market_history
+POST /rest/v1/rpc/curve
+POST /rest/v1/rpc/curve_history
+POST /rest/v1/rpc/fidc_aging
+POST /rest/v1/rpc/fidc_cedentes
+POST /rest/v1/rpc/fidc_portfolio
+POST /rest/v1/rpc/fidc_sacados
+POST /rest/v1/rpc/fidc_tranches
+POST /rest/v1/rpc/fii_property_history
+POST /rest/v1/rpc/financial_statement_history
+POST /rest/v1/rpc/financials
+POST /rest/v1/rpc/focus_expectations
+POST /rest/v1/rpc/fund_debentures
+POST /rest/v1/rpc/fund_documents
+POST /rest/v1/rpc/fund_holdings
+POST /rest/v1/rpc/fund_nav
+POST /rest/v1/rpc/fund_profile
+POST /rest/v1/rpc/fund_restatement_diff
+POST /rest/v1/rpc/fund_restatements
+POST /rest/v1/rpc/future_curve
+POST /rest/v1/rpc/future_series
+POST /rest/v1/rpc/income_statements
+POST /rest/v1/rpc/index_history
+POST /rest/v1/rpc/inflation
+POST /rest/v1/rpc/inflation_items
+POST /rest/v1/rpc/lookup
+POST /rest/v1/rpc/macro_series
+POST /rest/v1/rpc/metric_coverage
+POST /rest/v1/rpc/option_chain
+POST /rest/v1/rpc/option_exercises
+POST /rest/v1/rpc/option_history
+POST /rest/v1/rpc/panel
+POST /rest/v1/rpc/portfolio_credit_returns
+POST /rest/v1/rpc/portfolio_debenture_returns
+POST /rest/v1/rpc/portfolio_equivalents
+POST /rest/v1/rpc/portfolio_fee_peers
+POST /rest/v1/rpc/portfolio_fees
+POST /rest/v1/rpc/portfolio_fund_terms
+POST /rest/v1/rpc/portfolio_instruments
+POST /rest/v1/rpc/portfolio_lookthrough
+POST /rest/v1/rpc/portfolio_movement
+POST /rest/v1/rpc/portfolio_resolve
+POST /rest/v1/rpc/ptax
+POST /rest/v1/rpc/quote_history
+POST /rest/v1/rpc/quote_latest
+POST /rest/v1/rpc/research_universe
+POST /rest/v1/rpc/rj_listed_documents
+POST /rest/v1/rpc/screen_captive_vehicles
+POST /rest/v1/rpc/screen_delinquency_drivers
+POST /rest/v1/rpc/screen_dormant_funds
+POST /rest/v1/rpc/screen_dormant_trend
+POST /rest/v1/rpc/screen_evergreen_aging
+POST /rest/v1/rpc/screen_late_filers
+POST /rest/v1/rpc/screen_overdue_securit
+POST /rest/v1/rpc/screen_restatements
+POST /rest/v1/rpc/screen_silent_filers
+POST /rest/v1/rpc/screen_zombie_growth
+POST /rest/v1/rpc/search_funds
+POST /rest/v1/rpc/termo_history
+POST /rest/v1/rpc/trade_consolidated_history
+```
+
+Views (13), read with `GET` and PostgREST filters:
+
+```
+GET /rest/v1/auctions
+GET /rest/v1/bdrs
+GET /rest/v1/cash_securities
+GET /rest/v1/equities
+GET /rest/v1/fund_quotas
+GET /rest/v1/funds
+GET /rest/v1/investor_flow
+GET /rest/v1/lending_participants
+GET /rest/v1/lending_trades
+GET /rest/v1/quotes
+GET /rest/v1/short_interest
+GET /rest/v1/short_interest_by_sector
+GET /rest/v1/units
+```
