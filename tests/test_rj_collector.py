@@ -17,7 +17,7 @@ import pytest
 
 from src.fetchers.rj import client as rj_client
 from src.fetchers.rj.client import FetchError, PoliteClient, RobotsDisallowed
-from src.fetchers.rj.parse import case_links, classify_tipo, cnj_numbers, parse_case_page
+from src.fetchers.rj.parse import case_blocks, case_links, classify_tipo, cnj_numbers, parse_case_page
 from src.fetchers.rj.sites import SITES
 from src.pipeline import ingest_rj
 from src.pipeline.ingest_rj import EmptySiteError, RJIngestor, harvest_site
@@ -188,6 +188,14 @@ def test_classify_tipo(title, section, tipo):
 @pytest.mark.parametrize("site", SITES, ids=lambda s: s.domain)
 def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
+    if site.inline_blocks_xpath:  # inline: n_cases blocks on the list page; numero and n_docs of the first
+        blocks = case_blocks(_fixture(site.domain, "list"), site.inline_blocks_xpath)
+        assert len(blocks) == n_cases
+        cp = parse_case_page(blocks[0], site.list_urls[0], site.doc_pattern, site.debtor_xpath,
+                             site.debtor_from_title, site.doc_title_xpath)
+        assert cp.numero_processo == numero
+        assert len(cp.documents) == n_docs and all(d.titulo for d in cp.documents)
+        return
     links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text, site.case_section, site.case_scope,
                        card=site.case_card, anchors_xpath=site.case_anchors_xpath)
     assert len(links) == n_cases
