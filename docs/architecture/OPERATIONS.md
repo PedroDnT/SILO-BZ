@@ -5,7 +5,7 @@ Times in UTC-3, with UTC in parentheses.
 ```
 03:00 (06:00)  daily_ingest ─┬─ probe CVM ─────────── unreachable → skip ingest
                              ├─ apply schema + migrations
-                             ├─ run_daily: CVM → BACEN → IBGE → B3 → BDI → ANBIMA → ETF
+                             ├─ run_daily: CVM → BACEN → IBGE → ANBIMA → B3 → BDI → ETF
                              │       source failed → exit 1/red; next three still run
                              ├─ ANALYZE               skipped only if the probe or schema apply failed
                              ├─ apply_analytical.sh   refresh matviews/api; smoke guards
@@ -63,8 +63,8 @@ after a run    publish_check  green daily run, or red with hook done: wait ≤45
 - `scripts/verify_pipeline.py` is run by hand.
 - DB Health checks matview lag on `fact_fund_monthly` only; the other matviews
   refresh in the same apply and go stale with it.
-- No workflow or routine schedules the Scout, Builder and Sentinel agents
-  (`.claude/agents/`; checked 2026-09-29).
+- The Sentinel runs daily since 2026-10-06; Scout and Builder are paused
+  (`.claude/agents/`, OPEN_ITEMS item 13).
 
 Deeper: [database maintenance](../reference/DATABASE_MAINTENANCE.md),
 [Supabase operations](../reference/supabase_operations.md).

@@ -373,18 +373,38 @@ UNION ALL SELECT 'cia_account_future', count(*) FROM cia_account_future
 UNION ALL SELECT 'b3_cotahist_future', count(*) FROM b3_cotahist_future;
 ```
 
-Each year, before January:
+Each year, before January. **A plain `CREATE TABLE … _2027 PARTITION OF … FROM
+('2027-01-01') TO ('2028-01-01')` fails.** Each `_future` partition is bound
+`FROM ('2027-01-01') TO (MAXVALUE)` (`schema.sql:90`, `:1813`;
+`migrations/04_cia.sql:157`), so the new range overlaps it and Postgres refuses it.
+This was found on 2026-10-13. The sequence below has not yet been run against the
+database.
 
-1. Add the next partition to `schema.sql` and a new migration, following the existing
-   pattern:
-   ```sql
-   CREATE TABLE IF NOT EXISTS cvm_fi_diario_2027 PARTITION OF cvm_fi_diario
-       FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');
-   ```
-   (and the matching `cia_account_2027`, which partitions on `dt_refer`, and
-   `b3_cotahist_2027`, which partitions on `trade_date`).
-2. Apply it, then move any rows already parked in `_future` into the real partition
-   (`INSERT … SELECT` + `DELETE`, inside a transaction).
+For each table (`cvm_fi_diario` on `dt_comptc`, `cia_account` on `dt_refer`,
+`b3_cotahist` on `trade_date`), in one transaction:
+
+```sql
+BEGIN;
+ALTER TABLE cvm_fi_diario DETACH PARTITION cvm_fi_diario_future;
+CREATE TABLE cvm_fi_diario_2027 PARTITION OF cvm_fi_diario
+    FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');
+INSERT INTO cvm_fi_diario
+    SELECT * FROM cvm_fi_diario_future WHERE dt_comptc < '2028-01-01';
+DELETE FROM cvm_fi_diario_future WHERE dt_comptc < '2028-01-01';
+ALTER TABLE cvm_fi_diario ATTACH PARTITION cvm_fi_diario_future
+    FOR VALUES FROM ('2028-01-01') TO (MAXVALUE);
+COMMIT;
+```
+
+1. **Write it as a new migration with a guard.** `schema.sql` and every migration are
+   applied again on every run (`.github/actions/apply-schema`). Wrap the sequence in a
+   `DO` block that does nothing when `to_regclass('public.cvm_fi_diario_2027')` is
+   not null.
+2. **In `schema.sql`, change only the `_future` lower bound to `2028-01-01`.** Leave
+   out a plain `_2027` CREATE there. `schema.sql` runs before the migrations, so that
+   CREATE would hit the overlap on the live database. `IF NOT EXISTS` on `_future`
+   means the new bound only matters on a fresh database.
+3. **Run the check above again afterwards.** It must return `0` for every table.
 
 ---
 
@@ -394,7 +414,7 @@ Each year, before January:
 bash scripts/apply_analytical.sh     # run AFTER data exists
 ```
 
-Applies `src/store/analytical/01…28` in order, re-creating dims, matviews
+Applies `src/store/analytical/01…36` in order, re-creating dims, matviews
 (`dim_fund`, `fact_fund_monthly`, `fact_security_monthly`), fraud screens and the
 ranking/ETF functions. The re-create _is_ the daily refresh, so dashboards see fresh
 aggregates without a separate cron. The two matviews `schema.sql` owns
@@ -516,11 +536,12 @@ run should be compared against:
 ### Disk vs the plan allowance
 
 The DB Health workflow (`health.yml`) reports `pg_database_size` as an absolute
-GB figure. `PLAN_DISK_GB` is **empty by default**: a placeholder of 8 GB against
-a ~72 GB warehouse printed "899%" and trained everyone to ignore the line. Set
-it only to a real purchased allowance (included + addon). The gate **warns, it
-does not fail**, and it must not be "fixed" by dropping landing tables: those
-relations _are_ the warehouse.
+GB figure. `PLAN_DISK_GB` is set to `135` in `health.yml`, the purchased
+allowance (included + addon). An earlier placeholder of 8 GB against a ~72 GB
+warehouse printed "899%" and trained everyone to ignore the line, so set it only
+to a real purchased allowance. The gate **warns from 85% and fails above 90%**
+(`DISK_WARN_PCT`, `DISK_FAIL_PCT`). It must not be "fixed" by dropping landing
+tables: those relations _are_ the warehouse.
 
 What to do (operator, not a migration):
 

@@ -29,8 +29,7 @@ the same as `scripts/trace_view.py exposure`.
 Files: `wrangler.jsonc` (Container `standard-1`, `max_instances` 3, image
 `engine/Dockerfile` built from the repository root, LLM defaults as `vars`,
 invocation logs off, preview URLs off), `src/index.ts` (routes, token check,
-upload page, egress), `engine/` (the image, see its README). `container/` is the
-health-only image of the first deploy, no longer referenced.
+upload page, egress), `engine/` (the image, see its README).
 
 ## Run traces in R2 (ADR 0003)
 

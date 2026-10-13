@@ -2,13 +2,13 @@
 
 # SILO: Brazilian public financial data, ingested daily and served to people and AI agents
 
-SILO is a production system. A GitHub Actions cron pulls the day's filings from **CVM**, **BACEN**, **IBGE** and **B3**, validates them, upserts them into one Supabase Postgres warehouse, rebuilds the analytical layer and republishes the public dashboard. It keeps a verifiable record of **funds**, **listed companies** and **markets**, for researchers, AI agents and anyone checking a claim against what was actually filed.
+SILO is a production system. A GitHub Actions cron pulls the day's filings from **CVM**, **BACEN**, **IBGE**, **ANBIMA** and **B3** (including Fundos.NET), plus court notices on judicial recoveries, validates them, upserts them into one Supabase Postgres warehouse, rebuilds the analytical layer and republishes the public dashboard. It keeps a verifiable record of **funds**, **listed companies** and **markets**, for researchers, AI agents and anyone checking a claim against what was actually filed.
 
 It is built for financial accountability, not for choosing investments: there is no advice, rating or recommendation anywhere in it. A failed fetch raises, a field the source did not publish stays blank, and an unknown identifier returns nothing rather than a plausible number.
 
 | Start here  | Link                                                                                                                                  |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Dashboard   | [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/) (rebuilt after every nightly ingest; the page header says when) |
+| Dashboard   | [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/) (rebuilt after every weekday ingest; the page header says when) |
 | Read API    | `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/` (schema `api`, anon key, open read)                                               |
 | Caller docs | [`scalar/`](scalar/) — researcher-facing guides on Scalar; `api-docs/` is the operator archive                                        |
 | For agents  | [`skill.md`](skill.md), [`llms.txt`](llms.txt)                                                                                        |
@@ -50,6 +50,7 @@ Fetch (`src/fetchers/`, HTTP only), parse (`src/parsers/`, validated rows), stor
 - **03:00 UTC-3 (06:00 UTC), `daily_ingest.yml`:** schema and migrations, `run_daily`, `ANALYZE`, analytical rebuild, dashboard deploy hook. If a source fails the run goes red, but the last three steps still run; only a failed probe, schema apply or analytical apply holds them back.
 - **04:30 UTC-3 (07:30 UTC), `health.yml`:** reads the audit log and the tables, fails loudly when they disagree.
 - **05:00 UTC-3 (08:00 UTC), `watchdog.yml` and `publish_check.yml`:** re-run stale slices; confirm the public URL serves the new build.
+- **08:07 UTC-3 (11:07 UTC), `rj_collect.yml`:** judicial-recovery cases from administrator sites and the DJEN court notices (DJEN needs the `BR_PROXY_URL` secret).
 - **On demand, `backfill.yml`:** one entity and year range at a time.
 
 The system in four short pages, in `docs/architecture/`:
@@ -83,7 +84,7 @@ Sign-in (GitHub OAuth, [`/signin.html`](https://silo-bz-deloslabs.vercel.app/sig
 | `test.yml`         | every PR and push                        | the offline pytest suite; on dispatch, a read-only `api.*` smoke against production                                                                                                                                                                                                                                                              |
 | `daily_ingest.yml` | 03:00 UTC-3 (06:00 UTC), and on dispatch | `daily` is the scheduled run, ANALYZE and analytical refresh included; `analytics-only` is just those two; `b3-backfill` loads yearly COTAHIST zips; `b3-cash-dividends` loads B3's cash-distribution history; `b3-trade-consolidated` loads the fixed income ETF prints. `rebuild_dashboard=true` also fires the deploy hook after a manual run |
 | `watchdog.yml`     | 05:00 UTC-3 (08:00 UTC)                  | self-healing re-run of stale slices                                                                                                                                                                                                                                                                                                              |
-| `health.yml`       | scheduled                                | the health gates; files an issue on failure                                                                                                                                                                                                                                                                                                      |
+| `health.yml`       | scheduled                                | the health gates; a red run is the alarm                                                                                                                                                                                                                                                                                                         |
 | `backfill.yml`     | on dispatch                              | historical fills, one entity at a time; `fi_doc_type` repairs one FI source; `fnet_start` / `fnet_end` / `fnet_sweep` make an FNET-only dispatch                                                                                                                                                                                                 |
 
 Secrets: `POSTGRES_URL` (Supabase, `sslmode=require`); `VERCEL_DEPLOY_HOOK_URL` (deploy hook of the Vercel project `silo-bz` on `main`, team `deloslabs`; it is the only thing that publishes the site); `APIFY_TOKEN` (optional). Day-to-day upkeep (checks, audit-log triage, partition rollover, symptom to fix): [docs/reference/DATABASE_MAINTENANCE.md](docs/reference/DATABASE_MAINTENANCE.md). Operator tooling: [scripts/README.md](scripts/README.md).
