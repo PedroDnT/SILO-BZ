@@ -11,8 +11,9 @@ GitHub is REST only (`gh api repos/PedroDnT/SILO-BZ/...`; GraphQL is 403 here).
 ## 1. Queue
 
 1. `git fetch origin main`. List open issues labelled `ready-for-agent` (and the filter
-   label, if the owner gave one), oldest first.
-2. Drop an issue that: carries `needs-triage`, `ready-for-human` or `wontfix`; has an
+   label, if the owner gave one). Order them by priority: `P0-critical`, `P1-next`,
+   `P2-later`, then no priority; oldest first within a priority.
+2. Drop an issue that: carries `needs-triage`, `ready-for-human`, `wontfix` or `P3-parked`; has an
    assignee; is blocked by an open issue (`.../issues/{n}/dependencies/blocked_by`); has an
    open PR that references it; names no file in its body.
 3. **Overlap check.** List every open PR's changed files (`.../pulls/{n}/files`). An issue

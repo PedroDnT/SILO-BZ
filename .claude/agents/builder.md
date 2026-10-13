@@ -72,7 +72,9 @@ it.
    - **3 or more open agent PRs:** stop. No-op: "budget full".
 4. Check that the label `agent:builder` exists. If not, stop. No-op: "label
    agent:builder missing; the owner creates labels". Do not create it.
-5. Take the **oldest** open issue labelled `ready-for-agent` (by creation date) that
+5. Take the open issue labelled `ready-for-agent` with the **highest priority**
+   (`P0-critical`, then `P1-next`, `P2-later`, then no priority; never `P3-parked`),
+   the oldest by creation date within that priority, that
    has no open PR already referencing it, and that is one of the two shapes
    above. Skip the ones that are not, and note them in your session output.
    None left: stop. No-op: "no eligible ready-for-agent issue".

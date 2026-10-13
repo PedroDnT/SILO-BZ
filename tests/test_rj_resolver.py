@@ -49,6 +49,17 @@ def test_candidates_keep_same_domain_content_links_only():
     assert got == ["https://aj.example.com.br/processos/empresa-x/", "https://aj.example.com.br/processos/empresa-y/"]
 
 
+def test_results_inside_article_come_before_the_menu():
+    # acfb.com.br, 2026-10-13: the whole content area carries a "search" class, and its
+    # menu links came first in page order, so the one real result was never tried.
+    page = """<html><body><div class="cmsms_search"><div class="menu"><a href="/project/falencia/">Falência</a>
+    <a href="/processos/">Processos</a><a href="/contato/">Contato</a></div>
+    <article><header><h3><a href="https://aj.example.com.br/empresa-y-ltda-2/">Empresa Y Ltda</a></h3></header></article>
+    </div><footer><a href="/quem-somos/">Quem somos</a></footer></body></html>"""
+    got = candidates(page, "https://aj.example.com.br/?s=x", "aj.example.com.br")
+    assert got == ["https://aj.example.com.br/empresa-y-ltda-2/"]
+
+
 def test_only_the_page_printing_the_number_is_accepted():
     site = _Site({
         f"https://aj.example.com.br/?s={masked(NUMERO)}": SEARCH,
