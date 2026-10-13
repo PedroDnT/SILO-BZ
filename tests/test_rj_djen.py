@@ -132,6 +132,22 @@ def test_rows_case_per_process_and_one_document_per_linked_act():
     assert all("texto" not in d for d in docs)  # the text is read, never stored
 
 
+def test_a_host_that_never_answers_is_skipped_after_three_failures():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.host)
+        if request.url.host == "esaj.dead.jus.br":
+            raise httpx.ConnectTimeout("no answer", request=request)
+        return httpx.Response(200)
+
+    client = DjenClient(proxy="", transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    dead = [client.status(f"https://esaj.dead.jus.br/doc?id={i}") for i in range(6)]
+    assert dead == [None] * 6  # unchecked, never marked dead
+    assert calls.count("esaj.dead.jus.br") == djen.HOST_FAILURES_TO_SKIP
+    assert client.status("https://pje.live.jus.br/doc?id=1") == 200  # other hosts still checked
+
+
 def test_a_failed_tribunal_is_an_error_row_and_the_run_is_red():
     class Down:
         def day(self, t, d):

@@ -37,6 +37,8 @@ USER_AGENT = "SILO-BZ RJ collector (+https://github.com/PedroDnT/SILO-BZ)"
 PAGE_SIZE = 100
 COUNT_CAP = 10_000
 MIN_INTERVAL_S = 1.0
+STATUS_TIMEOUT_S = 15.0       # one act-link check; the DJEN pages keep the client's 60 s
+HOST_FAILURES_TO_SKIP = 3     # network failures in a row before a host's links are left unchecked
 RELAY_REGION = "sa-east-1"
 RJ_CLASSES = {"129", "128"}
 SEARCH_TEXT = "recuperação judicial"
@@ -116,6 +118,7 @@ class DjenClient:
                                   headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
         self._sleep = sleep
         self._last = 0.0
+        self._host_failures: Dict[str, int] = {}
 
     def close(self) -> None:
         self._http.close()
@@ -141,19 +144,31 @@ class DjenClient:
         return payload
 
     def status(self, url: str) -> Optional[int]:
-        """HTTP status of a HEAD on a DJEN act link (GET when HEAD is refused); None on a network error."""
+        """HTTP status of a HEAD on a DJEN act link (GET when HEAD is refused); None on a network error.
+
+        Act links live on each court's own host, and some hosts never answer from
+        outside Brazil (TJMS, 2026-10-13: 34 links, 32 minutes, none answered). So a
+        check waits at most STATUS_TIMEOUT_S, and a host that failed
+        HOST_FAILURES_TO_SKIP times in a row is not tried again in this run: its
+        links stay unchecked (http_status NULL), never marked dead.
+        """
+        host = httpx.URL(url).host
+        if self._host_failures.get(host, 0) >= HOST_FAILURES_TO_SKIP:
+            return None
         wait = MIN_INTERVAL_S - (time.monotonic() - self._last)
         if wait > 0:
             self._sleep(wait)
         self._last = time.monotonic()
         try:
-            resp = self._http.head(url, follow_redirects=True)
+            resp = self._http.head(url, follow_redirects=True, timeout=STATUS_TIMEOUT_S)
             if resp.status_code in (403, 405, 501):
-                with self._http.stream("GET", url, follow_redirects=True) as r:
-                    return r.status_code
-            return resp.status_code
+                with self._http.stream("GET", url, follow_redirects=True, timeout=STATUS_TIMEOUT_S) as r:
+                    resp = r
         except httpx.HTTPError:
+            self._host_failures[host] = self._host_failures.get(host, 0) + 1
             return None
+        self._host_failures[host] = 0
+        return resp.status_code
 
     def day(self, tribunal: str, day: date) -> List[DjenItem]:
         """Every RJ-class item one tribunal published on one day."""
