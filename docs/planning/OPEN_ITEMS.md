@@ -839,3 +839,26 @@ a decision first.
   calls a paid LLM behind one shared token. **owner**.
 - Stale code comments: `03_fact_bacen_monthly.sql` ("nothing in `api` reads a
   bacen table"), `daily_ingest.yml:70-72` (`CVM_FI_CONCURRENCY`).
+
+## 25. RJ document coverage: the free route is parked (#841)
+
+**Status: parked by the owner on 2026-10-13, not a priority.** Nothing here is active work.
+
+What runs: the AJ-site collector (75 domains), DJEN discovery through `djen-relay`, the
+resolver, and the coverage view `public.rj_coverage`. On 2026-10-13, **425 of the 2,220
+September 2026 DJEN cases (19.1%)** had a document link from an AJ site; #846 asks for
+about 40%. Only 426 of the 2,220 cases name an inventoried AJ, so even a perfect resolver
+reaches about 31%. Numbers per court are in the epic status comment (#841).
+
+Open, if the owner picks this up again:
+
+- **RJ-5 (#847), owner:** accept about 20% coverage, consider DataJud (its non-commercial
+  clause) or a paid feed, or ask for more AJ adapters.
+- **State lists (#846), measured 2026-10-13:** the TJPR CONSEPRE search answers 405 to its own
+  page; TJMT RecuperaJud was in maintenance and its robots.txt disallows the page; TJRJ's
+  server sends no intermediate certificate, so TLS fails from a runner too (about 2 points at
+  most, 64 cases); JUCEMG lists 840 RJ companies with no process number.
+- **More AJ adapters (#845):** the JS sites and the sites marked "not read" in
+  `src/fetchers/rj/sites.py`.
+- **Owner, Supabase dashboard:** delete the spike Edge Functions `djen-reach-probe` and
+  `djen-sample-probe` (#843); the MCP has no delete tool.
