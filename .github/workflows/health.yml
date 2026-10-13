@@ -10,7 +10,7 @@ name: DB Health
 # default_transaction_read_only = on, so a health check can never mutate data.
 #
 # Modes (workflow_dispatch):
-#   checks       — the gate (default; also what the schedule runs)
+#   checks       — the gate (default; also what workflow_run and the schedule run)
 #   diagnostics  — prints one-off investigation queries from
 #                  scripts/health_diagnostics/*.sql; a missing relation
 #                  skips that file and the rest still run. Never fails the
@@ -21,8 +21,16 @@ name: DB Health
 # may safely overlap an ingest run.
 
 on:
+  # When "Daily CVM Ingest" completes, whatever its conclusion (#870): a fixed
+  # clock could read a run still in progress (the daily workflow can end as
+  # late as ~10:00 UTC).
+  workflow_run:
+    workflows: ["Daily CVM Ingest"]
+    types: [completed]
   schedule:
-    - cron: "30 7 * * *" # 07:30 UTC — after the 06:00 daily ingest settles
+    # Fallback for a day the daily run never ran: 07:30 UTC-3 (10:30 UTC),
+    # after the daily workflow's latest finish.
+    - cron: "30 10 * * *"
   workflow_dispatch:
     inputs:
       mode:

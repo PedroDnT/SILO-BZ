@@ -20,6 +20,12 @@ import scripts.check_staleness as cs
 _BASE_MONDAY = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def _no_github_output(monkeypatch):
+    """main() appends heal_* flags to $GITHUB_OUTPUT; keep CI's own file clean."""
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+
+
 def _fixed_now(weekday: int) -> datetime:
     return _BASE_MONDAY + timedelta(days=weekday)
 
@@ -261,3 +267,100 @@ def test_stale_lending_returns_the_recovery_exit_code(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "lending slice is stale" in out
     assert "cannot be backfilled" in out
+
+
+
+# ── #870: FNET, FNET diffs and RJ heal on their own flags ─────────────────
+
+
+def test_side_sources_name_what_the_pipelines_log():
+    assert cs.SIDE_SOURCES["fnet"][0] == "fnet"
+    assert set(cs.SIDE_SOURCES["fnet"][1]) == {"register", "fund_link"}
+    assert cs.SIDE_SOURCES["fnet_diff"][:2] == ("fnet", ("diff",))
+    assert cs.SIDE_SOURCES["rj"][0] == "rj"
+    assert cs.SIDE_ENTITIES == ("fnet", "rj")
+
+
+def test_main_counts_leave_the_side_sources_out():
+    """Before #870 an FNET error re-ran run_daily, which never touches FNET."""
+    sql, params = cs.MAIN_SCOPE
+    assert "NOT (e.entity = ANY(%s))" in sql
+    assert params == (["fnet", "rj"],)
+    import inspect
+    for fn in (cs.unhealed_error_slices, cs.stuck_running_slices):
+        assert inspect.signature(fn).parameters["scope"].default is cs.MAIN_SCOPE
+        assert "*scope[1]" in inspect.getsource(fn)
+
+
+def test_scope_params_follow_the_sql_order():
+    sql, params = cs._scope(entity="fnet", doc_types=("diff",))
+    assert sql.index("e.entity = %s") < sql.index("e.doc_type = ANY(%s)")
+    assert params == ("fnet", ["diff"])
+
+
+class _SideConn(_Conn):
+    """Answers the side freshness query with `side_last`, the rest as _Conn."""
+
+    def __init__(self, last_finished, side_last, unhealed=0, stuck=0):
+        super().__init__(last_finished, unhealed, stuck)
+        self._side_last = side_last
+
+    def cursor(self):
+        conn = self
+
+        class _C(_Cursor):
+            def fetchone(self):
+                if "status IN ('ok', 'skipped')" in self._sql and "unhealed" not in self._sql \
+                        and ") stuck" not in self._sql:
+                    return [conn._side_last]
+                return super().fetchone()
+
+        return _C(self)
+
+
+def test_side_sources_fresh_write_false_flags(monkeypatch, tmp_path, capsys):
+    out = tmp_path / "out"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    p, fixed = _patch_now(weekday=2)
+    conn = _SideConn(fixed - timedelta(hours=2), fixed - timedelta(hours=3))
+    monkeypatch.setattr(cs, "get_pg_client", lambda: conn)
+    with p:
+        assert cs.main() == cs.EXIT_FRESH
+    assert out.read_text().splitlines() == [
+        "heal_fnet=false", "heal_fnet_diff=false", "heal_rj=false",
+    ]
+
+
+def test_stale_side_source_flags_heal_without_rerunning_daily(monkeypatch, tmp_path, capsys):
+    out = tmp_path / "out"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    p, fixed = _patch_now(weekday=5)  # Saturday: side sources are not weekday-gated
+    conn = _SideConn(fixed - timedelta(hours=2), fixed - timedelta(hours=40))
+    monkeypatch.setattr(cs, "get_pg_client", lambda: conn)
+    with p:
+        assert cs.main() == cs.EXIT_FRESH, "a stale FNET/RJ must not re-run run_daily"
+    assert "heal_fnet=true" in out.read_text()
+    assert "heal_rj=true" in out.read_text()
+    assert "last ok 40h ago" in capsys.readouterr().out
+
+
+def test_side_errors_flag_only_their_source(monkeypatch):
+    seen = []
+
+    def unhealed(conn, hours=0, scope=cs.MAIN_SCOPE):
+        seen.append(scope)
+        return 2 if scope == cs._scope(entity="rj", doc_types=None) else 0
+
+    monkeypatch.setattr(cs, "unhealed_error_slices", unhealed)
+    monkeypatch.setattr(cs, "stuck_running_slices", lambda *a, **k: 0)
+    monkeypatch.setattr(cs, "side_success_age_hours", lambda *a: 1.0)
+    verdicts = cs.side_source_verdicts(object())
+    assert verdicts == {"fnet": "", "fnet_diff": "", "rj": "2 unhealed error slice(s)"}
+    assert cs.MAIN_SCOPE not in seen
+
+
+def test_no_github_output_writes_nothing(monkeypatch, tmp_path):
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.chdir(tmp_path)
+    cs.write_github_output({"fnet": True})
+    assert list(tmp_path.iterdir()) == []

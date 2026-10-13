@@ -715,7 +715,7 @@ through the Edge Function `djen-relay` in `sa-east-1`; September 2026 was backfi
 courts, all `ok`). Coverage is in `public.rj_coverage` and the epic status comment (#841).
 `BR_PROXY_URL` stays as an optional fallback.
 
-Assessment 2026-10-13 (item 24): `rj_case` and `rj_document` are not served and the watchdog does not heal `rj_collect`.
+Assessment 2026-10-13 (item 24): `rj_case` and `rj_document` are not served. The watchdog heals RJ on its own flag since branch `orchestrator/870-health-on-workflow-run` (#870).
 
 ## 24. Assessment 2026-10-13: proposed tickets (#862)
 
@@ -753,9 +753,14 @@ a decision first.
   pool 4.
 - ANALYZE only the tables a run changed; fix the "of 20" message (27 tables).
 - Run DB Health and the watchdog on `workflow_run` of the daily run, not fixed
-  clocks.
+  clocks. Fixed on branch `orchestrator/870-health-on-workflow-run` (#870): both
+  run when "Daily CVM Ingest" completes, with fallback crons at 07:30 and 07:40
+  UTC-3 (10:30 and 10:40 UTC). Gate files: the owner merges.
 - Print per-file timings in `scripts/apply_analytical.sh`.
-- Let the watchdog heal FNET, FNET diffs and RJ.
+- Let the watchdog heal FNET, FNET diffs and RJ. Fixed on the same branch
+  (#870): `scripts/check_staleness.py` writes `heal_fnet`, `heal_fnet_diff` and
+  `heal_rj`, each re-running only its source; FNET and RJ errors no longer
+  re-run `run_daily`, which could not heal them.
 
 **Workflow: structural (owner; an ADR first)**
 

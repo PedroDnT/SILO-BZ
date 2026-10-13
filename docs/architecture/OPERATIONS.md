@@ -11,8 +11,9 @@ Times in UTC-3, with UTC in parentheses.
                              ├─ apply_analytical.sh   refresh matviews/api; smoke guards
                              ├─ Vercel deploy hook    dashboard build, 17 to 45 min; needs the apply green
                              └─ B3 events · rates/market · FNET register · fnet-diff   (run even after a failure)
-04:30 (07:30)  health         read-only gate: errors, stuck slices, fact_fund_monthly lag, disk, anon exposure
-05:00 (08:00)  watchdog       stale or unhealed? → re-run run_daily, B3 events and market (data only)
+after daily    health         read-only: errors, stuck, fund lag, disk, anon
+after daily    watchdog       stale/unhealed? re-run run_daily, B3 events, market;
+                              FNET, fnet-diff, RJ on own flags; fallback crons 07:30/07:40 (10:30/10:40)
 05:00 (08:00)  publish_check  public URL stale? promote; ERRORed → red
 after a run    publish_check  green daily run, or red with hook done: wait ≤45 min, promote
                               (no-op while Vercel auto-assigns; item 8)
@@ -31,9 +32,8 @@ after a run    publish_check  green daily run, or red with hook done: wait ≤45
   matview-fed columns do not: `days_to_cover` joins `mv_b3_adtv_21`, and
   `fund_type` in `api.fund_quotas` falls back to `mv_b3_isin_subtype`.
 - An issue "Daily ingest is failing" is opened or commented on.
-- Watchdog heals data only; no analytical apply or deploy hook.
-- Health and the watchdog count errors only for slices the daily run re-reads
-  (`src/pipeline/daily_window.py`). Older ones are backfill work.
+- Watchdog heals data only: no analytical apply, no deploy hook. It and health
+  count errors only in slices the daily run re-reads (`src/pipeline/daily_window.py`).
 
 ## Changes
 

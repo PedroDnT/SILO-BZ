@@ -740,3 +740,19 @@ def test_future_partition_check_fails_when_the_probe_sees_too_few_partitions():
 def test_future_partition_check_runs_before_the_final_verdict():
     body = _step("Health checks")["run"]
     assert body.index("# 4d. Yearly partitions") < body.index('echo "HEALTH: FAIL"')
+
+
+def test_health_runs_when_the_daily_run_completes_with_a_fallback_cron():
+    """#870: a fixed 07:30 UTC clock could read a daily run still in progress."""
+    spec = _spec()
+    on = spec.get("on", spec.get(True))  # PyYAML reads the bare key `on` as True
+    daily = yaml.safe_load((ROOT / ".github/workflows/daily_ingest.yml").read_text())
+    assert on["workflow_run"]["workflows"] == [daily["name"]]
+    assert on["workflow_run"]["types"] == ["completed"]
+    # No conclusion filter: a failed daily run is exactly what health must read.
+    assert "if" not in spec["jobs"]["health"]
+    crons = [c["cron"] for c in on["schedule"]]
+    assert len(crons) == 1, "keep exactly one fallback cron"
+    minute, hour = (int(x) for x in crons[0].split()[:2])
+    assert (hour, minute) > (10, 0), "after the daily workflow's latest finish (~10:00 UTC)"
+    assert "workflow_dispatch" in on
