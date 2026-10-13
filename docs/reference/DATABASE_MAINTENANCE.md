@@ -359,9 +359,11 @@ Adding a whole dataset is a different recipe — see "Adding a dataset" in `AGEN
 ## 6. Yearly partition rollover ⚠️
 
 `cvm_fi_diario`, `cia_account`, and `b3_cotahist` are **range-partitioned by year**.
-Partitions are declared through **2026**, plus a `_future` catch-all.
+Partitions are declared through **2027**, plus a `_future` catch-all from 2028-01-01.
+The 2027 partitions come from `migrations/76_partition_rollover_2027.sql` (#867), and
+DB Health (`health.yml`, check 4d) fails while any `_future` partition holds a row.
 
-This will not fail loudly. Once 2027 data arrives it lands in `cvm_fi_diario_future` /
+This will not fail loudly. Data for a year with no partition of its own lands in `cvm_fi_diario_future` /
 `cia_account_future` / `b3_cotahist_future`, which silently forfeits partition pruning
 and grows without bound — the same quiet-degradation shape as the bugs above.
 
@@ -373,12 +375,11 @@ UNION ALL SELECT 'cia_account_future', count(*) FROM cia_account_future
 UNION ALL SELECT 'b3_cotahist_future', count(*) FROM b3_cotahist_future;
 ```
 
-Each year, before January. **A plain `CREATE TABLE … _2027 PARTITION OF … FROM
-('2027-01-01') TO ('2028-01-01')` fails.** Each `_future` partition is bound
-`FROM ('2027-01-01') TO (MAXVALUE)` (`schema.sql:90`, `:1813`;
-`migrations/04_cia.sql:157`), so the new range overlaps it and Postgres refuses it.
-This was found on 2026-10-13. The sequence below has not yet been run against the
-database.
+Each year, before January. **A plain `CREATE TABLE … _<year> PARTITION OF …` fails.**
+Each `_future` partition covers every later year up to `MAXVALUE`, so the new range
+overlaps it and Postgres refuses it. Migration 76 runs the sequence below for 2027
+(after it, `_future` starts at 2028-01-01); the 2028 rollover is the same move with
+every year shifted by one, in a new migration.
 
 For each table (`cvm_fi_diario` on `dt_comptc`, `cia_account` on `dt_refer`,
 `b3_cotahist` on `trade_date`), in one transaction:
@@ -408,6 +409,8 @@ COMMIT;
    would hit the overlap on the live database. `IF NOT EXISTS` on `_future` means
    the new bound only matters on a fresh database.
 3. **Run the check above again afterwards.** It must return `0` for every table.
+4. **Allowlist the new partitions** in `tests/fixtures/schema_migration_parity_allowlist.json`:
+   they exist only after the migrations, and the `sql-compile` parity check fails otherwise.
 
 ---
 

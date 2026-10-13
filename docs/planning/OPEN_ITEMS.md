@@ -742,11 +742,11 @@ a decision first.
   of retention). Watchdog recovery uses the same gate. Make the probe gate the CVM
   scope only. Adding `!cancelled()` alone brings back the 40-minute
   connect-refusal loop of 2026-08-29. **owner** (design choice).
-- **The 2027 partition rollover.** The old runbook step overlapped `_future` and
-  would fail; [`DATABASE_MAINTENANCE.md`](../reference/DATABASE_MAINTENANCE.md) §6
-  now gives a guarded sequence. Ship it as a migration before 2027-01-01, and add a
-  `_future` row-count check to `health.yml`. Live read 2026-10-13: 0 rows in all
-  three `_future` partitions.
+- **The 2027 partition rollover.** Shipped (#867): migration 76 creates the
+  `_2027` partitions and re-bounds `_future` from 2028; `health.yml` check 4d fails
+  while any `_future` partition holds rows. It goes live on the next daily apply
+  ([`DATABASE_MAINTENANCE.md`](../reference/DATABASE_MAINTENANCE.md) §6). Live read
+  2026-10-13: 0 rows in all three `_future` partitions.
 
 **Workflow: small changes**
 

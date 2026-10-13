@@ -707,3 +707,36 @@ class TestStuckRunningBranch:
     def test_psql_error_text_is_not_read_as_zero(self):
         fail, err, _ = _run_check_1b("ERROR:relationdoesnotexist")
         assert fail == 1 and "did not return a count" in err
+
+
+# ---------------------------------------------------------------------------
+# 4d. `_future` partitions must be empty (#867). A row in a catch-all means its
+# year has no partition: nothing fails, pruning is lost and _future grows.
+
+def _future_check() -> str:
+    body = _step("Health checks")["run"]
+    start = body.index("# 4d. Yearly partitions")
+    return body[start: body.index("# 5. Disk", start)]
+
+
+def test_future_partition_check_exists_and_fails_the_gate():
+    check = _future_check()
+    assert "pg_inherits" in check, "partitions are discovered, not hard-coded"
+    assert "LIKE '%\\_future'" in check, "the underscore is escaped in LIKE"
+    assert check.count("fail=1") == 2, "both rows-present and no-answer fail the gate"
+
+
+def test_future_partition_check_probes_with_limit_not_a_full_count():
+    check = _future_check()
+    assert "LIMIT 1" in check
+    assert "query_to_xml" in check
+
+
+def test_future_partition_check_fails_when_the_probe_sees_too_few_partitions():
+    # cvm_fi_diario, cia_account, b3_cotahist and b3_lending_trade each have one.
+    assert '[ "$future_n" -lt 4 ]' in _future_check()
+
+
+def test_future_partition_check_runs_before_the_final_verdict():
+    body = _step("Health checks")["run"]
+    assert body.index("# 4d. Yearly partitions") < body.index('echo "HEALTH: FAIL"')

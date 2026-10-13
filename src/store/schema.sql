@@ -86,8 +86,11 @@ CREATE TABLE IF NOT EXISTS cvm_fi_diario_2025 PARTITION OF cvm_fi_diario
     FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
 CREATE TABLE IF NOT EXISTS cvm_fi_diario_2026 PARTITION OF cvm_fi_diario
     FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+-- cvm_fi_diario_2027 is created by migrations/76_partition_rollover_2027.sql, not
+-- here: on the live database _future already covers 2027, so a CREATE here
+-- (applied before the migrations) would overlap it.
 CREATE TABLE IF NOT EXISTS cvm_fi_diario_future PARTITION OF cvm_fi_diario
-    FOR VALUES FROM ('2027-01-01') TO (MAXVALUE);
+    FOR VALUES FROM ('2028-01-01') TO (MAXVALUE);
 
 -- BRIN index: efficient for monotonically inserted date data
 CREATE INDEX IF NOT EXISTS idx_fi_diario_dt    ON cvm_fi_diario USING BRIN (dt_comptc);
@@ -1809,8 +1812,11 @@ CREATE TABLE IF NOT EXISTS b3_cotahist_2025 PARTITION OF b3_cotahist
     FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
 CREATE TABLE IF NOT EXISTS b3_cotahist_2026 PARTITION OF b3_cotahist
     FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+-- b3_cotahist_2027 is created by migrations/76_partition_rollover_2027.sql, not
+-- here: on the live database _future already covers 2027, so a CREATE here
+-- (applied before the migrations) would overlap it.
 CREATE TABLE IF NOT EXISTS b3_cotahist_future PARTITION OF b3_cotahist
-    FOR VALUES FROM ('2027-01-01') TO (MAXVALUE);
+    FOR VALUES FROM ('2028-01-01') TO (MAXVALUE);
 
 CREATE INDEX IF NOT EXISTS idx_b3_cotahist_dt
     ON b3_cotahist USING BRIN (trade_date);
