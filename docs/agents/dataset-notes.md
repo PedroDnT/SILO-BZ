@@ -195,7 +195,9 @@ sites in `src/fetchers/rj/sites.py`, which must be `html` with robots allowed in
 the #844 inventory `src/fetchers/rj/aj_sites.csv`. The key is the 20-digit CNJ
 number as the page prints it, with `source` (`aj_site:<domain>`) in `rj_case`'s
 key, so a case listed by two sources keeps both rows. A case page with no CNJ
-number yields no case. `first_seen_at` is set once by the DEFAULT, and
+number yields no case. A site with no page per case sets `inline_blocks_xpath`:
+each block of its list page is read as a case, and the list page is the
+case's `aj_case_url` and the documents' `found_on`. `first_seen_at` is set once by the DEFAULT, and
 `public.rj_document_new` is the new-document signal. `tipo` is a title rule
 (`parse.classify_tipo`); `titulo` is as published. `http_status` comes from a
 budgeted HEAD (`RJ_HEAD_BUDGET` per site per run), so NULL means not checked
