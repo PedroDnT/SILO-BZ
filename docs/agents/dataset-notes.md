@@ -201,3 +201,11 @@ number yields no case. `first_seen_at` is set once by the DEFAULT, and
 budgeted HEAD (`RJ_HEAD_BUDGET` per site per run), so NULL means not checked
 yet. A site that lists no case after it had cases fails the run. Never parse
 the documents for personal data: creditor lists carry CPFs.
+DJEN (#846, `src/pipeline/ingest_rj_djen.py`) is the discovery source: the
+same tables with `source = 'djen'`, classes 129 / 128 only, `devedor_nome` =
+the polo ativo names as DJEN prints them, one `rj_document` per act with its own
+`link` (`found_on` is the act's certidão). DJEN refuses non-Brazilian egress,
+so the client needs `BR_PROXY_URL` and refuses to start without it. A day whose
+`count` reaches 10,000 raises instead of paging past the cap.
+`public.rj_coverage` gives, per tribunal (read from the CNJ number) and source,
+the share of cases with at least one administrador judicial document link.

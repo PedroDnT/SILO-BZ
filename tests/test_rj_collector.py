@@ -151,6 +151,8 @@ def test_cnj_numbers_printed_and_bare():
     ("1° Edital de Credores", "", "relacao_credores_devedor"),
     ("2° Edital de Credores Retificado", "", "relacao_credores_aj"),
     ("Decisão Deferimento RJ AFA Plásticos", "", "decisao_deferimento"),
+    ("Intimação: DESPACHO/DECISÃO", "Defiro o processamento da recuperação judicial.", "decisao_deferimento"),
+    ("Intimação: DESPACHO/DECISÃO", "Indefiro o pedido de tutela.", "outros"),
     ("Despacho que determinou perícia prévia", "", "outros"),
     ("Decisão de deferimento da recuperação judicial - 20.02.2024", "", "decisao_deferimento"),
     ("Deferimento do pedido de Recuperação Judicial", "", "decisao_deferimento"),
