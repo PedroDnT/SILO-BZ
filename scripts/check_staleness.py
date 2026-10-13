@@ -20,11 +20,19 @@ Exit codes (consumed by the workflow's `if:` steps):
           ingest errors remain → re-run daily ingest
     11  — only the monthly ANBIMA/ETF slice is stale → re-run daily ingest
 
+FNET, FNET diffs and RJ (#870) are not healed by run_daily, so they are kept
+out of the exit code and out of the counts above. Each gets its own verdict,
+printed and, under GitHub Actions, written to $GITHUB_OUTPUT as
+``heal_fnet`` / ``heal_fnet_diff`` / ``heal_rj``; the watchdog re-runs only the
+source whose flag is ``true``. Before #870 an FNET error re-ran run_daily,
+which never touches FNET, so it could never heal.
+
 Run standalone:
     POSTGRES_URL=... python scripts/check_staleness.py
 """
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -83,6 +91,43 @@ EXIT_FRESH = 0
 EXIT_DAILY_STALE = 10
 EXIT_MONTHLY_STALE = 11
 
+# Sources with their own recovery step in watchdog.yml (#870): run_daily does
+# not write them, so they never count toward the exit code above. name ->
+# (entity, doc_types whose errors/stuck rows count (None = every doc_type),
+# doc_type whose latest ok/skipped row is the freshness signal (None = any)).
+# FNET and fnet-diff run in every scheduled daily run and rj_collect runs every
+# day, so none is weekday-gated. A run that wants no work still writes ok.
+SIDE_SOURCES = {
+    "fnet": ("fnet", ("register", "fund_link"), "register"),
+    "fnet_diff": ("fnet", ("diff",), "diff"),
+    "rj": ("rj", None, None),
+}
+SIDE_ENTITIES = tuple(sorted({entity for entity, _, _ in SIDE_SOURCES.values()}))
+SIDE_THRESHOLD_HOURS = 26           # one daily period + slack, like the FI slice
+
+
+def _scope(
+    entity: Optional[str] = None,
+    doc_types: Optional[tuple] = None,
+    exclude_entities: tuple = (),
+) -> tuple[str, tuple]:
+    """SQL (on alias ``e``) and params narrowing the slices a count reads."""
+    sql, params = "", []
+    if exclude_entities:
+        sql += " AND NOT (e.entity = ANY(%s))"
+        params.append(list(exclude_entities))
+    if entity is not None:
+        sql += " AND e.entity = %s"
+        params.append(entity)
+    if doc_types is not None:
+        sql += " AND e.doc_type = ANY(%s)"
+        params.append(list(doc_types))
+    return sql, tuple(params)
+
+
+# What run_daily (and the watchdog's market / B3 events steps) can heal.
+MAIN_SCOPE = _scope(exclude_entities=SIDE_ENTITIES)
+
 
 def last_success_age_hours(
     conn: Any, entity: str, doc_type: str
@@ -109,7 +154,9 @@ def last_success_age_hours(
     return (datetime.now(timezone.utc) - last).total_seconds() / 3600.0
 
 
-def unhealed_error_slices(conn: Any, hours: float = UNHEALED_ERROR_HOURS) -> int:
+def unhealed_error_slices(
+    conn: Any, hours: float = UNHEALED_ERROR_HOURS, scope: tuple = MAIN_SCOPE
+) -> int:
     """Count ingest slices whose latest attempt in the window is still ``error``.
 
     Same predicate as ``.github/workflows/health.yml`` check 1: a later ``ok``
@@ -123,6 +170,8 @@ def unhealed_error_slices(conn: Any, hours: float = UNHEALED_ERROR_HOURS) -> int
     the 06:00 run (33237536770). Those are a failed cron, not a quiet weekend.
     DB Health #14 (33507857471) then failed on 31 historical ``fi/cda_*``
     backfill errors daily will never retry; those must not page the watchdog.
+    ``scope`` (``_scope``) narrows the count; the default leaves out the
+    ``SIDE_SOURCES``, which have their own recovery steps.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -139,17 +188,19 @@ def unhealed_error_slices(conn: Any, hours: float = UNHEALED_ERROR_HOURS) -> int
                           AND s.doc_type     IS NOT DISTINCT FROM e.doc_type
                           AND s.period_year  IS NOT DISTINCT FROM e.period_year
                           AND s.period_month IS NOT DISTINCT FROM e.period_month
-                          AND s.started_at   > e.started_at)
+                          AND s.started_at   > e.started_at)""" + scope[0] + """
                  AND """ + _DAILY_WINDOW_SQL + """
             ) unhealed
             """,
-            (hours, *daily_window.daily_window_params()),
+            (hours, *scope[1], *daily_window.daily_window_params()),
         )
         row = cur.fetchone()
     return int(row[0] if row and row[0] is not None else 0)
 
 
-def stuck_running_slices(conn: Any, hours: float = STUCK_RUNNING_HOURS) -> int:
+def stuck_running_slices(
+    conn: Any, hours: float = STUCK_RUNNING_HOURS, scope: tuple = MAIN_SCOPE
+) -> int:
     """Count daily-window slices whose latest attempt is a ``running`` row older than ``hours``.
 
     Same slice scope and heal rule as ``unhealed_error_slices`` / health check
@@ -173,11 +224,11 @@ def stuck_running_slices(conn: Any, hours: float = STUCK_RUNNING_HOURS) -> int:
                           AND s.doc_type     IS NOT DISTINCT FROM e.doc_type
                           AND s.period_year  IS NOT DISTINCT FROM e.period_year
                           AND s.period_month IS NOT DISTINCT FROM e.period_month
-                          AND s.started_at   > e.started_at)
+                          AND s.started_at   > e.started_at)""" + scope[0] + """
                  AND """ + _DAILY_WINDOW_SQL + """
             ) stuck
             """,
-            (hours, *daily_window.daily_window_params()),
+            (hours, *scope[1], *daily_window.daily_window_params()),
         )
         row = cur.fetchone()
     return int(row[0] if row and row[0] is not None else 0)
@@ -201,9 +252,67 @@ def is_stale(
     return age is None or age > threshold_hours
 
 
+def side_success_age_hours(
+    conn: Any, entity: str, doc_type: Optional[str]
+) -> Optional[float]:
+    """Hours since the latest ``ok`` or ``skipped`` row of a side source.
+
+    ``doc_type`` None reads every doc_type of the entity (RJ logs one row per
+    site, per DJEN tribunal and for the resolver). None when it never ran.
+    """
+    sql = (
+        "SELECT MAX(finished_at) FROM cvm_ingest_log "
+        "WHERE entity = %s AND status IN ('ok', 'skipped') "
+        "AND finished_at IS NOT NULL"
+    )
+    params: tuple = (entity,)
+    if doc_type is not None:
+        sql += " AND doc_type = %s"
+        params += (doc_type,)
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+    last = row[0] if row else None
+    if last is None:
+        return None
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - last).total_seconds() / 3600.0
+
+
+def side_source_verdicts(conn: Any) -> dict[str, str]:
+    """name -> "" when the source is fine, else why the watchdog must re-run it."""
+    out: dict[str, str] = {}
+    for name, (entity, doc_types, fresh_doc) in SIDE_SOURCES.items():
+        scope = _scope(entity=entity, doc_types=doc_types)
+        reasons = []
+        unhealed = unhealed_error_slices(conn, UNHEALED_ERROR_HOURS, scope)
+        if unhealed:
+            reasons.append(f"{unhealed} unhealed error slice(s)")
+        stuck = stuck_running_slices(conn, STUCK_RUNNING_HOURS, scope)
+        if stuck:
+            reasons.append(f"{stuck} slice(s) stuck at running")
+        age = side_success_age_hours(conn, entity, fresh_doc)
+        if age is None or age > SIDE_THRESHOLD_HOURS:
+            reasons.append("never ran" if age is None else f"last ok {age:.0f}h ago")
+        out[name] = "; ".join(reasons)
+    return out
+
+
+def write_github_output(flags: dict[str, bool]) -> None:
+    """Append ``heal_<name>=true|false`` to $GITHUB_OUTPUT when it is set."""
+    path = os.environ.get("GITHUB_OUTPUT")
+    if not path:
+        return
+    with open(path, "a", encoding="utf-8") as fh:
+        for name, heal in flags.items():
+            fh.write(f"heal_{name}={'true' if heal else 'false'}\n")
+
+
 def main() -> int:
     conn = get_pg_client()
     try:
+        side = side_source_verdicts(conn)
         unhealed = unhealed_error_slices(conn, UNHEALED_ERROR_HOURS)
         stuck = stuck_running_slices(conn, STUCK_RUNNING_HOURS)
         daily_stale = is_stale(
@@ -235,6 +344,9 @@ def main() -> int:
     print(f"[staleness] lending ({LENDING_ENTITY}/{LENDING_DOC}): {lending_age}")
     print(f"[staleness] unhealed ingest errors ({UNHEALED_ERROR_HOURS}h): {unhealed}")
     print(f"[staleness] slices stuck at running (>{STUCK_RUNNING_HOURS}h): {stuck}")
+    for name, why in side.items():
+        print(f"[staleness] {name}: {'fresh' if not why else 'HEAL (' + why + ')'}")
+    write_github_output({name: bool(why) for name, why in side.items()})
 
     # Unhealed errors first, and never weekend-gated. weekday_only exists so a
     # quiet Saturday does not look like a missed cron; 44 CVMHostUnreachable

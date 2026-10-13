@@ -35,6 +35,8 @@ TWINS = {
     ),
     # The CVM probe's alarm (#866): the probe stays green, this fails the run.
     "Fail the run when CVM was unreachable": "Fail the run when CVM was unreachable",
+    # #870: gated on the staleness check's own heal_fnet flag.
+    "Refresh FNET document register (recovery)": "Refresh FNET document register",
 }
 
 # Step keys that may differ between twins, each with its reason.
@@ -63,7 +65,6 @@ NOT_RECOVERED = {
     "Analyze tables post-ingest": "recovery heals data only (docs/architecture/OPERATIONS.md).",
     "Build / refresh analytical layer": "recovery heals data only; the next 06:00 run rebuilds it.",
     "Trigger dashboard rebuild (Vercel deploy hook)": "recovery heals data only; it publishes nothing.",
-    "Refresh FNET document register": "FNET is not a slice the staleness check watches.",
 }
 
 # Watchdog steps with no daily twin, each with its reason.
@@ -87,14 +88,22 @@ ALLOWED_ORDER_DIFFS = {
 
 # Other daily_ingest jobs the watchdog has no counterpart for.
 OTHER_DAILY_JOBS = {
-    "fnet-diff": "FNET restatement diffs; not a slice the staleness check watches.",
+    "fnet-diff": "twinned by the watchdog's own fnet-diff job (#870); compared below.",
     "notify-failure": "files the daily-failure tracking issue; a red watchdog run shows on its own.",
+}
+
+# Watchdog jobs besides WATCHDOG_JOB (#870), each with what it twins.
+WATCHDOG_JOBS = {
+    WATCHDOG_JOB: "re-runs the daily ingest job's steps.",
+    "fnet-diff": "daily_ingest.yml's fnet-diff job, gated on heal_fnet_diff.",
+    "rj": "rj_collect.yml's collect job for every site, gated on heal_rj.",
 }
 
 # Job keys that may differ between the two jobs.
 ALLOWED_JOB_KEY_DIFFS = {
     "name": "each job names itself.",
-    "timeout-minutes": "the daily job has more steps (analytical layer, FNET) than recovery.",
+    "timeout-minutes": "may differ; both are 180 since recovery also runs FNET (#870).",
+    "outputs": "the watchdog hands heal_fnet_diff / heal_rj to its fnet-diff and rj jobs.",
     "steps": "compared step by step below.",
 }
 
@@ -218,3 +227,92 @@ def test_recovery_does_not_rebuild_analytics():
     text = (WORKFLOWS / "watchdog.yml").read_text()
     assert "apply_analytical" not in text
     assert "VERCEL" not in text.upper()
+
+
+# ── #870: triggers, and the FNET-diff and RJ recovery jobs ──────────────────
+
+
+def _on(workflow: str) -> dict:
+    spec = _load(workflow)
+    return spec.get("on", spec.get(True))  # PyYAML reads the bare key `on` as True
+
+
+def test_watchdog_runs_when_the_daily_run_completes_with_a_fallback_cron():
+    on = _on("watchdog.yml")
+    assert on["workflow_run"]["workflows"] == [_load("daily_ingest.yml")["name"]]
+    assert on["workflow_run"]["types"] == ["completed"]
+    # No conclusion filter: a failed daily run is when the watchdog matters most.
+    assert "if" not in _job("watchdog.yml", WATCHDOG_JOB)
+    crons = [c["cron"] for c in on["schedule"]]
+    assert len(crons) == 1, "keep exactly one fallback cron"
+    minute, hour = (int(x) for x in crons[0].split()[:2])
+    # After the daily workflow's latest finish (~10:00 UTC), before rj_collect
+    # (11:07 UTC): a pending run in supabase-ingest cancels an older pending one.
+    assert (10, 0) < (hour, minute) < (11, 7)
+    assert "workflow_dispatch" in on
+
+
+def test_watchdog_jobs_are_known():
+    assert set(_load("watchdog.yml")["jobs"]) == set(WATCHDOG_JOBS)
+
+
+def _run_or_uses(step: dict) -> tuple:
+    return (_normalise(step.get("run")), step.get("uses"), step.get("with"))
+
+
+def test_fnet_diff_recovery_job_twins_the_daily_job():
+    daily = _job("daily_ingest.yml", "fnet-diff")
+    watchdog = _job("watchdog.yml", "fnet-diff")
+    assert watchdog["needs"] == WATCHDOG_JOB
+    assert "!cancelled()" in watchdog["if"], "a red watchdog job must not hold it back"
+    assert "heal_fnet_diff" in watchdog["if"]
+    for key in ("runs-on", "timeout-minutes", "env"):
+        assert daily[key] == watchdog[key], f"fnet-diff {key!r} differs"
+    assert [_run_or_uses(s) for s in daily["steps"]] == [
+        _run_or_uses(s) for s in watchdog["steps"]
+    ]
+
+
+def test_rj_recovery_job_runs_what_rj_collect_runs():
+    collect = _load("rj_collect.yml")["jobs"]["collect"]
+    rj = _job("watchdog.yml", "rj")
+    assert rj["needs"] == WATCHDOG_JOB
+    assert "!cancelled()" in rj["if"] and "heal_rj" in rj["if"]
+    for key in ("runs-on", "timeout-minutes", "env"):
+        assert collect[key] == rj[key], f"rj {key!r} differs from rj_collect.yml"
+
+    def modules(job):
+        return [
+            s["run"].split("python -m ", 1)[1].split()[0]
+            for s in job["steps"] if "python -m " in (s.get("run") or "")
+        ]
+
+    assert modules(rj) == modules(collect) == [
+        "src.pipeline.ingest_rj", "src.pipeline.ingest_rj_djen", "src.pipeline.resolve_rj",
+    ]
+    assert any(s.get("uses") == "./.github/actions/apply-schema" for s in rj["steps"]), (
+        "the watchdog job skips its schema apply on an RJ-only day"
+    )
+    djen = {s["name"]: s for s in rj["steps"] if s.get("name")}["Discover RJ cases on DJEN"]
+    collect_djen = {s["name"]: s for s in collect["steps"] if s.get("name")}[
+        "Discover RJ cases on DJEN"
+    ]
+    for var in ("DJEN_RELAY_URL", "DJEN_RELAY_TOKEN", "BR_PROXY_URL"):
+        assert djen["env"][var] == collect_djen["env"][var]
+    rj_text = (WORKFLOWS / "watchdog.yml").read_text().split("\n  rj:", 1)[1]
+    for ref in ("{{ inputs.", "!inputs."):
+        assert ref not in rj_text, "the watchdog has no rj_collect inputs"
+
+
+def test_heal_flags_gate_their_own_recovery():
+    steps = _steps(_job("watchdog.yml", WATCHDOG_JOB))
+    assert "heal_fnet" in steps["Apply schema + migrations"]["if"], (
+        "an FNET-only day must still apply migrations before FNET writes"
+    )
+    assert "heal_fnet ==" in steps["Refresh FNET document register (recovery)"]["if"]
+    assert "heal_fnet" not in steps["Probe dados.cvm.gov.br"]["if"], "the probe gates CVM only"
+    noop = steps["Report no-op"]["if"]
+    for flag in ("heal_fnet ", "heal_fnet_diff", "heal_rj"):
+        assert flag in noop
+    outputs = _job("watchdog.yml", WATCHDOG_JOB)["outputs"]
+    assert set(outputs) == {"heal_fnet_diff", "heal_rj"}
