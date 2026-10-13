@@ -6,12 +6,16 @@ GitHub-hosted runner, and can it isolate recuperação judicial (RJ) items?
 
     python scripts/probe_djen.py reach
     python scripts/probe_djen.py sample --start 2026-09-01 --end 2026-09-30 --tribunals TJSP TJRJ
+    python scripts/probe_djen.py proxies --rounds 3
 
 `reach` sends one small query and prints the HTTP status, the item count and
 the field names. `sample` pages through RJ-related items per tribunal over a
 window and prints counts only: how many items, how many are of the RJ classes,
 how many read like a deferimento do processamento or an art. 52 edital, and how
-many name an administrador judicial.
+many name an administrador judicial. `proxies` asks whether a free public
+Brazilian proxy can stand in for a paid one: it reads published BR proxy lists,
+sends the `reach` query through each proxy with TLS verified end to end, and
+prints how many answer HTTP 200 and how many keep answering over a few rounds.
 
 It never prints party names, texts, CPFs or CNPJs: the log is public. Nothing is
 stored. A failed request raises (exit 1), so a blocked runner is a red job with
@@ -26,7 +30,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import concurrent.futures
 import re
+import subprocess
 import sys
 import time
 import unicodedata
@@ -42,6 +48,14 @@ MIN_INTERVAL_S = 1.0  # at most one request per second
 DEFAULT_TRIBUNALS = ("TJSP", "TJRJ", "TJMG", "TJRS", "TJPR", "TJSC")
 SEARCH_TEXT = "recuperação judicial"
 PAGE_SIZE = 100
+
+# Published lists of free Brazilian proxies (scheme://ip:port, one per line).
+FREE_PROXY_LISTS = (
+    "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&country=br"
+    "&protocol=http&proxy_format=protocolipport&format=text&timeout=10000",
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/BR/data.txt",
+)
+_PROXY_LINE = re.compile(r"^(https?|socks4a?|socks5h?)://[0-9A-Za-z.\-]+:\d{2,5}$")
 
 # TPU classes (CNJ Tabelas Processuais Unificadas).
 RJ_CLASS_CODES = {"129", "128"}  # 129 Recuperação Judicial, 128 Recuperação Extrajudicial
@@ -157,6 +171,52 @@ def cmd_sample(args: argparse.Namespace) -> int:
     return 0
 
 
+def parse_proxy_list(text: str) -> list[str]:
+    """scheme://host:port lines, deduplicated in order; anything else is skipped."""
+    seen: dict[str, None] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if _PROXY_LINE.match(line):
+            seen.setdefault(line, None)
+    return list(seen)
+
+
+def try_proxy(proxy: str, timeout: int = 15) -> str:
+    """HTTP status of the reach query through one proxy ("000" when it never answered).
+
+    curl, not urllib, because it speaks SOCKS too. TLS is verified as usual, so a
+    proxy that tampers with the connection fails instead of feeding fake data.
+    """
+    url = f"{BASE}?{urllib.parse.urlencode({'siglaTribunal': 'TJSP', 'pagina': 1, 'itensPorPagina': 5, 'texto': SEARCH_TEXT})}"
+    r = subprocess.run(["curl", "-s", "-m", str(timeout), "--proxy", proxy, "-A", USER_AGENT,
+                        "-o", "/dev/null", "-w", "%{http_code}", url], capture_output=True, text=True)
+    return r.stdout.strip() or "000"
+
+
+def cmd_proxies(args: argparse.Namespace) -> int:
+    proxies: list[str] = []
+    for src in args.lists:
+        req = urllib.request.Request(src, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            found = parse_proxy_list(resp.read().decode("utf-8", "replace"))
+        print(f"list {urllib.parse.urlsplit(src).netloc}: {len(found)} proxies")
+        proxies += [p for p in found if p not in proxies]
+    alive = proxies
+    for rnd in range(1, args.rounds + 1):
+        with concurrent.futures.ThreadPoolExecutor(args.workers) as ex:
+            codes = dict(zip(alive, ex.map(try_proxy, alive)))
+        print(f"round {rnd}: tried {len(alive)}, status counts {dict(Counter(codes.values()))}")
+        alive = [p for p, c in codes.items() if c == "200"]
+        if not alive:
+            break
+        if rnd < args.rounds:
+            time.sleep(args.pause)
+    print(f"answered HTTP 200 in all {args.rounds} rounds: {len(alive)} of {len(proxies)}")
+    for p in alive:
+        print(f"  ok {p}")
+    return 0 if alive else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -166,9 +226,14 @@ def main(argv: list[str] | None = None) -> int:
     sample.add_argument("--end", required=True, help="last day, YYYY-MM-DD")
     sample.add_argument("--tribunals", nargs="+", default=list(DEFAULT_TRIBUNALS))
     sample.add_argument("--max-pages", type=int, default=20)
+    prox = sub.add_parser("proxies", help="can a free public BR proxy reach DJEN, and does it keep working?")
+    prox.add_argument("--lists", nargs="+", default=list(FREE_PROXY_LISTS))
+    prox.add_argument("--rounds", type=int, default=3)
+    prox.add_argument("--pause", type=float, default=60.0, help="seconds between rounds")
+    prox.add_argument("--workers", type=int, default=40)
     args = parser.parse_args(argv)
     try:
-        return {"reach": cmd_reach, "sample": cmd_sample}[args.cmd](args)
+        return {"reach": cmd_reach, "sample": cmd_sample, "proxies": cmd_proxies}[args.cmd](args)
     except ProbeError as e:
         print(f"reachable: no ({e})", file=sys.stderr)
         return 1
