@@ -7,7 +7,7 @@
 -- of any status is shown beside it: last_status = 'error' with an old
 -- last_ok_at is the exact shape of a silent outage.
 --
--- Literal entity list drives the rows (fixed 9 — the labels the pipeline writes
+-- Literal entity list drives the rows (fixed 16 — the labels the pipeline writes
 -- to cvm_ingest_log), each LEFT JOIN LATERAL yields at most one row and keeps
 -- the outer row when it yields none, so the source is never empty. A 0-row
 -- source writes a zero-byte parquet and breaks the Evidence build.
@@ -18,7 +18,8 @@
 with entities (entity) as (
   values ('fi'), ('fidc'), ('fiagro'), ('fii'), ('fip'),
          ('securit'), ('etf'), ('cia_aberta'), ('anbima_etf'),
-         ('b3'), ('bacen')
+         ('b3'), ('bacen'), ('fnet'), ('ibge'), ('market'),
+         ('etf_market'), ('rj')
 )
 select
   e.entity,
