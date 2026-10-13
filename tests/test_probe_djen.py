@@ -89,3 +89,11 @@ def test_proxies_mode_keeps_only_proxies_that_answer_every_round(monkeypatch, ca
     assert probe.main(["proxies", "--lists", "https://example.test/l.txt", "--rounds", "2", "--pause", "0"]) == 0
     out = capsys.readouterr().out
     assert "1 of 2" in out and "ok http://1.1.1.1:80" in out and "2.2.2.2" not in out.split("all 2 rounds")[1]
+
+
+def test_page_counts_report_numbers_and_pdfs_never_text():
+    body = ('<a href="/x/rel-credores.pdf">Fulano de Tal</a><a href="/y.PDF?v=1">b</a>'
+            "<p>0012345-67.2024.8.19.0001 e 0012345-67.2024.8.19.0001, 1234567-89.2023.8.11.0041</p>")
+    counts = probe.page_counts(body)
+    assert counts == {"bytes": len(body), "cnj_numbers": 2, "pdf_links": 2}
+    assert "Fulano" not in str(counts)

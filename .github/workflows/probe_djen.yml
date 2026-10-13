@@ -11,16 +11,18 @@ name: Probe DJEN
 # nothing schedules it. A blocked runner fails the job with the status code.
 # mode=proxies tries published free Brazilian proxies (TLS verified end to end)
 # and fails the job when none answers HTTP 200 in every round.
+# mode=urls fetches the state RJ list pages of #846 (or `urls`) and prints the
+# status and counts (CNJ numbers, PDF links) only; it fails when one is not 200.
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "reach = one small query; sample = counts per tribunal over a window; proxies = try free BR proxies"
+        description: "reach = one small query; sample = counts per tribunal over a window; proxies = try free BR proxies; urls = state RJ list pages"
         required: true
         default: reach
         type: choice
-        options: [reach, sample, proxies]
+        options: [reach, sample, proxies, urls]
       start:
         description: "sample: first day (YYYY-MM-DD)"
         required: false
@@ -35,6 +37,11 @@ on:
         description: "sample: space-separated siglas"
         required: false
         default: "TJSP TJRJ TJMG TJRS TJPR TJSC"
+        type: string
+      urls:
+        description: "urls: space-separated pages (empty = the state RJ lists of #846)"
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -61,8 +68,12 @@ jobs:
           START: ${{ inputs.start }}
           END: ${{ inputs.end }}
           TRIBUNALS: ${{ inputs.tribunals }}
+          URLS: ${{ inputs.urls }}
         run: |
-          if [ "$MODE" = "proxies" ]; then
+          if [ "$MODE" = "urls" ]; then
+            # shellcheck disable=SC2086  # URLS is a word list on purpose
+            python -u scripts/probe_djen.py urls $URLS
+          elif [ "$MODE" = "proxies" ]; then
             python -u scripts/probe_djen.py proxies --rounds 3
           elif [ "$MODE" = "sample" ]; then
             # shellcheck disable=SC2086  # TRIBUNALS is a word list on purpose
