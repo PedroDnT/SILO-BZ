@@ -1,6 +1,7 @@
-import os, sys, asyncio, asyncpg, re
+import os, sys, asyncio, re
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv; load_dotenv()
+from src.store import pg_client  # noqa: E402
 
 TABLES = [
     "cvm_ingest_log", "cvm_fi_diario", "cvm_fidc_mensal",
@@ -14,7 +15,7 @@ TABLES = [
 async def main():
     pooler_url = os.environ["POSTGRES_URL"]
     session_url = re.sub(r":6543/", ":5432/", pooler_url)
-    conn = await asyncpg.connect(session_url)
+    conn = await pg_client.connect_async(session_url)
     print("Connection: OK")
     for t in TABLES:
         n = await conn.fetchval(f"SELECT COUNT(*) FROM {t}")

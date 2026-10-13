@@ -23,8 +23,10 @@ import os
 import re
 import sys
 
-import psycopg2
 from psycopg2 import sql
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.store import pg_client  # noqa: E402
 
 try:
     from dotenv import load_dotenv
@@ -47,7 +49,7 @@ def main() -> None:
     ap.add_argument("--exact", action="store_true", help="exact COUNT(*) instead of estimate")
     args = ap.parse_args()
 
-    conn = psycopg2.connect(_resolve_url(args.url))
+    conn = pg_client.connect(_resolve_url(args.url))
     conn.autocommit = True
     with conn.cursor() as cur:
         # Base tables + their estimated live rows (excludes partitions' parent
