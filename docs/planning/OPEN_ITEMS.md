@@ -785,9 +785,9 @@ a decision first.
 - Serve the dashboard-only tables, or record why not: `cvm_fi_perfil`,
   `cvm_securit_fluxo`, `cvm_securit_dfin`, `mkt_series`,
   `b3_investor_participation_monthly`.
-- Add `assert_map_matches` to the ingests without it: CDA blocks 1/2/4/6,
+- ~~Add `assert_map_matches` to the ingests without it: CDA blocks 1/2/4/6,
   `cad_fi`, FIDC tranche and tranche flows, FIP, FII `anual` and `dfin`, all CIA,
-  the ETF registry.
+  the ETF registry.~~ Done (#879).
 - Give `cvm_etf_registry`, `cia_company`, `anbima_class_monthly` and
   `b3_credit_capture` a named `uq_` constraint (rule 5).
 - Add raw-file fixtures for the CVM, CIA, BACEN, IBGE, ANBIMA, COTAHIST and B3

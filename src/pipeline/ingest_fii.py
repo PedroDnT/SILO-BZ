@@ -146,13 +146,13 @@ def ingest_fii_periodic(conn: Any, raw_rows: List[Dict[str, Any]], doc_type: str
         number of rows upserted
     """
     field_map = _PERIODIC_MAP.get(doc_type, _periodic.FIELD_MAP)
-    if doc_type in _PERIODIC_MAP:
-        # These members always carry the key; a header that no longer does is
-        # drift and must fail loudly rather than upsert a table full of NULLs.
-        assert_map_matches(
-            raw_rows, field_map, dataset=f"fii/{doc_type}",
-            required=("cnpj", "data_referencia"),
-        )
+    # Every member carries the key (anual and dfin too, back to 2016); a header
+    # that no longer does is drift and must fail loudly rather than upsert a
+    # table full of NULLs.
+    assert_map_matches(
+        raw_rows, field_map, dataset=f"fii/{doc_type}",
+        required=("cnpj", "data_referencia"),
+    )
 
     records: List[Dict[str, Any]] = []
     bad_versao = 0

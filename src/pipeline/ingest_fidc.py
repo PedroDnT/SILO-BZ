@@ -172,7 +172,13 @@ def ingest_fidc_tranche(
     Returns:
         number of rows upserted
     """
-    from src.parsers.mapping import _norm
+    # Every tab carries the join key; a tab whose header lost it would leave
+    # its columns NULL on every tranche, so check all three before the join.
+    for tab, rows in (("X_2", rows_x2), ("X_3", rows_x3), ("X_6", rows_x6)):
+        assert_map_matches(
+            rows, _tranche.FIELD_MAP, dataset=f"fidc/tab_{tab}",
+            required=("cnpj", "period", "classe_serie"),
+        )
 
     def _key(row: Dict[str, Any]) -> tuple:
         # Build key directly from raw row using apply_map on the key columns only
@@ -213,6 +219,10 @@ def ingest_fidc_tranche_flows(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """
     records: List[Dict[str, Any]] = []
 
+    assert_map_matches(
+        raw_rows, _flows.FIELD_MAP, dataset="fidc/tab_X_4",
+        required=("cnpj", "period", "classe_serie", "tp_oper"),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _flows.FIELD_MAP)
         # flows table has no raw column per schema — omit residual

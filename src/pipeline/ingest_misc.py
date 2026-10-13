@@ -71,6 +71,10 @@ def ingest_fip_periodic(
     records: List[Dict[str, Any]] = []
     undated = 0
 
+    assert_map_matches(
+        raw_rows, _fip.FIELD_MAP, dataset=f"fip/{doc_type}",
+        required=("cnpj", "period"),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _fip.FIELD_MAP)
         typed["doc_type"] = doc_type

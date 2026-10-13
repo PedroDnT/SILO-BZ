@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Sequence
 
-from src.parsers.mapping import apply_map
+from src.parsers.mapping import apply_map, assert_map_matches
 from src.parsers.field_maps import cia_company as _company
 from src.parsers.field_maps import cia_event as _event
 from src.parsers.field_maps import cia_account as _account
@@ -68,6 +68,7 @@ def ingest_cia_company(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     by_cd_cvm: Dict[str, Dict[str, Any]] = {}
     markets: Dict[str, set] = {}
 
+    assert_map_matches(raw_rows, _company.FIELD_MAP, dataset="cia/cad", required=("cd_cvm",))
     for row in raw_rows:
         typed, residual = apply_map(row, _company.FIELD_MAP)
 
@@ -133,6 +134,10 @@ def ingest_cia_event(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     records: List[Dict[str, Any]] = []
     unkeyable_rows = 0
 
+    assert_map_matches(
+        raw_rows, _event.FIELD_MAP, dataset="cia/ipe",
+        required=("cd_cvm", "protocolo", "versao"),
+    )
     for row in raw_rows:
         typed, _residual = apply_map(row, _event.FIELD_MAP)
 
@@ -184,6 +189,10 @@ def ingest_cia_ticker(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
         number of rows upserted
     """
     records: List[Dict[str, Any]] = []
+    assert_map_matches(
+        raw_rows, _ticker.FIELD_MAP, dataset="cia/fca_valor_mobiliario",
+        required=("cnpj_cia", "data_refer"),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _ticker.FIELD_MAP)
         if not typed.get("cnpj_cia") or typed.get("data_refer") is None:
@@ -230,6 +239,10 @@ def ingest_cia_filing(conn: Any, summary_rows: List[Dict[str, Any]], doc_type: s
     """
     records: List[Dict[str, Any]] = []
 
+    assert_map_matches(
+        summary_rows, _filing.FIELD_MAP, dataset=f"cia/{doc_type} summary",
+        required=("cd_cvm", "dt_refer"),
+    )
     for row in summary_rows:
         typed, _residual = apply_map(row, _filing.FIELD_MAP)
         typed["doc_type"] = doc_type
@@ -284,10 +297,17 @@ def ingest_cia_account(conn: Any, members: Sequence[Any], doc_type: str) -> int:
     """
     total = 0
 
-    for member in members:
-        if not getattr(member, "is_account_data", False):
-            continue
+    account_members = [m for m in members if getattr(m, "is_account_data", False)]
+    # Check every member's header before the first upsert, so a drifted member
+    # fails the slice without the members before it having landed.
+    for member in account_members:
+        assert_map_matches(
+            member.rows, _account.FIELD_MAP,
+            dataset=f"cia/{doc_type} {getattr(member, 'member_name', member.grupo)}",
+            required=("cd_cvm", "cd_conta", "dt_refer"),
+        )
 
+    for member in account_members:
         records: List[Dict[str, Any]] = []
         for row in member.rows:
             if len(records) >= _ACCOUNT_FLUSH_ROWS:
