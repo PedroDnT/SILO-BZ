@@ -8,7 +8,7 @@ parser / field map       typed rows; a bad row is dropped, never guessed
    ▼
 pipeline slice           audit start → upsert ON CONFLICT (natural key) → audit finish
    ▼
-landing table            public: cvm_* · b3_* · bacen_* · cia_* · fnet_* · mkt_*
+landing table            public: cvm_* · b3_* · bacen_* · cia_* · fnet_* · mkt_* · ibge_* · anbima_* · etf_* · rj_*
    ▼
 normalizing views        pick the filing version, the market, the instrument type, the identity
    ▼
@@ -72,4 +72,4 @@ per settlement/classification.
 | dashboard                  | `public`, at build | last successful build |
 | research job               | landing tables     | when dispatched       |
 
-COTAHIST 021=block, 020=odd; [API](../reference/API.md); [inventory](../reference/DATA_INVENTORY.md).
+[API](../reference/API.md); [inventory](../reference/DATA_INVENTORY.md).

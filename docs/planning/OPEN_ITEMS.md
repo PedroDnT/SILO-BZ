@@ -13,7 +13,7 @@ pointer. Anything provisional or missing goes in this file.
 
 | Surface              | State                                                                                                                                           |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Data API (PostgREST) | catalog **v68** live (`api.catalog()` read 2026-10-06)                                                                                          |
+| Data API (PostgREST) | catalog **v75** live (`api.catalog()` read 2026-10-13)                                                                                          |
 | Docs site            | Scalar, from `scalar/` and `scalar.config.json`, synced from GitHub on merge (item 7); Mintlify is no longer the host                           |
 | Dashboard            | `silo-bz-deloslabs.vercel.app` and `silo-bz.vercel.app`, both 200 on 2026-10-06                                                                 |
 | MCP                  | `silo-mcp` Edge Function answers at its public URL (405 to a bare GET, as a POST-only endpoint should)                                          |
@@ -52,6 +52,8 @@ not determine which project that is. (`webapp/README.md` records why none can
 exist yet: `vercel.json` builds `dashboard/` only, so `webapp/` needs a second
 Vercel project or another static host.) Evidence builds its parquet at deploy time,
 so the source-query fix only takes effect on a rebuild.
+
+Assessment 2026-10-13 (item 24): only `/growth` is backed by sources; `index`, `financials` and `events` query `cia_*` tables that have no source and would fail when built (inferred, not built).
 
 ## 4. ~~Two changelog rows render with phantom columns~~ (done)
 
@@ -122,6 +124,8 @@ Reported at 81% of the 135 GB allowance on 2026-09-17 and **not re-measured
 since**. Ingest stops when it fills, and the largest tables (`cvm_fi_diario`,
 `cia_account`, `b3_lending_trade`) grow every day. Worth a real measurement and
 a retention decision before it is urgent rather than after.
+
+Assessment 2026-10-13 (item 24): the Receita Federal CNPJ register, a federal candidate, adds about 1.2 GB packed a month, so its decision depends on this item.
 
 ## 11. `sdk/silo_client` is not published
 
@@ -255,6 +259,8 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 - **B9.** Alerts, only on signals from waves 1 and 2 once they exist.
 - **B10.** Document text (Stage 3), priority categories only.
 - **B11.** Per-event adjusted prices, where verified.
+
+Assessment 2026-10-13 (item 24): proposes dashboard pages and federal sources that this backlog does not list.
 
 ## 15. Portfolio diagnosis: decisions still open (2026-09-26)
 
@@ -510,6 +516,8 @@ before changing rule 4.
 10. **Stale remote branch `claude/audit-row-gaps`** (merged as #495, with later
     commits lost; the follow-up went out as #496). Delete only if the owner says so.
 
+Assessment 2026-10-13 (item 24), on point 6: `DataValidator` runs on 15 of 75 datasets; the per-family table is in `DATA_INVENTORY.md` §1.
+
 ## 18. Brief and client constraints (#607, #614)
 
 Implemented on `demo/brief-client-fit`: brief, expandable appendix, HTML upload delivery with browser PDF on request, optional declared client constraints and factual maturity/cash checks. Profile suitability remains not assessed. Deploy and live owner-portfolio validation pending. Contract: `docs/reference/portfolio/brief-client-fit.md`.
@@ -644,19 +652,6 @@ and [schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md)
 remain timestamped evidence of their earlier state. The production approvals and
 recoveries above supersede their then-pending rollout status.
 
-
-## 19. COTAHIST preserved fields and code reference (#720)
-
-Implemented on `codex/cotahist-complete-serving`, catalog v70: market 021 is block trading;
-sourced supplemental interpretations accompany dated labels. The existing SQL
-routes expose preserved market/board/term identity and contract fields; HTTP
-history accepts additional raw fields explicitly. The catalog publishes dated
-CODBDI/TPMERC/INDOPC references without inventing unknown descriptions.
-Production analytical apply, MCP redeployment and live acceptance remain pending.
-No new collection or source-vintage archive is part of this change.
-[Audit and field map](../reference/research/cotahist-storage-serving-map.md).
-
-
 The separately approved 40 MB 07/10 operational canary succeeded on 08/10 at
 18:49:55 UTC-3: 13,806 facts / 1,534 nine-metric groups, zero drops/missing dates,
 raw hash and exact persisted facts reconciled, one successful audit, exit 0 and
@@ -668,6 +663,19 @@ weekly-window cost and the first three scheduled cash sessions remain unverified
 
 
 The [recurring activation package](../../research_examples/debenture_equity/recurring-ingestion-approval.md) revalidates the existing 30/09–06/10 production window (59,670 facts, 82.13 MB raw, 73.103 seconds) instead of repeating it. Local repeat allocation was 38.53 MB, not a production measurement. The owner approved recurring daily/watchdog activation. The environment wiring is in PR #769; enabling the repository variable follows its green merge. First-three-session acceptance remains pending.
+
+Assessment 2026-10-13 (item 24): the B3 OTC backfill has no workflow input (CLI only) and no dashboard page reads `fact_credit_market`.
+
+## 19. COTAHIST preserved fields and code reference (#720)
+
+Implemented on `codex/cotahist-complete-serving`, catalog v70: market 021 is block trading;
+sourced supplemental interpretations accompany dated labels. The existing SQL
+routes expose preserved market/board/term identity and contract fields; HTTP
+history accepts additional raw fields explicitly. The catalog publishes dated
+CODBDI/TPMERC/INDOPC references without inventing unknown descriptions.
+Production analytical apply, MCP redeployment and live acceptance remain pending.
+No new collection or source-vintage archive is part of this change.
+[Audit and field map](../reference/research/cotahist-storage-serving-map.md).
 
 ## 20. Diagnosis coverage: three gaps to close (#765), proposal for the owner
 
@@ -689,6 +697,7 @@ statement prints, is in the annex, apart from the measured coverage). Item 3 use
 which evaluates 0 of the 2 debentures). Two suspected join gaps to check before any build: 2 multimercado funds with
 no CDA for 2026-04 (6,99%) and the same 2 with 9 and 10 of 13 month-end quotas missing.
 
+Assessment 2026-10-13 (item 24): Tesouro Direto is the first federal candidate there too.
 
 ## 21. Debenture observation serving (#789)
 
@@ -710,3 +719,112 @@ and as the GitHub repo secret `DJEN_RELAY_TOKEN`. Until then the DJEN step fails
 stores nothing; the AJ site step is not affected. Then dispatch `rj_collect` with
 `only=djen` and read `public.rj_coverage` for the per-tribunal coverage that #847 needs.
 `BR_PROXY_URL` stays as an optional fallback.
+
+Assessment 2026-10-13 (item 24): `rj_case` and `rj_document` are not served and the watchdog does not heal `rj_collect`.
+
+## 24. Assessment 2026-10-13: proposed tickets (#862)
+
+**Status: proposals. None of this is approved work.** The assessment traced all 75
+ingested datasets from source to `api` and dashboard, measured the daily workflow,
+and compared both with similar public-data projects (PUDL, Base dos Dados, dbt,
+OpenBB, Singer). The narrative is the private
+[assessment page](https://claude.ai/artifact/P2p43ugfcfrQoSzqkHMVMY); the owner can share it. The row-level lineage is in
+[`DATA_INVENTORY.md`](../reference/DATA_INVENTORY.md) §1 and §3. Each line below is
+filed as a GitHub issue under the map #865 (children #866 to #893); the owner
+marks the ones an agent may take (`ready-for-agent`). Lines marked **owner** need
+a decision first.
+
+**Data-loss risks (urgent)**
+
+- **The CVM probe gates the whole daily run.** "Run daily update"
+  (`daily_ingest.yml:129`) runs only when the probe passed, so a CVM outage also
+  skips BACEN, IBGE, ANBIMA, COTAHIST and the BDI ratchet (about 21 business days
+  of retention). Watchdog recovery uses the same gate. Make the probe gate the CVM
+  scope only. Adding `!cancelled()` alone brings back the 40-minute
+  connect-refusal loop of 2026-08-29. **owner** (design choice).
+- **The 2027 partition rollover.** The old runbook step overlapped `_future` and
+  would fail; [`DATABASE_MAINTENANCE.md`](../reference/DATABASE_MAINTENANCE.md) §6
+  now gives a guarded sequence. Ship it as a migration before 2027-01-01, and add a
+  `_future` row-count check to `health.yml`. Live read 2026-10-13: 0 rows in all
+  three `_future` partitions.
+
+**Workflow: small changes**
+
+- Run B3 events, market data and FNET as three parallel jobs; let `fnet-diff`
+  wait for FNET only. Worst case about 165 to 75 min (inferred).
+- Move the Apify ETF scrape (1,145 s measured) after the deploy hook.
+- Fix the apt cache key (it hashes `requirements.txt`); drop the dead
+  `CVM_FI_CONCURRENCY` from the daily env; align `CVM_DAILY_CONCURRENCY=8` with
+  pool 4.
+- ANALYZE only the tables a run changed; fix the "of 20" message (27 tables).
+- Run DB Health and the watchdog on `workflow_run` of the daily run, not fixed
+  clocks.
+- Print per-file timings in `scripts/apply_analytical.sh`.
+- Let the watchdog heal FNET, FNET diffs and RJ.
+
+**Workflow: structural (owner; an ADR first)**
+
+- A migration ledger (`schema_migrations`) instead of replaying `schema.sql` and
+  75 migrations every run (up to 14 m 25 s measured; 5 dated failures before
+  ingest).
+- `REFRESH MATERIALIZED VIEW CONCURRENTLY` plus a hash ledger of analytical files,
+  instead of DROP … CASCADE of all 36 files (about 28 min stated). This changes
+  the recorded rule "the re-create is the refresh" (`DATABASE_MAINTENANCE.md` §7).
+- Conditional download: CVM `Last-Modified`, `actions/cache` for
+  `CVM_CACHE_DIR`, CDA months M..M+5 re-read only when a file changed.
+- `COPY` into a staging table, then one `INSERT … ON CONFLICT … WHERE IS DISTINCT
+  FROM`, instead of `execute_values`.
+- One HTTP session per run, one shared retry helper (11 fetchers copy the loop),
+  one CNPJ helper (8 copies).
+
+**Data gaps**
+
+- Decide, per table read by nothing, to serve it, show it or stop ingesting it:
+  `cvm_registro_fundo/_classe/_subclasse`, `cvm_fidc_garantia`,
+  `cvm_fii_periodic`, `cvm_securit_mensal`, `rj_case`, `rj_document`. **owner**.
+- Serve the dashboard-only tables, or record why not: `cvm_fi_perfil`,
+  `cvm_securit_fluxo`, `cvm_securit_dfin`, `mkt_series`,
+  `b3_investor_participation_monthly`.
+- Add `assert_map_matches` to the ingests without it: CDA blocks 1/2/4/6,
+  `cad_fi`, FIDC tranche and tranche flows, FIP, FII `anual` and `dfin`, all CIA,
+  the ETF registry.
+- Give `cvm_etf_registry`, `cia_company`, `anbima_class_monthly` and
+  `b3_credit_capture` a named `uq_` constraint (rule 5).
+- Add raw-file fixtures for the CVM, CIA, BACEN, IBGE, ANBIMA, COTAHIST and B3
+  events tests, which use inline rows only.
+- A workflow input for the B3 OTC backfill (CLI only today); a backfill path for
+  `b3_corporate_event`.
+
+**Dashboard**
+
+- A listed-companies page: statements, events, RJ filings (item 3).
+- A filings page: the FNET register, late and silent filers, restatement diffs.
+- A federal macro section: the IPCA item tree and its history, IPCA-15, the EX2
+  and MA cores, GDP, the Focus monthly and Selic paths.
+- An instrument explorer (quotes, index history, corporate actions); lending
+  trades on `/short`.
+- Text fixes: `flows.md` ANBIMA claim, `macro.md` "25-code" (26), README "fifteen
+  pages" and `npm install`, `vercel_should_build.sh` "~90 queries" (144), the
+  `/ops` entity list without fnet, ibge, market, etf_market and rj.
+
+**Federal sources (owner; each is its own decision)**
+
+- Tesouro Direto prices and rates, daily CSV (item 20, gap 2; three decisions in
+  `research/tesouro-direto-price-source.md`).
+- Federal public debt: stock, issues and redemptions, monthly.
+- SICONFI (RREO, RGF, DCA): JSON API, no key.
+- BCB Olinda: IF.data, bank balance sheets (Cosif), SCR.data.
+- Receita Federal CNPJ register, monthly, about 1.2 GB packed (item 10).
+- SUSEP SES and BNDES financial indicators.
+
+**Architecture**
+
+- A test that pins the endpoint list in `docs/reference/API.md` to the catalog
+  (87 SQL functions, 81 MCP tools, 68 SDK calls, 46 named in API.md).
+- Route the 9 scripts that open their own DB connection through `pg_client`.
+- Extend the map in `.claude/hooks/pre-push-docs.sh` to `src/portfolio/`,
+  `deploy/cloudflare/` and new landing-table prefixes.
+- A rate limit on the Cloudflare upload Worker (the `ratelimits` binding); it
+  calls a paid LLM behind one shared token. **owner**.
+- Stale code comments: `03_fact_bacen_monthly.sql` ("nothing in `api` reads a
+  bacen table"), `daily_ingest.yml:70-72` (`CVM_FI_CONCURRENCY`).

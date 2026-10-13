@@ -4,7 +4,7 @@ SILO pulls Brazilian public financial data, keeps it in one Postgres and serves
 it read-only. Four infrastructures, four products.
 
 ```
-        SOURCES   CVM · B3 · BACEN · IBGE · ANBIMA · FNET · market hosts
+        SOURCES   CVM · B3 · BACEN · IBGE · ANBIMA · FNET · RJ courts · market hosts
                                    │  HTTP pull, never push
                   GitHub Actions   (the ingest compute)
                   fetch → parse → upsert, one audit row per slice

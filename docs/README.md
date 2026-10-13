@@ -15,5 +15,6 @@ Two rules keep it this way:
 
 - **A dated snapshot is not a file.** Status runs, reviews and field tests go in
   the PR or the issue, and in git history after that. Do not add them to `planning/`.
-- **Published product docs are elsewhere.** `api-docs/` is the Mintlify site,
+- **Published product docs are elsewhere.** `scalar/` is the docs site (Scalar;
+  Mintlify is no longer the host and `api-docs/` is the operator archive),
   `skill.md` and `sdk/` are what API callers read. They are not agent or planning docs.

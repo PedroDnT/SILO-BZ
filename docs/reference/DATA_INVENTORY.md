@@ -192,6 +192,41 @@ mensal, backlog B4) run daily in their own job, capped per run; history is
 Plus `cvm_ingest_log` — one row per `(entity, doc_type, period)` attempt, the
 audit trail every ingest writes exactly once.
 
+### How each family is checked before the upsert
+
+Rule 4 of `AGENTS.md` says every record passes `DataValidator`
+(`src/parsers/validation.py`). On 2026-10-13 it is called in these places
+only: the B3 BDI parsers (`src/parsers/b3_bdi.py`), B3 credit
+(`b3_credit.py`), the price report, TaxaSwap and global series parsers, FIDC
+tab X_7, and a CNPJ-only check in the lâmina, the Extrato and FIDC tab I
+(`OPEN_ITEMS.md` item 17, point 6). Everything else relies on type coercion in
+the field map. The header guard is `assert_map_matches`
+(`src/parsers/mapping.py`): it raises when CVM renames or drops a column.
+
+| Family | `DataValidator` | Header guard | Raw-file test fixture |
+| ------ | --------------- | ------------ | --------------------- |
+| CVM FI daily, perfil, balancete | no | yes | no (inline rows) |
+| CVM FI CDA blocks 1, 2, 4, 6 | no | **no** | no |
+| CVM FI lâmina, Extrato | CNPJ only | yes | yes |
+| CVM fund registry (`cad_fi`) | no | **no** | no |
+| CVM 175 registry levels | no | yes | yes |
+| CVM FIDC tabs | X_7 full, tab I CNPJ only | yes, except tranche and tranche flows | X_7 only |
+| CVM FIAGRO, FII | no | yes, except FII `anual` and `dfin` | no |
+| CVM FIP | no | **no** | no |
+| CVM securitization | no | yes | no |
+| CVM listed companies (all five) | no | **no** | no |
+| ETF registry, ETF market snapshot | no | no | snapshot only |
+| BACEN SGS, PTAX, Focus; IBGE; ANBIMA | no | no | no |
+| B3 COTAHIST, corporate events, cash dividends | no | no | no |
+| B3 BDI (7 tables), credit, index levels, consolidated trades | BDI and credit: yes | n/a (B3 formats) | yes |
+| B3 price report, TaxaSwap; global series | yes | n/a | yes |
+| FNET register, diffs | no | n/a | yes |
+| RJ sites, DJEN | no | n/a | sites only |
+
+Every ingest writes its `cvm_ingest_log` row. Side tables (`cvm_fi_cda_fund_name`,
+`b3_corporate_event_sweep`, `fnet_document_filter`, the FNET body, pair and diff
+tables) are counted under their parent slice's row.
+
 ---
 
 ## 2. What we could ingest and don't
@@ -386,7 +421,8 @@ counted at ingest, and an absent one stays NULL.
 
 The warehouse is wider than the API. This is the honest gap, one row per held
 relation, checked against `19_api_contract.sql` on 2026-09-15 (every `api.*`
-object and what it reads). "Indirect" means the table feeds `dim_fund` /
+object and what it reads) and re-checked against every `src/store/analytical/`
+file and `dashboard/sources/` on 2026-10-13. "Indirect" means the table feeds `dim_fund` /
 `fact_fund_monthly` and so reaches `funds`, `fund_nav` and `panel` without an
 endpoint of its own.
 
@@ -411,6 +447,8 @@ endpoint of its own.
 | `fnet_document`, `fnet_document_filter`, `dim_fund` + `cvm_fund_registry` (via `25_api_filing_screens.sql`) | filing behaviour: restatements, delivery lag, silence | **Yes** (catalog v37), as signals: `screen_restatements` (per `cnpjFundo` link, re-filings in a trailing delivery window, RE vs RC), `screen_late_filers` (first FNET delivery of the monthly informe against the deadline Resolução CVM 175 states — FIDC Anexo II art. 27 III, FII Anexo III art. 36 I, 15 days — cited on every row, measured from 2024-12 FIDC / 2025-07 FII) and `screen_silent_filers` (registry-active funds whose last filing in CVM's own tables is N complete months behind `latest_complete_period`, FNET's newest delivery as context). No fund is identified by name. |
 | `fnet_document`, `fnet_document_filter` | the FNET register: versions, restatements, delivery timestamps, fund links (migration 42) | **Yes** (catalog v33, `24_api_fnet.sql`): `fund_documents` (one fund's documents through its `cnpjFundo` links, newest delivery first, with FNET's download link as `source_url`) and `fund_restatements` (every `versao` > 1, paired with its predecessor by the stated key (cnpj link, categoria, tipo_documento, especie, reference_raw) because FNET links no versions; unlinked documents are served with `cnpj` NULL and never paired), and one `coverage()` row (`fnet_documents`, keyed on the delivery day). A document's fund is a link row or unknown — never its name; links come from the fortnightly sweep, so the newest documents may have none yet. |
 | `fnet_document_pair`, `fnet_document_diff` (via `fnet_document_body` hashes) | what a restatement changed, field by field (migration 46) | **Yes** (catalog v40, `24_api_fnet.sql`): `fund_restatement_diff` (one row per differing field of a compared pair, needs `p_cnpj` or `p_fnet_id`; text as printed, `old_num` / `new_num` / `delta` on numeric leaves only, `match_basis` path / key / position) and `fund_restatements`' `n_fields_changed` / `diff_status`, for the pair it serves only. FIDC informe mensal, restatements delivered from 2026 on; no body is kept. |
+| `bacen_expectativas` | the Focus survey | **Yes** (catalog v39): `focus_expectations`, one row per indicator × survey date × horizon × statistic. Also read by `/macro` and `/rates`. |
+| `cvm_fii_imovel` | the FII property register: vacancy, delinquency, revenue share per property | **Yes** (catalog v39): `fii_property_history`. Also read by `/fii`. |
 
 ### Held and not served — candidates
 
@@ -419,20 +457,68 @@ endpoint. Listed with what serving it would take.
 
 | Held                                                                                           | Rows                                                                                                                                             | Why not yet / what it would take                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bacen_expectativas` | the Focus survey | **No.** Ingested daily and read only by the `/macro` dashboard page. The IPCA set of `bacen_sgs` is served by `api.inflation` (v30) and the rest of `bacen_sgs` plus `bacen_ptax` by `api.macro_series` / `api.ptax` (v38) — see the served table above. Candidate: the Focus survey needs its own shape (indicator × horizon × statistic). |
 | `cvm_fiagro_mensal.vl_quota` / `nr_cotst` / `vl_total`; `cvm_fidc_mensal.vl_total` (2019–2024) | FIAGRO quota, quotaholders and total assets — filed on every monthly row since 2025-05; FIDC total assets from the pre-2025 file (~82 % of rows) | **No.** `fact_fund_monthly`'s fiagro arm is a copy of the fidc arm and sets all three `NULL`, so `fund_nav` returns them null by construction (declared in `catalog().applicability`). Candidate: pass them through in the fiagro arm (and `vl_total` in the fidc arm); the applicability block and its lockstep test then have to follow. Measured 2026-09-15.                                                                                                                                                                   |
 | `cvm_fi_perfil`                                                                                | FI investor mix (retail / institutional / …) and single-holder concentration                                                                     | **No.** Read by `/fi` only. Candidate: `fund_investors(p_cnpj, …)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `cvm_fii_periodic`, `cvm_fii_imovel`                                                           | FII quarterly/annual filings; the property register                                                                                              | **No.** `cvm_fii_periodic` is read by `/fii`; `cvm_fii_imovel` by nothing. Candidate: `fii_properties(p_cnpj)` — the register is the one FII fact with no monthly counterpart.                                                                                                                                                                                                                                                                                                                                                    |
-| `cvm_securit_*` (4 tables)                                                                     | CRI/CRA vehicles, series, flows, statements                                                                                                      | **No**, and structural: CRI/CRA are notes, not funds, and would need a third id type (the securitiser's CNPJ plus a series key). Read by `/securit` and `fraud_screen_overdue_securit` (served since v31 only as the signal `screen_overdue_securit`, not as series data).                                                                                                                                                                                                                                                        |
-| `etf_market_snapshot`, `cvm_etf_registry`                                                      | scraped ETF NAV / price / quotaholders; the ETF registry                                                                                         | **No.** The registry is used only as an _exclusion_ filter in `dim_fund`; the snapshot is read by `/etf` through `etf_market_latest`. Post-CVM-175 ETFs have no monthly CVM row, so this is the only ETF fundamentals path. Candidate: `etf_snapshot(p_ticker)`.                                                                                                                                                                                                                                                                  |
-| `b3_corporate_event`                                                                           | splits, bonuses, groupings                                                                                                                       | **No.** Held as published; `adjusted` stays `FALSE` everywhere. The convention was measured on 2026-08-31 (705 events with a print on both sides): `DESDOBRAMENTO`/`BONIFICACAO` fit `1 + factor/100` to within 0.4% at the median; consecutive-session pairs hit ±5% only 82.6%/86.3% of the time, and `GRUPAMENTO` never exceeds 42%. Below the 90% bar, so no adjusted series. See `docs/planning/INSTRUMENTS.md`. Candidate: serve the events themselves (`corporate_events(p_ticker)`) without applying them.                |
-| `cvm_fi_balancete_resumo`                                                                      | fund accounting summary: COFI group totals and fee accounts, one row per fund × month (migration 59) | **No.** Nothing reads it yet. The account-level `cvm_fi_balancete` (~174M rows, 31 GB, never read) was emptied by migration 62. |
+| `cvm_fii_periodic` | FII quarterly and annual filings (`trimestral_geral`, `trimestral_complemento`, `anual`, `dfin`) | **No**, and read by nothing. `vw_fii_periodic_latest` (migration 43) has no reader, and `/fii` no longer reads the table: `fii_property_explorer.sql` moved to `cvm_fii_imovel`, which is served (above). |
+| `cvm_securit_*` (4 tables) | CRI/CRA vehicles, series, flows, statements | **Partly**, and structural: CRI/CRA are notes, not funds, and would need a third id type (the securitiser's CNPJ plus a series key). `cvm_securit_serie` answers the signal `screen_overdue_securit` (v31) and, since v62, `portfolio_instruments` (one row per series, matched by CETIP code) and `portfolio_credit_returns`. `cvm_securit_fluxo` and `cvm_securit_dfin` are read only by `/securit`. `cvm_securit_mensal` is read by nothing: its one view, `instrument_activity`, has no reader. |
+| `etf_market_snapshot`, `cvm_etf_registry` | scraped ETF NAV / price / quotaholders; the ETF registry | **Partly.** Since v56–v68 `portfolio_fees`, `portfolio_fee_peers` and `portfolio_equivalents` return the snapshot's fee, PL and quotaholders as third-party fields (`etf_site_*`), and `portfolio_resolve` matches a registry ticker. There is no snapshot endpoint of its own; `/etf` reads it through `etf_market_latest`. Post-CVM-175 ETFs have no monthly CVM row, so this is the only ETF fundamentals path. Candidate: `etf_snapshot(p_ticker)`. |
+| `b3_corporate_event` | splits, bonuses, groupings | **Partly.** The events have no endpoint of their own, but `quote_history` and `panel` serve `close_adj`, backward-adjusted for splits, groupings and bonus shares (`api.close_adj_ratio`, which refuses a window it cannot adjust), and `close_total_return` adds cash distributions from `b3_cash_dividend` (#418). The first measurement (2026-08-31, below the 90% bar) is in `docs/planning/INSTRUMENTS.md`. Candidate: serve the events themselves (`corporate_events(p_ticker)`) without applying them. |
+| `cvm_fi_balancete_resumo` | fund accounting summary: COFI group totals and fee accounts, one row per fund × month (migration 59) | **Partly.** `portfolio_fees` reads its fee accounts for the fee estimate (`adm_fee_flow`, `*_pct_annual_est`); there is no endpoint of its own. The account-level `cvm_fi_balancete` (~174M rows, 31 GB, never read) was emptied by migration 62 and has no writer. |
 | `cvm_fi_extrato`, `vw_fi_extrato_latest` | the terms and fees each fund or class files in CVM's Extrato das Informações (migration 66): administration fee, performance fee (numeric, benchmark, method, text), entry and exit fees, custody fee, redemption terms, `CLASSE_ANBIMA` | **Yes, through `api.portfolio_fees`** (catalog v52): the primary disclosed-fee source, ahead of the lâmina and cad_fi, with `disclosed_origin`, the Extrato's own fee columns, and the reading rules (a filed 0 is `filed_zero`, a value above 5 is withheld as `implausible_filed`). Nothing else reads it. A CVM 175 row is the class (no subclass column); `taxa_adm` is as filed and its unit is not stated by CVM. |
 | `cvm_fi_lamina`, `vw_fi_lamina_latest` | the fees and redemption terms each fund files in CVM's lâmina (migration 65): administration, performance (text), entry, exit, expense ratio, D+ quote and payment days, minimums | **Yes, through `api.portfolio_fees`** (catalog v51, second source since v52 behind the Extrato; also the only source of the declared expense ratio `lamina_pr_pl_despesa`). Each monthly file holds only the lâminas filed that month, so read the current one through the view (`age_months` says how old). Fees are as filed, unit not stated by CVM. |
 | `cvm_registro_fundo`, `cvm_registro_classe`, `cvm_registro_subclasse` | the CVM 175 levels (migration 67): fund by `ID_Registro_Fundo`, class by `ID_Registro_Classe` with its fund's id, `Classe_Cotas` and `Classificacao_Anbima`, subclass by `(ID_Registro_Classe, ID_Subclasse)` with no CNPJ | **No.** New (#543). Serving the walk would take a view joining class to fund by id, read by `api.portfolio_resolve` / `portfolio_lookthrough`; not built yet. |
 | `cvm_fidc_garantia` | FIDC tab X_7 (migration 45): value of guarantees on the credit rights and a percentage, per fund × month, from 2019-11 | **No.** New; nothing reads it yet. CVM's dictionary leaves both columns undescribed and the percentage's denominator does not reconcile to one sibling total, so it is stored as filed. Most funds file zeros (28 of 4,383 non-zero in 2026-08). Candidate: a `kind = 'guarantees'` arm in `fidc_portfolio`, with the unstated denominator in its note, plus a `coverage()` row. |
 | `mkt_series`, IC-Br in `bacen_sgs` | UST / Brent / OFR FSI, IC-Br (migration 48) | **No.** Landed for the DUSTIN-BR research dataset (`research_examples/dustin_br/`). The DI1 contracts and B3 curves beside them are served since v42 (`future_curve`, `future_series`, `curve`, `curve_history`). VIX is not ingested at all (Cboe licence); IC-Br would join `macro_series`' registry. |
-| `cvm_fi_cda`                                                                                   | CDA block 1, government bonds per fund-month (one row per bond since migration 49)                                                                                               | **No.** Blocks 4, 2 and 6 are served; the header is read by nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `cvm_fi_cda` | CDA block 1, government bonds per fund-month (one row per bond since migration 49) | **Partly.** `portfolio_lookthrough` lists block 1 bonds per fund (repo collateral apart); there is no endpoint of its own. `/fi` and `/rates` read it. Blocks 4, 2 and 6 are served. |
+
+### Read by nothing
+
+Checked on 2026-10-13: each table below is written by its ingest and read by no
+view an endpoint or a page uses, no `api.*` function and no `dashboard/` source.
+A grep for each name over `src/store/analytical/`, `serve/`,
+`supabase/functions/`, `dashboard/` and `sdk/` finds only the grants file or a
+comment.
+
+| Held | Written by | Note |
+| ---- | ---------- | ---- |
+| `cvm_registro_fundo`, `cvm_registro_classe`, `cvm_registro_subclasse` | `src/pipeline/ingest_misc.py` `ingest_registro_level` | The CVM 175 levels. `cvm_fund_registry`, written in the same slice, is what everything reads. |
+| `cvm_fidc_garantia` | `src/pipeline/ingest_fidc.py` `ingest_fidc_garantia` | The one CVM table checked by `DataValidator` on CNPJ, date and number. |
+| `cvm_fii_periodic` | `src/pipeline/ingest_fii.py` `ingest_fii_periodic` | `vw_fii_periodic_latest` has no reader. |
+| `cvm_securit_mensal` | `src/pipeline/ingest_securit.py` `ingest_securit_mensal` | `instrument_activity` (migration 43) reads it and is read only by `scripts/queries/`. |
+| `fnet_document_body` | `src/pipeline/fnet_diff.py` | A cache of downloaded bodies; `fnet_document_pair` and `fnet_document_diff` are what is served. |
+| `rj_case`, `rj_document` | `src/pipeline/ingest_rj.py`, `ingest_rj_djen.py` | Read only by `public.rj_document_new` and `public.rj_coverage`, both revoked from the client roles. `api.rj_listed_documents` reads `cia_event`, not these. |
+| `cvm_fi_balancete` | nothing since migration 62 | Emptied, not dropped, because migration 22 still alters it. |
+
+### Shown on the dashboard, not served
+
+These tables reach a page but no `api.*` function or view:
+
+- `cvm_fi_perfil` (`/fi`)
+- `cvm_securit_fluxo` (`/securit`, through `fact_security_monthly`)
+- `cvm_securit_dfin` (`/securit`, a filing count only)
+- `mkt_series` (`/rates`)
+- `b3_investor_participation_monthly` (`/flows`)
+
+### Served, not on any dashboard page
+
+No dashboard source reads an `api.*` object; the pages read the tables and
+analytical views directly, at build time. These are served and on no page:
+
+- **Listed companies:** `cia_account`, `cia_filing`, `cia_event` (`financials`,
+  the statement functions, `company_events`, `rj_listed_documents`). The
+  unpublished `webapp/` holds the pages (`OPEN_ITEMS.md` item 3).
+- **Filings:** every `fnet_*` table (`fund_documents`, `fund_restatements`,
+  `fund_restatement_diff`, `screen_restatements`, `screen_late_filers`,
+  `screen_silent_filers`).
+- **Per instrument:** the `quote_history` family, `option_chain` /
+  `_history` / `_exercises`, `termo_history`, `index_history`
+  (`b3_index_level`), `lending_trades` / `lending_participants`
+  (`b3_lending_trade`), `credit_market_history` (`fact_credit_market`).
+- **Corporate actions:** `b3_corporate_event`, `b3_cash_dividend` (only inside
+  `close_adj` and `close_total_return`).
+- **Fund documents:** `cvm_fi_cda_debentures` (`fund_debentures`; `/holdings`
+  shows block 4 debentures, not block 6), `cvm_fi_lamina`, `cvm_fi_extrato`,
+  `cvm_fi_cda_fund_name`, and `anbima_class_monthly` outside the ETF classes.
 
 ### Not served by design
 
