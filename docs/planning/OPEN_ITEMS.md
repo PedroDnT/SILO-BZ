@@ -664,7 +664,7 @@ weekly-window cost and the first three scheduled cash sessions remain unverified
 
 The [recurring activation package](../../research_examples/debenture_equity/recurring-ingestion-approval.md) revalidates the existing 30/09–06/10 production window (59,670 facts, 82.13 MB raw, 73.103 seconds) instead of repeating it. Local repeat allocation was 38.53 MB, not a production measurement. The owner approved recurring daily/watchdog activation. The environment wiring is in PR #769; enabling the repository variable follows its green merge. First-three-session acceptance remains pending.
 
-Assessment 2026-10-13 (item 24): the B3 OTC backfill has no workflow input (CLI only) and no dashboard page reads `fact_credit_market`.
+Assessment 2026-10-13 (item 24): the B3 OTC backfill has no workflow input (CLI only) and no dashboard page reads `fact_credit_market`. The input is `daily_ingest` `mode=b3-credit` since #882; it refuses a window over 7 days, so each dispatch is one owner-approved slice.
 
 ## 19. COTAHIST preserved fields and code reference (#720)
 
@@ -797,8 +797,9 @@ a decision first.
   key, recorded in the migration header.
 - Add raw-file fixtures for the CVM, CIA, BACEN, IBGE, ANBIMA, COTAHIST and B3
   events tests, which use inline rows only.
-- A workflow input for the B3 OTC backfill (CLI only today); a backfill path for
-  `b3_corporate_event`.
+- ~~A workflow input for the B3 OTC backfill (CLI only today); a backfill path for
+  `b3_corporate_event`.~~ Done (#882): `daily_ingest` modes `b3-credit` (one
+  slice of 7 days at most) and `b3-corporate-events-full`.
 
 **Dashboard**
 
