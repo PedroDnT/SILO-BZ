@@ -9,8 +9,9 @@ Needs a Brazilian route, ``DJEN_RELAY_URL`` + ``DJEN_RELAY_TOKEN`` or ``BR_PROXY
 Per tribunal and day, every communication of class 129 / 128 becomes:
 
 * an ``rj_case`` row with ``source = 'djen'``: the 20-digit number, the court
-  division, the class, and ``devedor_nome`` = the names DJEN lists in polo
-  ativo (the recuperanda), as printed and joined with "; ". Nothing inferred.
+  division and the class. ``devedor_nome`` stays NULL: DJEN's polo ativo mixes
+  the recuperanda with partners, rural producers and lawyers, so it does not
+  name the debtor. The debtor comes from the AJ site or the resolver.
 * an ``rj_document`` row for the act itself (DJEN's ``link``), ``titulo`` =
   "<tipoComunicacao>: <tipoDocumento>", ``found_on`` = its certidão URL and
   ``data_publicacao`` = the day DJEN made it available. ``tipo`` comes from the
@@ -57,8 +58,6 @@ def rows_for(items: Sequence[DjenItem], seen_at: datetime) -> tuple[List[Dict[st
             "vara": it.orgao, "classe": it.classe, "devedor_nome": None,
             "aj_name": None, "aj_case_url": None, "last_seen_at": seen_at,
         })
-        if it.polo_ativo and not case["devedor_nome"]:
-            case["devedor_nome"] = "; ".join(dict.fromkeys(it.polo_ativo))
         if not (it.link and it.link.startswith(("http://", "https://")) and it.hash):
             continue  # an act without its own link is a case signal only, never a document
         titulo = ": ".join(p for p in (it.tipo_comunicacao, it.tipo_documento) if p)
