@@ -837,5 +837,6 @@ a decision first.
   `DATA_FLOW.md` is edited.
 - A rate limit on the Cloudflare upload Worker (the `ratelimits` binding); it
   calls a paid LLM behind one shared token. **owner**.
-- Stale code comments: `03_fact_bacen_monthly.sql` ("nothing in `api` reads a
-  bacen table"), `daily_ingest.yml:70-72` (`CVM_FI_CONCURRENCY`).
+- ~~Stale code comments: `03_fact_bacen_monthly.sql` ("nothing in `api` reads a
+  bacen table"), `daily_ingest.yml:70-72` (`CVM_FI_CONCURRENCY`).~~ Done (#893,
+  and #927 for `daily_ingest.yml`).
