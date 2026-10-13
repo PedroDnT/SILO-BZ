@@ -16,7 +16,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from src.parsers.mapping import apply_map, coerce, derive_is_active
+from src.parsers.mapping import apply_map, assert_map_matches, coerce, derive_is_active
 from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
@@ -52,8 +52,18 @@ def load_etf_seed(path: str = SEED_PATH) -> List[Dict[str, str]]:
         return list(csv.DictReader(fh))
 
 
+# The CNPJ that matches a cad_fi row to the seed, plus the enrichment fields:
+# only for the header-drift guard (the index reads the CNPJ itself below).
+_CAD_GUARD_MAP = {
+    "cnpj": (["CNPJ_FUNDO", "CNPJ_FUNDO_CLASSE"], "cnpj"),
+    **_CAD_ENRICH_MAP,
+}
+
+
 def _build_cad_index(cad_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """Map normalised CNPJ -> typed enrichment fields from cad_fi rows."""
+    # An empty list (the cad_fi fetch failed) is not drift and passes.
+    assert_map_matches(cad_rows, _CAD_GUARD_MAP, dataset="etf/cad_fi", required=("cnpj",))
     index: Dict[str, Dict[str, Any]] = {}
     for row in cad_rows:
         cnpj = coerce(row.get("CNPJ_FUNDO") or row.get("CNPJ_FUNDO_CLASSE"), "cnpj")

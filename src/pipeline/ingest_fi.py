@@ -135,6 +135,10 @@ def ingest_fi_cda(
     records: List[Dict[str, Any]] = []
     undated = 0
 
+    assert_map_matches(
+        raw_rows, _cda.FIELD_MAP, dataset="fi/cda_blc_1",
+        required=("cnpj", "period"),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _cda.FIELD_MAP)
         typed["raw"] = residual
@@ -303,6 +307,10 @@ def _ingest_cda_holdings(
     dropped = 0
     undated = 0
 
+    assert_map_matches(
+        raw_rows, field_map_module.FIELD_MAP, dataset=f"fi/{field_map_module.TABLE}",
+        required=("cnpj", "period", required),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, field_map_module.FIELD_MAP)
         typed["raw"] = residual
@@ -386,6 +394,10 @@ def ingest_fi_cda_debentures(
     dropped = 0
     undated = 0
 
+    assert_map_matches(
+        raw_rows, _cda_deb.FIELD_MAP, dataset="fi/cda_blc_6",
+        required=("cnpj", "period", "cpf_cnpj_emissor"),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _cda_deb.FIELD_MAP)
         typed["raw"] = residual
@@ -690,6 +702,7 @@ def ingest_fund_registry_fi(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """
     records: List[Dict[str, Any]] = []
 
+    assert_map_matches(raw_rows, _reg.FIELD_MAP, dataset="fi/cad", required=("cnpj",))
     for row in raw_rows:
         typed, residual = apply_map(row, _reg.FIELD_MAP)
         typed["entity_type"] = "fi"
