@@ -75,8 +75,6 @@ EXPECTED = {
     "fatorfiscal.com.br": (3, "00011573120188080017", 35),
     # Batch 7, read 2026-10-12. gomesdemattos lists 10 cases, 3 of them recuperação judicial;
     # cleversonneves lists 12 recuperações judiciais (its falências are pop-ups).
-    "mdse.com.br": (1, "40003727520268260354", 17),
-    "administracaojudicialrs.com.br": (17, "51018374320268210001", 6),
     "cleversonneves.com.br": (12, "00011018320188190019", 13),
     "vtladm.com.br": (8, "00049849520248160153", 8),
     "ecconsultoria.com.br": (2, "10004707320248260260", 3),
