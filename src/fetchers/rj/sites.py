@@ -305,19 +305,10 @@ SITES += (
 
 # --- Batch 7: WordPress + Elementor sites ---------------------------------------
 # Documents are PDFs in /wp-content/uploads/ unless the site says otherwise.
+# Not read: mdse.com.br and administracaojudicialrs.com.br answer HTTP 403 to the
+# GitHub runners on every run since they were added (2026-10-13), so the collector
+# cannot read them; their adapters were removed rather than kept failing red.
 SITES += (
-    # Case pages are /processo/<slug>/ (the falência list is /falencia/).
-    Site(domain="mdse.com.br", aj_name="MD Serviços Empresariais Ltda",
-         list_urls=("https://mdse.com.br/recuperacao-judicial/",),
-         case_pattern=r"^https://mdse\.com\.br/processo/[^/?#]+/$",
-         doc_pattern=WP_UPLOADS_PDF, platform="WordPress + Elementor"),
-    # The case rows are clickable Elementor containers (data-ha-element-link), not anchors.
-    Site(domain="administracaojudicialrs.com.br", aj_name="Albarello & Schmitz Administração Judicial",
-         list_urls=("https://administracaojudicialrs.com.br/casos/",),
-         case_pattern=r"^https://administracaojudicialrs\.com\.br/caso/[^/?#]+/$",
-         # Newer cases link the PDFs in uploads, older ones /download/<id>/?tmstv=... redirects.
-         doc_pattern=r"^https://administracaojudicialrs\.com\.br(?:/download/\d+/|/wp-content/uploads/[^?#]+\.(?i:pdf)$)",
-         platform="WordPress + Elementor, custom post type"),
     # Case pages sit at the root, beside the menu pages and four articles; the cases are
     # the icon-list links (the falências are pop-ups). The
     # <title> is "<debtor> - Cleverson Neves". The footer holds four creditor-form

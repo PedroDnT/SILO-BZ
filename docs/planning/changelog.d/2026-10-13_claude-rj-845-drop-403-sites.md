@@ -1,0 +1,1 @@
+| 2026-10-13 | claude/rj-845-drop-403-sites | **RJ collector: two AJ sites removed (#845):** mdse.com.br and administracaojudicialrs.com.br answer HTTP 403 to the GitHub runners on every run since they were added, so each daily `rj_collect` went red on them; their adapters and fixtures are removed and the reason is recorded in `sites.py`. No stored row is deleted. |
