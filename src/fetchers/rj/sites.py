@@ -25,6 +25,7 @@ class Site:
     doc_pattern: str               # regex an anchor's absolute URL must match to be a document
     platform: str
     case_text: str = ""            # optional regex the case anchor's folded text must match (mixed lists)
+    case_card: bool = False        # case_text matches the whole list card, not only the anchor text
     debtor_xpath: str = ""         # optional XPath of the element holding the debtor name
     debtor_from_title: bool = False  # the page <title> names the debtor; its headings are document titles
     case_section: str = ""         # optional regex the heading above a case link must match (lists grouped by type)
@@ -376,4 +377,93 @@ SITES += (
          case_pattern=(r"^https://zveiter\.com\.br/(?:mintucano|transcarioca|stcruz|kpfr|rodopetro|qldtotal|rnr)$"),
          doc_pattern=r"^https://zveiter\.com\.br/assets/pdfs/[^?#]+\.(?i:pdf)$",
          platform="custom static site", debtor_xpath="//h1[contains(@class, 'page-hero-title')]"),
+)
+
+# Batch 8 (#845).
+# Luidy.com.br's "lawyer directory" plugin (Diligence, LRF Líderes): every case is
+# /processos/<slug>/ and the card, not the link, prints the type, so ``case_card``
+# keeps the recuperação cards. Documents come through Download Attachments
+# (download.php?id=N) or plain uploads.
+LUIDY_DOC = (r"/wp-content/plugins/download-attachments/includes/download\.php\?id=\d+$"
+             r"|/wp-content/uploads/[^?#]+\.(?i:pdf)$")
+
+SITES += (
+    # Cases are /recuperacao-judicial/<slug>/ (the falências are under /falencia/); the files are
+    # SharePoint share links, one "Download" button each.
+    Site(domain="julianamorais.com.br", aj_name="Juliana Morais Sociedade de Advogados",
+         list_urls=("https://julianamorais.com.br/recuperacao-judicial/",),
+         case_pattern=r"^https://julianamorais\.com\.br/recuperacao-judicial/[a-z0-9-]+/$",
+         doc_pattern=r"^https://julianamorais-my\.sharepoint\.com/:b:/",
+         debtor_xpath='//h2[contains(@class, "elementor-heading-title")]',
+         platform="WordPress + Elementor, documents on SharePoint"),
+    # Cases are blog posts in a category archive; only the /rj-<name>/ slugs are read (news posts
+    # and a few cases without the prefix are not told apart by URL). The habilitação and
+    # divergência forms are templates, not case documents.
+    Site(domain="stenius.com.br", aj_name="Stenius Lacerda Bastos",
+         list_urls=("https://stenius.com.br/category/recuperacao-judicial/",
+                    "https://stenius.com.br/category/recuperacao-judicial/page/2/"),
+         case_pattern=r"^https://stenius\.com\.br/rj-[a-z0-9-]+/$",
+         doc_pattern=r"/wp-content/uploads/\d{4}/\d{2}/(?!mod-)[^?#]+\.(?i:pdf)$",
+         platform="WordPress + Elementor", debtor_from_title=True),
+    Site(domain="diligence.adm.br", aj_name="Diligence Administração em Recuperação Judicial e Falência",
+         list_urls=("https://diligence.adm.br/processos/",),
+         case_pattern=r"^https://diligence\.adm\.br/processos/(?!processo-modelo)[a-z0-9-]+/$",
+         doc_pattern=LUIDY_DOC, platform="WordPress + WPBakery (Luidy.com.br)",
+         case_text=r"recuperacao judicial", case_card=True),
+    Site(domain="lrflideres.com.br", aj_name="LRF Líderes em Recuperação Judicial, Falência e Consultoria Empresarial",
+         list_urls=("https://lrflideres.com.br/processos/",),
+         case_pattern=r"^https://lrflideres\.com\.br/processos/[a-z0-9-]+/$",
+         doc_pattern=LUIDY_DOC, platform="WordPress + WPBakery (Luidy.com.br)",
+         case_text=r"recuperacao (?:judicial|extra ?judicial)", case_card=True,
+         debtor_xpath='//h2[not(@class)]'),
+    # Attorna theme: cases are /recuperacao-judicial/<slug>/.
+    # Its /page/2/ repeats the first page's cases, so only the first is read.
+    Site(domain="inova-aj.com.br", aj_name="Inova Administração Judicial",
+         list_urls=("https://inova-aj.com.br/recuperacao-judicial/",),
+         case_pattern=r"^https://inova-aj\.com\.br/recuperacao-judicial/(?!page/)[^/?#]+/?$",
+         doc_pattern=r"/wp-content/uploads/[^?#]+\.(?i:pdf)$", platform="WordPress (attorna theme)"),
+)
+
+# --- Batch 9: WordPress sites -------------------------------------------------
+# Documents are PDFs in /wp-content/uploads/. Credibilità (cases link out to a
+# microsite for documents), CSH (no process number on the case pages), Wald (generic
+# document links, most of them on sub-pages) and Campi (falências filed under the same
+# /recuperacoes/ folder as RJ cases, type only in free text) are not read.
+SITES += (
+    # AJUDD: cards for RJ, falência, espólio and insolvência civil share one list;
+    # the RJ ones carry "recuperacao-judicial" in the slug.
+    Site(domain="ajudd.com.br", aj_name="Victor Barbosa Dutra",
+         list_urls=("https://www.ajudd.com.br/recuperacao-judicial-e-falencia/",),
+         case_pattern=r"^https://www\.ajudd\.com\.br/recuperacao-judicial-e-falencia/[^/?#]*recuperacao-judicial[^/?#]*/$",
+         doc_pattern=r"^https://www\.ajudd\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor", debtor_from_title=True),
+    Site(domain="chaves-soletti.adv.br", aj_name="Chaves & Soletti Advogados",
+         list_urls=("https://chaves-soletti.adv.br/recuperacao-judicial/",),
+         case_pattern=r"^https://chaves-soletti\.adv\.br/atuacao/recuperacao-judicial/[^/?#]+/$",
+         doc_pattern=r"^https://chaves-soletti\.adv\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor"),
+    # Cury: the page prints the main process first and its RMA incident second.
+    Site(domain="curyconsultores.com.br", aj_name="Cury Administradora Judicial",
+         list_urls=("https://curyconsultores.com.br/recuperacao-judicial/",),
+         case_pattern=r"^https://curyconsultores\.com\.br/credor/[^/?#]+/$",
+         doc_pattern=r"^https://curyconsultores\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor"),
+    # Faccio: cases at the root; the active and the inactive RJ lists.
+    Site(domain="faccioadministracoes.com.br", aj_name="Faccio Administrações Judiciais",
+         list_urls=("https://faccioadministracoes.com.br/recuperacoes-judiciais-ativas/",
+                    "https://faccioadministracoes.com.br/recuperacoes-judiciais-inativas/"),
+         case_pattern=_root_cases(
+             "faccioadministracoes.com.br",
+             "quem-somos|falencias(?:-ativas|-encerradas)?|recuperacoes-judiciais(?:-ativas|-inativas)?|"
+             "contato|politica-de-privacidade(?:-2)?"),
+         doc_pattern=r"^https://faccioadministracoes\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor"),
+    # Fatto: cases at the root; the RJ portal page only (falência and extrajudicial are other portals).
+    Site(domain="fattoonline.com.br", aj_name="Fatto Administração Judicial",
+         list_urls=("https://fattoonline.com.br/portal-de-processos/recuperacao-judicial/",),
+         case_pattern=_root_cases(
+             "fattoonline.com.br",
+             "institucional|portal-de-processos|habilitacao-e-divergencia|newsletters|contato|home|portal"),
+         doc_pattern=r"^https://fattoonline\.com\.br" + WP_UPLOADS_PDF,
+         platform="WordPress + Elementor"),
 )
