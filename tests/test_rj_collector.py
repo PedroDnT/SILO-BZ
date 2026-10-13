@@ -96,6 +96,17 @@ EXPECTED = {
     "curyconsultores.com.br": (32, "08707760820258120001", 6),
     "faccioadministracoes.com.br": (5, "00369971720168260100", 9),
     "fattoonline.com.br": (9, "00015738320248160140", 73),
+    # Batch 10, read 2026-10-12.
+    "calc.com.br": (12, "00223780920188160030", 11),
+    "ricardobiancardi.com.br": (7, "50486715820248080024", 34),
+    "adjud.com.br": (3, "00383283920138260100", 5),
+    # Batch 11, read 2026-10-12. cabezon lists 4 recuperações on its home page (more load by AJAX).
+    "wfsp.com.br": (145, "00141171420128260248", 4),
+    "ajcabezon.com.br": (4, "40015071620268260260", 1),
+    "safirajud.com.br": (11, "10097931720248110003", 4),
+    "ativosajce.com.br": (25, "41537157720268260100", 10),
+    "innovareadministradora.com.br": (47, "50942334920248240023", 3),
+    "guerreiroadmjudicial.com.br": (24, "50455104920258210022", 12),
 }
 
 
@@ -165,6 +176,8 @@ def test_cnj_numbers_printed_and_bare():
     ("Decisão Deferindo a Antecipação da Tutela Recursal", "", "outros"),
     ("3. Decisão determinando Emenda à Inicial mov. 21.1", "", "outros"),
     ("03. Decisão. Processamento da RJ", "", "decisao_deferimento"),
+    ("Deferimento da Recuperação", "", "decisao_deferimento"),
+    ("Nomeação Administrador Judicial", "", "outros"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo
@@ -174,7 +187,7 @@ def test_classify_tipo(title, section, tipo):
 def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
     links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text, site.case_section, site.case_scope,
-                       card=site.case_card)
+                       card=site.case_card, anchors_xpath=site.case_anchors_xpath)
     assert len(links) == n_cases
     hosts = {urlsplit(link).hostname for link in links}
     assert all(h == site.domain or h.endswith("." + site.domain) for h in hosts), hosts
@@ -452,3 +465,19 @@ def test_doc_title_xpath_names_a_download_button():
             '<div class="f">Petição Inicial</div><div><a href="https://aj.example/u/a.pdf">Download</a></div></body></html>')
     xp = 'preceding::div[@class="f"][normalize-space()][1]'
     assert parse_case_page(page, "https://aj.example/c/", r"\.pdf$", doc_title_xpath=xp).documents[0].titulo == "Petição Inicial"
+
+
+def test_adjud_reads_only_recuperacao_cards():
+    site = next(s for s in SITES if s.domain == "adjud.com.br")
+    page = _fixture(site.domain, "list")
+    every = case_links(page, site.list_urls[0], site.case_pattern)
+    kept = case_links(page, site.list_urls[0], site.case_pattern, site.case_text,
+                      anchors_xpath=site.case_anchors_xpath)
+    assert len(kept) == 3 and len(every) > 20 and set(kept) <= set(every)
+
+
+def test_title_debtor_accepts_an_en_dash_separator():
+    site = next(s for s in SITES if s.domain == "adjud.com.br")
+    cp = parse_case_page(_fixture(site.domain, "case"), "https://adjud.com.br/devedoras/interteck/",
+                         site.doc_pattern, debtor_from_title=True)
+    assert cp.devedor_nome == "Interteck"

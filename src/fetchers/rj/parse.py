@@ -73,7 +73,8 @@ _TIPO_RULES: Sequence[tuple] = (
     ("plano", r"\bplano\b|^[\d\W]*prj$"),
     ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"
                             r"|\bdefer\w*\s+(d[aeo]s?\s+)?(pedido\s+(d[ea]\s+)?)?(recuperacao judicial|rj)\b"
-                            r"|\b(decisao|despacho)\W+(?:de\W+)?processamento d[ao] (rj|recuperacao judicial)\b|\bdecisao defer\w*\s+(a\s+)?recuperacao\s*$|\bdef\b.*\bproc\b"),
+                            r"|\b(decisao|despacho)\W+(?:de\W+)?processamento d[ao] (rj|recuperacao judicial)\b|\bdecisao defer\w*\s+(a\s+)?recuperacao\s*$|\bdef\b.*\bproc\b"
+                            r"|^deferimento d[ao] recuperacao$"),
     ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*|conced\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
 )
@@ -122,7 +123,8 @@ def _base(tree, base_url: str) -> str:
 
 def _absolute(base: str, href: str) -> str:
     """An anchor's absolute URL, without the #fragment (it never reaches the server)."""
-    return urldefrag(urljoin(base, href.strip()))[0]
+    # Trailing %20 / spaces (some download scripts pad the "nome" parameter) name the same file.
+    return re.sub(r"(?:%20|\s)+$", "", urldefrag(urljoin(base, href.strip()))[0])
 
 
 def _same_host_https(page_url: str, url: str) -> str:
@@ -155,7 +157,7 @@ def _heading_above(el) -> str:
 
 def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = "",
                section_pattern: str = "", scope_xpath: str = "",
-               card: bool = False) -> List[str]:
+               card: bool = False, anchors_xpath: str = "") -> List[str]:
     """Case page URLs on a list page: every link whose URL matches ``pattern``.
 
     ``text_pattern`` (optional) is a regex the anchor's folded text must also
@@ -172,6 +174,8 @@ def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = 
     ``data-url="URL"``. With ``card`` the ``text_pattern`` is matched against the
     whole card around the link (its largest ancestor holding no other case link),
     for lists whose card prints the type in a sibling element rather than in the link.
+    ``anchors_xpath`` (optional) narrows the anchors considered to those it selects,
+    for lists whose cards carry the type as a class on a container (ADJUD).
     """
     tree = lxml_html.fromstring(page_html)
     base = _base(tree, base_url)
@@ -189,7 +193,7 @@ def case_links(page_html: str, base_url: str, pattern: str, text_pattern: str = 
             out.append(url)
 
     for root in roots:
-        for a in root.xpath(".//a[@href]"):
+        for a in root.xpath(anchors_xpath or ".//a[@href]"):
             url = resolve(a)
             if trx is not None and rx.search(url):
                 if not trx.search(fold(_card_text(a, resolve, rx) if card else _text(a))):
@@ -348,10 +352,24 @@ def _nearby_title(a) -> str:
     return ""
 
 
+_CARD_TITLE = "(.//strong|.//b|.//h4|.//h5|.//h6)[normalize-space()][1]"
+
+
+def _card_title(el) -> str:
+    """The title of a document card whose download is a button, not an anchor:
+    the first bold text or small heading in the nearest ancestor that has one."""
+    for anc in list(el.iterancestors())[:4]:
+        found = anc.xpath(_CARD_TITLE)
+        if found:
+            return _text(found[0])
+    return ""
+
+
 def _debtor_from_title(tree) -> Optional[str]:
-    """The debtor as the page <title> names it: "<debtor> - <site name>"."""
+    """The debtor as the page <title> names it: "<debtor> - <site name>" (hyphen or en/em dash)."""
     title = _text(tree.xpath("//title")[0]) if tree.xpath("//title") else ""
-    name = title.rsplit(" - ", 1)[0].strip() if " - " in title else ""
+    parts = re.split(r"\s[-\u2013\u2014]\s", title)
+    name = " - ".join(parts[:-1]).strip() if len(parts) > 1 else ""
     return name or None
 
 
@@ -395,6 +413,13 @@ def parse_case_page(page_html: str, base_url: str, doc_pattern: str, debtor_xpat
         if not _text(a):
             textless.add(url)
         by_url[url] = DocLink(url=url, titulo=titulo, section=section)
+        docs.append(by_url[url])
+    # Some sites make the download a <button data-file="URL">: same document, no anchor.
+    for el in tree.xpath("//*[@data-file]"):
+        url = _absolute(base, el.get("data-file"))
+        if not rx.search(url) or url in by_url:
+            continue
+        by_url[url] = DocLink(url=url, titulo=_card_title(el) or _title_of(el, url), section=_section_of(el))
         docs.append(by_url[url])
     return CasePage(
         numero_processo=numbers[0] if numbers else None,
