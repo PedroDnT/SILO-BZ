@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Take the open ready-for-agent issues of SILO-BZ and open one PR per issue, each from a subagent in its own worktree. The owner starts it; optional label filter (e.g. phase:B).
+description: Take the open ready-for-agent issues of SILO-BZ and open one PR per issue, each from a subagent in its own worktree. The owner starts it; optional label filter (e.g. bug or tech-debt).
 ---
 
 The on-demand orchestrator of map #695. The owner starts every run, so the owner's
@@ -12,7 +12,7 @@ GitHub is REST only (`gh api repos/PedroDnT/SILO-BZ/...`; GraphQL is 403 here).
 
 1. `git fetch origin main`. List open issues labelled `ready-for-agent` (and the filter
    label, if the owner gave one), oldest first.
-2. Drop an issue that: carries `needs-triage`, `needs-info` or `ready-for-human`; has an
+2. Drop an issue that: carries `needs-triage`, `ready-for-human` or `wontfix`; has an
    assignee; is blocked by an open issue (`.../issues/{n}/dependencies/blocked_by`); has an
    open PR that references it; names no file in its body.
 3. **Overlap check.** List every open PR's changed files (`.../pulls/{n}/files`). An issue
