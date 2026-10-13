@@ -167,7 +167,7 @@ def test_cnj_numbers_printed_and_bare():
     ("Decisão Deferimento RJ AFA Plásticos", "", "decisao_deferimento"),
     ("Intimação: DESPACHO/DECISÃO", "Defiro o processamento da recuperação judicial.", "decisao_deferimento"),
     ("Intimação: DESPACHO/DECISÃO", "Indefiro o pedido de tutela.", "outros"),
-    ("Despacho que determinou perícia prévia", "", "outros"),
+    ("Despacho que determinou perícia prévia", "", "constatacao_previa"),  # art. 51-A
     ("Decisão de deferimento da recuperação judicial - 20.02.2024", "", "decisao_deferimento"),
     ("Deferimento do pedido de Recuperação Judicial", "", "decisao_deferimento"),
     ("Decisão de Processamento da RJ", "", "decisao_deferimento"),
@@ -193,7 +193,7 @@ def test_cnj_numbers_printed_and_bare():
     ("3. Decisão determinando Emenda à Inicial mov. 21.1", "", "outros"),
     ("03. Decisão. Processamento da RJ", "", "decisao_deferimento"),
     ("Deferimento da Recuperação", "", "decisao_deferimento"),
-    ("Nomeação Administrador Judicial", "", "outros"),
+    ("Nomeação Administrador Judicial", "", "nomeacao_aj"),
     # Inline batch A titles.
     ("2º Modificativo do PRJ – Ajustado", "", "aditivo_plano"),
     ("Aditamento ao PRJ - Homologado", "", "aditivo_plano"),
@@ -211,7 +211,19 @@ def test_cnj_numbers_printed_and_bare():
     ("4. DECISÃO DE PROCESSAMENTO", "", "decisao_deferimento"),
     ("Decisão que deferiu o pedido de Recuperação Judicial", "", "decisao_deferimento"),
     ("EDITAL DE PROCESSAMENTO DA RECUPERAÇÃO JUDICIAL", "", "relacao_credores_devedor"),
-    ("Termo de Compromisso", "", "outros"),  # no category of its own (yet)
+    # The four types of migration 78.
+    ("Termo de Compromisso", "", "termo_compromisso"),
+    ("3. Termo de Compromisso do Administrador Judicial - fl. 412", "", "termo_compromisso"),
+    ("Laudo de Constatação Prévia", "", "constatacao_previa"),
+    ("Decisão que determinou a realização de constatação prévia", "", "constatacao_previa"),
+    ("Despacho que nomeia para constatação prévia", "", "constatacao_previa"),
+    ("Decisão de nomeação do Administrador Judicial", "", "nomeacao_aj"),
+    ("Sentença de Encerramento da Recuperação Judicial", "", "sentenca_encerramento"),
+    ("Decisão de encerramento da RJ", "", "sentenca_encerramento"),
+    ("Edital de encerramento da recuperação judicial", "", "sentenca_encerramento"),
+    ("Relatório de encerramento da RJ", "", "outros"),
+    ("Decisão de encerramento da fase administrativa de verificação dos créditos", "", "outros"),
+    ("Decisão saneadora - indeferimento do pedido de encerramento da recuperação judicial", "", "outros"),
     ("Indeferimento do pedido de tutela", "", "outros"),
 ])
 def test_classify_tipo(title, section, tipo):
