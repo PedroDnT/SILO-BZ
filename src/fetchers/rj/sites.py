@@ -31,6 +31,7 @@ class Site:
     case_section: str = ""         # optional regex the heading above a case link must match (lists grouped by type)
     case_scope: str = ""           # optional XPath of the elements the case links must sit inside
     doc_title_xpath: str = ""      # optional XPath, from a "Download" button, to the element holding its title
+    case_anchors_xpath: str = ""   # optional XPath narrowing the list anchors (type kept as a class on the card)
 
     @property
     def source(self) -> str:
@@ -466,4 +467,80 @@ SITES += (
              "institucional|portal-de-processos|habilitacao-e-divergencia|newsletters|contato|home|portal"),
          doc_pattern=r"^https://fattoonline\.com\.br" + WP_UPLOADS_PDF,
          platform="WordPress + Elementor"),
+)
+
+# --- Batch 10 -----------------------------------------------------------------
+# Not read, and why: trusteeaj.com.br (the list prints no case type and mixes
+# falências; the type filter runs in JavaScript), valejudicial.com.br and
+# veritasaj.com (HTTP 403 to the collector), tomazettepacheco.com.br (no RJ
+# case documents), kraft.adm.br (falências only), exladministracaojudicial.com.br
+# and compassojudicial.com.br (documents behind a login).
+SITES += (
+    # CALC: /processo/autos--rj-<slug> is a recuperação judicial; "fal-" and untyped slugs are not.
+    # Files sit under /plataforma//uploads/arquivo/ and the h2 holds "Autos: RJ <debtor>".
+    Site(domain="calc.com.br", aj_name="CALC Perícias e Administração Judicial Ltda",
+         list_urls=("https://calc.com.br/processos",),
+         case_pattern=r"^https://calc\.com\.br/processo/autos--rj-[^/?#]+$",
+         doc_pattern=r"^https://calc\.com\.br/plataforma//uploads/arquivo/",
+         platform="custom", debtor_xpath='//main//h2[contains(@class, "title")]'),
+    # Ricardo Biancardi: one blog post per case under /category/recuperacao-judicial/; the
+    # category also holds a notice about opening hours, which is not a case.
+    Site(domain="ricardobiancardi.com.br", aj_name="Ricardo Biancardi Fernandes Sociedade Individual de Advocacia",
+         list_urls=("https://ricardobiancardi.com.br/category/recuperacao-judicial/",),
+         case_pattern=r"^https://ricardobiancardi\.com\.br/20\d\d/\d\d/\d\d/(?!restricao-de-atendimento)[^/?#]+/$",
+         doc_pattern=WP_UPLOADS_PDF, platform="WordPress + WPBakery"),
+    # ADJUD: one portfolio holds every case; the card's class names the type, so only the
+    # recuperação and recuperação-extrajudicial cards are read. The page <title> names the debtor.
+    # central-surf is left out: its page prints no process number, only a decision PDF.
+    Site(domain="adjud.com.br", aj_name="ADJUD Administradores Judiciais Ltda",
+         list_urls=("https://adjud.com.br/",),
+         case_pattern=r"^https://adjud\.com\.br/devedoras/(?!central-surf/)[^/?#]+/$",
+         doc_pattern=WP_UPLOADS_PDF, platform="WordPress + WPBakery",
+         case_anchors_xpath=('//li[contains(@class, "category-recuperacoes") or '
+                             'contains(@class, "category-recuperacao-extra-judiciais")]//a[@href]'),
+         debtor_from_title=True),
+)
+
+# --- Batch 11: custom PHP portals ---------------------------------------------
+SITES += (
+    # WFSP: /processos/<id>; the case page's <base href> is the site root, so its files are /uploads/arquivos/.
+    Site(domain="wfsp.com.br", aj_name="WFSP Administração Empresarial Ltda.",
+         list_urls=("https://www.wfsp.com.br/recuperacao-judicial",),
+         case_pattern=r"^https://www\.wfsp\.com\.br/processos/\d+$",
+         doc_pattern=r"^https://www\.wfsp\.com\.br/uploads/arquivos/[^?#]+\.(?i:pdf)$",
+         platform="custom PHP"),
+    # Cabezón: /<tipo>/<id>/<slug>, the home page lists falências, recuperações and
+    # execuções; only /recuperacao/ is read. The "carregar mais" button loads more by
+    # AJAX, so only the cases the home page prints are read.
+    Site(domain="ajcabezon.com.br", aj_name="Cabezón Administração Judicial",
+         list_urls=("https://www.ajcabezon.com.br/home",),
+         case_pattern=r"^https://www\.ajcabezon\.com\.br/recuperacao/\d+/[^/?#]+$",
+         doc_pattern=r"^https://www\.ajcabezon\.com\.br/uploads/downloads/[^?#]+\.(?i:pdf)$",
+         platform="custom PHP (Agencia Kombi)"),
+    # Safira: the list rows are <div onclick="window.location.href = '.../empresas/<id>'">;
+    # /recuperacoes-judiciais/1 is the recuperações tab (the falências tab is /2).
+    Site(domain="safirajud.com.br", aj_name="Safira Auditoria e Administração Judicial Ltda",
+         list_urls=("https://safirajud.com.br/recuperacoes-judiciais/1",),
+         case_pattern=r"^https://safirajud\.com\.br/recuperacoes-judiciais/empresas/\d+$",
+         doc_pattern=r"^https://safirajud\.com\.br/recuperacoes-judiciais/assets/uploads/[^?#]+\.(?i:pdf)$",
+         platform="custom PHP", debtor_xpath='//section[@id="capa"]//strong'),
+    # Ativos: /processo?c=<id> on the recuperações list (natureza=1); same download.php as DoubleOne.
+    Site(domain="ativosajce.com.br", aj_name="Ativos Administração Judicial e Consultoria",
+         list_urls=("https://ativosajce.com.br/processos?natureza=1",),
+         case_pattern=r"^https://ativosajce\.com\.br/processo\?c=\d+$",
+         doc_pattern=DOUBLEONE_DOC, platform="custom PHP",
+         debtor_xpath='//h4'),
+    # Innovare: cliente_r.php?id=N; the page prints the debtor in the first bold line and
+    # the process number with no punctuation after "Número do Processo".
+    Site(domain="innovareadministradora.com.br", aj_name="Innovare Administradora",
+         list_urls=("https://www.innovareadministradora.com.br/site/recuperacao.php",),
+         case_pattern=r"^https://www\.innovareadministradora\.com\.br/site/cliente_r\.php\?id=\d+$",
+         doc_pattern=r"^https://www\.innovareadministradora\.com\.br/site/download4\.php\?arq=",
+         platform="custom PHP", debtor_xpath='//div[contains(@class, "services")]//p/b'),
+    # Guerreiro (Qodde): the download is a <button data-file="URL"> inside a document card.
+    Site(domain="guerreiroadmjudicial.com.br", aj_name="Guerreiro Administração Judicial Ltda",
+         list_urls=("https://guerreiroadmjudicial.com.br/recuperacao",),
+         case_pattern=r"^https://guerreiroadmjudicial\.com\.br/recuperacao/detalhe/\d+/[^/?#]+$",
+         doc_pattern=r"^https://guerreiroadmjudicial\.com\.br/upload/documentos_recuperacao/[^?#]+\.(?i:pdf)$",
+         platform="custom PHP (Qodde)"),
 )
