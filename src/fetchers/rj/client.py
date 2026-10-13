@@ -8,12 +8,14 @@ Every request the RJ collector sends goes through ``PoliteClient``:
 * the User-Agent names the repository, so a site owner can find us;
 * anything but HTTP 200 raises ``FetchError`` with the status. Nothing is
   returned for a failed page, so a caller can never mistake a failure for an
-  empty case list (integrity rule 1).
+  empty case list (integrity rule 1);
+* a GET whose connection drops mid-answer is retried once (#943).
 """
 
 from __future__ import annotations
 
 import codecs
+import logging
 import time
 import urllib.robotparser
 from dataclasses import dataclass
@@ -21,6 +23,8 @@ from typing import Callable, Dict, Optional
 from urllib.parse import urlsplit
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 USER_AGENT = "SILO-BZ RJ collector (+https://github.com/PedroDnT/SILO-BZ)"
 MIN_INTERVAL_S = 1.0
@@ -88,11 +92,23 @@ class PoliteClient:
         self._last[host] = self._clock()
 
     def _get(self, url: str) -> httpx.Response:
-        self._wait(urlsplit(url).netloc)
-        try:
-            return self._http.get(url)
-        except httpx.HTTPError as e:
-            raise FetchError(url, None, f"({type(e).__name__}: {e})") from e
+        """GET ``url``, retried once when the connection drops mid-answer (#943).
+
+        Only a dropped connection is retried (``RemoteProtocolError``,
+        ``ReadError``): a status code is the site's answer and a timeout already
+        waited its full length. A second drop raises.
+        """
+        for attempt in (1, 2):
+            self._wait(urlsplit(url).netloc)
+            try:
+                return self._http.get(url)
+            except (httpx.RemoteProtocolError, httpx.ReadError) as e:
+                if attempt == 2:
+                    raise FetchError(url, None, f"({type(e).__name__}: {e})") from e
+                logger.info("%s: %s, retrying once", url, type(e).__name__)
+            except httpx.HTTPError as e:
+                raise FetchError(url, None, f"({type(e).__name__}: {e})") from e
+        raise AssertionError("unreachable")
 
     def allowed(self, url: str) -> bool:
         parts = urlsplit(url)
