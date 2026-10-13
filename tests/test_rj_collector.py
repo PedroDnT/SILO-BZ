@@ -8,7 +8,9 @@ import csv
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
+from urllib.parse import urlsplit
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -38,6 +40,9 @@ EXPECTED = {
     # Batch 1, read 2026-10-12. n2wbrasil lists 6 cases, 1 of them a recuperação judicial; cb2d lists
     # 72, 30 of them recuperação judicial; trustdobrasil's list page holds 4 RJ cases.
     "pmmadv.com.br": (14, "11559062020248260100", 17),
+    # Batch 12, read 2026-10-12. zveiter's menu lists 14 cases; the pattern names the 7 recuperação ones that print a CNJ number.
+    "mcaa.adv.br": (34, "00036176120188190024", 38),
+    "zveiter.com.br": (7, "09477725220258190001", 14),
     "n2wbrasil.com.br": (1, "10001656420258260354", 12),
     "trustdobrasil.com.br": (4, "11155260420148260100", 29),
     "cb2d.com.br": (30, "50038749820228210090", 24),
@@ -54,6 +59,43 @@ EXPECTED = {
     "scalzilliedias.com.br": (10, "07200514920268020001", 12),
     "atrioconsultores.com.br": (3, "08022340820248180032", 14),
     "actionaj.com.br": (5, "40000604220268260373", 15),
+    "fvsadmj.com.br": (3, "10398814220258260114", 2),
+    "excelia-aj.com.br": (27, "10124090620178260451", 64),
+    "expertisemais.com.br": (31, "10943620220228260100", 67),
+    "tapxure.com.br": (9, "10008254320258260359", 8),
+    "erikasantiago.adv.br": (10, "50010497720178130027", 4),
+    # Batch 6, read 2026-10-12.
+    "k2consultoria.com": (27, "00214130320198190001", 11),
+    "bbsadvogados.com.br": (57, "00015183120238160185", 29),
+    "madgav.com.br": (2, "10026767720268130672", 15),
+    "rroadvogados.adv.br": (1, "09649089620248190001", 29),
+    "fraj.com.br": (85, "10081715320188260565", 9),
+    "rlg-aj.com.br": (13, "50114607620258210028", 18),
+    "clesciogalvao.adv.br": (2, "50020627320188130384", 7),
+    "fatorfiscal.com.br": (3, "00011573120188080017", 35),
+    # Batch 7, read 2026-10-12. gomesdemattos lists 10 cases, 3 of them recuperação judicial;
+    # cleversonneves lists 12 recuperações judiciais (its falências are pop-ups).
+    "mdse.com.br": (1, "40003727520268260354", 17),
+    "administracaojudicialrs.com.br": (17, "51018374320268210001", 6),
+    "cleversonneves.com.br": (12, "00011018320188190019", 13),
+    "vtladm.com.br": (8, "00049849520248160153", 8),
+    "ecconsultoria.com.br": (2, "10004707320248260260", 3),
+    "gomesdemattos.com.br": (3, "30147645820258190001", 36),
+    "costatellesadjud.com.br": (6, "10075371820248260510", 2),
+    # Batch 8, read 2026-10-12. Diligence lists 47 cards, 26 of them recuperação judicial (one is the
+    # site's template); LRF lists 78, 51 of them recuperação judicial or extrajudicial; stenius reads
+    # only the /rj-<name>/ posts of its first page.
+    "julianamorais.com.br": (25, "00909041720168130342", 12),
+    "stenius.com.br": (8, "57759089220258090014", 3),
+    "diligence.adm.br": (26, "01089231520258172001", 19),
+    "lrflideres.com.br": (51, "00007422920178173090", 76),
+    "inova-aj.com.br": (16, "00122399620218190001", 110),
+    # Batch 9, read 2026-10-12. ajudd lists 38 cards, 23 of them recuperação judicial by slug.
+    "ajudd.com.br": (23, "10677914920268130024", 13),
+    "chaves-soletti.adv.br": (2, "70056261320198220005", 77),
+    "curyconsultores.com.br": (32, "08707760820258120001", 6),
+    "faccioadministracoes.com.br": (5, "00369971720168260100", 9),
+    "fattoonline.com.br": (9, "00015738320248160140", 73),
 }
 
 
@@ -95,6 +137,9 @@ def test_cnj_numbers_printed_and_bare():
     ("Decisão de deferimento da Recuperação Judicial e nomeação da Administradora Judicial", "", "decisao_deferimento"),
     ("Pedido de Recuperação Judicial", "", "peticao_inicial"),
     ("Edital 5003717-16.2023.8.13.0672-Relacao Credores", "", "relacao_credores_devedor"),
+    ("1° Edital de Credores", "", "relacao_credores_devedor"),
+    ("2° Edital de Credores Retificado", "", "relacao_credores_aj"),
+    ("Decisão Deferimento RJ AFA Plásticos", "", "decisao_deferimento"),
     ("Intimação: DESPACHO/DECISÃO", "Defiro o processamento da recuperação judicial.", "decisao_deferimento"),
     ("Intimação: DESPACHO/DECISÃO", "Indefiro o pedido de tutela.", "outros"),
     ("Despacho que determinou perícia prévia", "", "outros"),
@@ -109,6 +154,19 @@ def test_cnj_numbers_printed_and_bare():
     ("1. Edital art. 52, par. primeiro", "", "relacao_credores_devedor"),
     ("Decisão - Deferimento da Recuperação Judicial e Nomeação FEX", "", "decisao_deferimento"),
     ("Decisão - Deferimento de Tutela Cautelar", "", "outros"),
+    ("Decisão de deferimento de Recuperação Judicial: 08.09.2022;", "", "decisao_deferimento"),
+    ("DECISAO - DEFERIMENTO RJ", "", "decisao_deferimento"),
+    ("CARLOS PERES DECISAO DEF PROC RJ E NOMEACAO TAPXURE", "", "decisao_deferimento"),
+    ("Decisão homologatória concedendo a recuperação judicial", "", "sentenca_concessao"),
+    ("Relatório Inicial da Administradora Judicial;", "", "outros"),
+    ("05 – Despacho de Processamento da Recuperação Judicial – Agile Equipamentos Odontologicos Ltda.", "", "decisao_deferimento"),
+    ("Decisão Processamento da Recuperação Judicial e Termo de Compromisso Administradores Judiciais.", "", "decisao_deferimento"),
+    ("Relatório Inicial das Atividades", "", "rma"),
+    ("EDITAL EM CUMPRIMENTO AO DISPOSTO NO § 2º DO ARTIGO 7º", "", "relacao_credores_aj"),
+    ("PDF — Decisão Deferindo Recuperação", "", "decisao_deferimento"),
+    ("Decisão Deferindo a Antecipação da Tutela Recursal", "", "outros"),
+    ("3. Decisão determinando Emenda à Inicial mov. 21.1", "", "outros"),
+    ("03. Decisão. Processamento da RJ", "", "decisao_deferimento"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo
@@ -117,12 +175,13 @@ def test_classify_tipo(title, section, tipo):
 @pytest.mark.parametrize("site", SITES, ids=lambda s: s.domain)
 def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
-    links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text)
+    links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text, site.case_section, site.case_scope,
+                       card=site.case_card)
     assert len(links) == n_cases
-    assert all(link.startswith((f"https://{site.domain}/", f"https://www.{site.domain}/")) for link in links)
-    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern, site.debtor_xpath)
-    assert all(urlsplit(link).netloc in (site.domain, f"www.{site.domain}") for link in links)
-    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern)
+    hosts = {urlsplit(link).hostname for link in links}
+    assert all(h == site.domain or h.endswith("." + site.domain) for h in hosts), hosts
+    cp = parse_case_page(_fixture(site.domain, "case"), links[0], site.doc_pattern, site.debtor_xpath,
+                         site.debtor_from_title, site.doc_title_xpath)
     assert cp.numero_processo == numero
     assert cp.devedor_nome
     assert len(cp.documents) == n_docs
@@ -135,6 +194,13 @@ def test_actionaj_second_list_page_adds_five_more_cases():
     first = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern)
     second = case_links(_fixture(site.domain, "list2"), site.list_urls[1], site.case_pattern)
     assert len(second) == 5 and not set(first) & set(second)
+
+
+def test_faccio_inactive_list_adds_three_more_cases():
+    site = next(s for s in SITES if s.domain == "faccioadministracoes.com.br")
+    first = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern)
+    second = case_links(_fixture(site.domain, "list2"), site.list_urls[1], site.case_pattern)
+    assert len(second) == 3 and not set(first) & set(second)
 
 
 def test_download_button_takes_the_title_printed_beside_it():
@@ -348,3 +414,43 @@ def test_mixed_lists_keep_only_the_case_type_the_site_names():
     page = _fixture(cb2d.domain, "list")
     assert len(case_links(page, cb2d.list_urls[0], cb2d.case_pattern)) == 72
     assert len(case_links(page, cb2d.list_urls[0], cb2d.case_pattern, cb2d.case_text)) == 30
+def test_icon_only_links_are_titled_from_the_file_name_and_rows_can_be_links():
+    # FVS: the case list rows carry the URL in onclick; the document anchors hold only an icon.
+    site = next(s for s in SITES if s.domain == "fvsadmj.com.br")
+    cp = parse_case_page(_fixture(site.domain, "case"), site.list_urls[0], site.doc_pattern)
+    assert [d.titulo for d in cp.documents] == ["Deferimento recuperacao CHAMA", "LISTA DE CREDORES"]
+
+
+# ---------------------------------------------------------------------------
+# Batch 7 parse options (synthetic pages; the real ones are the fixtures above)
+# ---------------------------------------------------------------------------
+def test_case_links_reads_clickable_containers_and_scopes_and_sections():
+    page = (
+        '<html><body><h2>Recuperação Judicial</h2>'
+        '<div data-ha-element-link=\'{"url":"https://aj.example/caso/a/"}\'>A</div>'
+        '<div class="jet" data-url="https://aj.example/caso/b/">B</div>'
+        '<h2>Falência</h2><div data-url="https://aj.example/caso/c/">C</div>'
+        '<ul><li class="item"><a href="https://aj.example/caso/d/">D</a></li></ul>'
+        '<p><a href="https://aj.example/caso/e/">E</a></p></body></html>')
+    base, pat = "https://aj.example/casos/", r"/caso/[a-z]/$"
+    assert case_links(page, base, pat) == [
+        "https://aj.example/caso/d/", "https://aj.example/caso/e/",
+        "https://aj.example/caso/a/", "https://aj.example/caso/b/", "https://aj.example/caso/c/"]
+    assert case_links(page, base, pat, section_pattern=r"^recuperacao judicial$") == [
+        "https://aj.example/caso/a/", "https://aj.example/caso/b/"]
+    assert case_links(page, base, pat, scope_xpath='//li[@class="item"]') == ["https://aj.example/caso/d/"]
+
+
+def test_title_of_a_textless_first_link_yields_to_a_later_link_with_text():
+    page = ('<html><body><p>Processo 1000470-73.2024.8.26.0260</p><p>Documentos:</p>'
+            '<p><a href="https://aj.example/download/x/"></a></p>'
+            '<h3><a href="https://aj.example/download/x/">Edital art. 52</a></h3></body></html>')
+    cp = parse_case_page(page, "https://aj.example/c/", r"/download/")
+    assert [d.titulo for d in cp.documents] == ["Edital art. 52"]
+
+
+def test_doc_title_xpath_names_a_download_button():
+    page = ('<html><body><p>Processo 1000470-73.2024.8.26.0260</p>'
+            '<div class="f">Petição Inicial</div><div><a href="https://aj.example/u/a.pdf">Download</a></div></body></html>')
+    xp = 'preceding::div[@class="f"][normalize-space()][1]'
+    assert parse_case_page(page, "https://aj.example/c/", r"\.pdf$", doc_title_xpath=xp).documents[0].titulo == "Petição Inicial"
