@@ -6,7 +6,7 @@ anthropic==1.13.0
 # Redator and the Revisor are asked for and validated with. test.yml installs these two lines from
 # here, so the offline report tests run against the same pins.
 openai==3.28.0
-pydantic==2.13.4
+pydantic==2.14.0
 weasyprint==70.0
 # Statement PDF reader (src/portfolio/statement_pdf.py): pypdf is the text extractor when poppler
 # (pdftotext) is absent; reportlab only builds the synthetic PDFs of the offline tests, which skip
