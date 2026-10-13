@@ -334,6 +334,39 @@ def test_harvest_counts_failed_case_pages_and_keeps_the_rest():
     assert all("first_seen_at" not in r for r in h.cases + h.documents)  # set once by the DEFAULT
 
 
+_INLINE_PAGE = """<html><head><base href="https://aj.example/files/"></head><body>
+<div class="caso"><h3>EMPRESA A LTDA</h3><p>Processo 5024740-14.2026.8.24.0023</p>
+  <a href="plano-a.pdf">Plano de Recuperação Judicial</a><a href="rma-a.pdf">RMA março</a></div>
+<div class="caso"><h3>EMPRESA B LTDA</h3><p>Processo 1000832-35.2025.8.24.0359</p>
+  <a href="qgc-b.pdf">Quadro Geral de Credores</a></div>
+<div class="caso"><h3>Sem número</h3><a href="x.pdf">Edital</a></div>
+<a href="/contato">Contato</a></body></html>"""
+
+
+def test_inline_site_reads_each_block_as_a_case():
+    from src.fetchers.rj.sites import Site
+
+    site = Site(domain="aj.example", aj_name="AJ Exemplo", list_urls=("https://aj.example/processos",),
+                case_pattern="", doc_pattern=r"\.pdf$", platform="test",
+                inline_blocks_xpath="//div[@class='caso']")
+
+    class Inline:
+        def get(self, url):
+            assert url == "https://aj.example/processos", "an inline site reads no case page"
+            return rj_client.Page(url, 200, _INLINE_PAGE)
+
+    h = harvest_site(site, Inline(), SEEN)
+    assert h.case_pages == 3 and h.without_number == ["https://aj.example/processos"]
+    assert {c["numero_processo"] for c in h.cases} == {"50247401420268240023", "10008323520258240359"}
+    assert all(c["aj_case_url"] == "https://aj.example/processos" for c in h.cases)
+    by_case = {}
+    for d in h.documents:
+        by_case.setdefault(d["numero_processo"], set()).add((d["url"], d["tipo"]))
+    assert by_case["50247401420268240023"] == {("https://aj.example/files/plano-a.pdf", "plano"),
+                                                ("https://aj.example/files/rma-a.pdf", "rma")}
+    assert by_case["10008323520258240359"] == {("https://aj.example/files/qgc-b.pdf", "qgc")}
+
+
 def test_a_list_page_failure_raises():
     site = SITES[0]
 

@@ -32,6 +32,7 @@ class Site:
     case_scope: str = ""           # optional XPath of the elements the case links must sit inside
     doc_title_xpath: str = ""      # optional XPath, from a "Download" button, to the element holding its title
     case_anchors_xpath: str = ""   # optional XPath narrowing the list anchors (type kept as a class on the card)
+    inline_blocks_xpath: str = ""  # optional XPath of the case blocks when the list page itself holds every case
 
     @property
     def source(self) -> str:

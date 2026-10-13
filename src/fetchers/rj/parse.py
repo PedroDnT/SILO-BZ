@@ -383,6 +383,21 @@ def _trim_process(name: Optional[str]) -> Optional[str]:
     return (_PROCESS_TAIL.sub("", name).strip() or None) if name else name
 
 
+def case_blocks(page_html: str, xpath: str) -> List[str]:
+    """The HTML of each element ``xpath`` selects: one case block on an inline list page.
+
+    Some AJ sites have no page per case: one page holds every case, each in its own
+    block (an accordion item, a table row, a section) with the CNJ number and the
+    document links. Each block is then read like a case page by ``parse_case_page``.
+    The page's <base>, if any, is kept so relative links resolve as on the page.
+    """
+    tree = lxml_html.fromstring(page_html)
+    base = tree.xpath("//base[@href]")
+    head = lxml_html.tostring(base[0], encoding="unicode") if base else ""
+    return [f"<html><head>{head}</head><body>{lxml_html.tostring(el, encoding='unicode')}</body></html>"
+            for el in tree.xpath(xpath)]
+
+
 def parse_case_page(page_html: str, base_url: str, doc_pattern: str, debtor_xpath: str = "",
                     debtor_from_title: bool = False, doc_title_xpath: str = "") -> CasePage:
     """``debtor_from_title`` for sites whose headings are document titles, not the debtor.
