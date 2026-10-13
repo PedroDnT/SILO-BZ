@@ -24,7 +24,7 @@ not create labels. So, before creating more than one issue:
 3. Create one issue, check it landed with its labels, then the rest.
 
 Learned on 2026-10-06 (#677): 14 child issues bounced on `phase:*` labels that did
-not exist. Since 2026-10-13 the repo keeps 12 labels and no phase labels
+not exist. Since 2026-10-13 the repo keeps 16 labels and no phase labels
 (`docs/agents/triage-labels.md` lists them). Do not create a label outside that set.
 
 ## Pull requests as a triage surface

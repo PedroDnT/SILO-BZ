@@ -24,7 +24,7 @@ The `tech-debt` skill runs the audit → issues → phase PR loop.
 
 ### Triage labels
 
-The repo keeps 12 labels. An issue has one status, `needs-triage`, `ready-for-agent`, `ready-for-human` or `wontfix`, and optionally `bug`, `tech-debt` or `epic`. No label starts an agent: `ready-for-agent` only makes an issue eligible. See `docs/agents/triage-labels.md`.
+The repo keeps 16 labels. An issue has one status, `needs-triage`, `ready-for-agent`, `ready-for-human` or `wontfix`; one priority, `P0-critical` to `P3-parked`, when it is `ready-for-agent`; and optionally `bug`, `tech-debt` or `epic`. Agents take work by priority, then oldest, and never `P3-parked`. No label starts an agent: `ready-for-agent` only makes an issue eligible. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
