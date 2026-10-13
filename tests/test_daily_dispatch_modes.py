@@ -104,7 +104,7 @@ def test_analyze_and_apply_run_after_a_failed_daily_update(name):
 
 @pytest.mark.parametrize("name", [_ANALYZE, _APPLY])
 def test_analyze_and_apply_still_skip_when_the_schema_step_failed(name):
-    """A failed probe or schema apply leaves the schema step failed or skipped."""
+    """A failed schema apply (or an earlier failed step) leaves it failed or skipped."""
     assert "steps.schema.outcome == 'success'" in _condition(name)
 
 

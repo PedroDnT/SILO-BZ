@@ -9,6 +9,8 @@ Fetches:
   - B3 COTAHIST: last 7 calendar days of daily quotation zips (404 → skipped)
 
 Required env vars: POSTGRES_URL
+Optional: CVM_REACHABLE=false (set by the workflows when the CVM probe fails)
+skips the CVM entities, each with a `skipped` audit row; the rest still run.
 """
 
 import asyncio
@@ -16,6 +18,7 @@ import logging
 import os
 import sys
 import time
+import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -24,6 +27,7 @@ from src.pipeline.bacen_pipeline import BacenIngestor
 from src.pipeline.anbima_pipeline import AnbimaIngestor
 from src.pipeline.b3_pipeline import B3Ingestor
 from src.pipeline.ibge_pipeline import IbgeIngestor
+from src.pipeline import ingest_log
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,19 +35,51 @@ logging.basicConfig(
 )
 logger = logging.getLogger("run_daily")
 
+# The CVM probe's answer (scripts/check_cvm_reachable.py), passed in by
+# daily_ingest.yml and watchdog.yml as CVM_REACHABLE (#866). Only the literal
+# "false" skips CVM; unset or anything else keeps the CVM scope, so a local run
+# and every caller that does not probe behave as before.
+CVM_SKIP_DOC_TYPE = "daily_scope"
 
-async def main() -> None:
-    start_ts = time.monotonic()
-    logger.info("Daily update starting")
 
-    # Sub-ingest failures are COLLECTED, not swallowed. Each source still runs
-    # even if an earlier one failed (one bad source must not skip the rest), but
-    # the process exits non-zero at the end so CI goes red. Previously each of
-    # these blocks logged a warning and continued: that is how the ANBIMA ingest
-    # failed on every single daily run for months without anyone noticing, and it
-    # contradicts the repo's own "no silent except" data-integrity rule (AGENTS.md).
-    failures: list[tuple[str, Exception]] = []
+def cvm_reachable() -> bool:
+    return os.getenv("CVM_REACHABLE", "").strip().lower() != "false"
 
+
+def log_cvm_scope_skipped() -> list[str]:
+    """One `skipped` audit row per CVM entity in the daily scope. Returns them.
+
+    The probe found dados.cvm.gov.br unreachable from this runner, so the CVM
+    scope is not attempted: it would spend ~40 minutes proving the same connect
+    refusal (2026-08-29) while BACEN, B3 and the BDI ratchet wait. Never a
+    silent skip: every entity gets its row, and a failed audit write raises
+    (``ingest_log.start``/``finish`` raise, unlike ``audited``).
+
+    The doc_type is ``daily_scope``, which no real slice uses. Health and the
+    watchdog treat a later ``ok`` or ``skipped`` row with the same key as a
+    heal, so a skip row on a real slice key would hide that slice's error.
+    """
+    from src.pipeline.cvm_pipeline import _resolve_daily_entities
+    from src.store.pg_client import get_pg_client
+
+    reason = (
+        "CVM probe failed: dados.cvm.gov.br unreachable from this runner "
+        "(CVM_REACHABLE=false); the CVM daily scope was not attempted (#866)"
+    )
+    client = get_pg_client()
+    entities = sorted(_resolve_daily_entities())
+    for entity in entities:
+        run_id = str(uuid.uuid4())
+        ingest_log.start(client, run_id, entity, CVM_SKIP_DOC_TYPE)
+        ingest_log.finish(
+            client, run_id, entity, CVM_SKIP_DOC_TYPE,
+            status="skipped", rows=0, error=reason,
+        )
+        logger.error("CVM %s skipped: %s", entity, reason)
+    return entities
+
+
+async def _run_cvm(failures: list) -> dict:
     cvm_ingestor = CVMIngestor()
     # A failed CVM slice writes its 'error' audit row and raises (#691, owner
     # decision 2026-10-06). daily_update runs every other slice first, then
@@ -61,6 +97,36 @@ async def main() -> None:
         for failure in exc.failures:
             logger.error("  %s", failure)
         failures.append(("cvm", exc))
+    return totals
+
+
+async def main() -> None:
+    start_ts = time.monotonic()
+    logger.info("Daily update starting")
+
+    # Sub-ingest failures are COLLECTED, not swallowed. Each source still runs
+    # even if an earlier one failed (one bad source must not skip the rest), but
+    # the process exits non-zero at the end so CI goes red. Previously each of
+    # these blocks logged a warning and continued: that is how the ANBIMA ingest
+    # failed on every single daily run for months without anyone noticing, and it
+    # contradicts the repo's own "no silent except" data-integrity rule (AGENTS.md).
+    failures: list[tuple[str, Exception]] = []
+
+    totals: dict[str, int] = {}
+    if not cvm_reachable():
+        # The workflow's own gate step turns the run red for this; here the
+        # skip is recorded, and every non-CVM source below still runs.
+        try:
+            skipped = log_cvm_scope_skipped()
+            logger.error(
+                "CVM unreachable — skipped %d CVM entities: %s",
+                len(skipped), ", ".join(skipped),
+            )
+        except Exception as exc:
+            logger.error("Could not record the CVM skip: %s", exc, exc_info=True)
+            failures.append(("cvm", exc))
+    else:
+        totals = await _run_cvm(failures)
 
     # BACEN: incremental refresh — re-fetches the last ~30 days; cheap.
     try:
@@ -140,7 +206,9 @@ async def main() -> None:
     # the deploy for data that had all landed. They still fail their own step.
 
     # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
-    # the post-CVM-175 daily file no longer exposes). Runs only when APIFY_TOKEN
+    # the post-CVM-175 daily file no longer exposes). Not a CVM source: it reads
+    # its tickers from the stored cvm_etf_registry, so it runs when CVM is
+    # unreachable. The ETF registry itself (CVM entity `etf`, cad_fi) does not. Runs only when APIFY_TOKEN
     # is set. ``ingest_etf_market`` writes a ``skipped`` audit row and returns 0
     # when Apify never delivered a dataset (403/408/ABORTED/usage-limit) — it
     # logs loudly there and does not re-raise, so a usage-limit day cannot skip

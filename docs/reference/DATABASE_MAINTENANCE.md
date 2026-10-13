@@ -26,8 +26,9 @@ your environment or `.env`.
 **or** if unhealed ingest errors remain in the same 26h **daily window** DB Health
 uses (including weekends — a Saturday `CVMHostUnreachable` burst is a failed cron,
 not a quiet market day). Historical backfill errors outside `DAILY_LOOKBACK_MONTHS`
-do not count. Recovery probes `dados.cvm.gov.br` first so a blocked
-runner IP fails in a second instead of writing another round of error rows.
+do not count. Recovery probes `dados.cvm.gov.br` first: on a blocked runner IP
+it skips the CVM scope (one `skipped` row per entity, #866) instead of writing
+another round of error rows, still heals the other sources, and ends red.
 
 `.github/workflows/backfill.yml` is on-demand only (see §4).
 

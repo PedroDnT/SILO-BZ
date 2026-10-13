@@ -7,8 +7,9 @@ name: Ingest Watchdog
 # Historical backfill errors outside DAILY_LOOKBACK_MONTHS do not count —
 # run_daily cannot heal 2010 (DB Health #14). Unhealed daily-window errors are
 # not weekend-gated: a Saturday CVMHostUnreachable burst is a failed cron, not
-# a quiet market day. Recovery probes CVM first so a blocked runner IP fails
-# in a second instead of writing another round of error rows.
+# a quiet market day. Recovery probes CVM first: on a blocked runner IP it
+# skips the CVM scope instead of writing another round of error rows, still
+# heals the other sources, and ends red (#866).
 #
 # This lives entirely in GitHub Actions and reuses the existing POSTGRES_URL
 # secret — no GitHub PAT in the database, no pg_net. See scripts/check_staleness.py.
@@ -89,22 +90,35 @@ jobs:
       # Recovery path: ask CVM first (a blocked IP must not write another
       # round of unhealed error rows), then schema, then run_daily. Gated on
       # the same condition as recovery so a no-op day stays a true no-op.
+      # As in daily_ingest.yml (#866), the probe gates the CVM scope only:
+      # run_daily skips CVM when CVM_REACHABLE is false and still heals the
+      # other sources; the last recovery step keeps the run red.
       - name: Probe dados.cvm.gov.br
+        id: cvm_probe
         if: ${{ steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true' }}
-        run: python scripts/check_cvm_reachable.py
+        run: |
+          if python scripts/check_cvm_reachable.py; then
+            echo "cvm_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cvm_ok=false" >> "$GITHUB_OUTPUT"
+            echo "::error title=CVM unreachable::the CVM scope is skipped; the other sources still run and the last step fails the job"
+          fi
 
       # Bootstrap schema/migrations before the recovery run. The watchdog
       # previously ran run_daily directly, so a recovery against a DB missing a
       # migration (e.g. cvm_fund_registry without migration 11's admin/gestor
       # columns) failed silently — the exact drift this guards against.
       - name: Apply schema + migrations
+        id: schema
         if: ${{ steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true' }}
         uses: ./.github/actions/apply-schema
         with:
           postgres-url: ${{ secrets.POSTGRES_URL }}
 
       - name: Run daily ingest (recovery)
-        if: ${{ steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true' }}
+        if: ${{ !cancelled() && steps.schema.outcome == 'success' && (steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true') }}
+        env:
+          CVM_REACHABLE: ${{ steps.cvm_probe.outputs.cvm_ok }}
         run: python -m src.pipeline.run_daily
 
       # The market slices (DI1, B3 curves, UST, VIX, Brent) are written by their
@@ -129,6 +143,12 @@ jobs:
         env:
           B3_CREDIT_ENABLED: ${{ vars.B3_CREDIT_ENABLED }}
         run: python -m src.pipeline.run_b3_events
+
+      - name: Fail the run when CVM was unreachable
+        if: ${{ !cancelled() && steps.cvm_probe.outputs.cvm_ok == 'false' }}
+        run: |
+          echo "::error title=CVM unreachable::dados.cvm.gov.br refused this runner; the CVM scope was skipped (one skipped row per entity in cvm_ingest_log). Re-dispatch to draw a fresh runner IP."
+          exit 1
 
       - name: Report no-op
         if: ${{ steps.staleness.outputs.stale == 'false' && github.event.inputs.force != 'true' }}
