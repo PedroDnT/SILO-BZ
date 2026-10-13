@@ -17,7 +17,7 @@ import pytest
 
 from src.fetchers.rj import client as rj_client
 from src.fetchers.rj.client import FetchError, PoliteClient, RobotsDisallowed
-from src.fetchers.rj.parse import case_links, classify_tipo, cnj_numbers, parse_case_page
+from src.fetchers.rj.parse import case_blocks, case_links, classify_tipo, cnj_numbers, parse_case_page
 from src.fetchers.rj.sites import SITES
 from src.pipeline import ingest_rj
 from src.pipeline.ingest_rj import EmptySiteError, RJIngestor, harvest_site
@@ -107,6 +107,22 @@ EXPECTED = {
     "ativosajce.com.br": (25, "41537157720268260100", 10),
     "innovareadministradora.com.br": (47, "50942334920248240023", 3),
     "guerreiroadmjudicial.com.br": (24, "50455104920258210022", 12),
+    # Inline batch A, read 2026-10-13: (blocks in the fixture, first block's number, its documents).
+    # Fixtures cut to their first blocks; ajruiz and gatekeeper keep one falência block,
+    # which the XPath must not select. Gatekeeper's 8th block prints a malformed number.
+    "ajruiz.com.br": (12, "10223659020218110041", 7),
+    "vonsaltiel.com.br": (12, "50009038920208210065", 0),
+    "gatekeeperaj.com.br": (8, "10013944520258260100", 34),
+    "vwadvogados.com.br": (6, "57220341820248090051", 36),
+    "arzadministradorajudicial.com.br": (8, "10009937920248260359", 47),
+    "carapetcovaj.com.br": (6, "08104026820258190021", 6),
+    # Inline batch B, read 2026-10-13: (blocks on the list page, the first block's number, its documents).
+    # atlaspartnersaj lists 3 cases, 1 of them recuperação judicial; salgadorocha lists 6, 5 of them
+    # falências; swotglobal lists 3 without their type (falências and recuperações together).
+    "atlaspartnersaj.com.br": (1, "10010394920258260354", 28),
+    "salgadorocha.com.br": (1, "50389210320228080024", 3),
+    "flyrec.com.br": (2, "10023989320238260260", 1),
+    "swotglobal.com": (3, "10030030520248260260", 2),
 }
 
 
@@ -180,6 +196,14 @@ def test_cnj_numbers_printed_and_bare():
     ("03. Decisão. Processamento da RJ", "", "decisao_deferimento"),
     ("Deferimento da Recuperação", "", "decisao_deferimento"),
     ("Nomeação Administrador Judicial", "", "outros"),
+    # Inline batch A titles.
+    ("2º Modificativo do PRJ – Ajustado", "", "aditivo_plano"),
+    ("Aditamento ao PRJ - Homologado", "", "aditivo_plano"),
+    ("Decisão de Homologação do PRJ", "", "sentenca_concessao"),
+    ("26 - Sentença Homologatória do plano e concessão da RJ", "", "sentenca_concessao"),
+    ("3ª RMAs junho e julho de 2025", "", "rma"),
+    ("Relatório sobre o PRJ (fls. 267/287)", "", "outros"),
+    ("Decisão - Homologação do PRJ", "", "sentenca_concessao"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo
@@ -188,6 +212,14 @@ def test_classify_tipo(title, section, tipo):
 @pytest.mark.parametrize("site", SITES, ids=lambda s: s.domain)
 def test_fixture_pages_parse(site):
     n_cases, numero, n_docs = EXPECTED[site.domain]
+    if site.inline_blocks_xpath:  # inline: n_cases blocks on the list page; numero and n_docs of the first
+        blocks = case_blocks(_fixture(site.domain, "list"), site.inline_blocks_xpath)
+        assert len(blocks) == n_cases
+        cp = parse_case_page(blocks[0], site.list_urls[0], site.doc_pattern, site.debtor_xpath,
+                             site.debtor_from_title, site.doc_title_xpath)
+        assert cp.numero_processo == numero
+        assert len(cp.documents) == n_docs and all(d.titulo for d in cp.documents)
+        return
     links = case_links(_fixture(site.domain, "list"), site.list_urls[0], site.case_pattern, site.case_text, site.case_section, site.case_scope,
                        card=site.case_card, anchors_xpath=site.case_anchors_xpath)
     assert len(links) == n_cases
@@ -229,6 +261,16 @@ def test_doubleone_title_comes_from_the_download_name():
                          site.doc_pattern)
     first = cp.documents[0]
     assert first.titulo == "Petição Inicial" and classify_tipo(first.titulo, first.section) == "peticao_inicial"
+
+
+def test_arquivo_para_download_takes_the_case_paragraph_as_title():
+    site = next(s for s in SITES if s.domain == "flyrec.com.br")
+    block = case_blocks(_fixture(site.domain, "list"), site.inline_blocks_xpath)[0]
+    cp = parse_case_page(block, site.list_urls[0], site.doc_pattern, site.debtor_xpath,
+                         site.debtor_from_title, site.doc_title_xpath)
+    (doc,) = cp.documents
+    assert "Relação de Credores Elaborada pela Administradora Judicial" in doc.titulo
+    assert classify_tipo(doc.titulo, doc.section) == "relacao_credores_aj"
 
 
 def test_every_site_is_html_and_allowed_by_the_inventory():
@@ -332,6 +374,39 @@ def test_harvest_counts_failed_case_pages_and_keeps_the_rest():
     assert all(c["source"] == "aj_site:recupereadmjudicial.com.br" for c in h.cases)
     assert all(d["found_on"].startswith("https://recupereadmjudicial.com.br/") for d in h.documents)
     assert all("first_seen_at" not in r for r in h.cases + h.documents)  # set once by the DEFAULT
+
+
+_INLINE_PAGE = """<html><head><base href="https://aj.example/files/"></head><body>
+<div class="caso"><h3>EMPRESA A LTDA</h3><p>Processo 5024740-14.2026.8.24.0023</p>
+  <a href="plano-a.pdf">Plano de Recuperação Judicial</a><a href="rma-a.pdf">RMA março</a></div>
+<div class="caso"><h3>EMPRESA B LTDA</h3><p>Processo 1000832-35.2025.8.24.0359</p>
+  <a href="qgc-b.pdf">Quadro Geral de Credores</a></div>
+<div class="caso"><h3>Sem número</h3><a href="x.pdf">Edital</a></div>
+<a href="/contato">Contato</a></body></html>"""
+
+
+def test_inline_site_reads_each_block_as_a_case():
+    from src.fetchers.rj.sites import Site
+
+    site = Site(domain="aj.example", aj_name="AJ Exemplo", list_urls=("https://aj.example/processos",),
+                case_pattern="", doc_pattern=r"\.pdf$", platform="test",
+                inline_blocks_xpath="//div[@class='caso']")
+
+    class Inline:
+        def get(self, url):
+            assert url == "https://aj.example/processos", "an inline site reads no case page"
+            return rj_client.Page(url, 200, _INLINE_PAGE)
+
+    h = harvest_site(site, Inline(), SEEN)
+    assert h.case_pages == 3 and h.without_number == ["https://aj.example/processos"]
+    assert {c["numero_processo"] for c in h.cases} == {"50247401420268240023", "10008323520258240359"}
+    assert all(c["aj_case_url"] == "https://aj.example/processos" for c in h.cases)
+    by_case = {}
+    for d in h.documents:
+        by_case.setdefault(d["numero_processo"], set()).add((d["url"], d["tipo"]))
+    assert by_case["50247401420268240023"] == {("https://aj.example/files/plano-a.pdf", "plano"),
+                                                ("https://aj.example/files/rma-a.pdf", "rma")}
+    assert by_case["10008323520258240359"] == {("https://aj.example/files/qgc-b.pdf", "qgc")}
 
 
 def test_a_list_page_failure_raises():
@@ -483,3 +558,46 @@ def test_title_debtor_accepts_an_en_dash_separator():
     cp = parse_case_page(_fixture(site.domain, "case"), "https://adjud.com.br/devedoras/interteck/",
                          site.doc_pattern, debtor_from_title=True)
     assert cp.devedor_nome == "Interteck"
+
+
+# ---------------------------------------------------------------------------
+# Inline batch A parse rules (#845)
+# ---------------------------------------------------------------------------
+def test_a_numbered_link_with_an_action_label_is_titled_by_its_own_text():
+    # VW Advogados: <a><span>1 - </span>Petição Inicial<i>Visualizar</i></a>.
+    page = ('<html><body><p>Autos nº. 5722034-18.2024.8.09.0051</p><ul>'
+            '<li><a href="https://aj.example/u/a.pdf"><span>1 - </span> Petição Inicial <i> Visualizar</i></a></li>'
+            '<li><a href="https://aj.example/u/b.pdf"><span>Plano</span><span>2 MB</span></a></li></ul></body></html>')
+    cp = parse_case_page(page, "https://aj.example/c/", r"\.pdf$")
+    assert [d.titulo for d in cp.documents] == ["Petição Inicial", "Plano"]
+    site = next(s for s in SITES if s.domain == "vwadvogados.com.br")
+    block = case_blocks(_fixture(site.domain, "list"), site.inline_blocks_xpath)[0]
+    first = parse_case_page(block, site.list_urls[0], site.doc_pattern).documents[0]
+    assert first.titulo == "Petição Inicial" and classify_tipo(first.titulo, first.section) == "peticao_inicial"
+
+
+def test_a_year_sub_heading_keeps_the_section_heading_above_it():
+    # Gatekeeper: RMAs titled by month under "2023", "2024" sub-headings of "Relatórios Mensais".
+    page = ('<html><body><p>Processo nº 1001394-45.2025.8.26.0100</p>'
+            '<h4>Documentos</h4><p><a href="https://aj.example/u/pi.pdf">Petição Inicial</a></p>'
+            '<h4>RELATÓRIOS MENSAIS DE ATIVIDADES</h4><h4>2023</h4>'
+            '<p><a href="https://aj.example/u/1.pdf">Janeiro /</a></p><h4>2024</h4>'
+            '<p><a href="https://aj.example/u/2.pdf">Fevereiro</a></p></body></html>')
+    docs = parse_case_page(page, "https://aj.example/c/", r"\.pdf$").documents
+    assert [d.section for d in docs] == [
+        "Documentos", "RELATÓRIOS MENSAIS DE ATIVIDADES 2023", "RELATÓRIOS MENSAIS DE ATIVIDADES 2024"]
+    assert [classify_tipo(d.titulo, d.section) for d in docs] == ["peticao_inicial", "rma", "rma"]
+
+
+def test_inline_batch_a_selects_only_recuperacao_blocks():
+    # The fixtures keep one falência block (ajruiz, gatekeeper) or whole falência
+    # sections (arz, carapetcov) that the XPath must leave out.
+    for domain, falida in (("ajruiz.com.br", "10011093920228260009"),
+                           ("gatekeeperaj.com.br", "10161301020218260003"),
+                           ("arzadministradorajudicial.com.br", "11254003220228260100"),
+                           ("carapetcovaj.com.br", "00433997220038190001")):
+        site = next(s for s in SITES if s.domain == domain)
+        page = _fixture(domain, "list")
+        assert falida in cnj_numbers(page)
+        numbers = {n for b in case_blocks(page, site.inline_blocks_xpath) for n in cnj_numbers(b)}
+        assert falida not in numbers, domain
