@@ -1,6 +1,6 @@
 name: RJ document links
 
-# Daily collector for epic #841 / #845: reads the case pages of administrador
+# Daily collector for epic #841 / #845 / #846: reads the case pages of administrador
 # judicial websites (src/fetchers/rj/sites.py) and stores the LINKS to each
 # recuperação judicial case's documents in rj_case / rj_document. No file is
 # downloaded. One cvm_ingest_log row per site (entity rj).
@@ -17,6 +17,21 @@ on:
     inputs:
       sites:
         description: "Space-separated domains from sites.py; empty = every site"
+        required: false
+        default: ""
+        type: string
+      only:
+        description: "Run one part only: sites, djen, or both (empty)"
+        required: false
+        default: ""
+        type: string
+      djen_start:
+        description: "DJEN: first day (YYYY-MM-DD); empty = the last RJ_DJEN_DAYS days"
+        required: false
+        default: ""
+        type: string
+      djen_end:
+        description: "DJEN: last day (YYYY-MM-DD); empty = yesterday"
         required: false
         default: ""
         type: string
@@ -55,9 +70,26 @@ jobs:
           postgres-url: ${{ secrets.POSTGRES_URL }}
 
       - name: Collect
+        if: ${{ inputs.only != 'djen' }}
         env:
           SITES: ${{ inputs.sites }}
         run: |
           args=()
           for s in $SITES; do args+=(--site "$s"); done
           python -m src.pipeline.ingest_rj "${args[@]}"
+
+      # DJEN (#846) answers 403 outside Brazil (#843), so it goes through the
+      # Brazilian proxy in the BR_PROXY_URL secret. Without the secret the
+      # client refuses to start and this step is red: a missing egress is never
+      # an empty day. It runs even when the AJ step failed.
+      - name: Discover RJ cases on DJEN
+        if: ${{ !cancelled() && inputs.only != 'sites' }}
+        env:
+          BR_PROXY_URL: ${{ secrets.BR_PROXY_URL }}
+          DJEN_START: ${{ inputs.djen_start }}
+          DJEN_END: ${{ inputs.djen_end }}
+        run: |
+          args=()
+          [ -n "$DJEN_START" ] && args+=(--start "$DJEN_START")
+          [ -n "$DJEN_END" ] && args+=(--end "$DJEN_END")
+          python -m src.pipeline.ingest_rj_djen "${args[@]}"

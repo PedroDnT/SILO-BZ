@@ -95,6 +95,8 @@ def test_cnj_numbers_printed_and_bare():
     ("Decisão de deferimento da Recuperação Judicial e nomeação da Administradora Judicial", "", "decisao_deferimento"),
     ("Pedido de Recuperação Judicial", "", "peticao_inicial"),
     ("Edital 5003717-16.2023.8.13.0672-Relacao Credores", "", "relacao_credores_devedor"),
+    ("Intimação: DESPACHO/DECISÃO", "Defiro o processamento da recuperação judicial.", "decisao_deferimento"),
+    ("Intimação: DESPACHO/DECISÃO", "Indefiro o pedido de tutela.", "outros"),
     ("Despacho que determinou perícia prévia", "", "outros"),
     ("Decisão de deferimento da recuperação judicial - 20.02.2024", "", "decisao_deferimento"),
     ("Deferimento do pedido de Recuperação Judicial", "", "decisao_deferimento"),

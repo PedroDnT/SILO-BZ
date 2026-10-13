@@ -70,6 +70,8 @@ _TIPO_RULES: Sequence[tuple] = (
     ("decisao_deferimento", r"\b(defer\w*)\b.*\bprocessamento\b|\bprocessamento\b.*\bdefer\w*"
                             r"|\bdefer\w*\s+(d[ao]s?\s+)?(pedido\s+(d[ea]\s+)?)?(recuperacao judicial|rj)\b"
                             r"|\bdecisao de processamento d[ao] (rj|recuperacao judicial)\b"),
+    # The court's own wording in a DJEN act: "Defiro o processamento ...".
+    ("decisao_deferimento", r"\bdefir\w*\s+(o\s+)?(pedido\s+de\s+)?processamento\b"),
     ("sentenca_concessao", r"\bsentenca\b.*\b(concess\w*|homolog\w*)\b|\b(concess\w*)\b.*\brecuperacao\b"),
     ("demonstracoes_contabeis", r"\b(demonstracoes contabeis|demonstrativos contabeis|balanco|balancete|dre)\b"),
 )
