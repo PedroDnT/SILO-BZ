@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional, Sequence
 from urllib.parse import urlsplit
 
-from lxml import html as lxml_html
+from lxml import etree, html as lxml_html
 
 from src.fetchers.rj.aj_index import aj_by_name
 from src.fetchers.rj.client import FetchError, PoliteClient, RobotsDisallowed
@@ -114,14 +114,17 @@ def resolve_case(client: Any, numero: str, domain: str, aj_name: str, seen_at: d
     site = _site_for(domain)
     try:
         page = client.get(f"https://{domain}/?s={masked(numero)}")
+        found = candidates(page.text, page.url, domain)
     except (FetchError, RobotsDisallowed):
         return False
-    for url in candidates(page.text, page.url, domain)[:MAX_CANDIDATES]:
+    except etree.ParserError:  # an empty body (behrmannratis.com, 2026-10-13): nothing found
+        return False
+    for url in found[:MAX_CANDIDATES]:
         try:
             case_page = client.get(url)
-        except (FetchError, RobotsDisallowed):
+            cp = parse_case_page(case_page.text, case_page.url, site.doc_pattern)
+        except (FetchError, RobotsDisallowed, etree.ParserError):
             continue
-        cp = parse_case_page(case_page.text, case_page.url, site.doc_pattern)
         if cp.numero_processo != numero or not _same_domain(case_page.url, domain):
             continue
         _read_case(out.harvest, replace(site, aj_name=aj_name), case_page.text, case_page.url, seen_at)
