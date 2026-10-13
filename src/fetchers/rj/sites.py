@@ -614,3 +614,46 @@ SITES += (
                              "[contains(translate(preceding::h2[1], 'abcdefghijklmnopqrstuvwxyzçã', "
                              "'ABCDEFGHIJKLMNOPQRSTUVWXYZÇÃ'), 'RECUPERA')]"),
 )
+
+
+# Inline batch B (#845): the list page holds every case, one block each, read in place.
+# Not read: assistjud.com.br (no document links), arj.adm.br (no CNJ number; downloads
+# carry a per-load token), murillolobo.adv.br (rows link other cases' files) and
+# joanamelloadvogados.com (an unfinished template page whose PDFs answer 404).
+SITES += (
+    # Atlas: one Elementor accordion item per case; the type is the item's <h2>, so only the
+    # recuperação blocks are read (the page also lists a falência and a perícia).
+    Site(domain="atlaspartnersaj.com.br", aj_name="Atlas Partners Administração e Consultoria Empresarial Ltda",
+         list_urls=("https://atlaspartnersaj.com.br/processos/",),
+         case_pattern="",
+         doc_pattern=r"^https://atlaspartnersaj\.com\.br/wp-content/uploads/[^?#]+\.(?:pdf|docx?)$",
+         platform="WordPress, Elementor accordion", debtor_xpath="//summary",
+         inline_blocks_xpath="//details[contains(@class, 'e-n-accordion-item')][.//h2[contains(., 'Recuperação')]]"),
+    # Salgado Rocha: one Elementor container per case; the falências are the "MASSA FALIDA" ones.
+    Site(domain="salgadorocha.com.br", aj_name="Salgado Rocha Sociedade Individual de Advocacia",
+         list_urls=("https://salgadorocha.com.br/our_services/administracao-judicial/",),
+         case_pattern="",
+         doc_pattern=r"^https://salgadorocha\.com\.br/wp-content/uploads/[^?#]+\.pdf$",
+         platform="WordPress, Elementor",
+         inline_blocks_xpath="//article//div[contains(@class, 'e-parent')][.//p[contains(., 'Processo')]]"
+                             "[not(.//h4[starts-with(normalize-space(), 'MASSA FALIDA')])]"),
+    # Fly: one WPBakery row per case; the link reads "Arquivo para download" and the
+    # document is named in the case paragraph beside it.
+    Site(domain="flyrec.com.br", aj_name="FLY Recuperações Empresariais Ltda",
+         list_urls=("https://flyrec.com.br/processos/",),
+         case_pattern="",
+         doc_pattern=r"^https://flyrec\.com\.br/flwp/wp-content/uploads/[^?#]+\.pdf$",
+         platform="WordPress, WPBakery", debtor_xpath="(//p/strong)[1]",
+         doc_title_xpath="ancestor::div[contains(@class, 'vc_row')][1]//div[contains(@class, 'vc_col-sm-9')]//p[normalize-space()][1]",
+         inline_blocks_xpath="//div[contains(@class, 'vc_row')][.//p[starts-with(normalize-space(), 'Recuperação Judicial')]]"
+                             "[.//a[contains(@href, '/wp-content/uploads/')]]"),
+    # Swot (Duda): one inner grid per appointment; the page lists falências and recuperações
+    # together and no block prints its type, so all are read.
+    Site(domain="swotglobal.com", aj_name="Swot Global Consulting Ltda",
+         list_urls=("https://www.swotglobal.com/administra%C3%A7%C3%A3o-judicial",),
+         case_pattern="",
+         doc_pattern=r"^https://irp\.cdn-website\.com/6140ff32/files/uploaded/[^?#]+\.pdf$",
+         platform="Duda", debtor_xpath="(//p/strong)[1]",
+         inline_blocks_xpath="//div[contains(@class, 'inner-grid')][count(.//p[contains(., 'PROCESSO N')])=1]"
+                             "[.//a[contains(@href, '/files/uploaded/')]]"),
+)

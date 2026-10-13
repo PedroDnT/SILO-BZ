@@ -116,6 +116,13 @@ EXPECTED = {
     "vwadvogados.com.br": (6, "57220341820248090051", 36),
     "arzadministradorajudicial.com.br": (8, "10009937920248260359", 47),
     "carapetcovaj.com.br": (6, "08104026820258190021", 6),
+    # Inline batch B, read 2026-10-13: (blocks on the list page, the first block's number, its documents).
+    # atlaspartnersaj lists 3 cases, 1 of them recuperação judicial; salgadorocha lists 6, 5 of them
+    # falências; swotglobal lists 3 without their type (falências and recuperações together).
+    "atlaspartnersaj.com.br": (1, "10010394920258260354", 28),
+    "salgadorocha.com.br": (1, "50389210320228080024", 3),
+    "flyrec.com.br": (2, "10023989320238260260", 1),
+    "swotglobal.com": (3, "10030030520248260260", 2),
 }
 
 
@@ -196,6 +203,7 @@ def test_cnj_numbers_printed_and_bare():
     ("26 - Sentença Homologatória do plano e concessão da RJ", "", "sentenca_concessao"),
     ("3ª RMAs junho e julho de 2025", "", "rma"),
     ("Relatório sobre o PRJ (fls. 267/287)", "", "outros"),
+    ("Decisão - Homologação do PRJ", "", "sentenca_concessao"),
 ])
 def test_classify_tipo(title, section, tipo):
     assert classify_tipo(title, section) == tipo
@@ -253,6 +261,16 @@ def test_doubleone_title_comes_from_the_download_name():
                          site.doc_pattern)
     first = cp.documents[0]
     assert first.titulo == "Petição Inicial" and classify_tipo(first.titulo, first.section) == "peticao_inicial"
+
+
+def test_arquivo_para_download_takes_the_case_paragraph_as_title():
+    site = next(s for s in SITES if s.domain == "flyrec.com.br")
+    block = case_blocks(_fixture(site.domain, "list"), site.inline_blocks_xpath)[0]
+    cp = parse_case_page(block, site.list_urls[0], site.doc_pattern, site.debtor_xpath,
+                         site.debtor_from_title, site.doc_title_xpath)
+    (doc,) = cp.documents
+    assert "Relação de Credores Elaborada pela Administradora Judicial" in doc.titulo
+    assert classify_tipo(doc.titulo, doc.section) == "relacao_credores_aj"
 
 
 def test_every_site_is_html_and_allowed_by_the_inventory():

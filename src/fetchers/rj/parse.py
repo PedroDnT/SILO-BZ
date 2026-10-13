@@ -349,7 +349,7 @@ def _title_of(a, url: str, title_xpath: str = "") -> str:
 
 
 # Link texts that name the action, not the document.
-_GENERIC_LINK_TEXT = {"", "baixar", "download", "dowload", "visualizar", "abrir", "ver"}
+_GENERIC_LINK_TEXT = {"", "baixar", "download", "dowload", "visualizar", "abrir", "ver", "arquivo para download"}
 
 
 def _xpath_title(a, xpath: str) -> str:
