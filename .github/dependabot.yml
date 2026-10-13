@@ -1,10 +1,13 @@
 # Dependabot moves the SHA-pinned actions in .github/workflows/ (#686).
 # Each `uses:` line is pinned to a full commit SHA with its tag in a comment;
 # Dependabot updates both in one PR.
+# One label for every Dependabot PR: the repo keeps 12 labels
+# (docs/agents/triage-labels.md), so no python/javascript/github_actions.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    labels: ["dependencies"]
     schedule:
       interval: weekly
   # requirements.txt and requirements-dev.txt are pinned with == (#687);
@@ -12,6 +15,7 @@ updates:
   # requirements-report.txt and deploy/cloudflare/engine/requirements.txt.
   - package-ecosystem: pip
     directory: /
+    labels: ["dependencies"]
     schedule:
       interval: monthly
   # npm trees (#812). Dependabot did not watch them before, so no version PRs
@@ -20,16 +24,19 @@ updates:
   # (Evidence's build), so a bump there is judged by its Vercel preview build.
   - package-ecosystem: npm
     directory: /dashboard
+    labels: ["dependencies"]
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
   - package-ecosystem: npm
     directory: /webapp
+    labels: ["dependencies"]
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
   - package-ecosystem: npm
     directory: /deploy/cloudflare
+    labels: ["dependencies"]
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
