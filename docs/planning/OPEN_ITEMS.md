@@ -726,8 +726,9 @@ and compared both with similar public-data projects (PUDL, Base dos Dados, dbt,
 OpenBB, Singer). The narrative is the private
 [assessment page](https://claude.ai/artifact/P2p43ugfcfrQoSzqkHMVMY); the owner can share it. The row-level lineage is in
 [`DATA_INVENTORY.md`](../reference/DATA_INVENTORY.md) §1 and §3. Each line below is
-filed as a GitHub issue; the owner marks the ones an agent may take
-(`ready-for-agent`). Lines marked **owner** need a decision first.
+filed as a GitHub issue under the map #865 (children #866 to #893); the owner
+marks the ones an agent may take (`ready-for-agent`). Lines marked **owner** need
+a decision first.
 
 **Data-loss risks (urgent)**
 
