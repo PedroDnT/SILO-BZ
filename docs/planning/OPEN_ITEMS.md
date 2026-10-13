@@ -828,7 +828,9 @@ a decision first.
 
 - A test that pins the endpoint list in `docs/reference/API.md` to the catalog
   (87 SQL functions, 81 MCP tools, 68 SDK calls, 46 named in API.md).
-- Route the 9 scripts that open their own DB connection through `pg_client`.
+- ~~Route the 9 scripts that open their own DB connection through `pg_client`.~~
+  Done (#890): `pg_client.connect` and `connect_async` (only `apply_schema.py`'s asyncpg
+  fallback stays raw); `apply_schema.py` has a test.
 - Done (#891): the map in `.claude/hooks/pre-push-docs.sh` covers `src/portfolio/`
   and `deploy/cloudflare/`, and a migration that adds a table holds the push until
   `DATA_FLOW.md` is edited.

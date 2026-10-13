@@ -128,8 +128,11 @@ def _apply_whole_files(execute, items):
 
 
 def apply_via_psycopg2(db_url: str, items):
-    import psycopg2  # type: ignore
-    conn = psycopg2.connect(db_url)
+    # Imported here, not at the top: pg_client needs psycopg2, and this script
+    # must still run (psql, asyncpg, manual fallback) where psycopg2 is absent.
+    from src.store import pg_client
+
+    conn = pg_client.connect(db_url)
     conn.autocommit = True
     try:
         def execute(sql):
@@ -145,6 +148,8 @@ def apply_via_asyncpg(db_url: str, items):
     import asyncpg  # type: ignore
 
     async def _run():
+        # Raw asyncpg on purpose: this path runs only when psycopg2 is missing,
+        # and src.store.pg_client cannot be imported without psycopg2.
         conn = await asyncpg.connect(db_url)
         ok = err = 0
         for name, path in items:

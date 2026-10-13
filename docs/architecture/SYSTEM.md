@@ -24,7 +24,7 @@ it read-only. Four infrastructures, four products.
 | `src/fetchers`         | Talking to sources. A 404 means "not published yet". DJEN goes out via the `djen-relay` Edge Function (sa-east-1). |
 | `src/parsers`          | Bytes to typed rows. Invalid rows are dropped.                                                                |
 | `src/pipeline`         | Slices, the `cvm_ingest_log` audit, the entrypoints.                                                          |
-| `src/store`            | The one writer and pool factory (`pg_client`, also `serve/`'s pool), schema, migrations.                      |
+| `src/store`            | The one writer and pool factory (`pg_client`, also `serve/`'s pool and the scripts' connections), schema, migrations.                      |
 | `src/store/analytical` | Views, matviews and schema `api`.                                                                             |
 | `src/portfolio`        | The diagnosis: statement readers, engine, report, investigator. |
 | `deploy/cloudflare`    | The Worker, the engine Container and private R2 for traces.                                                   |
