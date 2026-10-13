@@ -23,6 +23,7 @@ Grouped by when you would reach for them.
 | `db_parity.py`                | Lists user tables/views with row-count estimates — used to compare two databases.                                                           |
 | `list_tables.py`              | Every schema / table / row-count / column. Broader than `db_parity.py`, handy for a first look at an unfamiliar database.                   |
 | `_check_conn.py`              | Bare connection check. Rewrites `:6543`→`:5432` defensively; see `docs/reference/supabase_operations.md`.                                             |
+| `probe_djen.py`               | DJEN reachability spike (#843): `reach` prints status, count and field names; `sample` prints RJ item counts per tribunal. Never party data. Dispatch `probe_djen.yml` to run it from a GitHub runner. |
 | `trace_view.py`               | Reads the diagnosis run traces in R2 (ADR 0003): `list` the keys, `show` one as a timeline (spans, sections, agents, Revisor removals) or several as one row each; `exposure TICKER <trace key or engine.json>` says where one asset's exposure comes from (direct and through each fund, with the CDA month). Times in UTC-3. |
 
 ## Offline development (no Supabase credentials needed)
