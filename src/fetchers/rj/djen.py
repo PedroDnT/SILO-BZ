@@ -68,7 +68,8 @@ class DjenItem:
     link: Optional[str]         # the act itself
     hash: Optional[str]         # its certidão: /comunicacao/{hash}/certidao
     texto: str                  # read for rules; never stored
-    polo_ativo: List[str]       # destinatarios with polo "A": the recuperanda(s), as printed
+    # The destinatarios (party names) are not read: polo ativo mixes the debtor
+    # with partners, rural producers and lawyers, so it is not the recuperanda.
 
 
 def parse_item(raw: Dict[str, Any]) -> Optional[DjenItem]:
@@ -77,9 +78,6 @@ def parse_item(raw: Dict[str, Any]) -> Optional[DjenItem]:
     numero = "".join(c for c in str(raw.get("numero_processo") or "") if c.isdigit())
     if code not in RJ_CLASSES or len(numero) != 20:
         return None
-    dest = raw.get("destinatarios") or []
-    ativo = [str(d.get("nome")).strip() for d in dest
-             if isinstance(d, dict) and d.get("polo") == "A" and d.get("nome")]
     return DjenItem(
         numero_processo=numero,
         tribunal=str(raw.get("siglaTribunal") or ""),
@@ -92,7 +90,6 @@ def parse_item(raw: Dict[str, Any]) -> Optional[DjenItem]:
         link=raw.get("link") or None,
         hash=raw.get("hash") or None,
         texto=str(raw.get("texto") or ""),
-        polo_ativo=ativo,
     )
 
 
