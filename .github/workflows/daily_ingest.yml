@@ -100,8 +100,8 @@ jobs:
       # analytics-only dispatch went green without fetching, and the Saturday
       # watchdog no-op'd because fi/inf_diario still had Friday's ok. ANY HTTP
       # response (including 404) passes; only a connect-level failure fails.
-      # analytics-only / b3-backfill / b3-cash-dividends / b3-trade-consolidated
-      # never touch CVM, so they skip this.
+      # Only the schedule and a mode=daily dispatch run it; every other
+      # dispatch mode skips it.
       #
       # The probe gates the CVM scope only, not the run (#866, owner decision
       # 2026-10-13). The step stays green and records cvm_ok; run_daily reads
