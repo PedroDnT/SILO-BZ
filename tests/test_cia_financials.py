@@ -434,6 +434,144 @@ async def test_itr_dfp_ingest_upserts_each_member_before_reading_the_next():
 
 
 # ---------------------------------------------------------------------------
+# #960: the ITR/DFP parse and upserts run off the event loop
+# ---------------------------------------------------------------------------
+
+def _slow_itr_ingestor(threads: List[str]):
+    """An ingestor whose three members are read in a recorded thread."""
+    import threading
+
+    from src.pipeline.cvm_pipeline import CVMIngestor
+
+    members = [
+        FakeMember(grupo="_summary", escopo=None, rows=[SUMMARY_ROW]),
+        FakeMember(grupo="DRE", escopo="con", rows=[DRE_ROW]),
+        FakeMember(grupo="BPA", escopo="ind", rows=[BPA_ROW]),
+    ]
+
+    def _members():
+        for m in members:
+            threads.append(threading.current_thread().name)
+            yield m
+
+    class _Fetcher:
+        async def fetch_zip_members_async(self, doc_type, year, include_summary=False):
+            return _members()
+
+    ing = CVMIngestor.__new__(CVMIngestor)
+    ing._supabase = None
+    ing._cia_fetcher = _Fetcher()
+    finish: Dict[str, Any] = {}
+    ing._log_start = lambda *a, **k: None
+    ing._log_finish = lambda run_id, n, error=None, fetched=None: finish.update(
+        n=n, error=error, fetched=fetched)
+    return ing, finish
+
+
+async def _run_with_ticker(coro):
+    """Await coro while a ticker coroutine counts; return (result, ticks)."""
+    import asyncio
+
+    ticks = 0
+    stop = asyncio.Event()
+
+    async def ticker():
+        nonlocal ticks
+        while not stop.is_set():
+            ticks += 1
+            await asyncio.sleep(0.005)
+
+    task = asyncio.create_task(ticker())
+    await asyncio.sleep(0)           # let the ticker take its first step
+    start = ticks
+    try:
+        result = await coro
+    finally:
+        stop.set()
+        await task
+    return result, ticks - start
+
+
+@pytest.mark.asyncio
+async def test_itr_dfp_ingest_lets_other_coroutines_run_during_slow_upserts():
+    import threading
+    import time
+
+    threads: List[str] = []
+    ing, finish = _slow_itr_ingestor(threads)
+
+    def _filing(conn, rows, doc_type):
+        threads.append(threading.current_thread().name)
+        time.sleep(0.1)
+        return len(rows)
+
+    def _account(conn, members, doc_type):
+        threads.append(threading.current_thread().name)
+        time.sleep(0.1)
+        return sum(len(m.rows) for m in members)
+
+    with patch("src.pipeline.cvm_pipeline.ingest_cia_filing", side_effect=_filing), \
+         patch("src.pipeline.cvm_pipeline.ingest_cia_account", side_effect=_account):
+        n, ticks = await _run_with_ticker(ing.ingest_cia_itr_dfp("itr", 2026))
+
+    # 0.3 s of blocking upserts. On the loop the ticker would not move at all;
+    # off it, it ticks every 5 ms. 10 is a loose floor for a slow CI box.
+    assert ticks >= 10
+    main = threading.main_thread().name
+    assert threads and all(t != main for t in threads)   # iteration and upserts
+    assert n == 3
+    assert finish == {"n": 3, "error": None, "fetched": 2}
+
+
+@pytest.mark.asyncio
+async def test_itr_dfp_new_versions_lets_other_coroutines_run_during_slow_upserts():
+    import threading
+    import time
+
+    held = [("1023", datetime.date(2023, 12, 31), 1)]
+    ing, _read, finish = _new_versions_ingestor(_members_v1_and_v2(), held)
+    threads: List[str] = []
+
+    def _filing(conn, rows, doc_type):
+        threads.append(threading.current_thread().name)
+        time.sleep(0.1)
+        return len(rows)
+
+    def _account(conn, members, doc_type):
+        threads.append(threading.current_thread().name)
+        time.sleep(0.1)
+        return sum(len(m.rows) for m in members)
+
+    with patch("src.pipeline.cvm_pipeline.ingest_cia_filing", side_effect=_filing), \
+         patch("src.pipeline.cvm_pipeline.ingest_cia_account", side_effect=_account):
+        n, ticks = await _run_with_ticker(ing.ingest_cia_itr_dfp_new_versions("dfp", 2023))
+
+    assert ticks >= 10
+    main = threading.main_thread().name
+    assert threads and all(t != main for t in threads)
+    assert n == 3                    # version 2: one header, two statement lines
+    assert finish["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_itr_dfp_ingest_upsert_failure_in_the_thread_reaches_the_audit_row():
+    threads: List[str] = []
+    ing, finish = _slow_itr_ingestor(threads)
+
+    def _account(conn, members, doc_type):
+        raise RuntimeError("upsert failed")
+
+    with patch("src.pipeline.cvm_pipeline.ingest_cia_filing", return_value=1), \
+         patch("src.pipeline.cvm_pipeline.ingest_cia_account", side_effect=_account):
+        n = await ing.ingest_cia_itr_dfp("itr", 2026)
+
+    # The stub _log_finish does not classify, so _audited returns 0 rather
+    # than raising CVMSliceError; what matters is that the error was recorded.
+    assert n == 0
+    assert "upsert failed" in finish["error"]
+
+
+# ---------------------------------------------------------------------------
 # #383: the previous year's ZIP, only the documents SILO does not hold
 # ---------------------------------------------------------------------------
 
