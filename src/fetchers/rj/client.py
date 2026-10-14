@@ -9,7 +9,11 @@ Every request the RJ collector sends goes through ``PoliteClient``:
 * anything but HTTP 200 raises ``FetchError`` with the status. Nothing is
   returned for a failed page, so a caller can never mistake a failure for an
   empty case list (integrity rule 1);
-* a GET whose connection drops mid-answer is retried once (#943).
+* a GET whose connection drops mid-answer is retried once (#943), and so is
+  a GET answered with HTTP 503 (#955). The 503 retry waits the per-host
+  interval, or the answer's ``Retry-After`` in seconds when it is longer, up to
+  ``RETRY_AFTER_CAP_S``. One GET makes at most two attempts in all, and no
+  other status is retried.
 """
 
 from __future__ import annotations
@@ -28,6 +32,19 @@ logger = logging.getLogger(__name__)
 
 USER_AGENT = "SILO-BZ RJ collector (+https://github.com/PedroDnT/SILO-BZ)"
 MIN_INTERVAL_S = 1.0
+RETRY_AFTER_CAP_S = 30.0  # the longest Retry-After we wait before the one 503 retry
+
+
+def _retry_after_s(resp: httpx.Response) -> float:
+    """How long to wait before retrying a 503: its Retry-After in seconds, capped.
+
+    An HTTP-date, a negative or any other unreadable value falls back to the
+    per-host interval, and so does a value shorter than it.
+    """
+    value = resp.headers.get("retry-after", "").strip()
+    if not (value.isascii() and value.isdigit()):
+        return MIN_INTERVAL_S
+    return max(MIN_INTERVAL_S, min(float(value), RETRY_AFTER_CAP_S))
 
 
 def _percent_bytes(err: UnicodeDecodeError):
@@ -83,31 +100,42 @@ class PoliteClient:
     def close(self) -> None:
         self._http.close()
 
-    def _wait(self, host: str) -> None:
+    def _wait(self, host: str, interval: float = MIN_INTERVAL_S) -> None:
         last = self._last.get(host)
         if last is not None:
-            gap = MIN_INTERVAL_S - (self._clock() - last)
+            gap = interval - (self._clock() - last)
             if gap > 0:
                 self._sleep(gap)
         self._last[host] = self._clock()
 
     def _get(self, url: str) -> httpx.Response:
-        """GET ``url``, retried once when the connection drops mid-answer (#943).
+        """GET ``url``, retried once on a dropped connection (#943) or an HTTP 503 (#955).
 
-        Only a dropped connection is retried (``RemoteProtocolError``,
-        ``ReadError``): a status code is the site's answer and a timeout already
-        waited its full length. A second drop raises.
+        A dropped connection is ``RemoteProtocolError`` or ``ReadError``. A 503
+        says the site is busy for now, so the retry waits ``_retry_after_s``.
+        Any other status is the site's answer and a timeout already waited its
+        full length, so neither is retried. The two causes share one retry: a
+        GET makes at most two attempts. The last answer is returned whatever
+        its status, and the caller decides what a non-200 means.
         """
+        host = urlsplit(url).netloc
+        interval = MIN_INTERVAL_S
         for attempt in (1, 2):
-            self._wait(urlsplit(url).netloc)
+            self._wait(host, interval)
             try:
-                return self._http.get(url)
+                resp = self._http.get(url)
             except (httpx.RemoteProtocolError, httpx.ReadError) as e:
                 if attempt == 2:
                     raise FetchError(url, None, f"({type(e).__name__}: {e})") from e
                 logger.info("%s: %s, retrying once", url, type(e).__name__)
+                continue
             except httpx.HTTPError as e:
                 raise FetchError(url, None, f"({type(e).__name__}: {e})") from e
+            if resp.status_code != 503 or attempt == 2:
+                return resp
+            interval = _retry_after_s(resp)
+            self._last[host] = self._clock()  # Retry-After counts from the answer
+            logger.info("%s: HTTP 503, retrying once in %.0f s", url, interval)
         raise AssertionError("unreachable")
 
     def allowed(self, url: str) -> bool:

@@ -702,3 +702,83 @@ def test_an_http_error_status_is_not_retried():
     with pytest.raises(FetchError) as e:
         c.get("https://aj.example/processo/1")
     assert e.value.status == 403 and calls["page"] == 1
+
+
+# HTTP 503 is retried once (#955)
+
+def _busy_client(answers, sleeps=None):
+    """A client whose page answers come from ``answers`` in order, on a frozen clock.
+
+    Each answer is a status, a (status, Retry-After) pair, or "drop". The clock
+    never moves, so every wait sleeps its full interval and ``sleeps`` shows it.
+    """
+    answers, calls = list(answers), {"page": 0}
+
+    def handler(req):
+        if req.url.path == "/robots.txt":
+            return httpx.Response(404)
+        calls["page"] += 1
+        a = answers.pop(0)
+        if a == "drop":
+            raise httpx.RemoteProtocolError("peer closed connection", request=req)
+        status, retry_after = a if isinstance(a, tuple) else (a, None)
+        headers = {"Retry-After": retry_after} if retry_after is not None else {}
+        return httpx.Response(status, text="caso", headers=headers)
+
+    c = PoliteClient(transport=httpx.MockTransport(handler),
+                     sleep=(sleeps.append if sleeps is not None else lambda s: None),
+                     clock=lambda: 0.0)
+    return c, calls
+
+
+def test_a_503_is_retried_once():
+    c, calls = _busy_client([503, 200])
+    assert c.get("https://aj.example/processo/1").text == "caso"
+    assert calls["page"] == 2
+
+
+def test_a_second_503_raises_with_its_status():
+    c, calls = _busy_client([503, 503])
+    with pytest.raises(FetchError) as e:
+        c.get("https://aj.example/processo/1")
+    assert e.value.status == 503 and calls["page"] == 2
+
+
+@pytest.mark.parametrize("retry_after,waited", [
+    ("5", 5.0),
+    ("999", 30.0),
+    ("0", rj_client.MIN_INTERVAL_S),
+    ("Wed, 21 Oct 2026 07:28:00 GMT", rj_client.MIN_INTERVAL_S),
+    ("-3", rj_client.MIN_INTERVAL_S),
+    ("soon", rj_client.MIN_INTERVAL_S),
+])
+def test_the_503_retry_waits_retry_after_seconds_capped(retry_after, waited):
+    sleeps: list = []
+    c, calls = _busy_client([(503, retry_after), 200], sleeps)
+    c.get("https://aj.example/processo/1")
+    # robots.txt comes first, so the first page GET waits the per-host interval;
+    # the retry then waits what the 503 asked for.
+    assert sleeps == [rj_client.MIN_INTERVAL_S, waited]
+    assert rj_client.RETRY_AFTER_CAP_S == 30.0
+
+
+@pytest.mark.parametrize("status", [403, 404, 500])
+def test_other_error_statuses_are_not_retried(status):
+    c, calls = _busy_client([status, 200])
+    with pytest.raises(FetchError) as e:
+        c.get("https://aj.example/processo/1")
+    assert e.value.status == status and calls["page"] == 1
+
+
+def test_a_drop_then_a_503_stops_after_two_attempts():
+    c, calls = _busy_client(["drop", 503, 200])
+    with pytest.raises(FetchError) as e:
+        c.get("https://aj.example/processo/1")
+    assert e.value.status == 503 and calls["page"] == 2
+
+
+def test_a_503_then_a_drop_stops_after_two_attempts():
+    c, calls = _busy_client([503, "drop", 200])
+    with pytest.raises(FetchError) as e:
+        c.get("https://aj.example/processo/1")
+    assert e.value.status is None and calls["page"] == 2
