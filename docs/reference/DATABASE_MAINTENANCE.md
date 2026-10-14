@@ -152,7 +152,7 @@ still is. Re-run daily ingest after that fix so the later `ok` heals the row.
 
 `CVM_DB_POOL_SIZE` (default **4**) sets how many Postgres connections the ingest
 holds. It is not the connection ceiling — the instance reports
-`max_connections = 120`; the _10_ people remember is the GoTrue/Auth pool, which
+`max_connections = 160` (measured 2026-10-14); the _10_ people remember is the GoTrue/Auth pool, which
 ingest never touches. The real limit is compute: `max_parallel_workers = 2` and
 `max_worker_processes = 6` (a ~2 vCPU box), plus every concurrent writer
 maintaining the same indexes on one unpartitioned table.
@@ -175,8 +175,20 @@ numbers.
 
 Pool size and task concurrency are different knobs: `CVM_DAILY_CONCURRENCY`
 (the daily run) and `CVM_FI_CONCURRENCY` (backfill) control how many slices are
-in flight, `CVM_DB_POOL_SIZE` how many can write at once. Raising one without
-the other does nothing.
+in flight, `CVM_DB_POOL_SIZE` how many can write at once. A slice holds a
+connection only while one upsert chunk runs, never while it downloads or
+parses. So a pool above the concurrency does nothing, and a concurrency above
+the pool keeps every free connection fed while other slices fetch.
+
+The daily run keeps 8 slices on a pool of 4 on purpose (#869). Measured from
+the logs of scheduled runs 38519970263, 38211023053 and 37735520042
+(2026-10-08 to 10-14): no `PoolError`, no pool timeout, no `too many
+connections`. In the FI window (338 s, 331 s and 897 s) more than 4 slices
+were parsed and waiting or writing for 258, 235 and 278 s, so the 4 writers
+stayed busy. That count is a log heuristic (parse lines minus row lines). The CVM phase then
+ends with ~6 min of `cia_aberta/itr` alone, which neither knob shortens. A
+bigger pool needs an on-box timing of the FI window at `CVM_DB_POOL_SIZE=8`
+first; `tests/test_pg_pool.py` keeps the concurrency at or above the pool.
 
 ## 4. Healing gaps (backfill)
 

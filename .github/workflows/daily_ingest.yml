@@ -80,6 +80,10 @@ jobs:
       # run_daily's CVM tasks take this one (_get_concurrency("daily")); the
       # per-entity knobs such as CVM_FI_CONCURRENCY are read only by backfill
       # (#869), so none is set here.
+      # 8 slices in flight on the default pool of 4 (CVM_DB_POOL_SIZE unset) is
+      # deliberate: a slice holds a connection only per upsert chunk, so the
+      # other 4 download and parse while 4 write. The pool caps the writers.
+      # Measured and explained in DATABASE_MAINTENANCE.md §3b (#869).
       CVM_DAILY_CONCURRENCY: "8"
       TZ: "America/Sao_Paulo"
 

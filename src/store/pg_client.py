@@ -135,7 +135,7 @@ def _get_upsert_chunk_size() -> int:
 def _get_pool_size() -> int:
     """How many Postgres connections the ingest may hold at once.
 
-    Default 4, NOT the ~120 max_connections the server allows. The binding
+    Default 4, NOT the 160 max_connections the server allows (2026-10-14). The binding
     constraint is compute, not connection slots: the Supabase instance reports
     max_parallel_workers = 2 and max_worker_processes = 6 (a ~2 vCPU box), and
     the big writes go into single unpartitioned tables whose indexes every

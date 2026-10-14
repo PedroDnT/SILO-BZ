@@ -270,3 +270,44 @@ class TestKeepalives:
         assert kw["keepalives_idle"] == 30
         assert kw["keepalives_interval"] == 10
         assert kw["keepalives_count"] == 3
+
+
+class TestDailyConcurrencyVsPool:
+    """#869: the daily run keeps 8 slices in flight on a pool of 4, on purpose.
+
+    A slice holds a connection only while one upsert chunk runs, never while
+    it downloads or parses. So slices above the pool size fetch and parse
+    while up to `pool` others write, and a freed connection is taken at once.
+    The pool, not the concurrency, caps the writers, because the Supabase box
+    is compute bound (DATABASE_MAINTENANCE.md §3b). These tests pin both
+    halves: the checkout is per chunk, and the workflow keeps the concurrency
+    at or above the pool it runs with.
+    """
+
+    def test_upsert_checks_out_one_connection_per_chunk(self, client, monkeypatch):
+        monkeypatch.setenv("CVM_UPSERT_CHUNK_SIZE", "2")
+        monkeypatch.setattr(pg.psycopg2.extras, "execute_values",
+                            lambda cur, sql, values, page_size=None: None)
+        rows = [{"k": i, "v": i} for i in range(5)]
+        pg.upsert_rows(client, "t", rows, conflict_columns="k")
+        # 5 rows at 2 per chunk: 3 checkouts, each returned before the next.
+        assert len(client._pool.returned_conns) == 3
+        assert client._pool._out == 0
+
+    def test_daily_workflow_concurrency_is_at_least_the_pool(self):
+        from pathlib import Path
+
+        import yaml
+
+        wf = Path(__file__).resolve().parents[1] / ".github/workflows/daily_ingest.yml"
+        jobs = yaml.safe_load(wf.read_text())["jobs"]
+        envs = [j.get("env", {}) for j in jobs.values()
+                if "CVM_DAILY_CONCURRENCY" in j.get("env", {})]
+        assert envs, "no job in daily_ingest.yml sets CVM_DAILY_CONCURRENCY"
+        for env in envs:
+            concurrency = int(env["CVM_DAILY_CONCURRENCY"])
+            pool = int(env.get("CVM_DB_POOL_SIZE", pg._DEFAULT_POOL_SIZE))
+            assert concurrency >= pool, (
+                f"CVM_DAILY_CONCURRENCY={concurrency} below the pool of {pool}: "
+                "the extra connections would sit idle"
+            )

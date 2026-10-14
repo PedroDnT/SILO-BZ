@@ -587,9 +587,9 @@ class CVMIngestor:
         produced the 2026-08-27 balancete failures: co-scheduled slices sharing
         an elapsed time, one 'ok' and its siblings 'TimeoutError'.
 
-        Writes still serialise (one connection, one lock in _PgClient.cursor),
-        which is intended; the gain is that a thread waiting on that lock is not
-        holding the loop hostage.
+        At most CVM_DB_POOL_SIZE writes run at once (the semaphore in
+        _PgClient.cursor), which is intended; the gain is that a thread waiting
+        for a connection is not holding the loop hostage (#869).
 
         Applied to the four FI monthly ingests — the ones that run many-at-once
         over millions of rows. The remaining ingest_* methods still call their
