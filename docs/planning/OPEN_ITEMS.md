@@ -810,6 +810,8 @@ a decision first.
   and MA cores, GDP, the Focus monthly and Selic paths.~~ Done (#885) on
   `/macro`; the Selic path is the Anuais year-end path, because the per-meeting
   endpoint stores one meeting per survey date (its horizon key is NULL).
+  #945 keys new Selic rows on the meeting (`Reuniao`); the history refill and
+  the NULL-row cleanup wait for the owner, then the per-meeting path can be drawn.
 - An instrument explorer (quotes, index history, corporate actions); lending
   trades on `/short`.
 - ~~Text fixes: `flows.md` ANBIMA claim, `macro.md` "25-code" (26) (done, #885), README "fifteen

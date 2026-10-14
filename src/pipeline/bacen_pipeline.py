@@ -179,6 +179,25 @@ EXPECTATIVAS_INDICATORS: Dict[str, Optional[List[str]]] = {
     "ExpectativasMercadoInflacao12Meses": ["IPCA"],
 }
 
+# Source field that holds the forecast horizon, per endpoint. The default is
+# DataReferencia (a year on Anuais, a month/year on Mensais). The Selic
+# endpoint has no DataReferencia: it publishes the COPOM meeting in "Reuniao"
+# (e.g. "R6/2028", verified live 2026-10-13 UTC-3, issue #945). Keyed on
+# DataReferencia it stored NULL, and the NULLS NOT DISTINCT key kept one
+# arbitrary meeting per survey date.
+EXPECTATIVAS_HORIZON_FIELD: Dict[str, str] = {
+    "ExpectativasMercadoSelic": "Reuniao",
+}
+
+
+def expectativas_horizon(endpoint: str, rec: Dict[str, Any]) -> Optional[str]:
+    """The horizon exactly as BACEN published it, or None when the row has none.
+
+    Never synthesized: a row without the endpoint's horizon field keeps NULL.
+    """
+    field = EXPECTATIVAS_HORIZON_FIELD.get(endpoint, "DataReferencia")
+    return rec.get(field)
+
 
 # ---------------------------------------------------------------------------
 # Ingestor
@@ -428,7 +447,8 @@ class BacenIngestor:
                     # The forecast horizon. Part of the natural key: one survey
                     # date publishes one forecast per horizon, so keying without
                     # it collapsed ~97% of the payload to an arbitrary survivor.
-                    "horizon":        rec.get("DataReferencia"),
+                    # DataReferencia, or Reuniao on the Selic endpoint (#945).
+                    "horizon":        expectativas_horizon(endpoint, rec),
                     "median":         rec.get("Mediana"),
                     "mean_val":       rec.get("Media"),
                     "std_dev":        rec.get("DesvioPadrao"),

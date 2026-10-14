@@ -1632,13 +1632,14 @@ CREATE TABLE IF NOT EXISTS bacen_expectativas (
     mean_val       NUMERIC,
     std_dev        NUMERIC,
     -- Forecast horizon (DataReferencia): a year for the annual endpoints,
-    -- month/year for the monthly ones. Part of the natural key — one survey
+    -- month/year for the monthly ones, the COPOM meeting for the Selic one. Part of the natural key — one survey
     -- date carries one forecast PER horizon, so omitting it collapses ~97% of
     -- the published data to an arbitrary survivor. See migration 16.
     horizon        TEXT,
     raw            JSONB        NOT NULL,
     fetched_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    -- horizon is DataReferencia. baseCalculo and Suavizada are *not* in the
+    -- horizon is DataReferencia, or Reuniao (the COPOM meeting, e.g. "R6/2028")
+    -- on ExpectativasMercadoSelic, which has no DataReferencia (#945). baseCalculo and Suavizada are *not* in the
     -- key: the fetcher filters to baseCalculo=0 (and Suavizada='N' on the
     -- Inflacao12/13-24 endpoints). A filter regression would silently collide
     -- again — do not "fix" that by widening the key without also storing the
