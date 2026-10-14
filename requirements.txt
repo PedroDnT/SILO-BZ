@@ -11,7 +11,7 @@ httpx==0.28.1
 # Data parsing
 pandas==3.0.6
 # sdk/silo_client prices() returns a polars DataFrame (sdk/pyproject.toml)
-polars==1.44.2
+polars==2.0.0
 numpy==1.26.4
 python-dateutil==2.9.0.post0
 lxml==6.1.3
