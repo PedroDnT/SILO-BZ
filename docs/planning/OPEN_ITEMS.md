@@ -858,8 +858,9 @@ reaches about 31%. Numbers per court are in the epic status comment (#841).
 
 Open, if the owner picks this up again:
 
-- **RJ-5 (#847), owner:** accept about 20% coverage, consider DataJud (its non-commercial
-  clause) or a paid feed, or ask for more AJ adapters.
+- **RJ-5 (#847), decided 2026-10-14 and closed:** no paid feed, annex documents out of
+  scope, DataJud not used while SILO's non-commercial use is not settled. Reopen #847 if
+  one of these changes.
 - **State lists (#846), measured 2026-10-13:** the TJPR CONSEPRE search answers 405 to its own
   page; TJMT RecuperaJud was in maintenance and its robots.txt disallows the page; TJRJ's
   server sends no intermediate certificate, so TLS fails from a runner too (about 2 points at

@@ -1,0 +1,1 @@
+| 2026-10-14 | claude/rj-847-decided | **RJ-5 decided (#847):** the owner decided on 2026-10-14: no paid feed, annex documents out of scope, DataJud not used while SILO's non-commercial use is not settled. #847 is closed with the decision as a comment; `OPEN_ITEMS.md` item 25 says so. |
