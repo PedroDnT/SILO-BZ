@@ -1,0 +1,1 @@
+| 2026-10-14 | orchestrator/956-filing-screens-comment | **Filing-screens header names its reader (#956):** the header of `src/store/analytical/25_api_filing_screens.sql` said no page runs the three filing screens; since #954 the `/filings` page calls `api.screen_late_filers`, `api.screen_silent_filers` and `api.screen_restatements` directly. Comment only. |
