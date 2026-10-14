@@ -19,8 +19,9 @@
 --
 -- WHY A NEW FILE, AND WHY THESE ARE NOT WRAPPERS. The seven screens in 23 wrap
 -- the public functions the dashboard reads (15_fraud_screens.sql) so the page
--- and the API cannot disagree. No page runs these three, so there is no second
--- reader to agree with: the api function IS the one definition. 23 keeps its
+-- and the API cannot disagree. Here it is the other way round: the api function
+-- IS the one definition, and the /filings page (#954) calls these three api
+-- functions directly, so the two cannot disagree either. 23 keeps its
 -- "wrappers only" invariant (tests/test_api_screens_contract.py pins it).
 --
 -- FUND IDENTITY. FNET rows carry no CNPJ; a document is a fund's only through
