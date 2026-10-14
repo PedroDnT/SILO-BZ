@@ -591,10 +591,13 @@ class CVMIngestor:
         _PgClient.cursor), which is intended; the gain is that a thread waiting
         for a connection is not holding the loop hostage (#869).
 
-        Applied to the four FI monthly ingests — the ones that run many-at-once
-        over millions of rows. The remaining ingest_* methods still call their
-        store function inline: they are either sequential or small enough that
-        the loop pause is not observable. Convert them if that stops being true.
+        Applied to the four FI monthly ingests (the ones that run many-at-once
+        over millions of rows) and to the ITR/DFP loops (ingest_cia_itr_dfp and
+        ingest_cia_itr_dfp_new_versions), whose ~2.2M-row ITR year blocked every
+        other CVM slice while it ran (#960). The remaining ingest_* methods still
+        call their store function inline: they are either sequential or small
+        enough that the loop pause is not observable. Convert them if that stops
+        being true.
         """
         return await asyncio.to_thread(fn, *args)
 
@@ -1684,14 +1687,12 @@ class CVMIngestor:
         and the scoped statement members (BPA/BPP/DRE/DFC_*/DMPL/DRA/DVA × con/ind)
         to cia_account. Returns the combined upserted row count.
         """
-        async def work():
+        def load(members) -> Tuple[int, int]:
+            # Runs in a worker thread (_store). Advancing the iterator unzips
+            # and parses a member CSV, and the upserts are psycopg2: both are
+            # synchronous, so on the loop they would stall every other slice
+            # for the length of an ITR year (#960).
             rows_inserted = 0
-            # One pass over a lazy iterator: each member is parsed, upserted and
-            # released before the next is read, so peak memory is one member,
-            # not the whole ~19-CSV archive.
-            members = await self._cia_fetcher.fetch_zip_members_async(
-                doc_type, year, include_summary=True
-            )
             n_members = 0
             account_members = 0
             for m in members:
@@ -1714,6 +1715,16 @@ class CVMIngestor:
             # _log_finish turns "saw source rows, wrote none" into an error
             # rather than the warning-only check above.
             return rows_inserted, account_members
+
+        async def work():
+            # One pass over a lazy iterator: each member is parsed, upserted and
+            # released before the next is read, so peak memory is one member,
+            # not the whole ~19-CSV archive. The download is awaited here; the
+            # iteration and the writes run off the loop.
+            members = await self._cia_fetcher.fetch_zip_members_async(
+                doc_type, year, include_summary=True
+            )
+            return await self._store(load, members)
         return await self._audited("cia_aberta", doc_type, year, None, work)
 
     def _held_cia_documents(
@@ -1761,12 +1772,12 @@ class CVMIngestor:
             typed, _ = apply_map(row, key_map)
             return typed.get("cd_cvm"), typed.get("dt_refer"), typed.get("versao")
 
-        async def work():
+        def load(members) -> Tuple[int, int]:
+            # Runs in a worker thread (_store), like ingest_cia_itr_dfp (#960):
+            # the member parse, the held-documents read and the upserts are
+            # all synchronous.
             rows_inserted = 0
             fetched = 0
-            members = await self._cia_fetcher.fetch_zip_members_async(
-                doc_type, year, include_summary=True
-            )
             new_docs: Optional[Set[Tuple[Any, Any, Any]]] = None
             with_lines: Set[Tuple[Any, Any, Any]] = set()
             header: List[Dict[str, Any]] = []
@@ -1832,6 +1843,12 @@ class CVMIngestor:
                 doc_type, year, len(new_docs), rows_inserted,
             )
             return rows_inserted, fetched
+
+        async def work():
+            members = await self._cia_fetcher.fetch_zip_members_async(
+                doc_type, year, include_summary=True
+            )
+            return await self._store(load, members)
         return await self._audited("cia_aberta", doc_type, year, None, work)
 
     # ------------------------------------------------------------------
