@@ -5,10 +5,10 @@ Evidence.dev analytics dashboard backed by the Supabase Postgres pipeline.
 
 ## Pages
 
-Nineteen routes in four groups, ordered broad → granular → operational. `/` is
+Twenty routes in four groups, ordered broad → granular → operational. `/` is
 the entry point: it carries the headline figures, a "start here" reading path,
 and the grouped index. The sidebar order is the `sidebar_position` in each page's
-frontmatter (1–18 below; Evidence sorts alphabetically without it), and
+frontmatter (1–19 below; Evidence sorts alphabetically without it), and
 `index.md`'s "Pages" tables and this table repeat the same order —
 `tests/test_dashboard_nav_order.py` keeps the three in step.
 
@@ -44,16 +44,17 @@ frontmatter (1–18 below; Evidence sorts alphabetically without it), and
 | 15  | Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                                 |
 | 16  | Suspicious Screens | `/suspicious`  | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated                                       |
 | 17  | Dormant Funds      | `/dormant`     | Funds with zero subscriptions and redemptions for 3 consecutive complete months (definition stated first), the count at every month-end over 36 months, where the money stands still, by administrator, and the empty shells |
+| 18  | Filing Behaviour   | `/filings`     | FNET documents delivered per day, late filers against the CVM 175 deadline, silent filers (active in the registry, no informe), frequent restaters, the latest restatements by type, and the field-level diff of FIDC informe restatements, with what each screen does not support stated |
 
 **Operations** — whether the numbers landed.
 
 | #   | Page            | Path   | What it shows                                                                                        |
 | --- | --------------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| 18  | Pipeline Health | `/ops` | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage |
+| 19  | Pipeline Health | `/ops` | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage |
 
 ### Page conventions
 
-Applied uniformly across all nineteen pages, so a reader who learns them once can
+Applied uniformly across all twenty pages, so a reader who learns them once can
 read any page:
 
 - **Structure.** Frontmatter `title` matches the `# H1` exactly, with
