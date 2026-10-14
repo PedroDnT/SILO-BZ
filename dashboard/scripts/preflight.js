@@ -117,6 +117,29 @@ const REQUIRED_AFTER_MIGRATION = [
     source: 'src/store/migrations/43_fii_versions.sql',
     fix: 'python scripts/apply_schema.py',
   },
+  // /filings reads the FNET register and its restatement diffs directly.
+  // Its three screens call api.screen_* (25_api_filing_screens.sql), which
+  // the analytical apply guards on these same tables.
+  {
+    relation: 'fnet_document', column: null,
+    source: 'src/store/migrations/42_fnet_document.sql',
+    fix: 'python scripts/apply_schema.py',
+  },
+  {
+    relation: 'fnet_document_filter', column: null,
+    source: 'src/store/migrations/42_fnet_document.sql',
+    fix: 'python scripts/apply_schema.py',
+  },
+  {
+    relation: 'fnet_document_pair', column: null,
+    source: 'src/store/migrations/46_fnet_document_diff.sql',
+    fix: 'python scripts/apply_schema.py',
+  },
+  {
+    relation: 'fnet_document_diff', column: null,
+    source: 'src/store/migrations/46_fnet_document_diff.sql',
+    fix: 'python scripts/apply_schema.py',
+  },
 ];
 
 const missingVars = ['host', 'database', 'user', 'password'].filter((v) => !env(v));

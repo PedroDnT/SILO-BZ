@@ -2080,7 +2080,7 @@ def catalog_payload() -> Dict[str, Any]:
             "screen_dormant_trend": "POST /rest/v1/rpc/screen_dormant_trend",
             "screen_delinquency_drivers": "POST /rest/v1/rpc/screen_delinquency_drivers",
             # The filing-behaviour screens (v37): restatements, late and
-            # silent filers. No dashboard page; same signal-not-verdict rules.
+            # silent filers. /filings calls them; same signal-not-verdict rules.
             "screen_restatements": "POST /rest/v1/rpc/screen_restatements",
             "screen_late_filers": "POST /rest/v1/rpc/screen_late_filers",
             "screen_silent_filers": "POST /rest/v1/rpc/screen_silent_filers",

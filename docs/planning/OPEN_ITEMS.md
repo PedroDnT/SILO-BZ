@@ -804,7 +804,8 @@ a decision first.
 **Dashboard**
 
 - A listed-companies page: statements, events, RJ filings (item 3).
-- A filings page: the FNET register, late and silent filers, restatement diffs.
+- ~~A filings page: the FNET register, late and silent filers, restatement diffs.~~
+  Done on branch `orchestrator/884-filings-page` (#884): `/filings`.
 - ~~A federal macro section: the IPCA item tree and its history, IPCA-15, the EX2
   and MA cores, GDP, the Focus monthly and Selic paths.~~ Done (#885) on
   `/macro`; the Selic path is the Anuais year-end path, because the per-meeting

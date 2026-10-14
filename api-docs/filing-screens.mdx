@@ -27,7 +27,7 @@ icon: "clock"
 | `screen_late_filers` | the FNET register | the monthly informe's first delivery came `p_min_days_late`+ days after the cited deadline in `p_min_late`+ months |
 | `screen_silent_filers` | CVM's own fund tables | a fund the registry lists as active has filed no periodic informe for `p_min_silent_months`..`p_max_silent_months` complete months |
 
-No dashboard page runs these three, so the API function is the only definition.
+The dashboard's `/filings` page calls these three functions, so the API function is still the only definition.
 Their defaults are published in `screens` in [`catalog()`](/api-docs/conventions),
 with the allowed ranges and a `meaning` that says what else produces the row.
 

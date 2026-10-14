@@ -167,6 +167,7 @@ In sidebar order.
 | [Performance](/performance)            | Who beat their peers, ranked **within** each asset class                                        | The return basis differs per class and is never mixed                                              |
 | [Suspicious Deal Screens](/suspicious) | Four forensic patterns: zombie growth, evergreen aging, overdue certificates, captive vehicles  | Screens produce **signals, not findings** — every hit needs primary-source verification            |
 | [Dormant Funds](/dormant)              | FI classes with zero subscriptions and redemptions for 3 months: empty shells vs parked capital | Three months is a **floor**; NULL flows disqualify rather than count as zero; FI only              |
+| [Filing Behaviour](/filings)           | FNET filings per day, late and silent filers, frequent restaters, what a FIDC restatement changed | Signals, not findings; the register is SILO's crawl of FNET, and a document is a fund's only by its CNPJ link |
 
 ### Operations
 

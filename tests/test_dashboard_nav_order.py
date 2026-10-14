@@ -20,6 +20,7 @@ ORDER = [
     "industry", "macro", "rates", "markets", "short", "flows",
     "fi", "fidc", "fii", "securit", "etf",
     "managers", "fund", "holdings", "performance", "suspicious", "dormant",
+    "filings",
     "ops",
 ]
 
