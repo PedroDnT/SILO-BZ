@@ -664,7 +664,7 @@ weekly-window cost and the first three scheduled cash sessions remain unverified
 
 The [recurring activation package](../../research_examples/debenture_equity/recurring-ingestion-approval.md) revalidates the existing 30/09–06/10 production window (59,670 facts, 82.13 MB raw, 73.103 seconds) instead of repeating it. Local repeat allocation was 38.53 MB, not a production measurement. The owner approved recurring daily/watchdog activation. The environment wiring is in PR #769; enabling the repository variable follows its green merge. First-three-session acceptance remains pending.
 
-Assessment 2026-10-13 (item 24): the B3 OTC backfill has no workflow input (CLI only) and no dashboard page reads `fact_credit_market`.
+Assessment 2026-10-13 (item 24): the B3 OTC backfill has no workflow input (CLI only) and no dashboard page reads `fact_credit_market`. The input is `daily_ingest` `mode=b3-credit` since #882; it refuses a window over 7 days, so each dispatch is one owner-approved slice.
 
 ## 19. COTAHIST preserved fields and code reference (#720)
 
@@ -797,8 +797,9 @@ a decision first.
   key, recorded in the migration header.
 - Add raw-file fixtures for the CVM, CIA, BACEN, IBGE, ANBIMA, COTAHIST and B3
   events tests, which use inline rows only.
-- A workflow input for the B3 OTC backfill (CLI only today); a backfill path for
-  `b3_corporate_event`.
+- ~~A workflow input for the B3 OTC backfill (CLI only today); a backfill path for
+  `b3_corporate_event`.~~ Done (#882): `daily_ingest` modes `b3-credit` (one
+  slice of 7 days at most) and `b3-corporate-events-full`.
 
 **Dashboard**
 
@@ -810,9 +811,10 @@ a decision first.
   endpoint stores one meeting per survey date (its horizon key is NULL).
 - An instrument explorer (quotes, index history, corporate actions); lending
   trades on `/short`.
-- Text fixes: `flows.md` ANBIMA claim, ~~`macro.md` "25-code" (26)~~ (done, #885), README "fifteen
+- ~~Text fixes: `flows.md` ANBIMA claim, `macro.md` "25-code" (26) (done, #885), README "fifteen
   pages" and `npm install`, `vercel_should_build.sh` "~90 queries" (144), the
-  `/ops` entity list without fnet, ibge, market, etf_market and rj.
+  `/ops` entity list without fnet, ibge, market, etf_market and rj.~~ Done on
+  branch `orchestrator/887-dashboard-text-fixes` (#887).
 
 **Federal sources (owner; each is its own decision)**
 
@@ -828,11 +830,38 @@ a decision first.
 
 - A test that pins the endpoint list in `docs/reference/API.md` to the catalog
   (87 SQL functions, 81 MCP tools, 68 SDK calls, 46 named in API.md).
-- Route the 9 scripts that open their own DB connection through `pg_client`.
+- ~~Route the 9 scripts that open their own DB connection through `pg_client`.~~
+  Done (#890): `pg_client.connect` and `connect_async` (only `apply_schema.py`'s asyncpg
+  fallback stays raw); `apply_schema.py` has a test. #947 moved the last two asyncpg
+  scripts to `pg_client.connect` and removed `connect_async`.
 - Done (#891): the map in `.claude/hooks/pre-push-docs.sh` covers `src/portfolio/`
   and `deploy/cloudflare/`, and a migration that adds a table holds the push until
   `DATA_FLOW.md` is edited.
 - A rate limit on the Cloudflare upload Worker (the `ratelimits` binding); it
   calls a paid LLM behind one shared token. **owner**.
-- Stale code comments: `03_fact_bacen_monthly.sql` ("nothing in `api` reads a
-  bacen table"), `daily_ingest.yml:70-72` (`CVM_FI_CONCURRENCY`).
+- ~~Stale code comments: `03_fact_bacen_monthly.sql` ("nothing in `api` reads a
+  bacen table"), `daily_ingest.yml:70-72` (`CVM_FI_CONCURRENCY`).~~ Done (#893,
+  and #927 for `daily_ingest.yml`).
+
+## 25. RJ document coverage: the free route is parked (#841)
+
+**Status: parked by the owner on 2026-10-13, not a priority.** Nothing here is active work.
+
+What runs: the AJ-site collector (75 domains), DJEN discovery through `djen-relay`, the
+resolver, and the coverage view `public.rj_coverage`. On 2026-10-13, **425 of the 2,220
+September 2026 DJEN cases (19.1%)** had a document link from an AJ site; #846 asks for
+about 40%. Only 426 of the 2,220 cases name an inventoried AJ, so even a perfect resolver
+reaches about 31%. Numbers per court are in the epic status comment (#841).
+
+Open, if the owner picks this up again:
+
+- **RJ-5 (#847), owner:** accept about 20% coverage, consider DataJud (its non-commercial
+  clause) or a paid feed, or ask for more AJ adapters.
+- **State lists (#846), measured 2026-10-13:** the TJPR CONSEPRE search answers 405 to its own
+  page; TJMT RecuperaJud was in maintenance and its robots.txt disallows the page; TJRJ's
+  server sends no intermediate certificate, so TLS fails from a runner too (about 2 points at
+  most, 64 cases); JUCEMG lists 840 RJ companies with no process number.
+- **More AJ adapters (#845):** the JS sites and the sites marked "not read" in
+  `src/fetchers/rj/sites.py`.
+- **Owner, Supabase dashboard:** delete the spike Edge Functions `djen-reach-probe` and
+  `djen-sample-probe` (#843); the MCP has no delete tool.

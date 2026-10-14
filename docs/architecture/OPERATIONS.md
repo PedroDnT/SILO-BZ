@@ -3,7 +3,7 @@
 Times in UTC-3, with UTC in parentheses.
 
 ```
-03:00 (06:00)  daily_ingest ─┬─ probe CVM ─────────── unreachable → skip CVM, run red
+03:00 (06:00)  daily_ingest ─┬─ probe CVM             unreachable → skip CVM, run red
                              ├─ apply schema + migrations
                              ├─ run_daily: CVM → BACEN → IBGE → ANBIMA → B3 → BDI → ETF
                              │       source failed → exit 1/red; next three still run
@@ -22,49 +22,50 @@ after a run    publish_check  green daily run, or red with hook done: wait ≤45
 
 ## A red day
 
-- Rows that landed stay landed.
-- After a failed `run_daily`, ANALYZE, the apply and deploy hook still run.
-  Matviews, `api.panel` and the dashboard may be partly stale; the run stays red.
+- Landed rows stay. After a failed `run_daily`, ANALYZE, the apply and deploy
+  hook still run. Matviews, `api.panel` and the dashboard may be partly stale; the run stays red.
   `landed_at` and `api.coverage()` show freshness by source.
 - Schema/apply failures hold back publication until a successful run or
   `mode=analytics-only` with `rebuild_dashboard=true`.
-- Plain views (quotes, short interest) show new data at once. Their
-  matview-fed columns do not: `days_to_cover` joins `mv_b3_adtv_21`, and
+- Plain views (quotes, short interest) show new data at once, but not their
+  matview-fed columns: `days_to_cover` joins `mv_b3_adtv_21`;
   `fund_type` in `api.fund_quotas` falls back to `mv_b3_isin_subtype`.
-- An issue "Daily ingest is failing" is opened or commented on.
+- An issue "Daily ingest is failing" is opened or updated.
 - Watchdog heals data only: no analytical apply, no deploy hook. It and health
   count errors only in slices the daily run re-reads (`src/pipeline/daily_window.py`).
 
 ## Changes
 
-- PR → `test.yml` (pytest, SQL compile on an ephemeral Postgres) → auto-merge.
+- PR → `test.yml` (pytest, SQL compile on ephemeral Postgres) → auto-merge.
   Hook/PR CI share a sanitized dotenv/DB-password guard; CI checks PR additions.
   A PR touching `src/portfolio/` or `deploy/cloudflare/engine/` also runs
-  `engine_image.yml`: it builds and smokes the engine image, publishes nothing.
+  `engine_image.yml` (builds and smokes the image, publishes nothing).
 - A merge deploys nothing to the database. Migrations apply on the next
-  workflow run; analytical SQL applies on the next scheduled run or
-  `analytics-only`. `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo
-  (`deploy/cloudflare/`, Worker plus engine Container) needs
-  `deploy_cloudflare.yml`, which ends with a paid end-to-end report.
-- Dashboard merges do not publish: `vercel.json` disables production Git deploys.
-  The deploy hook publishes after a weekday scheduled apply or a dispatch
-  with `rebuild_dashboard=true`.
-- Writers share the `supabase-ingest` concurrency group. Health and
-  publish_check are read-only and may overlap.
+  workflow run, analytical SQL on the next scheduled run or `analytics-only`.
+  `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo (`deploy/cloudflare/`,
+  Worker + engine Container) needs `deploy_cloudflare.yml`, which ends with a
+  paid end-to-end report.
+- Dashboard merges do not publish (`vercel.json` disables production Git
+  deploys); the deploy hook does, after a weekday scheduled apply or
+  `rebuild_dashboard=true`.
+- Writers share the `supabase-ingest` group; read-only health and
+  publish_check may overlap.
 - Trace keys are pending. Background storage validates artifacts, writes the
-  trace last and logs fixed codes; failures preserve reports.
+  trace last, logs fixed codes and keeps reports on failure.
 - Schema replay skips matching indexes and absent constraints.
 - DEB: daily/watchdog pass `vars.B3_CREDIT_ENABLED`; only `1` enables
-  seven-day refresh with smaller-slice recovery.
+  seven-day refresh with smaller-slice recovery. `mode=b3-credit` loads
+  one owner-approved slice, 7 days at most (item 18).
   [Contract](../reference/research/debenture-secondary-market-capture.md).
 
 ## Not automated
 
-- `scripts/verify_pipeline.py` is run by hand.
-- DB Health checks matview lag on `fact_fund_monthly` only; the other matviews
-  refresh in the same apply and go stale with it.
-- The Sentinel runs daily since 2026-10-06; Scout and Builder are paused
-  (`.claude/agents/`, OPEN_ITEMS item 13).
+- `scripts/verify_pipeline.py` is run by hand. All issuers' B3 events once:
+  `mode=b3-corporate-events-full`.
+- DB Health checks matview lag on `fact_fund_monthly` only; the others share
+  its apply and go stale with it.
+- Sentinel runs daily since 2026-10-06; Scout and Builder are paused
+  (`.claude/agents/`, item 13).
 
 Deeper: [database maintenance](../reference/DATABASE_MAINTENANCE.md),
 [Supabase operations](../reference/supabase_operations.md).

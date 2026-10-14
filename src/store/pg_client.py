@@ -173,6 +173,18 @@ def get_pool(dsn: str, *, minconn: int = 1, maxconn: int, **connect_kwargs: Any)
     )
 
 
+def connect(dsn: str, **connect_kwargs: Any) -> Any:
+    """Open ONE psycopg2 connection: the single-connection factory for scripts.
+
+    One-off operator scripts (``scripts/``) need a plain connection, not a
+    pool. They get it here so the libpq settings (``KEEPALIVES``) match the
+    pool's. ``connect_kwargs`` go to libpq and win over the defaults (e.g.
+    ``connect_timeout=20``). The DSN is used as given: reading env vars,
+    stripping whitespace or swapping the pooler port stays in each script.
+    """
+    return psycopg2.connect(dsn, **{**KEEPALIVES, **connect_kwargs})
+
+
 class _PgClient:
     """Pooled Postgres client for the ingest pipeline.
 

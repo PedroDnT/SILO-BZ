@@ -38,7 +38,8 @@ sidebar_position: 18
   themselves, then the analytical layer downstream of both.
 
   ENTITY LABELS are the ones the pipeline actually writes to the log
-  (fi / fidc / fiagro / fii / fip / securit / etf / cia_aberta / anbima_etf), NOT
+  (fi / fidc / fiagro / fii / fip / securit / etf / cia_aberta / anbima_etf /
+  b3 / bacen / fnet / ibge / market / etf_market / rj), NOT
   the API dispatch keys — the two differ (the log says doc_type 'inf_diario'
   where the old Flask dispatch called it 'diario'; ingest is CLI/Actions now).
 

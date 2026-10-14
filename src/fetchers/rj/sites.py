@@ -13,7 +13,7 @@ needs JavaScript or a login is not read.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Dict, Tuple
 
 
 @dataclass(frozen=True)
@@ -306,8 +306,7 @@ SITES += (
 # --- Batch 7: WordPress + Elementor sites ---------------------------------------
 # Documents are PDFs in /wp-content/uploads/ unless the site says otherwise.
 # Not read: mdse.com.br and administracaojudicialrs.com.br answer HTTP 403 to the
-# GitHub runners on every run since they were added (2026-10-13), so the collector
-# cannot read them; their adapters were removed rather than kept failing red.
+# GitHub runners on every run; they are in ``KNOWN_DEAD`` at the end of this file.
 SITES += (
     # Case pages sit at the root, beside the menu pages and four articles; the cases are
     # the icon-list links (the falências are pop-ups). The
@@ -648,3 +647,22 @@ SITES += (
          inline_blocks_xpath="//div[contains(@class, 'inner-grid')][count(.//p[contains(., 'PROCESSO N')])=1]"
                              "[.//a[contains(@href, '/files/uploaded/')]]"),
 )
+
+
+# Known dead (#943): inventoried sites the collector cannot read from where it runs.
+# Each run logs one ``skipped`` row per domain (doc_type ``aj_site:<domain>``, as
+# ``Site.source``) with this reason and sends the site no request. The skip stays
+# visible in cvm_ingest_log and heals the domain's earlier error rows, so a site
+# that never answers does not keep the watchdog red. Move a domain back to a
+# ``Site`` only once a run from the GitHub runners reads it.
+_RUNNER_403 = ("known dead since 2026-10-13: HTTP 403 to the GitHub runners on every run; "
+               "it answers 200 to the same User-Agent from another network (#943)")
+KNOWN_DEAD: Dict[str, str] = {
+    "mdse.com.br": _RUNNER_403,
+    "administracaojudicialrs.com.br": _RUNNER_403,
+}
+
+
+def dead_source(domain: str) -> str:
+    """The audit doc_type of a known-dead site: the ``source`` its ``Site`` would write."""
+    return f"aj_site:{domain}"

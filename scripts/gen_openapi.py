@@ -38,7 +38,8 @@ import re
 import sys
 from typing import Any
 
-import psycopg2
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.store import pg_client  # noqa: E402
 
 # The published Data API. Views hang off the root, functions off /rpc/.
 SERVER_URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
@@ -915,7 +916,7 @@ def main(argv: list[str] | None = None) -> int:
             "This script reads the live catalog; it has no offline mode on purpose."
         )
 
-    with psycopg2.connect(args.dsn) as conn:
+    with pg_client.connect(args.dsn) as conn:
         spec = build_spec(conn)
 
     json.dump(spec, sys.stdout, indent=2, ensure_ascii=False)

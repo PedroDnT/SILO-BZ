@@ -25,8 +25,9 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   blocks every month through M+5 (CVM completes them about 90 days late), last
   year's FII files from January to March, COTAHIST and
   B3's consolidated trade file (in `run_b3_events`) 7 days, BACEN 30 days. Deep history is manual:
-  `backfill.yml`, `market_backfill.yml`, `daily_ingest` `mode=b3-backfill` and
-  `mode=b3-trade-consolidated` (B3 kept that file from 2025-06-10 only).
+  `backfill.yml`, `market_backfill.yml`, `daily_ingest` modes `b3-backfill`,
+  `b3-trade-consolidated` (B3 kept that file from 2025-06-10 only),
+  `b3-credit` and `b3-corporate-events-full`.
 - A re-read CDA month replaces the rows of each fund in the file, so a
   dropped or re-filed position goes (`cvm_ingest_log.rows_deleted`). Funds
   missing from the file keep theirs.
@@ -42,8 +43,8 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   only when `scripts/apply_analytical.sh` drops and recreates them.
 - `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`,
   because a view depends on the first. The same apply refreshes them
-  (`22_b3_tape_matviews.sql`), and also `mv_b3_cash_event`, created by migration
-  56 (it reads `cia_ticker`): the cash events behind `close_total_return`,
+  (`22_b3_tape_matviews.sql`) and `mv_b3_cash_event` (migration 56; it reads
+  `cia_ticker`): the cash events behind `close_total_return`,
   resolved once there because the ISIN join costs seconds per call.
 - `mv_fund_holdings_monthly` (`30_fund_holdings.sql`) is the one daily pass over
   the CDA holdings tables, which have no index on period; `/holdings` reads it.
@@ -65,11 +66,11 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 `credit_market_history`: audited date vintages before code filter; nine metrics
 per settlement/classification.
 
-| Path                       | Reads              | Fresh as of           |
-| -------------------------- | ------------------ | --------------------- |
-| PostgREST, SDK, `silo-mcp` | `api.*`            | live database         |
-| `serve/` (local only)      | `api.*`            | live database         |
-| dashboard                  | `public`, at build | last successful build |
-| research job               | landing tables     | when dispatched       |
+| Path | Reads | Fresh as of |
+| --- | --- | --- |
+| PostgREST, SDK, `silo-mcp` | `api.*` | live database |
+| `serve/` (local only) | `api.*` | live database |
+| dashboard | `public`, at build | last successful build |
+| research job | landing tables | when dispatched |
 
 [API](../reference/API.md); [inventory](../reference/DATA_INVENTORY.md).

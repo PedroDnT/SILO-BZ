@@ -21,6 +21,8 @@ Integrity (AGENTS.md):
   checked on later runs. The link itself always comes from a fetched case page.
 * One ``cvm_ingest_log`` row per site per run: entity ``rj``, doc_type the
   site's ``source``.
+* A domain in ``sites.KNOWN_DEAD`` gets no request: its row is ``skipped`` with
+  the recorded reason (#943). It stays visible, and it is not a failure.
 """
 
 from __future__ import annotations
@@ -31,11 +33,11 @@ import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from src.fetchers.rj.client import FetchError, PoliteClient, RobotsDisallowed
 from src.fetchers.rj.parse import case_blocks, case_links, classify_tipo, parse_case_page
-from src.fetchers.rj.sites import SITES, Site
+from src.fetchers.rj.sites import KNOWN_DEAD, SITES, Site, dead_source
 from src.pipeline.ingest_log import Outcome, audited
 from src.store.pg_client import get_pg_client, upsert_rows
 
@@ -180,11 +182,18 @@ class RJIngestor:
             return Outcome(rows, status="error", error=f"{note}; first failures: {'; '.join(h.failed_pages[:3])}")
         return Outcome(rows, error=note)
 
-    async def collect(self, sites: Sequence[Site]) -> Dict[str, int]:
+    async def collect(self, sites: Sequence[Site],
+                      dead: Optional[Mapping[str, str]] = None) -> Dict[str, int]:
+        """Collect ``sites``; log each domain of ``dead`` (domain -> reason) as ``skipped``."""
         seen_at = datetime.now(timezone.utc)
         gate = asyncio.Semaphore(CONCURRENT_SITES)
         results: Dict[str, int] = {}
         failures: List[str] = []
+
+        for domain, reason in (dead or {}).items():
+            async def skip(reason: str = reason) -> Outcome:
+                return Outcome(0, status="skipped", error=reason)
+            results[domain] = await audited(self._pg, ENTITY, dead_source(domain), skip)
 
         async def one(site: Site) -> None:
             async with gate:
@@ -207,10 +216,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     sites = [s for s in SITES if not args.site or s.domain in args.site]
-    unknown = set(args.site or ()) - {s.domain for s in sites}
+    dead = {d: r for d, r in KNOWN_DEAD.items() if not args.site or d in args.site}
+    unknown = set(args.site or ()) - {s.domain for s in sites} - set(dead)
     if unknown:
         parser.error(f"unknown site(s): {sorted(unknown)}")
-    results = asyncio.run(RJIngestor().collect(sites))
+    results = asyncio.run(RJIngestor().collect(sites, dead))
     logger.info("RJ collect: %s", results)
     return 0
 

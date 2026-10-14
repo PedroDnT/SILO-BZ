@@ -5,10 +5,10 @@ Evidence.dev analytics dashboard backed by the Supabase Postgres pipeline.
 
 ## Pages
 
-Eighteen routes in four groups, ordered broad → granular → operational. `/` is
+Nineteen routes in four groups, ordered broad → granular → operational. `/` is
 the entry point: it carries the headline figures, a "start here" reading path,
 and the grouped index. The sidebar order is the `sidebar_position` in each page's
-frontmatter (1–17 below; Evidence sorts alphabetically without it), and
+frontmatter (1–18 below; Evidence sorts alphabetically without it), and
 `index.md`'s "Pages" tables and this table repeat the same order —
 `tests/test_dashboard_nav_order.py` keeps the three in step.
 
@@ -22,7 +22,7 @@ frontmatter (1–17 below; Evidence sorts alphabetically without it), and
 | 3   | Rates and Curves   | `/rates`    | B3 nominal (PRE) and real (DPL) reference curves on fixed vertices, implied breakeven inflation at 1y/2y/5y/10y, weekly 1y and 5y real yield and breakeven since 2008, 1y breakeven vs the Focus 12-month IPCA median, DI1 open interest by maturity, NTN-B held by investment funds (CVM CDA), US Treasury curve, Brent and the OFR stress index |
 | 4   | B3 Markets         | `/markets`  | B3 tape as a market: monthly traded volume (standard vs odd lot), volume by instrument type, most traded tickers over 90 days, options activity — all from `b3_cotahist`, unadjusted                                   |
 | 5   | Short Monitor      | `/short`    | B3's securities-lending book: short interest per ticker, % of free float (basis labelled), days to cover vs 21-session ADTV, borrow rates, sector concentration. **No backfill exists** — B3 retains ~21 business days |
-| 6   | Follow the Money   | `/flows`    | Net flow by investor type, derived from B3's month-to-date participation snapshots (T+2), plus cash-market ADTV from the tape. ANBIMA fund flows stay on `/industry`                                                   |
+| 6   | Follow the Money   | `/flows`    | Net flow by investor type, derived from B3's month-to-date participation snapshots (T+2), plus cash-market ADTV from the tape. ANBIMA fund-class flows are not on the dashboard; ANBIMA ETF flows are on the ETF page         |
 
 **By asset class** — one page per CVM family, plus the securitisation market.
 
@@ -43,7 +43,7 @@ frontmatter (1–17 below; Evidence sorts alphabetically without it), and
 | 14  | Fund Holdings      | `/holdings`    | Largest stock holdings by ticker, debentures by issuer code and same-group holdings, on the last complete CDA month                    |
 | 15  | Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                                 |
 | 16  | Suspicious Screens | `/suspicious`  | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated                                       |
-| 17  | Dormant Funds      | `/dormant`     | Funds with capital parked for 36 months (definition stated first), where the money stands still, by administrator, and the empty shells |
+| 17  | Dormant Funds      | `/dormant`     | Funds with zero subscriptions and redemptions for 3 consecutive complete months (definition stated first), the count at every month-end over 36 months, where the money stands still, by administrator, and the empty shells |
 
 **Operations** — whether the numbers landed.
 
@@ -53,7 +53,7 @@ frontmatter (1–17 below; Evidence sorts alphabetically without it), and
 
 ### Page conventions
 
-Applied uniformly across all fifteen pages, so a reader who learns them once can
+Applied uniformly across all nineteen pages, so a reader who learns them once can
 read any page:
 
 - **Structure.** Frontmatter `title` matches the `# H1` exactly, with
@@ -95,7 +95,7 @@ read any page:
 Connects to Supabase Postgres via `@evidence-dev/postgres`. The `supabase` source is configured in `sources/supabase/connection.yaml`. Credentials are injected at build time via environment variables or the Evidence settings UI.
 
 ```bash
-npm install
+npm ci
 npm run sources   # pull schema from Supabase
 npm run dev       # http://localhost:3000
 ```
@@ -165,7 +165,7 @@ Vercel's dashboard, deliberately:
 ```json
 {
   "framework": null,
-  "installCommand": "cd dashboard && npm install",
+  "installCommand": "cd dashboard && npm ci",
   "buildCommand": "cd dashboard && npm run preflight && npm run sources && npm run build",
   "outputDirectory": "dashboard/build"
 }

@@ -9,9 +9,10 @@
 -- this monthly matview: the analytical functions take the benchmark rate as a
 -- parameter (benchmark_rate NUMERIC DEFAULT NULL) instead of joining it.
 --
--- Nothing in schema `api` reads a bacen_* table (docs/reference/DATA_INVENTORY.md §3
--- lists the macro series as held-not-served), and mv_savings_flow_monthly —
--- the one analytical reader of bacen_sgs — is revoked from every client role.
+-- Schema `api` serves the bacen_* tables in other files: `inflation` (catalog
+-- v30), `macro_series` and `ptax` (v38), `focus_expectations` (v39); see
+-- docs/reference/DATA_INVENTORY.md §3. This matview is not one of those
+-- readers, and mv_savings_flow_monthly is revoked from every client role.
 --
 -- An earlier version of this header said the pipeline no longer ingested
 -- BACEN. It does; the claim was wrong and the ops page would have shown the

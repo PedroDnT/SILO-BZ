@@ -1,0 +1,64 @@
+name: Dependabot auto-merge
+
+# Turns on auto-merge for a Dependabot PR that moves a pip package or a GitHub
+# Action by a patch or minor version. GitHub then merges it once the required
+# check, `pytest (offline)` (ruleset "main: pytest (offline) must pass"),
+# is green. This workflow never merges by itself and never skips CI.
+#
+# Left for the owner, on purpose:
+#   - a major bump (polars 1.x to 2.x), and any 0.x minor bump;
+#   - npm bumps: the dashboard build is judged by its Vercel preview, which is
+#     not a required check (see .github/dependabot.yml);
+#   - a grouped or oddly worded title: scripts/dependabot_update_type.py says
+#     "unknown", and unknown never merges.
+#
+# A merge made with GITHUB_TOKEN starts no push workflow on main. Dependabot
+# PRs need none: the PR run of test.yml is the gate.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: enable auto-merge
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The gate script comes from the default branch, never from the PR.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Classify the update
+        id: gate
+        env:
+          # Through env, never interpolated into the script: a title is input.
+          TITLE: ${{ github.event.pull_request.title }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          kind=$(python3 scripts/dependabot_update_type.py "$TITLE")
+          case "$BRANCH" in
+            dependabot/pip/*|dependabot/github_actions/*) ecosystem_ok=true ;;
+            *) ecosystem_ok=false ;;
+          esac
+          echo "Update type: $kind. Branch: $BRANCH. Ecosystem allowed: $ecosystem_ok."
+          if [ "$ecosystem_ok" = true ] && { [ "$kind" = patch ] || [ "$kind" = minor ]; }; then
+            echo "merge=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "merge=false" >> "$GITHUB_OUTPUT"
+            echo "Not auto-merging. The owner reviews this PR."
+          fi
+
+      - name: Enable auto-merge
+        if: steps.gate.outputs.merge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"

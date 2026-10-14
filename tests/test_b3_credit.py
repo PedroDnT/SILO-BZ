@@ -321,6 +321,48 @@ async def test_credit_backfill_cli_requires_both_boundaries():
         await rb.main(args)
 
 
+@pytest.mark.parametrize("start,end", [("", ""), ("2026-10-01", ""), ("", "2026-10-05")])
+async def test_credit_backfill_refuses_a_blank_date_from_the_dispatch(start, end):
+    """daily_ingest mode=b3-credit passes "" for a blank input. That must stop,
+    not fall through to a default full backfill (#882)."""
+    from src.pipeline import run_backfill as rb
+
+    args = argparse.Namespace(doc_type=None, b3_credit_start=start, b3_credit_end=end)
+    with patch.object(rb, "CVMIngestor", side_effect=AssertionError("must not fall through")):
+        with pytest.raises(SystemExit, match="both required"):
+            await rb.main(args)
+
+
+@pytest.mark.parametrize("start,end,why", [
+    ("2026-10-05", "2026-10-01", "empty"),
+    ("2026-09-01", "2026-09-08", "8 days"),
+    ("2025-10-01", "2026-09-30", "at most 7"),
+])
+async def test_credit_backfill_refuses_an_empty_or_over_wide_window(start, end, why):
+    """One dispatch is one owner-approved slice (OPEN_ITEMS item 18). Refused, never trimmed."""
+    from src.pipeline import run_backfill as rb
+
+    ing = MagicMock()
+    ing.backfill = AsyncMock(side_effect=AssertionError("must not fetch"))
+    args = argparse.Namespace(doc_type=None, b3_credit_start=start, b3_credit_end=end)
+    with patch.object(C, "B3CreditIngestor", return_value=ing):
+        with pytest.raises(SystemExit, match=why):
+            await rb.main(args)
+    ing.backfill.assert_not_awaited()
+
+
+async def test_credit_backfill_takes_a_full_seven_day_slice():
+    from src.pipeline import run_backfill as rb
+
+    ing = MagicMock()
+    ing.backfill = AsyncMock(return_value={C.FACT_TABLE: 0})
+    args = argparse.Namespace(doc_type=None, b3_credit_start="2026-09-01",
+                              b3_credit_end="2026-09-07")
+    with patch.object(C, "B3CreditIngestor", return_value=ing):
+        await rb.main(args)
+    ing.backfill.assert_awaited_once_with(date(2026, 9, 1), date(2026, 9, 7))
+
+
 @pytest.mark.skipif(not os.getenv("SILO_TEST_CREDIT_DATABASE_URL"),
                     reason="requires a disposable local credit-test Postgres with migration 74")
 async def test_real_pg_client_writes_capture_dates_facts_and_single_audit(monkeypatch):

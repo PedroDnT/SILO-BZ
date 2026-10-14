@@ -6,8 +6,9 @@
 #   exit 1 -> BUILD
 #
 # WHY THIS EXISTS
-# A dashboard build runs `evidence sources`, which fires ~90 SQL queries at the
-# production Supabase and takes 25-45 minutes. Vercel builds every commit on
+# A dashboard build runs `evidence sources`, which fires one SQL query per file in
+# dashboard/sources/supabase/ (150 on 2026-10-13) at the production Supabase
+# and takes 25-45 minutes. Vercel builds every commit on
 # every branch, so a commit that touches only tests/ or .github/ paid that full
 # price for an identical output.
 #
@@ -121,7 +122,8 @@ if [ "${VERCEL_ENV:-}" = "production" ]; then
 fi
 
 # Dependabot PRs only rewrite lockfiles. A preview still runs `evidence sources`
-# (~90 queries, 25-45 min) because dashboard/package-lock.json is watched, and
+# (one query per source file, 25-45 min) because dashboard/package-lock.json is
+# watched, and
 # that rebuild cannot change the published snapshot. Measured on PR #230
 # (2026-09-15): the qs 6.15.3 → 6.16.0 preview died at
 # BUILD_EXCEEDED_MAXIMUM_TIME after 45 minutes, which is what blocked merge —
