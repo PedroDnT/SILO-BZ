@@ -417,6 +417,16 @@ def _fii_daily_years(today: date) -> List[int]:
     return [today.year]
 
 
+def _cia_itr_dfp_full_read(today: Optional[date]) -> bool:
+    """Whether the daily run re-reads the current year's ITR/DFP ZIPs in full.
+
+    True on daily_window.CIA_ITR_DFP_FULL_READ_WEEKDAY, the first run after CVM's
+    weekly regeneration, and when no `today` is given. On the other days the
+    file is the one the last full read saw, so only new documents are read.
+    """
+    return today is None or today.weekday() == daily_window.CIA_ITR_DFP_FULL_READ_WEEKDAY
+
+
 # FIDC tabs I, II, VIII, X and X_7: HIST/ yearly ZIPs cover 2013-2024 and the
 # monthly ZIPs start 2025-01 — the same boundary backfill() splits
 # cvm_fidc_mensal on. The header is identical across that boundary, but not
@@ -1744,10 +1754,11 @@ class CVMIngestor:
     async def ingest_cia_itr_dfp_new_versions(self, doc_type: str, year: int) -> int:
         """Ingest only the ITR/DFP documents of one year that SILO does not hold (#383).
 
-        The daily run re-reads the current year in full. A DFP filed in the
+        The daily run reads the previous year this way: a DFP filed in the
         next year, or a restatement of a prior-year document, lands in the
         PREVIOUS year's ZIP, and re-reading that one in full every day costs
-        about 4.7M upserts (measured 2026-09-28). This reads the year's header
+        about 4.7M upserts (measured 2026-09-28). It reads the current year
+        this way too, except on the weekly full-read day (#961). This reads the year's header
         CSV first and compares its (cd_cvm, dt_refer, versao) with cia_filing.
         When nothing is new it stops there, before any statement member is
         parsed. Otherwise it upserts the new headers and only the statement
@@ -2369,7 +2380,9 @@ class CVMIngestor:
         """Plan current-year slices without executing or auditing them.
 
         FII also gets the previous year from January to March when `today` is
-        given (_fii_daily_years).
+        given (_fii_daily_years). The current year's ITR/DFP is a full read only
+        on the weekly full-read day, or when `today` is None
+        (_cia_itr_dfp_full_read).
         """
         tasks: List[IngestTask] = []
         fii_years = _fii_daily_years(today) if today is not None else [year]
@@ -2418,12 +2431,28 @@ class CVMIngestor:
                 f"cia_aberta/fca_valor_mobiliario {year}",
                 self.ingest_cia_fca(year),
             ))
+            # The current year: a full read on the weekly full-read day (the
+            # first run after CVM regenerates the ZIPs), otherwise only the
+            # documents SILO does not hold (#961). No `today` keeps the full read.
+            full_read = _cia_itr_dfp_full_read(today)
+            logger.info(
+                "cia_aberta itr/dfp %d: %s", year,
+                "full read" if full_read else "new versions only (full read on weekday %d)"
+                % daily_window.CIA_ITR_DFP_FULL_READ_WEEKDAY,
+            )
             for doc_type in ("itr", "dfp"):
-                tasks.append(IngestTask(
-                    "cia_account",
-                    f"cia_aberta/{doc_type} {year}",
-                    self.ingest_cia_itr_dfp(doc_type, year),
-                ))
+                if full_read:
+                    tasks.append(IngestTask(
+                        "cia_account",
+                        f"cia_aberta/{doc_type} {year}",
+                        self.ingest_cia_itr_dfp(doc_type, year),
+                    ))
+                else:
+                    tasks.append(IngestTask(
+                        "cia_account",
+                        f"cia_aberta/{doc_type} {year} new versions",
+                        self.ingest_cia_itr_dfp_new_versions(doc_type, year),
+                    ))
             # A DFP filed in January and a restated prior-year document land in
             # last year's ZIP: read its header, ingest only what is new (#383).
             for doc_type in ("itr", "dfp"):

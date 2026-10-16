@@ -81,6 +81,103 @@ def test_daily_annual_plan_keeps_fip_and_cia_slices_separate_from_execution():
             task.operation.close()
 
 
+class TestCiaItrDfpDailyDispatch:
+    """The current year's ITR/DFP: full on Monday, new versions otherwise (#961).
+
+    CVM regenerates the ZIPs on Sunday after that day's run, so Monday's run is
+    the first to see each new file. The previous year is always new versions
+    (#383), and backfill never goes through this planner.
+    """
+
+    @staticmethod
+    def _calls(today):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        ingestor = CVMIngestor(service=object(), cia_fetcher=object(), client=_FakeClient())
+        calls = []
+
+        async def _noop():
+            return 0
+
+        def full(doc_type, year):
+            calls.append(("full", doc_type, year))
+            return _noop()
+
+        def new_versions(doc_type, year):
+            calls.append(("new", doc_type, year))
+            return _noop()
+
+        ingestor.ingest_cia_itr_dfp = full
+        ingestor.ingest_cia_itr_dfp_new_versions = new_versions
+        year = today.year if today is not None else 2026
+        tasks = ingestor._plan_daily_annual_tasks({"cia_aberta"}, year, today)
+        try:
+            return sorted(calls), {t.description for t in tasks}
+        finally:
+            for task in tasks:
+                task.operation.close()
+
+    def test_monday_reads_the_current_year_in_full(self):
+        calls, descriptions = self._calls(date(2026, 10, 12))  # a Monday
+        assert calls == sorted([
+            ("full", "itr", 2026), ("full", "dfp", 2026),
+            ("new", "itr", 2025), ("new", "dfp", 2025),
+        ])
+        assert {"cia_aberta/itr 2026", "cia_aberta/dfp 2026"} <= descriptions
+
+    def test_other_days_read_only_new_versions_of_both_years(self):
+        # Tuesday to Sunday: Sunday's run comes before CVM's regeneration.
+        for day in range(13, 19):
+            today = date(2026, 10, day)
+            assert today.weekday() != 0
+            calls, descriptions = self._calls(today)
+            assert calls == sorted([
+                ("new", "itr", 2026), ("new", "dfp", 2026),
+                ("new", "itr", 2025), ("new", "dfp", 2025),
+            ]), today
+            assert {"cia_aberta/itr 2026 new versions",
+                    "cia_aberta/dfp 2026 new versions"} <= descriptions
+
+    def test_no_today_keeps_the_full_read(self):
+        calls, _ = self._calls(None)
+        assert ("full", "itr", 2026) in calls and ("full", "dfp", 2026) in calls
+
+    async def test_backfill_stays_on_the_full_read(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        ingestor = CVMIngestor(service=object(), cia_fetcher=object(), client=_FakeClient())
+        calls = []
+
+        async def _zero(*_args):
+            return 0
+
+        def full(doc_type, year):
+            calls.append(("full", doc_type, year))
+            return _zero()
+
+        def new_versions(doc_type, year):
+            calls.append(("new", doc_type, year))
+            return _zero()
+
+        ingestor.ingest_cia_cad = lambda: _zero()
+        ingestor.ingest_cia_ipe = lambda year: _zero()
+        ingestor.ingest_cia_fca = lambda year: _zero()
+        ingestor.ingest_cia_itr_dfp = full
+        ingestor.ingest_cia_itr_dfp_new_versions = new_versions
+        await ingestor.backfill(start_year=2025, end_year=2026, entity_filter="cia_aberta")
+        assert sorted(calls) == sorted(
+            ("full", d, y) for y in (2025, 2026) for d in ("itr", "dfp")
+        )
+
+    def test_full_read_weekday_is_monday(self):
+        from src.pipeline import daily_window
+        from src.pipeline.cvm_pipeline import _cia_itr_dfp_full_read
+
+        assert daily_window.CIA_ITR_DFP_FULL_READ_WEEKDAY == 0
+        assert _cia_itr_dfp_full_read(date(2026, 10, 19))
+        assert not _cia_itr_dfp_full_read(date(2026, 10, 18))
+
+
 # ---------------------------------------------------------------------------
 # supabase_client helpers
 # ---------------------------------------------------------------------------

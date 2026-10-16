@@ -24,6 +24,15 @@ CDA_REFRESH_MONTHS = 5
 # month, because December's reports land in last year's file early in the year.
 FII_PREVIOUS_YEAR_THROUGH_MONTH = 3
 
+# CIA ITR/DFP current-year ZIPs: the day of the week (Monday = 0) the daily run
+# re-reads them in full; on the other days it ingests only the documents SILO
+# does not hold (#961). CVM regenerates these ZIPs once a week, on Sunday near
+# 07:45 UTC-3 (10:45 UTC), after that day's run: from 2026-08-12 to 2026-10-14
+# the current-year ITR row count moved only on Monday runs. The weekly full read
+# catches what a new-documents read cannot: lines CVM publishes later for a
+# header SILO already holds, and a member a truncated fetch left short.
+CIA_ITR_DFP_FULL_READ_WEEKDAY = 0
+
 
 def daily_window_sql(alias: str = "e") -> str:
     """SQL predicate: the cvm_ingest_log slice `alias` is one daily_update retries.
