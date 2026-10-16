@@ -136,9 +136,14 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        # AWS public mirror of the Docker official image. Docker Hub rate-limits
-        # anonymous pulls from shared runner IPs (runs 1354-1356, 2026-10-09).
-        image: public.ecr.aws/docker/library/postgres:15
+        # Google's pull-through mirror of the Docker official image (#962).
+        # Docker Hub rate-limits anonymous pulls from shared runner IPs (runs
+        # 1354-1356, 2026-10-09). ECR Public, the next source, has its own
+        # anonymous limit: "toomanyrequests: Data limit exceeded" failed runs
+        # 38479667756 (PR #950) and 38612845648 (PR #958). mirror.gcr.io needs
+        # no auth, and on 2026-10-14 its postgres:15 index had the same digest
+        # as ECR's (sha256:c961aa28...), so pg_isready works as before.
+        image: mirror.gcr.io/library/postgres:15
         env:
           POSTGRES_PASSWORD: ci
           POSTGRES_DB: silo_ci
