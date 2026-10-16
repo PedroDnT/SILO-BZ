@@ -748,11 +748,11 @@ a decision first.
 - Run B3 events, market data and FNET as three parallel jobs; let `fnet-diff`
   wait for FNET only. Worst case about 165 to 75 min (inferred).
 - Move the Apify ETF scrape (1,145 s measured) after the deploy hook.
-- Fix the apt cache key (it hashes `requirements.txt`); drop the dead
+- ~~Fix the apt cache key (it hashes `requirements.txt`); drop the dead
   `CVM_FI_CONCURRENCY` from the daily env; align `CVM_DAILY_CONCURRENCY=8` with
-  pool 4. Partly shipped (#869): the apt cache is keyed on the schema action,
-  which skips the install when `psql` exists, and the variable is gone. The pool
-  still waits for a measurement.
+  pool 4.~~ Done (#869): the variable is gone; 8 on a pool of 4 is measured and
+  pinned (#959); the apt cache step is removed, since the runner image ships
+  `psql` and the schema action never runs apt, so the cache never saved.
 - ANALYZE only the tables a run changed; fix the "of 20" message (27 tables).
   Shipped (#869): tables with `n_mod_since_analyze > 0`, one psql session.
 - Run DB Health and the watchdog on `workflow_run` of the daily run, not fixed
