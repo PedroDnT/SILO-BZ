@@ -55,7 +55,6 @@ ALLOWED_STEP_DIFFS: dict[tuple[str, str], str] = {}
 
 # Daily `ingest` steps the watchdog does not re-run, each with its reason.
 NOT_RECOVERED = {
-    "Cache apt packages": "a download cache only; it changes no command or result.",
     "Run B3 COTAHIST yearly backfill": "dispatch-only mode b3-backfill, not part of a daily run.",
     "Run B3 cash-dividend history backfill": "dispatch-only mode b3-cash-dividends.",
     "Run B3 consolidated trades backfill": "dispatch-only mode b3-trade-consolidated.",

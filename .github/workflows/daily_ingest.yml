@@ -124,17 +124,6 @@ jobs:
             echo "::error title=CVM unreachable::the CVM scope is skipped; the other sources still run and the last step fails the job"
           fi
 
-      # Keyed on the action that runs apt (it installs postgresql-client only
-      # when the runner lacks psql), not on requirements.txt, which apt never
-      # reads (#869).
-      - name: Cache apt packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /var/cache/apt/archives
-          key: ${{ runner.os }}-apt-${{ hashFiles('.github/actions/apply-schema/action.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-apt-
-
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
