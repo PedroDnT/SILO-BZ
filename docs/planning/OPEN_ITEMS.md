@@ -772,6 +772,7 @@ a decision first.
 - A migration ledger (`schema_migrations`) instead of replaying `schema.sql` and
   75 migrations every run (up to 14 m 25 s measured; 5 dated failures before
   ingest).
+  ADR 0006 is written and Proposed (#872); the owner accepts it before any change.
 - `REFRESH MATERIALIZED VIEW CONCURRENTLY` plus a hash ledger of analytical files,
   instead of DROP … CASCADE of all 36 files (about 28 min stated). This changes
   the recorded rule "the re-create is the refresh" (`DATABASE_MAINTENANCE.md` §7).
