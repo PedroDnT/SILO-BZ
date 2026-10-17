@@ -661,7 +661,6 @@ runbook. The earlier failed audit remains visible. No schema, permanent activati
 new dataset or PIT certification; the next-day heartbeat stays paused. Recurring
 weekly-window cost and the first three scheduled cash sessions remain unverified.
 
-
 The [recurring activation package](../../research_examples/debenture_equity/recurring-ingestion-approval.md) revalidates the existing 30/09–06/10 production window (59,670 facts, 82.13 MB raw, 73.103 seconds) instead of repeating it. Local repeat allocation was 38.53 MB, not a production measurement. The owner approved recurring daily/watchdog activation. The environment wiring is in PR #769; enabling the repository variable follows its green merge. First-three-session acceptance remains pending.
 
 Assessment 2026-10-13 (item 24): the B3 OTC backfill has no workflow input (CLI only) and no dashboard page reads `fact_credit_market`. The input is `daily_ingest` `mode=b3-credit` since #882; it refuses a window over 7 days, so each dispatch is one owner-approved slice.
@@ -683,11 +682,11 @@ No new collection or source-vintage archive is part of this change.
 2026-10-08 real report (`docs/reference/research/report-v2-trace-audit.md`). Shares are of that portfolio's value.
 Ranked by share of the portfolio against the work to close it.
 
-| # | Gap | Share | Smallest change that closes it | Work |
-| --- | --- | --- | --- | --- |
-| 1 | 2 funds ambiguous: "a cota não desempatou" | 19,55% | **Built in #783 (catalog v72), approved 2026-10-09.** Measured before building, the proposed fix (the last quota on or before the date) would have resolved neither line. One line abbreviated the fund type, so the real fund was no candidate (12,7%): a name hint now adds it, behind the candidates that scored on their own, ambiguous unless its quota matches. The other (6,0%) had five FIAGRO candidates, which file no daily quota: on a month-end date their `cvm_fiagro_mensal` quota is compared. Verify on the live database after `daily_ingest` `mode=analytics-only` by resolving the two lines again. | Done in #783 |
-| 2 | 2 Tesouro titles without a return | 9,07% | **Measured 2026-10-09 (#802): would move this portfolio by 0 of the 9,07%.** The Treasury's public price file (ODbL, daily) has a `PU Base` for the NTN-B on every month-end of the window, but that title pays coupons, which the file does not carry; the LTN is not in the file. A build helps the coupon-free Direto titles, not this report. Needs the owner on three points (licence, a posted quote as a mark, coupon titles): `docs/reference/research/tesouro-direto-price-source.md`. | Measured, not built |
-| 3 | 2 debentures without a return | 8,03% | SILO already captures B3 OTC debenture prices (`b3_credit_observations`, migration 74). Grant a serving function and read it as the debenture's price series. | Rule over existing data |
+| #   | Gap                                        | Share  | Smallest change that closes it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Work                    |
+| --- | ------------------------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| 1   | 2 funds ambiguous: "a cota não desempatou" | 19,55% | **Built in #783 (catalog v72), approved 2026-10-09.** Measured before building, the proposed fix (the last quota on or before the date) would have resolved neither line. One line abbreviated the fund type, so the real fund was no candidate (12,7%): a name hint now adds it, behind the candidates that scored on their own, ambiguous unless its quota matches. The other (6,0%) had five FIAGRO candidates, which file no daily quota: on a month-end date their `cvm_fiagro_mensal` quota is compared. Verify on the live database after `daily_ingest` `mode=analytics-only` by resolving the two lines again. | Done in #783            |
+| 2   | 2 Tesouro titles without a return          | 9,07%  | **Measured 2026-10-09 (#802): would move this portfolio by 0 of the 9,07%.** The Treasury's public price file (ODbL, daily) has a `PU Base` for the NTN-B on every month-end of the window, but that title pays coupons, which the file does not carry; the LTN is not in the file. A build helps the coupon-free Direto titles, not this report. Needs the owner on three points (licence, a posted quote as a mark, coupon titles): `docs/reference/research/tesouro-direto-price-source.md`.                                                                                                                         | Measured, not built     |
+| 3   | 2 debentures without a return              | 8,03%  | SILO already captures B3 OTC debenture prices (`b3_credit_observations`, migration 74). Grant a serving function and read it as the debenture's price series.                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Rule over existing data |
 
 Not in the top three: 6 CRA and CRI without a return (21,52%), handled by #766 (the securitizer's curve in
 `cvm_securit_serie`, `api.portfolio_credit_returns`, catalog v71, engine schema 2.1: the owner accepted the guards on
@@ -777,10 +776,11 @@ a decision first.
 - `REFRESH MATERIALIZED VIEW CONCURRENTLY` plus a hash ledger of analytical files,
   instead of DROP … CASCADE of all 36 files (about 28 min stated). This changes
   the recorded rule "the re-create is the refresh" (`DATABASE_MAINTENANCE.md` §7).
+  ADR 0005 is written and Proposed (#873); the owner accepts it before any change.
 - Conditional download: CVM `Last-Modified`, `actions/cache` for
   `CVM_CACHE_DIR`, CDA months M..M+5 re-read only when a file changed.
 - `COPY` into a staging table, then one `INSERT … ON CONFLICT … WHERE IS DISTINCT
-  FROM`, instead of `execute_values`.
+FROM`, instead of `execute_values`.
 - One HTTP session per run, one shared retry helper (11 fetchers copy the loop),
   one CNPJ helper (8 copies).
 
