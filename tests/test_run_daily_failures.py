@@ -135,43 +135,20 @@ async def test_multiple_failures_all_reported(monkeypatch, caplog):
 
 
 @pytest.mark.asyncio
-async def test_absent_apify_token_is_not_a_failure(monkeypatch):
-    """A missing optional token skips the scrape; it must not fail the run."""
-    monkeypatch.delenv("APIFY_TOKEN", raising=False)
-    p1, p2, p3, p4, *_ = _patches()
-    with p1, p2, p3, p4:
-        await rd.main()
+async def test_run_daily_no_longer_scrapes_the_etf_market(monkeypatch):
+    """The ETF snapshot left run_daily for the `etf-market` job (#868).
 
-
-@pytest.mark.asyncio
-async def test_etf_scrape_failure_exits_nonzero(monkeypatch):
-    monkeypatch.setenv("APIFY_TOKEN", "tok")
-    p1, p2, p3, p4, *_ = _patches()
-    with p1, p2, p3, p4, \
-         patch("src.pipeline.ingest_etf_market.ingest_etf_market",
-               new=AsyncMock(side_effect=RuntimeError("scrape blocked"))), \
-         patch("src.store.pg_client.get_pg_client", return_value=MagicMock()):
-        with pytest.raises(SystemExit) as exc:
-            await rd.main()
-    assert exc.value.code == 1
-
-
-@pytest.mark.asyncio
-async def test_etf_scrape_skipped_is_not_a_failure(monkeypatch):
-    """ingest_etf_market returns 0 when Apify skips (absorbs the error internally).
-
-    All Apify unavailability variants (403 actor-not-approved, 403 usage hard
-    limit, 408 run-timeout-exceeded, ABORTED) are turned into Outcome(0,
-    "skipped") inside ingest_etf_market; run_daily sees 0 rows, no exception.
-    The detailed per-variant behaviour is tested in test_etf_market.py.
+    With the token set, run_daily must not call it: the scrape sat ahead of
+    ANALYZE, the apply and the deploy hook for up to 2,400 s. Its failure and
+    skip contract is pinned in tests/test_run_etf_market.py.
     """
     monkeypatch.setenv("APIFY_TOKEN", "tok")
     p1, p2, p3, p4, *_ = _patches()
+    etf = AsyncMock(side_effect=RuntimeError("must not run in run_daily"))
     with p1, p2, p3, p4, \
-         patch("src.pipeline.ingest_etf_market.ingest_etf_market",
-               new=AsyncMock(return_value=0)), \
-         patch("src.store.pg_client.get_pg_client", return_value=MagicMock()):
+         patch("src.pipeline.ingest_etf_market.ingest_etf_market", new=etf):
         await rd.main()  # no SystemExit
+    etf.assert_not_awaited()
 
 
 @pytest.mark.asyncio

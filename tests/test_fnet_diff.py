@@ -478,8 +478,8 @@ yaml = pytest.importorskip("yaml")
 def test_the_daily_run_diffs_in_its_own_job_after_the_ingest():
     spec = yaml.safe_load((ROOT / ".github/workflows/daily_ingest.yml").read_text())
     job = spec["jobs"]["fnet-diff"]
-    assert job["needs"] == "ingest"
-    register = next(s for s in spec["jobs"]["ingest"]["steps"] if s.get("name") == "Refresh FNET document register")
+    assert job["needs"] == "fnet-register"  # only FNET, not the whole ingest (#868)
+    register = spec["jobs"]["fnet-register"]
     assert job["if"] == register["if"]  # schedule or a manual daily, even after a failed ingest
     assert job["timeout-minutes"] > fd.DEFAULT_BUDGET_MINUTES
     assert any(s.get("run") == "python -m src.pipeline.fnet_diff" for s in job["steps"])

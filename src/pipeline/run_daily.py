@@ -205,26 +205,10 @@ async def main() -> None:
     # EOF failed this process, which skipped ANALYZE, the analytics apply and
     # the deploy for data that had all landed. They still fail their own step.
 
-    # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
-    # the post-CVM-175 daily file no longer exposes). Not a CVM source: it reads
-    # its tickers from the stored cvm_etf_registry, so it runs when CVM is
-    # unreachable. The ETF registry itself (CVM entity `etf`, cad_fi) does not. Runs only when APIFY_TOKEN
-    # is set. ``ingest_etf_market`` writes a ``skipped`` audit row and returns 0
-    # when Apify never delivered a dataset (403/408/ABORTED/usage-limit) — it
-    # logs loudly there and does not re-raise, so a usage-limit day cannot skip
-    # ANALYZE and analytics. A scrape that ran and returned bad/empty data still
-    # raises, which adds to ``failures``.
-    if os.getenv("APIFY_TOKEN"):
-        try:
-            from src.pipeline.ingest_etf_market import ingest_etf_market
-            from src.store.pg_client import get_pg_client
-            etf_rows = await ingest_etf_market(get_pg_client())
-            totals["etf_market_snapshot"] = etf_rows
-        except Exception as exc:
-            logger.error("ETF market scrape failed: %s", exc, exc_info=True)
-            failures.append(("etf_market", exc))
-    else:
-        logger.info("APIFY_TOKEN unset — skipping ETF market scrape")
+    # The ETF market snapshot (etfsbrasil.com.br via Apify) is NOT run here
+    # either (#868): up to 2,400 s of scraping sat before ANALYZE, the analytical
+    # apply and the deploy hook. It is the `etf-market` job in daily_ingest.yml
+    # (`python -m src.pipeline.run_etf_market`); it still fails its own job.
 
     elapsed = time.monotonic() - start_ts
     total_rows = sum(totals.values())
