@@ -1751,6 +1751,28 @@ class CVMIngestor:
             )
             return {(r[0], r[1], r[2]) for r in cur.fetchall()}
 
+    def _lineless_held_cia_documents(
+        self, doc_type: str, ref_dates: List[date]
+    ) -> Set[Tuple[str, date, Optional[int]]]:
+        """(cd_cvm, dt_refer, versao) of held ITR/DFP headers with no cia_account line (#970).
+
+        Bounded by dt_refer (partition pruning) and answered from the
+        (cd_cvm, dt_refer) index, so it never scans a year of statement lines.
+        """
+        if not ref_dates:
+            return set()
+        with self._supabase.cursor() as cur:
+            cur.execute(
+                "SELECT f.cd_cvm, f.dt_refer, f.versao FROM cia_filing f"
+                " WHERE f.doc_type = %s AND f.dt_refer = ANY(%s)"
+                " AND NOT EXISTS (SELECT 1 FROM cia_account a"
+                "   WHERE a.cd_cvm = f.cd_cvm AND a.doc_type = f.doc_type"
+                "   AND a.dt_refer = f.dt_refer AND a.versao IS NOT DISTINCT FROM f.versao"
+                "   AND a.dt_refer = ANY(%s))",
+                (doc_type, list(ref_dates), list(ref_dates)),
+            )
+            return {(r[0], r[1], r[2]) for r in cur.fetchall()}
+
     async def ingest_cia_itr_dfp_new_versions(self, doc_type: str, year: int) -> int:
         """Ingest only the ITR/DFP documents of one year that SILO does not hold (#383).
 
@@ -1772,6 +1794,12 @@ class CVMIngestor:
         a document with no lines is left out, logged, and compared again on
         the next run; a superseded version has no lines by construction and
         its header is written as published.
+
+        A header SILO already holds is compared again when it has no
+        cia_account line and is the latest version of its document (#970):
+        CVM may publish its lines later, and without this check they would
+        load only on the weekly full read, and never once the year rolled over.
+        Only its lines are written; the header is already held.
         """
         from src.fetchers.cia_fetcher import CIAMember
         from src.parsers.field_maps import cia_filing as _filing_map
@@ -1790,6 +1818,7 @@ class CVMIngestor:
             rows_inserted = 0
             fetched = 0
             new_docs: Optional[Set[Tuple[Any, Any, Any]]] = None
+            wanted: Set[Tuple[Any, Any, Any]] = set()  # new_docs plus held headers re-checked
             with_lines: Set[Tuple[Any, Any, Any]] = set()
             header: List[Dict[str, Any]] = []
             for m in members:
@@ -1800,8 +1829,26 @@ class CVMIngestor:
                     )
                     if not m.rows:
                         raise ValueError(f"cia_aberta/{doc_type} {year}: the header CSV is empty")
+                    ref_dates = sorted({k[1] for k in published if k[1] is not None})
                     new_docs = {k for k in published if k[0] and k[1] is not None} - held
-                    if not new_docs:
+                    latest_pub: Dict[Tuple[Any, Any], int] = {}
+                    for k in published:
+                        if k[2] is not None:
+                            latest_pub[(k[0], k[1])] = max(latest_pub.get((k[0], k[1]), k[2]), k[2])
+                    # A superseded version never has lines, so only the latest
+                    # version of a held document is worth reading again.
+                    recheck = {
+                        k for k in self._lineless_held_cia_documents(doc_type, ref_dates)
+                        if k in published and k[2] == latest_pub.get((k[0], k[1]), k[2])
+                    }
+                    if recheck:
+                        logger.info(
+                            "cia_aberta/%s %d: %d held header(s) without statement lines "
+                            "compared again (first: %s)",
+                            doc_type, year, len(recheck), sorted(recheck, key=str)[0],
+                        )
+                    wanted = new_docs | recheck
+                    if not wanted:
                         break
                     header = [r for r in m.rows if doc_key(r) in new_docs]
                 elif m.is_account_data:
@@ -1812,7 +1859,7 @@ class CVMIngestor:
                             f"cia_aberta/{doc_type} {year}: statement member "
                             f"{m.member_name} came before the header CSV"
                         )
-                    lines = [r for r in m.rows if doc_key(r) in new_docs]
+                    lines = [r for r in m.rows if doc_key(r) in wanted]
                     if lines:
                         fetched += len(lines)
                         with_lines.update(doc_key(r) for r in lines)
@@ -1823,7 +1870,7 @@ class CVMIngestor:
                         )
             if new_docs is None:
                 raise ValueError(f"cia_aberta/{doc_type} {year}: no header CSV in the ZIP")
-            if new_docs:
+            if wanted:
                 # A version the header lists with a newer one beside it has no
                 # lines by construction (the statement CSVs carry only the
                 # latest), so its header is written as published. Only the

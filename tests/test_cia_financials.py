@@ -576,9 +576,11 @@ async def test_itr_dfp_ingest_upsert_failure_in_the_thread_reaches_the_audit_row
 # ---------------------------------------------------------------------------
 
 class _HeldCursor:
-    def __init__(self, held):
+    def __init__(self, held, lineless=()):
         self.held = held
+        self.lineless = list(lineless)
         self.executed = []
+        self._last = ""
 
     def __enter__(self):
         return self
@@ -588,20 +590,22 @@ class _HeldCursor:
 
     def execute(self, sql, params=None):
         self.executed.append((sql, params))
+        self._last = sql
 
     def fetchall(self):
-        return self.held
+        # the held-lineless query (#970) is the one with NOT EXISTS
+        return self.lineless if "NOT EXISTS" in self._last else self.held
 
 
 class _HeldClient:
-    def __init__(self, held):
-        self.cursor_obj = _HeldCursor(held)
+    def __init__(self, held, lineless=()):
+        self.cursor_obj = _HeldCursor(held, lineless)
 
     def cursor(self):
         return self.cursor_obj
 
 
-def _new_versions_ingestor(members, held):
+def _new_versions_ingestor(members, held, lineless=()):
     from src.pipeline.cvm_pipeline import CVMIngestor
 
     read: List[str] = []
@@ -617,7 +621,7 @@ def _new_versions_ingestor(members, held):
             return _iter()
 
     ing = CVMIngestor.__new__(CVMIngestor)
-    ing._supabase = _HeldClient(held)
+    ing._supabase = _HeldClient(held, lineless)
     ing._cia_fetcher = _Fetcher()
     finish = {}
     ing._log_start = lambda *a, **k: None
@@ -653,6 +657,8 @@ async def test_prior_year_reads_only_the_header_when_nothing_is_new():
     assert finish == {"n": 0, "error": None, "fetched": 0}
     sql, params = ing._supabase.cursor_obj.executed[0]
     assert "FROM cia_filing" in sql and params == ("dfp", [datetime.date(2023, 12, 31)])
+    lsql, lparams = ing._supabase.cursor_obj.executed[1]
+    assert "NOT EXISTS" in lsql and lparams[1] == [datetime.date(2023, 12, 31)]
 
 
 @pytest.mark.asyncio
@@ -751,3 +757,62 @@ async def test_prior_year_writes_a_superseded_versions_header_without_lines():
          patch("src.pipeline.cvm_pipeline.ingest_cia_account", side_effect=lambda c, ms, d: 1):
         await ing.ingest_cia_itr_dfp_new_versions("dfp", 2023)
     assert seen["filing"] == ["1", "2"]
+
+
+@pytest.mark.asyncio
+async def test_held_header_without_lines_gets_its_lines_once_cvm_publishes_them():
+    """#970: a header SILO holds with no cia_account line is compared again, so
+    lines CVM adds later load without a full read. Only the lines are written:
+    the header is already held."""
+    from src.fetchers.cia_fetcher import CIAMember
+
+    key = ("1023", datetime.date(2023, 12, 31), 1)
+    summary = CIAMember("dfp_cia_aberta_2023.csv", "_summary", None, [SUMMARY_ROW])
+    dre = CIAMember("dfp_cia_aberta_DRE_con_2023.csv", "DRE", "con", [DRE_ROW])
+    ing, read, finish = _new_versions_ingestor([summary, dre], [key], lineless=[key])
+    seen = {}
+
+    def _account(conn, members, doc_type):
+        seen["account"] = [(m.grupo, len(m.rows)) for m in members]
+        return sum(len(m.rows) for m in members)
+
+    with patch("src.pipeline.cvm_pipeline.ingest_cia_filing") as filing, \
+         patch("src.pipeline.cvm_pipeline.ingest_cia_account", side_effect=_account):
+        n = await ing.ingest_cia_itr_dfp_new_versions("dfp", 2023)
+    assert seen["account"] == [("DRE", 1)]
+    filing.assert_not_called()
+    assert n == 1 and finish == {"n": 1, "error": None, "fetched": 1}
+
+
+@pytest.mark.asyncio
+async def test_held_header_still_without_lines_writes_nothing():
+    from src.fetchers.cia_fetcher import CIAMember
+
+    key = ("1023", datetime.date(2023, 12, 31), 1)
+    summary = CIAMember("dfp_cia_aberta_2023.csv", "_summary", None, [SUMMARY_ROW])
+    ing, _read, finish = _new_versions_ingestor([summary], [key], lineless=[key])
+    with patch("src.pipeline.cvm_pipeline.ingest_cia_filing") as filing, \
+         patch("src.pipeline.cvm_pipeline.ingest_cia_account") as account:
+        n = await ing.ingest_cia_itr_dfp_new_versions("dfp", 2023)
+    filing.assert_not_called()
+    account.assert_not_called()
+    assert n == 0 and finish == {"n": 0, "error": None, "fetched": 0}
+
+
+@pytest.mark.asyncio
+async def test_held_superseded_version_without_lines_is_not_compared_again():
+    """v1 beside a published v2 has no lines by construction; only v2 is re-read."""
+    from src.fetchers.cia_fetcher import CIAMember
+
+    v1 = ("1023", datetime.date(2023, 12, 31), 1)
+    v2 = ("1023", datetime.date(2023, 12, 31), 2)
+    summary = CIAMember("dfp_cia_aberta_2023.csv", "_summary", None,
+                        [SUMMARY_ROW, {**SUMMARY_ROW, "VERSAO": "2"}])
+    dre = CIAMember("dfp_cia_aberta_DRE_con_2023.csv", "DRE", "con", [DRE_ROW, {**DRE_ROW, "VERSAO": "2"}])
+    ing, _read, _finish = _new_versions_ingestor([summary, dre], [v1, v2], lineless=[v1])
+    with patch("src.pipeline.cvm_pipeline.ingest_cia_filing") as filing, \
+         patch("src.pipeline.cvm_pipeline.ingest_cia_account") as account:
+        n = await ing.ingest_cia_itr_dfp_new_versions("dfp", 2023)
+    assert n == 0
+    filing.assert_not_called()
+    account.assert_not_called()
