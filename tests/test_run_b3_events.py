@@ -155,22 +155,21 @@ def _get(path: Path, job: str, name: str) -> dict:
     return next(s for s in _steps(path, job) if s.get("name") == name)
 
 
-def test_the_daily_job_runs_the_step_after_publishing():
-    names = _names(DAILY, "ingest")
-    assert names.index("Trigger dashboard rebuild (Vercel deploy hook)") < names.index(STEP), (
-        "the step must come after the deploy hook, or a failure could still "
-        "keep the dashboard from publishing"
-    )
-    assert names.index("Build / refresh analytical layer") < names.index(STEP)
-    step = _get(DAILY, "ingest", STEP)
+def test_the_daily_job_runs_the_step_after_the_ingest_job():
+    """It is the `b3-events` job, which needs `ingest` (and so the deploy hook
+    and the analytical apply that end it), not a step at its tail (#868)."""
+    spec = yaml.safe_load(DAILY.read_text(encoding="utf-8"))["jobs"]
+    assert spec["b3-events"]["needs"] == "ingest"
+    assert STEP not in _names(DAILY, "ingest")
+    step = _get(DAILY, "b3-events", STEP)
     assert step["run"].strip() == "python -m src.pipeline.run_b3_events"
-    assert step.get("timeout-minutes"), "a hung proxy must not eat the job's 180 minutes"
+    assert spec["b3-events"]["timeout-minutes"], "a hung proxy must not hold the run open"
     assert not step.get("continue-on-error"), "a failure must still fail the job"
 
 
-def test_the_step_runs_after_a_failure_but_only_on_a_daily_run():
-    cond = str(_get(DAILY, "ingest", STEP).get("if", ""))
-    assert "!cancelled()" in cond, "it must run even when an earlier step failed"
+def test_the_job_runs_after_a_failure_but_only_on_a_daily_run():
+    cond = str(yaml.safe_load(DAILY.read_text(encoding="utf-8"))["jobs"]["b3-events"].get("if", ""))
+    assert "!cancelled()" in cond, "it must run even when the ingest job failed"
     assert "github.event_name == 'schedule'" in cond
     assert "github.event.inputs.mode == 'daily'" in cond
     assert "analytics-only" not in cond
