@@ -467,9 +467,9 @@ before changing rule 4.
    slice first, then raise `CVMRunFailed`; `run_daily` and `run_backfill` still
    run the other sources and exit 1. `_log_start` / `_log_finish` stay, because
    they hold the CVM status rules and the failure ledger.
-3. **ETF market is not migrated.** It is a synchronous call from `run_daily`;
-   folding it into the async `audited` would change `run_daily` and the event
-   loop. It already writes through `ingest_log.start` and `finish`.
+3. **ETF market is not migrated.** It was a synchronous call from `run_daily`
+   (since #868 its own job); folding it into the async `audited` would change
+   the event loop. It already writes through `ingest_log.start` and `finish`.
 4. **Candidate 01, one home for each API endpoint's facts.** The inventory found
    no drift across 67 endpoints, so the large refactor is not recommended. An
    optional small version: generate the `catalog.postgrest` dict and pin the SDK
@@ -745,9 +745,12 @@ a decision first.
 
 **Workflow: small changes**
 
-- Run B3 events, market data and FNET as three parallel jobs; let `fnet-diff`
-  wait for FNET only. Worst case about 165 to 75 min (inferred).
-- Move the Apify ETF scrape (1,145 s measured) after the deploy hook.
+- ~~Run B3 events, market data and FNET as three parallel jobs; let `fnet-diff`
+  wait for FNET only. Worst case about 165 to 75 min (inferred).~~ Done on branch
+  `orchestrator/868-post-hook-jobs` (#868): jobs `b3-events`, `market-data`,
+  `fnet-register` (`fnet-diff` needs it alone), all after `ingest`.
+- ~~Move the Apify ETF scrape (1,145 s measured) after the deploy hook.~~ Done
+  (#868): job `etf-market` (`run_etf_market`); the watchdog re-runs it.
 - ~~Fix the apt cache key (it hashes `requirements.txt`); drop the dead
   `CVM_FI_CONCURRENCY` from the daily env; align `CVM_DAILY_CONCURRENCY=8` with
   pool 4.~~ Done (#869): the variable is gone; 8 on a pool of 4 is measured and

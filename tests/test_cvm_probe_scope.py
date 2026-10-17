@@ -66,22 +66,6 @@ async def test_unreachable_cvm_is_skipped_with_one_row_per_entity(monkeypatch):
     b3.daily_update_bdi.assert_awaited()
 
 
-async def test_the_etf_market_snapshot_still_runs_when_cvm_is_skipped(monkeypatch):
-    ps, (cvm, *_rest) = _run_unreachable(monkeypatch)
-    monkeypatch.setenv("APIFY_TOKEN", "tok")
-    etf = MagicMock()
-
-    async def fake_etf(conn):
-        etf(conn)
-        return 5
-
-    with ps[0], ps[1], ps[2], ps[3], ps[4], ps[5], ps[6], \
-            patch("src.pipeline.ingest_etf_market.ingest_etf_market", new=fake_etf):
-        await rd.main()
-    cvm.daily_update.assert_not_awaited()
-    etf.assert_called_once()
-
-
 async def test_a_failed_skip_row_fails_the_run_but_not_the_other_sources(monkeypatch):
     """Never skip silently: no audit row means a red run."""
     start = MagicMock(side_effect=RuntimeError("audit table unreachable"))

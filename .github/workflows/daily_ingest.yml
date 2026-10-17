@@ -64,9 +64,6 @@ jobs:
     timeout-minutes: 180
     env:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
-      # Optional: enables the etfsbrasil ETF NAV/price/cotistas scrape in run_daily.
-      # When the secret is unset this is empty and the scrape step self-skips.
-      APIFY_TOKEN: "${{ secrets.APIFY_TOKEN }}"
       CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
       # Optional repository variable: re-points the BACEN SGS host (issue #537). Empty means the default.
       BACEN_SGS_BASE_URL: "${{ vars.BACEN_SGS_BASE_URL }}"
@@ -383,59 +380,6 @@ jobs:
                      "keep serving the previous build until the next trigger." ;;
           esac
 
-      # B3 corporate events and cash distributions (src/pipeline/run_b3_events.py).
-      # Their own step, right after the deploy hook, for the same reason as the
-      # market data and FNET below: a few hundred calls to B3's listed-companies
-      # proxy (about 10 minutes on 2026-09-30) must not be able to skip ANALYZE,
-      # the analytical apply or the deploy hook. They ran inside run_daily until
-      # 2026-09-30, and on 2026-08-29 a corporate-events SSL EOF turned that
-      # process red for data that had all landed. The analytical apply reads
-      # neither table; api.quote_history reads b3_corporate_event live, so a new
-      # event counts from the moment it lands. A failed source writes its
-      # `error` audit row and fails the job.
-      # 75, not 45: the corporate-event sweep is one serial request per issuer and
-      # B3's latency swings (0.2 s a request on 2026-09-30, 1.0 s on 2026-10-01,
-      # when 2,597 requests took 44 minutes and timed out run 36842444079).
-      # #482 made the sweep incremental; this is headroom for a slow B3 night.
-      - name: Refresh B3 corporate events and cash dividends
-        if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
-        timeout-minutes: 75
-        env:
-          B3_CREDIT_ENABLED: ${{ vars.B3_CREDIT_ENABLED }}
-        run: python -m src.pipeline.run_b3_events
-
-      # The FNET document register (fnet_document / fnet_document_filter) runs
-      # LAST, on its own. FNET answers GitHub runners slowly and sometimes not at
-      # all; when it lived inside run_daily, one fund's ReadTimeout (run
-      # 36101156388, 2026-09-25) failed that step and so skipped ANALYZE, the
-      # analytical layer and the deploy hook, for CVM/BACEN/B3 data that had all
-      # landed. Here it runs even if an earlier step failed (!cancelled()), but a
-      # failure still fails the job (no continue-on-error), writes its `error`
-      # audit row, and files the tracking issue below. The dashboard does not
-      # read FNET, and the api functions over it need no rebuild.
-      # DI1 futures and B3's reference curves (pesquisapregao files), the U.S.
-      # Treasury par curve, Cboe VIX and EIA Brent (src/pipeline/market_pipeline.py,
-      # docs/reference/research/dustin_br_data_sources.md). Its own step, after the
-      # analytical layer, for the same reason as FNET below: four foreign hosts
-      # must not be able to skip ANALYZE, the analytical apply or the deploy
-      # hook. Nothing the dashboard or schema api reads depends on it. A failed
-      # slice writes its `error` audit row and fails the job.
-      - name: Refresh rates and market data
-        if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
-        timeout-minutes: 30
-        env:
-          # Optional. Without it the EIA fetch uses EIA's rate-limited DEMO_KEY.
-          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
-          # Cboe VIX is fetched only when this repository variable is 1, which
-          # needs a signed Cboe licence (docs/reference/research/dustin_br_data_sources.md §5).
-          CBOE_VIX_LICENSED: ${{ vars.CBOE_VIX_LICENSED }}
-        run: python -m src.pipeline.market_pipeline
-
-      - name: Refresh FNET document register
-        if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
-        timeout-minutes: 60
-        run: python -m src.pipeline.fnet_pipeline
-
       # The CVM probe's alarm (#866). The probe step stays green so the schema
       # apply and run_daily's non-CVM sources run; this step turns the run red
       # (and files the tracking issue) when CVM was unreachable. Last, so it
@@ -447,16 +391,177 @@ jobs:
           echo "::error title=CVM unreachable::dados.cvm.gov.br refused this runner; the CVM scope was skipped (one skipped row per entity in cvm_ingest_log). Re-dispatch to draw a fresh runner IP."
           exit 1
 
+  # The post-hook work (#868): four jobs that need `ingest`, not four steps at
+  # its tail. They call different hosts and write different tables, so they run
+  # side by side and the worst case is the longest one (75 minutes, B3 events)
+  # instead of the sum (165 before). Each is `!cancelled()`, as the steps were:
+  # it runs even after a red `ingest`, so a failed source never skips another.
+  # A failure still fails its own job, writes its `error` audit row and, through
+  # `notify-failure`, files the tracking issue. They stay in the workflow's
+  # `supabase-ingest` concurrency group for the whole run (the group belongs to
+  # the run, not to a job), so no other writer starts under them.
+  #
+  # The schema is applied once, in `ingest`; these jobs add no apply. They run
+  # only where the old steps ran: the schedule and mode=daily.
+  #
+  # B3 corporate events and cash distributions (src/pipeline/run_b3_events.py): a
+  # few hundred calls to B3's listed-companies proxy. They ran inside run_daily
+  # until 2026-09-30, and on 2026-08-29 a corporate-events SSL EOF turned that
+  # process red for data that had all landed. The analytical apply reads neither
+  # table; api.quote_history reads b3_corporate_event live.
+  # 75, not 45: the corporate-event sweep is one serial request per issuer and
+  # B3's latency swings (0.2 s a request on 2026-09-30, 1.0 s on 2026-10-01,
+  # when 2,597 requests took 44 minutes and timed out run 36842444079).
+  b3-events:
+    name: B3 corporate events and cash dividends
+    needs: ingest
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
+      CVM_UPSERT_CHUNK_SIZE: "5000"
+      TZ: "America/Sao_Paulo"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Refresh B3 corporate events and cash dividends
+        env:
+          B3_CREDIT_ENABLED: ${{ vars.B3_CREDIT_ENABLED }}
+        run: python -m src.pipeline.run_b3_events
+
+  # DI1 futures and B3's reference curves (pesquisapregao files), the U.S.
+  # Treasury par curve, Cboe VIX and EIA Brent (src/pipeline/market_pipeline.py,
+  # docs/reference/research/dustin_br_data_sources.md). Four foreign hosts must
+  # not be able to skip ANALYZE, the analytical apply or the deploy hook, nor
+  # each other. Nothing the dashboard or schema api reads depends on it.
+  market-data:
+    name: Rates and market data
+    needs: ingest
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
+      CVM_UPSERT_CHUNK_SIZE: "5000"
+      TZ: "America/Sao_Paulo"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Refresh rates and market data
+        env:
+          # Optional. Without it the EIA fetch uses EIA's rate-limited DEMO_KEY.
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+          # Cboe VIX is fetched only when this repository variable is 1, which
+          # needs a signed Cboe licence (docs/reference/research/dustin_br_data_sources.md §5).
+          CBOE_VIX_LICENSED: ${{ vars.CBOE_VIX_LICENSED }}
+        run: python -m src.pipeline.market_pipeline
+
+  # The FNET document register (fnet_document / fnet_document_filter). FNET
+  # answers GitHub runners slowly and sometimes not at all; when it lived inside
+  # run_daily, one fund's ReadTimeout (run 36101156388, 2026-09-25) failed that
+  # step and so skipped ANALYZE, the analytical layer and the deploy hook, for
+  # CVM/BACEN/B3 data that had all landed. A failure still fails this job (no
+  # continue-on-error), writes its `error` audit row and files the tracking
+  # issue. The dashboard does not read FNET, and the api functions over it need
+  # no rebuild. `fnet-diff` waits for this job and nothing else.
+  fnet-register:
+    name: FNET document register
+    needs: ingest
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
+      CVM_UPSERT_CHUNK_SIZE: "5000"
+      TZ: "America/Sao_Paulo"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Refresh FNET document register
+        run: python -m src.pipeline.fnet_pipeline
+
+  # The ETF market snapshot (etfsbrasil.com.br via Apify: NAV, price, cotistas
+  # the post-CVM-175 daily file no longer exposes). It ran at the end of
+  # run_daily, ahead of ANALYZE, the apply and the deploy hook: 1,145 s for 178
+  # tickers on the measured run, up to 2,400 s of budget (#868). Not a CVM
+  # source: it reads its tickers from the stored cvm_etf_registry. APIFY_TOKEN
+  # is optional; unset, the step logs and exits 0. An Apify refusal (403/408/
+  # ABORTED/usage limit) writes a `skipped` audit row and stays green; a scrape
+  # that ran and returned bad data fails the job.
+  etf-market:
+    name: ETF market snapshot
+    needs: ingest
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      # Optional: enables the etfsbrasil ETF NAV/price/cotistas scrape.
+      APIFY_TOKEN: "${{ secrets.APIFY_TOKEN }}"
+      CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
+      CVM_UPSERT_CHUNK_SIZE: "5000"
+      TZ: "America/Sao_Paulo"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Refresh ETF market snapshot
+        run: python -m src.pipeline.run_etf_market
+
   # FNET restatement diffs (backlog B4, docs/planning/DOCUMENTS.md): for each
   # re-filed FIDC informe mensal, download it and its predecessor from FNET and
-  # store what changed (src/pipeline/fnet_diff.py). Its own job, after the
-  # ingest job and whatever became of it (!cancelled()), so its FNET latency
-  # never eats the ingest job's 180 minutes. The run caps itself at 200
+  # store what changed (src/pipeline/fnet_diff.py). Its own job, after the FNET
+  # register job and whatever became of it (!cancelled()), so its FNET latency
+  # never eats the ingest job's 180 minutes and it never waits for B3, the
+  # market data or the ETF scrape (#868). The run caps itself at 200
   # documents and a 30-minute budget and leaves the rest queued for tomorrow;
   # a failed download still fails this job and writes its `error` audit row.
   fnet-diff:
     name: FNET restatement diffs
-    needs: ingest
+    needs: fnet-register
     if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -483,7 +588,7 @@ jobs:
   # unnoticed). Issue-per-incident, comment-per-day — no new secrets needed.
   notify-failure:
     name: File failure issue
-    needs: [ingest, fnet-diff]
+    needs: [ingest, b3-events, market-data, fnet-register, etf-market, fnet-diff]
     if: ${{ failure() && github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     permissions:
