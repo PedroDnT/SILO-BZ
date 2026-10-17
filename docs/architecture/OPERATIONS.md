@@ -5,14 +5,14 @@ Times in UTC-3, with UTC in parentheses.
 ```
 03:00 (06:00)  daily_ingest ─┬─ probe CVM             unreachable → skip CVM, run red
                              ├─ apply schema + migrations
-                             ├─ run_daily: CVM → BACEN → IBGE → ANBIMA → B3 → BDI → ETF
+                             ├─ run_daily: CVM → BACEN → IBGE → ANBIMA → B3 → BDI
                              │       source failed → exit 1/red; next three still run
                              ├─ ANALYZE               skipped only if the schema apply failed
                              ├─ apply_analytical.sh   refresh matviews/api; smoke guards
-                             ├─ Vercel deploy hook    dashboard build, 17 to 45 min; needs the apply green
-                             └─ B3 events · rates/market · FNET register · fnet-diff   (run even after a failure)
+                             └─ Vercel deploy hook    dashboard build, 17 to 45 min; needs the apply green
+               parallel jobs after ingest, even if red (≤75 min): B3 events · rates · ETF · FNET → fnet-diff
 after daily    health         read-only: errors, stuck, fund lag, disk, anon
-after daily    watchdog       stale/unhealed? re-run run_daily, B3 events, market;
+after daily    watchdog       stale/unhealed? re-run run_daily, B3 events, market, ETF;
                               FNET, fnet-diff, RJ on own flags; fallback crons 07:30/07:40 (10:30/10:40)
 05:00 (08:00)  publish_check  public URL stale? promote; ERRORed → red
 after a run    publish_check  green daily run, or red with hook done: wait ≤45 min, promote
