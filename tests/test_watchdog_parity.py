@@ -21,6 +21,13 @@ WORKFLOWS = Path(__file__).resolve().parents[1] / ".github/workflows"
 DAILY_JOB = "ingest"
 WATCHDOG_JOB = "watchdog"
 
+# Daily jobs holding steps the watchdog twins besides DAILY_JOB (#868). The
+# post-hook work left the ingest job's tail for jobs of its own. They are read
+# in file order, after `ingest`, so the step order below is the old one.
+POST_HOOK_JOBS = ("b3-events", "market-data", "fnet-register", "etf-market")
+# Boilerplate each post-hook job repeats; the ingest job's copy is the twin.
+REPEATED_STEPS = ("Checkout repository", "Set up Python 3.12", "Install dependencies")
+
 # watchdog step name -> daily_ingest step name.
 TWINS = {
     "Checkout repository": "Checkout repository",
@@ -37,6 +44,8 @@ TWINS = {
     "Fail the run when CVM was unreachable": "Fail the run when CVM was unreachable",
     # #870: gated on the staleness check's own heal_fnet flag.
     "Refresh FNET document register (recovery)": "Refresh FNET document register",
+    # #868: the ETF snapshot left run_daily for the daily `etf-market` job.
+    "Refresh ETF market snapshot (recovery)": "Refresh ETF market snapshot",
 }
 
 # Step keys that may differ between twins, each with its reason.
@@ -89,6 +98,7 @@ ALLOWED_ORDER_DIFFS = {
 
 # Other daily_ingest jobs the watchdog has no counterpart for.
 OTHER_DAILY_JOBS = {
+    **{job: "post-hook job whose steps the watchdog twins by name (#868)." for job in POST_HOOK_JOBS},
     "fnet-diff": "twinned by the watchdog's own fnet-diff job (#870); compared below.",
     "notify-failure": "files the daily-failure tracking issue; a red watchdog run shows on its own.",
 }
@@ -135,6 +145,33 @@ def _effective_env(job: dict, step: dict) -> dict:
     return {**(job.get("env") or {}), **(step.get("env") or {})}
 
 
+def _daily_steps() -> dict[str, tuple[str, dict, dict]]:
+    """Every daily step by name -> (job name, its job, the step), in daily order.
+
+    The order is the one the steps had before #868: the post-hook jobs' steps
+    sit right after the deploy hook, ahead of the CVM alarm that closes `ingest`.
+
+    A step in a post-hook job that sets no timeout of its own is capped by its
+    job's, so that cap is folded into the step: the watchdog keeps it per step.
+    """
+    out: dict[str, tuple[str, dict, dict]] = {}
+    for job_name in (DAILY_JOB, *POST_HOOK_JOBS):
+        job = _job("daily_ingest.yml", job_name)
+        for name, step in _steps(job).items():
+            if job_name != DAILY_JOB and name in REPEATED_STEPS:
+                continue
+            assert name not in out, f"step {name!r} appears in two daily jobs"
+            if job_name != DAILY_JOB and "timeout-minutes" in job:
+                step = {"timeout-minutes": job["timeout-minutes"], **step}
+            out[name] = (job_name, job, step)
+    hook = list(out).index("Trigger dashboard rebuild (Vercel deploy hook)") + 1
+    names = list(out)
+    ordered = names[:hook] + [n for n in names if out[n][0] != DAILY_JOB] + [
+        n for n in names[hook:] if out[n][0] == DAILY_JOB
+    ]
+    return {n: out[n] for n in ordered}
+
+
 def test_both_workflows_share_the_ingest_concurrency_group():
     daily, watchdog = _load("daily_ingest.yml"), _load("watchdog.yml")
     assert daily["concurrency"] == watchdog["concurrency"]
@@ -158,7 +195,7 @@ def test_job_settings_match():
 
 
 def test_every_daily_step_is_twinned_or_listed():
-    daily = _steps(_job("daily_ingest.yml", DAILY_JOB))
+    daily = _daily_steps()
     twinned = set(TWINS.values())
     unlisted = sorted(set(daily) - twinned - set(NOT_RECOVERED))
     assert not unlisted, (
@@ -176,14 +213,20 @@ def test_every_watchdog_step_is_twinned_or_listed():
 
 @pytest.mark.parametrize("watchdog_name", sorted(TWINS))
 def test_twin_runs_the_same_command_with_the_same_env(watchdog_name):
-    daily_job = _job("daily_ingest.yml", DAILY_JOB)
     watchdog_job = _job("watchdog.yml", WATCHDOG_JOB)
-    d = _steps(daily_job)[TWINS[watchdog_name]]
+    daily_name, daily_job, d = _daily_steps()[TWINS[watchdog_name]]
     w = _steps(watchdog_job)[watchdog_name]
 
-    assert _effective_env(daily_job, d) == _effective_env(watchdog_job, w), (
-        f"{watchdog_name!r}: the env differs from its daily twin"
-    )
+    daily_env, watchdog_env = _effective_env(daily_job, d), _effective_env(watchdog_job, w)
+    if daily_name == DAILY_JOB:
+        assert daily_env == watchdog_env, f"{watchdog_name!r}: the env differs from its daily twin"
+    else:
+        # A post-hook job carries only the env its step needs; the watchdog job
+        # carries the whole daily set. Every variable the daily step sees must
+        # reach the watchdog step with the same value (#868).
+        assert daily_env.items() <= watchdog_env.items(), (
+            f"{watchdog_name!r}: the env differs from its daily twin"
+        )
     for key in sorted((set(d) | set(w)) - {"env"}):
         if key in ALLOWED_KEY_DIFFS or (watchdog_name, key) in ALLOWED_STEP_DIFFS:
             continue
@@ -194,10 +237,9 @@ def test_twin_runs_the_same_command_with_the_same_env(watchdog_name):
 
 
 def test_allowed_step_diffs_are_real():
-    daily_job = _job("daily_ingest.yml", DAILY_JOB)
     watchdog_job = _job("watchdog.yml", WATCHDOG_JOB)
     for watchdog_name, key in ALLOWED_STEP_DIFFS:
-        d = _steps(daily_job)[TWINS[watchdog_name]]
+        _, _, d = _daily_steps()[TWINS[watchdog_name]]
         w = _steps(watchdog_job)[watchdog_name]
         assert d.get(key) != w.get(key), (
             f"{watchdog_name!r} {key!r} now matches; drop it from ALLOWED_STEP_DIFFS"
@@ -205,9 +247,7 @@ def test_allowed_step_diffs_are_real():
 
 
 def test_twins_keep_the_daily_order_except_the_listed_pairs():
-    daily_pos = {
-        s["name"]: i for i, s in enumerate(_job("daily_ingest.yml", DAILY_JOB)["steps"])
-    }
+    daily_pos = {name: i for i, name in enumerate(_daily_steps())}
     watchdog_twins = [
         s["name"] for s in _job("watchdog.yml", WATCHDOG_JOB)["steps"] if s["name"] in TWINS
     ]
