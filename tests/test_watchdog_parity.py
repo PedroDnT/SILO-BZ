@@ -75,6 +75,7 @@ NOT_RECOVERED = {
     "Analyze tables post-ingest": "recovery heals data only (docs/architecture/OPERATIONS.md).",
     "Build / refresh analytical layer": "recovery heals data only; the next 06:00 run rebuilds it.",
     "Trigger dashboard rebuild (Vercel deploy hook)": "recovery heals data only; it publishes nothing.",
+    "Archive downloaded CVM files (R2)": "the next daily run downloads the same CVM files again and archives any new version (#982).",
 }
 
 # Watchdog steps with no daily twin, each with its reason.

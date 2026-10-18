@@ -381,6 +381,24 @@ jobs:
                      "keep serving the previous build until the next trigger." ;;
           esac
 
+      # Point-in-time record (#982). Most CVM tables are upserted in place, so a
+      # correction replaces the old value and nothing says when it appeared.
+      # This keeps each CVM file run_daily downloaded (the fetcher's ./cache) in
+      # R2 under raw/cvm/<url path>/<sha256>; bytes already held are not sent
+      # again, so an object's upload time is when SILO first saw that version.
+      # Off until the owner creates the bucket and sets RAW_ARCHIVE_ENABLED=1.
+      # Not continue-on-error: once enabled, a failed upload turns the run red.
+      # It is after the apply and the deploy hook, so it can block neither.
+      - name: Archive downloaded CVM files (R2)
+        if: ${{ !cancelled() && vars.RAW_ARCHIVE_ENABLED == '1' && steps.daily.outcome != 'skipped' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+        run: python scripts/archive_raw_sources.py --cache-dir cache --bucket "$R2_BUCKET" --endpoint "$R2_ENDPOINT"
+
       # The CVM probe's alarm (#866). The probe step stays green so the schema
       # apply and run_daily's non-CVM sources run; this step turns the run red
       # (and files the tracking issue) when CVM was unreachable. Last, so it
