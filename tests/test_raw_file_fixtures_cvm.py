@@ -289,13 +289,16 @@ def test_etf_registry_enriches_from_the_real_cad_rows():
     n, cap = _ingest(ingest_etf, ingest_etf.ingest_etf_registry, seed, _cad_rows())
     recs = {r["ticker"]: r for r in cap["cvm_etf_registry"]}
     assert n == len(recs) == len(seed)
-    # The three seed ETFs present in the fixture take cad_fi's registration date
-    # and status; a seed ETF absent from it keeps NULL enrichment.
+    # The three seed ETFs present in the fixture take cad_fi's registration date;
+    # the seed's status wins (#899: GOVE11 is CANCELADA in cad_fi, active in the
+    # CVM-175 seed and still trading). A seed ETF absent from it keeps NULL enrichment.
     assert {t: (recs[t]["cnpj"], recs[t]["dt_reg"], recs[t]["situacao"]) for t in ("GOVE11", "URET11", "GURU11")} == {
-        "GOVE11": ("11184136000115", date(2009, 12, 14), "CANCELADA"),
+        "GOVE11": ("11184136000115", date(2009, 12, 14), "Em Funcionamento Normal"),
         "URET11": ("40955945000181", date(2021, 12, 27), "CANCELADA"),
         "GURU11": ("43955479000122", date(2021, 12, 3), "CANCELADA"),
     }
+    assert (recs["GOVE11"]["is_active"], recs["GOVE11"]["dt_cancel"]) == (True, None)
+    assert recs["URET11"]["is_active"] is False and recs["GURU11"]["is_active"] is False
     assert recs["URET11"]["admin"] == "BANCO BNP PARIBAS BRASIL S/A"
     assert recs["GURU11"]["admin"] == "BTG PACTUAL SERVIÇOS FINANCEIROS S/A DTVM"
     enriched = {t for t, r in recs.items() if r["dt_reg"] is not None}
