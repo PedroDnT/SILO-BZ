@@ -19,48 +19,48 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 
 ## Ingest
 
-- A **slice** is (source, doc_type, period): `ok`, `skipped` (unpublished; CVM
-  probe down: `daily_scope`), or `error`.
+- A **slice** is (source, doc_type, period): `ok`, `skipped` (unpublished, file
+  unchanged, CVM probe down: `daily_scope`), or `error`.
+- The daily run sends the ETag / Last-Modified an ok slice stored
+  (`cvm_source_validator`, 7 days) for CDA, FII, FIP, SECURIT, CIA IPE/FCA; a
+  304 is `skipped`, `unchanged:`, fresh to `check_staleness.py`.
 - Daily windows heal late publication: CVM 4 months (gap-aware), the four CDA
-  blocks every month through M+5 (CVM completes them about 90 days late), last
-  year's FII files from January to March, COTAHIST and
-  B3's consolidated trade file (in `run_b3_events`) 7 days, BACEN 30 days. Current-year ITR/DFP: full on Monday (CVM
-  regenerates them Sunday), new documents and lineless headers otherwise. Deep history is manual:
-  `backfill.yml`, `market_backfill.yml`, `daily_ingest` modes `b3-backfill`,
-  `b3-trade-consolidated` (B3 kept that file from 2025-06-10 only),
-  `b3-credit` and `b3-corporate-events-full`.
-- A re-read CDA month replaces the rows of each fund in the file, so a
-  dropped or re-filed position goes (`cvm_ingest_log.rows_deleted`). Funds
-  missing from the file keep theirs.
-- B3 BDI (lending, investor flow) is a ratchet, no backfill ([SYSTEM](SYSTEM.md)).
+  blocks every month through M+5 (completed about 90 days late), last
+  year's FII files in January-March, COTAHIST and B3's consolidated trade file
+  (in `run_b3_events`) 7 days, BACEN 30 days. Current-year ITR/DFP: full on
+  Monday (CVM regenerates them Sunday), new documents and lineless headers
+  otherwise. Deep history is manual: `backfill.yml`, `market_backfill.yml`,
+  `daily_ingest` modes `b3-backfill`, `b3-trade-consolidated` (kept from
+  2025-06-10), `b3-credit`, `b3-corporate-events-full`.
+- A re-read CDA month replaces the rows of each fund in the file, so a dropped
+  or re-filed position goes (`cvm_ingest_log.rows_deleted`); absent funds keep theirs.
+- B3 BDI (lending, investor flow): a ratchet, no backfill ([SYSTEM](SYSTEM.md)).
 - OTC DEB (migration 74): `b3_credit_capture` saves raw CSV and knowledge time;
   `fact_credit_market` stores long metrics; missing sessions/drops fail it.
-  Daily capture is opt-in; history uses weekly slices.
+  Daily capture opt-in; history weekly.
 
 ## Analytical
 
-- Plain views change the moment rows land.
+- Plain views change as rows land.
 - Matviews (`dim_fund`, `fact_fund_monthly`, `mv_period_completeness`, …) change
-  only when `scripts/apply_analytical.sh` drops and recreates them.
+  only when `scripts/apply_analytical.sh` recreates them.
 - `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`,
   because a view depends on the first. The same apply refreshes them
   (`22_b3_tape_matviews.sql`) and `mv_b3_cash_event` (migration 56; it reads
-  `cia_ticker`): the cash events behind `close_total_return`,
-  resolved once there because the ISIN join costs seconds per call.
+  `cia_ticker`): the cash events behind `close_total_return`, resolved once
+  because the ISIN join costs seconds per call.
 - `mv_fund_holdings_monthly` (`30_fund_holdings.sql`) is the one daily pass over
-  the CDA holdings tables, which have no index on period; `/holdings` reads it.
+  the CDA holdings tables (no period index); `/holdings` reads it.
 - `mv_fund_name_history` (`31_api_portfolio.sql`) holds every name a fund ever
-  filed (CDA and registry) behind a trigram index; `api.portfolio_resolve` reads
-  it, rebuilt by the same apply. `portfolio_lookthrough` reads the CDA tables
+  filed (CDA, registry) behind a trigram index for `api.portfolio_resolve`. `portfolio_lookthrough` reads the CDA tables
   only by CNPJ and one month; `portfolio_instruments` filters `cd_ativo` by
-  month, while debenture returns use exact tickers and median PU from 3+ funds.
+  month; debenture returns use exact tickers and median PU from 3+ funds.
 - `api.portfolio_fee_peers` (`31_api_portfolio.sql`) groups the latest FI Extrato
-  fees of active funds by class, FUNDO_COTAS and scope (30-peer minimum), plus ETFs
-  via `portfolio_class_index` (generated from a reviewed YAML) and
-  `etf_market_snapshot`. `class_return_distribution` reads `fact_fund_monthly`;
+  fees of active funds by class, FUNDO_COTAS and scope (30-peer minimum), plus
+  ETFs via `portfolio_class_index` (reviewed YAML) and `etf_market_snapshot`. `class_return_distribution` reads `fact_fund_monthly`;
   `portfolio_equivalents` reads the same view (approved pairs), `cvm_etf_registry`
   and `etf_market_snapshot`.
-- pg_cron is absent (checked 2026-09-29); its schedules do not run.
+- pg_cron is absent (2026-09-29): its schedules do not run.
 
 ## Serving
 
