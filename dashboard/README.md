@@ -110,10 +110,10 @@ npm run build     # outputs to build/
 Deployed to **Vercel** (project `silo-bz` in team `deloslabs`; public URL
 [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/), which Vercel
 generates from the project name and reassigns to every production deployment — nothing to
-maintain, and nothing that can silently unpin). Production rebuilds once a day, after every
+maintain, and nothing that can silently unpin). Production rebuilds once a week, on Monday, after the
 successful scheduled Daily CVM Ingest (deploy hook). A merge to `main` does NOT rebuild it:
 `vercel.json` sets `git.deploymentEnabled.main = false`, so the hook is the only publisher.
-The snapshot is therefore at most a day old; `/` and `/ops` show when it was
+The snapshot is therefore at most a week old; `/` and `/ops` show when it was
 built (`sources/supabase/build_stamp.sql`). Can also be served as a static build — point
 any static host at `build/`.
 

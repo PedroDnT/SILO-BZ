@@ -8,7 +8,7 @@ It is built for financial accountability, not for choosing investments: there is
 
 | Start here  | Link                                                                                                                                  |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Dashboard   | [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/) (rebuilt after every weekday ingest; the page header says when) |
+| Dashboard   | [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/) (rebuilt every Monday after the ingest; the page header says when) |
 | Read API    | `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/` (schema `api`, anon key, open read)                                               |
 | Caller docs | [`scalar/`](scalar/) — researcher-facing guides on Scalar; `api-docs/` is the operator archive                                        |
 | For agents  | [`skill.md`](skill.md), [`llms.txt`](llms.txt)                                                                                        |

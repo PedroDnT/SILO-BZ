@@ -35,7 +35,7 @@ Single-context: root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
 - One Vercel project (`silo-bz`, team `deloslabs`) exists, and it builds only
   `dashboard/`: root `vercel.json` hardcodes `cd dashboard`. It also disables
   git-triggered production deployments on `main`, so a merge publishes nothing:
-  only the deploy hook does, fired by a scheduled daily run on weekdays (Brasília) whose analytical apply
+  only the deploy hook does, fired by a scheduled run on Mondays (Brasília) whose analytical apply
   succeeded (a red source does not block it) or by a dispatch with `rebuild_dashboard=true`. `scripts/vercel_should_build.sh`
   builds a PR preview only when `dashboard/`, `vercel.json` or the script itself
   changed. `webapp/` has no Vercel deployment (`webapp/README.md`). Do not assume
@@ -220,17 +220,9 @@ UPDATE`). **Never open a raw DB connection elsewhere — always go through `pg_c
 - **`serve/`** — read-only Flask adapter over schema `api` (`python -m serve.app`).
   Not an ingest trigger. See `docs/reference/API.md`.
 
-**The BDI group is a ratchet, and the only part of this warehouse that is.** B3 keeps
-~21 business days of those tables and publishes no archive, and an over-wide request
-returns HTTP 200 with a silently clamped window — so a missed session is lost at any
-price, `run_backfill` deliberately offers no lending option, and every ingest reconciles
-the sessions it received against the ones it asked for. Read `b3_lending_open_position`
-through `is_total` (B3 publishes both the per-market rows and its own `Total` sum; adding
-them double-counts), and read `% of float` together with `float_basis`
-(`index_free_float` and `shares_outstanding` are different denominators). In
-`b3_lending_trade`, `doador`/`tomador` are BROKERAGES, not beneficial owners —
-~75% of trades carry the same code on both legs, so a large borrow through a
-broker is its client book, not its own position.
+**BDI ratchet** (a missed B3 session is lost; read lending through `is_total`;
+`doador`/`tomador` are brokerages): `docs/agents/dataset-notes.md`, "B3 BDI ratchet",
+before you touch those tables.
 
 The other per-dataset notes (storage layout, FII versions, the FNET register,
 restatement diffs, lineage, the analytical layer) are in
@@ -258,12 +250,8 @@ For a _new class_ of data (e.g. market/price series for securities), read
 time series as a **long fact** keyed on `(instrument natural key, date[, metric])` rather
 than a wide per-source table — same provenance + idempotent-upsert rules apply.
 
-The daily run probes a **gap-aware trailing window** for monthly datasets
-(`CVM_DAILY_LOOKBACK_MONTHS`, default 4): it always refreshes the current + previous month
-and additionally re-fetches any month in the window with no successful `cvm_ingest_log`
-row, so a slice CVM publishes late (its 1–2 month lag) is healed on the next run instead of
-missed forever. A not-yet-published month 404s and is logged `skipped`, not `error`. Deep
-history is still `run_backfill`'s job, not the daily window's.
+Monthly datasets use a gap-aware daily lookback (`CVM_DAILY_LOOKBACK_MONTHS`, default 4):
+`docs/agents/dataset-notes.md`, "Gap-aware daily window".
 
 ### Adding an API endpoint
 
@@ -441,11 +429,8 @@ see, so it is the lock (owner decision, 2026-10-07, #711):
 
 ## Codex task-boundary board
 
-- This repository uses the opt-in Codex task-boundary board in `.codex/coordination/project.yaml`.
-- Before substantial writes, load the installed `codex-coordinator` skill, list active claims from the primary worktree, and publish only this task's bounded claim.
-- The local board is Codex's own; also claim on GitHub as "Working beside other agents" says, so other agents see the claim.
-- Native Codex tasks remain the execution, messaging, and transcript authority; an explicitly requested goal Coordinator is on demand, with no heartbeat or mandatory pull-request workflow.
-- Reject cross-project notices and never store transcripts, reasoning, prompts, or tool output in Coordinator state.
+Codex: before substantial writes, read `docs/agents/codex-coordination.md` (opt-in board,
+`.codex/coordination/project.yaml`).
 
 <!-- graphify-rules-start (managed by `graphify init`) -->
 ## Use Graphify before grep

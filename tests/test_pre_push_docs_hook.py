@@ -422,25 +422,14 @@ def test_the_hook_is_wired_to_git_push():
     assert len(wired) == 1 and wired[0]["if"] == "Bash(git push *)"
 
 
-def test_the_prettier_hook_leaves_the_changelog_alone(tmp_path):
-    """Prettier pads every row of a markdown table to the widest cell: 228
-    changed lines on this changelog, the churn test_changelog_integrity.py
-    refuses to normalise. The hook above sends every branch to that file."""
+def test_no_edit_hook_runs_prettier():
+    """Prettier pads every row of a markdown table to the widest cell. It
+    rewrote whole tables on every edit and pushed DECISIONS.md over its size
+    cap, so the owner removed the hook (#944)."""
     settings = json.loads(SETTINGS.read_text(encoding="utf-8"))
-    command = next(handler["command"] for group in settings["hooks"]["PostToolUse"]
-                   for handler in group["hooks"] if "prettier" in handler["command"])
-    calls = tmp_path / "calls"
-    fake = tmp_path / "bin" / "prettier"
-    fake.parent.mkdir()
-    fake.write_text(f'#!/usr/bin/env bash\necho "$@" >> "{calls}"\n', encoding="utf-8")
-    fake.chmod(0o755)
-    env = {**ENV, "PATH": f"{fake.parent}{os.pathsep}{ENV['PATH']}"}
-    for path in ("/repo/docs/planning/CHANGELOG.md",
-                 "/repo/docs/planning/changelog.d/2026-10-04_claude-x.md", "/repo/README.md"):
-        subprocess.run(["bash", "-c", command], env=env, check=True, text=True,
-                       input=json.dumps({"tool_input": {"file_path": path}}))
-    formatted = calls.read_text(encoding="utf-8").splitlines()
-    assert len(formatted) == 1 and formatted[0].endswith("/repo/README.md")
+    commands = [handler["command"] for group in settings["hooks"]["PostToolUse"]
+                for handler in group["hooks"]]
+    assert not [c for c in commands if "prettier" in c]
 
 
 # The four architecture pages (docs/architecture/) describe structure. A change
