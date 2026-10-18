@@ -53,6 +53,18 @@ including the trade-by-trade tape with the brokerage on each leg, investor-type
 flow, index free float and the cash instrument registry; `src/fetchers/b3_bdi_fetcher.py`
 carries the verified endpoint contract).
 
+**B3 BDI ratchet — the BDI group is a ratchet, and the only part of this warehouse that is.** B3 keeps
+~21 business days of those tables and publishes no archive, and an over-wide request
+returns HTTP 200 with a silently clamped window — so a missed session is lost at any
+price, `run_backfill` deliberately offers no lending option, and every ingest reconciles
+the sessions it received against the ones it asked for. Read `b3_lending_open_position`
+through `is_total` (B3 publishes both the per-market rows and its own `Total` sum; adding
+them double-counts), and read `% of float` together with `float_basis`
+(`index_free_float` and `shares_outstanding` are different denominators). In
+`b3_lending_trade`, `doador`/`tomador` are BROKERAGES, not beneficial owners —
+~75% of trades carry the same code on both legs, so a large borrow through a
+broker is its client book, not its own position.
+
 **Index levels** (`b3_index_level`, migration 55; `src/fetchers/b3_index_fetcher.py` →
 `ingest_b3_index.py`, audit `b3` / `index_levels`) hold B3's published daily level for nine
 indices: IBOV (1968), IBXX, IBXL, SMLL, IDIV, UTIL, ICON, IMOB, IFIX. They are levels as
@@ -218,3 +230,10 @@ refuses to start. The act links' HEAD checks go direct, without the token. A day
 `count` reaches 10,000 raises instead of paging past the cap.
 `public.rj_coverage` gives, per tribunal (read from the CNJ number) and source,
 the share of cases with at least one administrador judicial document link.
+
+**Gap-aware daily window.** The daily run probes a **gap-aware trailing window** for monthly datasets
+(`CVM_DAILY_LOOKBACK_MONTHS`, default 4): it always refreshes the current + previous month
+and additionally re-fetches any month in the window with no successful `cvm_ingest_log`
+row, so a slice CVM publishes late (its 1–2 month lag) is healed on the next run instead of
+missed forever. A not-yet-published month 404s and is logged `skipped`, not `error`. Deep
+history is still `run_backfill`'s job, not the daily window's.

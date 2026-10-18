@@ -356,12 +356,13 @@ jobs:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
         run: |
           set -uo pipefail
-          # Owner decision 2026-10-10: the scheduled run publishes the dashboard
-          # on weekdays only (Brasília date, workflow TZ). Ingest and analytics
-          # still run every day; Monday's build carries the weekend. A manual
-          # dispatch with rebuild_dashboard=true still publishes on any day.
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$(date +%u)" -ge 6 ]; then
-            echo "Weekend scheduled run: dashboard rebuild skipped by design."
+          # Owner decision 2026-10-18 (supersedes the weekday rule of 2026-10-10):
+          # the scheduled run publishes the dashboard on Mondays only (Brasília
+          # date, workflow TZ). Ingest and analytics still run every day;
+          # Monday's build carries the week. A manual dispatch with
+          # rebuild_dashboard=true still publishes on any day.
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] && [ "$(date +%u)" -ne 1 ]; then
+            echo "Not Monday: scheduled dashboard rebuild skipped by design."
             exit 0
           fi
           if [ -z "${VERCEL_DEPLOY_HOOK_URL:-}" ]; then

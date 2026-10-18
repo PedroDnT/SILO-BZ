@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_root_instructions_fit_the_loader_byte_cap():
     size = len((ROOT / "AGENTS.md").read_bytes())
     assert size < 32 * 1024, f"AGENTS.md is {size} bytes; loader cap is 32 KiB"
+    assert size < 26 * 1024 + 512, f"AGENTS.md is {size} bytes; keep 6 KiB of headroom under the cap (#976)"
 
 
 def test_reference_detail_is_on_demand_and_reachable_from_entry_points():
@@ -16,6 +17,11 @@ def test_reference_detail_is_on_demand_and_reachable_from_entry_points():
     silo = (ROOT / ".claude/skills/silo/SKILL.md").read_text()
     assert "@docs/agents/dataset-notes.md" not in claude
     assert "@AGENTS.md" in claude
-    for name in ("docs/agents/dataset-notes.md", "docs/agents/cursor-cloud.md", "docs/agents/consumers.md"):
+    for name in (
+        "docs/agents/dataset-notes.md",
+        "docs/agents/cursor-cloud.md",
+        "docs/agents/consumers.md",
+        "docs/agents/codex-coordination.md",
+    ):
         assert name in agents and (ROOT / name).is_file()
     assert "docs/agents/dataset-notes.md" in silo
