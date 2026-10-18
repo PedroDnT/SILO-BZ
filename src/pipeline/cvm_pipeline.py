@@ -34,6 +34,7 @@ from uuid import uuid4
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src import cnpj as cnpj_text
+from src.fetchers import conditional
 from src.fetchers.cvm_fetcher import CVMFetcher
 from src.store.pg_client import get_pg_client, upsert_rows
 from src.pipeline.ingest_log import describe, finish as _finish_row, lineage
@@ -536,7 +537,10 @@ def _classify_finish(
     * 'ok' — rows landed, or the published file was genuinely empty
       (fetched == 0) for a period that never held rows.
     """
-    if error and any(marker in error for marker in _NOT_PUBLISHED_MARKERS):
+    if error and (
+        error.startswith(conditional.UNCHANGED_PREFIX)
+        or any(marker in error for marker in _NOT_PUBLISHED_MARKERS)
+    ):
         return "skipped", error
     if error:
         return "error", error
@@ -888,8 +892,16 @@ class CVMIngestor:
         name = f"{entity}/{doc_type}"
         if year:
             name += f" {year}" + (f"-{month:02d}" if month else "")
+        sources = self._open_sources(entity, doc_type, year, month)
+        token = conditional.current.set(sources) if sources is not None else None
         try:
             result = await work()
+        except conditional.SourceUnchanged as exc:
+            # The file is the one this slice last loaded 'ok' (HTTP 304): not a
+            # failure, and not a load either. One audit row, status 'skipped'.
+            self._log_finish(run_id, 0, str(exc))
+            logger.info("%s: %s", name, exc)
+            return 0
         except Exception as exc:
             logger.warning("ingest %s failed: %s", name, _describe(exc))
             # rows_deleted only for a slice that replaces rows; NULL otherwise.
@@ -898,6 +910,9 @@ class CVMIngestor:
             if status == "error":
                 raise CVMSliceError([self.failures[-1]]) from exc
             return 0
+        finally:
+            if token is not None:
+                conditional.current.reset(token)
         rows, fetched = result if isinstance(result, tuple) else (result, None)
         extra = {} if stats is None else {"deleted": stats.get("rows_deleted", 0)}
         if (entity, doc_type) not in _INCREMENTAL_SLICES:
@@ -908,8 +923,73 @@ class CVMIngestor:
         if status == "error":
             # The data contract: source rows fetched, none upserted.
             raise CVMSliceError([self.failures[-1]])
+        if sources is not None and status == "ok" and rows > 0:
+            self._store_validators(entity, doc_type, year, month, sources)
         logger.info("%s: %d rows", name, rows)
         return rows
+
+    def _open_sources(
+        self, entity: str, doc_type: str, year: Optional[int], month: Optional[int],
+    ) -> Optional[conditional.SliceSources]:
+        """The validators this slice may send, or None when it downloads as always.
+
+        Only the daily run asks (``daily_update`` sets ``_conditional_fetch``;
+        a backfill re-reads on purpose), only for the slices in
+        ``conditional.CONDITIONAL_SLICES``. The slice still gets a
+        ``SliceSources`` with nothing stored when none is recorded, so the
+        fetcher can note what it saw. A failed lookup means a full download.
+        """
+        if not (getattr(self, "_conditional_fetch", False) and conditional.enabled()
+                and conditional.is_conditional_slice(entity, doc_type)):
+            return None
+        sources = conditional.SliceSources()
+        try:
+            with self._supabase.cursor() as cur:
+                cur.execute(
+                    "SELECT url, etag, last_modified, content_length FROM cvm_source_validator"
+                    " WHERE entity=%s AND doc_type=%s AND period_year=%s AND period_month=%s"
+                    " AND parser_version IS NOT DISTINCT FROM %s"
+                    " AND verified_at > now() - make_interval(days => %s)",
+                    (entity, doc_type, year or 0, month or 0,
+                     lineage()["parser_version"], conditional.max_age_days()),
+                )
+                for url, etag, last_modified, length in cur.fetchall():
+                    sources.stored[url] = conditional.Validator(etag, last_modified, length)
+        except Exception as e:
+            logger.warning(
+                "validator lookup failed for %s/%s %s-%s (%s); downloading in full",
+                entity, doc_type, year, month, _describe(e),
+            )
+            sources.stored.clear()
+        return sources
+
+    def _store_validators(
+        self, entity: str, doc_type: str, year: Optional[int], month: Optional[int],
+        sources: conditional.SliceSources,
+    ) -> None:
+        """Remember the versions an 'ok' slice loaded, so tomorrow can ask 'changed?'.
+
+        Best-effort like the audit writes: a failure costs tomorrow's skip, never
+        a row, and is logged.
+        """
+        rows = [{
+            "entity": entity, "doc_type": doc_type,
+            "period_year": year or 0, "period_month": month or 0,
+            "url": url, "etag": v.etag, "last_modified": v.last_modified,
+            "content_length": v.content_length,
+            "parser_version": lineage()["parser_version"],
+            "verified_at": datetime.now(timezone.utc).isoformat(),
+        } for url, v in sources.seen.items()]
+        try:
+            upsert_rows(
+                self._supabase, "cvm_source_validator", rows,
+                conflict_columns="entity,doc_type,period_year,period_month,url",
+            )
+        except Exception as e:
+            logger.warning(
+                "validator write failed for %s/%s %s-%s (%s); no skip tomorrow",
+                entity, doc_type, year, month, _describe(e),
+            )
 
     def _previous_ok_rows(
         self, entity: str, doc_type: str, year: Optional[int], month: Optional[int],
@@ -2576,6 +2656,7 @@ class CVMIngestor:
         totals = _new_totals()
         tasks: List[IngestTask] = []
         daily_entities = _resolve_daily_entities()
+        self._conditional_fetch = True  # #874: a file unchanged since its last ok load is skipped
 
         # Fund registry refresh
         # FII omitted on purpose — CVM retired FII/CAD/; registro_fundo covers it.
@@ -2620,6 +2701,9 @@ class CVMIngestor:
             self._refresh_etf_metrics()
 
         logger.info("Daily update complete: %s", totals)
+        unchanged = [x for x in self.skips if conditional.UNCHANGED_PREFIX in x]
+        if unchanged:
+            logger.info("Conditional download: %d slice(s) skipped as unchanged", len(unchanged))
         # Every slice ran; a failed one now fails the run (#691).
         self._raise_if_failed(totals)
         return totals

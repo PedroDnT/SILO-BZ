@@ -41,6 +41,7 @@ from typing import Any, Optional
 # Reuse the single sanctioned DB entry point — never open a raw connection here
 # (data-integrity rule: all DB access goes through pg_client).
 from src.store.pg_client import get_pg_client
+from src.fetchers.conditional import UNCHANGED_PREFIX
 from src.pipeline import daily_window
 
 # Proxy slices. The daily FI snapshot is the canonical "did the daily run happen"
@@ -136,6 +137,10 @@ def last_success_age_hours(
 ) -> Optional[float]:
     """Hours since the most recent successful ingest of (entity, doc_type).
 
+    A ``skipped`` row that says the source file is unchanged (#874) counts as a
+    success: the file is the one an earlier ``ok`` run loaded, so the slice is
+    as fresh as that file. Any other ``skipped`` (not published) does not.
+
     Returns None when no successful run has ever been recorded (treated as
     stale by callers — a slice that never ran needs attention).
     """
@@ -143,8 +148,9 @@ def last_success_age_hours(
         cur.execute(
             "SELECT MAX(finished_at) FROM cvm_ingest_log "
             "WHERE entity = %s AND doc_type = %s "
-            "AND status = 'ok' AND finished_at IS NOT NULL",
-            (entity, doc_type),
+            "AND (status = 'ok' OR (status = 'skipped' AND error_msg LIKE %s)) "
+            "AND finished_at IS NOT NULL",
+            (entity, doc_type, UNCHANGED_PREFIX + "%"),
         )
         row = cur.fetchone()
 

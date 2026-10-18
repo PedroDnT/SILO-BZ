@@ -29,6 +29,7 @@ import aiohttp
 import dns.resolver
 from aiohttp.abc import AbstractResolver
 
+from . import conditional
 from .cvm_config import config, dataset_config
 from .http import Retry, SessionHolder, linear, retry_async
 
@@ -306,7 +307,21 @@ class CVMFetcher:
         except Exception:
             return None
 
-    async def _save_cache(self, cache_path: str, meta_path: str, content: bytes, url: str) -> None:
+    def _cached_validator(self, meta_path: str) -> Optional[conditional.Validator]:
+        """The validator stored next to a cache entry, None when it has none."""
+        try:
+            with open(meta_path, "r") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            return None
+        if not (meta.get("etag") or meta.get("last_modified")):
+            return None
+        return conditional.Validator(meta.get("etag"), meta.get("last_modified"), meta.get("content_length"))
+
+    async def _save_cache(
+        self, cache_path: str, meta_path: str, content: bytes, url: str,
+        validator: Optional[conditional.Validator] = None,
+    ) -> None:
         """Write the cache entry atomically.
 
         Writing straight to cache_path let a concurrent reader observe a
@@ -333,6 +348,11 @@ class CVMFetcher:
                 "url": url,
                 "size": len(content),
             }
+            if validator is not None:
+                metadata.update(
+                    etag=validator.etag, last_modified=validator.last_modified,
+                    content_length=validator.content_length,
+                )
             async with aiofiles.open(tmp_meta, "w") as f:
                 await f.write(json.dumps(metadata, indent=2))
             os.replace(tmp_meta, meta_path)
@@ -380,6 +400,7 @@ class CVMFetcher:
         cache_path, meta_path = self._cache_paths(url)
         cached = await self._load_cache(cache_path, meta_path)
         if cached is not None:
+            self._note_seen(url, self._cached_validator(meta_path))
             return cached
 
         # Single-flight: hold the per-URL lock across the download so the other
@@ -389,14 +410,27 @@ class CVMFetcher:
         async with lock:
             cached = await self._load_cache(cache_path, meta_path)
             if cached is not None:
+                self._note_seen(url, self._cached_validator(meta_path))
                 return cached
             return await self._download_uncached(url, cache_path, meta_path)
+
+    @staticmethod
+    def _note_seen(url: str, validator: Optional[conditional.Validator]) -> None:
+        """Tell the slice being audited which version of ``url`` it is about to ingest."""
+        sources = conditional.current.get()
+        if sources is not None and validator is not None:
+            sources.seen[url] = validator
 
     async def _download_uncached(self, url: str, cache_path: str, meta_path: str) -> bytes:
         # Cheapest possible check, before any socket or backoff: if the breaker
         # has already latched, this download cannot succeed either.
         self._raise_if_host_unreachable()
         timeout = aiohttp.ClientTimeout(total=self.timeout)
+        # A conditional request only for a slice that loaded this very file
+        # before (conditional.py): its stored validator, or nothing.
+        sources = conditional.current.get()
+        stored = sources.validator_for(url) if sources is not None else None
+        headers = stored.request_headers() if stored is not None else {}
 
         async def build(rotation: int) -> aiohttp.ClientSession:
             return await self._build_session(timeout, rotation)
@@ -410,7 +444,7 @@ class CVMFetcher:
                 # n is 1-based; the DNS order rotates from 0, as it always has.
                 session = await sessions.get(self._rotation_key(n - 1))
                 try:
-                    async with session.get(url) as response:
+                    async with session.get(url, headers=headers or None) as response:
                         # Any HTTP response proves the host answered, so it clears
                         # the connect-failure breaker even when the status is an
                         # error. A 404 for a not-yet-published month is routine on
@@ -418,10 +452,14 @@ class CVMFetcher:
                         self._note_success()
                         if response.status == 404:
                             raise ValueError(f"Data not found at {url}")
+                        if response.status == 304 and stored is not None:
+                            raise conditional.SourceUnchanged(url, stored)
                         if response.status != 200:
                             raise RuntimeError(f"HTTP {response.status} from {url}")
                         content = await response.read()
-                        await self._save_cache(cache_path, meta_path, content, url)
+                        validator = conditional.Validator.from_headers(response.headers)
+                        await self._save_cache(cache_path, meta_path, content, url, validator)
+                        self._note_seen(url, validator)
                         self._note_success()
                         return content
                 except aiohttp.ClientConnectorError as exc:
