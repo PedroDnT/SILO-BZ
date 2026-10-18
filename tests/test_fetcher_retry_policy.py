@@ -38,6 +38,7 @@ from src.fetchers import (
 )
 
 REAL_CLIENT = httpx.AsyncClient
+REAL_SLEEP = asyncio.sleep
 DELAY = 1.5
 ATTEMPTS = 3
 LINEAR = [DELAY * 1, DELAY * 2]  # waits after attempt 1 and 2 of 3, none after 3
@@ -63,7 +64,8 @@ def sleeps(monkeypatch) -> List[float]:
     waited: List[float] = []
 
     async def fake_async_sleep(seconds: float, *a: Any, **k: Any) -> None:
-        waited.append(seconds)
+        if seconds > 0:  # aiohttp yields with sleep(0); that is not a backoff
+            waited.append(seconds)
 
     monkeypatch.setattr(asyncio, "sleep", fake_async_sleep)
     monkeypatch.setattr(time, "sleep", lambda seconds: waited.append(seconds))
@@ -430,7 +432,7 @@ async def test_cvm_timeouts_wait_linearly_between_attempts(cvm, tmp_path, sleeps
     async def stall(request):
         nonlocal calls
         calls += 1
-        await asyncio.Event().wait()  # never answers; asyncio.sleep is the recorder here
+        await REAL_SLEEP(2)  # past the 0.2 s total timeout; asyncio.sleep is the recorder here
         return web.Response(body=b"x")
 
     url, cleanup = await _local_server(stall)
