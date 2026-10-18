@@ -873,3 +873,22 @@ Open, if the owner picks this up again:
   `src/fetchers/rj/sites.py`.
 - **Owner, Supabase dashboard:** delete the spike Edge Functions `djen-reach-probe` and
   `djen-sample-probe` (#843); the MCP has no delete tool.
+
+## 26. Point-in-time record of CVM source files: off until the owner creates the bucket (#982)
+
+Most CVM tables are upserted in place, so a correction replaces the old value and
+`fetched_at` (first insert only) cannot say when it appeared. Since #982 the daily
+ingest job can keep each CVM file it downloaded in R2, under
+`raw/cvm/<url path>/<sha256>`, one object per distinct content
+(`scripts/archive_raw_sources.py`). It records from the day it is enabled; the past
+cannot be rebuilt. **Owner, to enable:**
+
+1. Create a private R2 bucket (for example `silo-raw-sources`) and an R2 API token
+   with object read and write on that bucket only.
+2. Add the repository secrets `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and
+   `R2_ENDPOINT` (`https://<account_id>.r2.cloudflarestorage.com`), and the
+   variables `R2_BUCKET` and `RAW_ARCHIVE_ENABLED=1`.
+
+Once enabled, a failed upload turns the daily run red as its last step. Size is not
+measured yet; the current-month FI daily file changes every day, so expect tens to
+hundreds of MB a day.
