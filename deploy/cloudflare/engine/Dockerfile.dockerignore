@@ -3,6 +3,7 @@
 !deploy/cloudflare/engine/requirements.txt
 !deploy/cloudflare/engine/start.sh
 !src/__init__.py
+!src/cnpj.py
 !src/portfolio/**
 **/__pycache__
 **/*.pyc

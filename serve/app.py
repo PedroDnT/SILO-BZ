@@ -24,12 +24,12 @@ import psycopg2
 import psycopg2.errors
 from flask import Flask, jsonify, request
 
+from src import cnpj as cnpj_text
 from serve.catalog import METRICS, QUOTE_HISTORY_FIELDS, catalog_payload, tool_specs
 from serve.pool import ServePool
 
 logger = logging.getLogger(__name__)
 
-_CNPJ_DIGITS = re.compile(r"\D")
 _TICKER = re.compile(r"^[A-Z0-9]{4,12}$")
 _MAX_POINTS = 5000
 # api.panel returns one 1000-row page per call (PostgREST db-max-rows, the
@@ -97,8 +97,8 @@ def normalize_ticker(raw: str) -> str:
 
 
 def normalize_cnpj(raw: str) -> str:
-    digits = _CNPJ_DIGITS.sub("", raw or "")
-    if len(digits) != 14:
+    digits = cnpj_text.exact(raw)
+    if digits is None:
         raise ValueError("cnpj must have 14 digits")
     return digits
 
@@ -221,8 +221,8 @@ def parse_ids(raw: Optional[str]) -> List[str]:
         token = part.strip()
         if not token:
             continue
-        digits = _CNPJ_DIGITS.sub("", token)
-        if len(digits) == 14:
+        digits = cnpj_text.exact(token)
+        if digits is not None:
             out.append(digits)
         else:
             out.append(normalize_ticker(token))

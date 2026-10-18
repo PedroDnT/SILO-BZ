@@ -19,6 +19,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import quote, urlencode
 
 import httpx
+
+from .http import Retry, env_retry_config, linear, retry_async
 import numpy as np
 import pandas as pd
 
@@ -145,9 +147,7 @@ def _olinda_retry_config() -> Tuple[int, float]:
     backoff. Exhausted retries still raise — a persistent 503 is an error,
     not an empty week.
     """
-    attempts = max(1, int(os.getenv("BACEN_OLINDA_MAX_RETRIES", "4")))
-    delay = float(os.getenv("BACEN_OLINDA_RETRY_DELAY", "2"))
-    return attempts, delay
+    return env_retry_config("BACEN_OLINDA", attempts="4", delay="2")
 
 
 def _olinda_parse(body: str, url: str) -> Dict[str, Any]:
@@ -186,29 +186,22 @@ async def _olinda_request(
     as "response is not JSON" and abort without a second try. Persistent
     failures still raise ``BacenFetchError`` — never an empty list.
     """
-    last_exc: Optional[BaseException] = None
-    for attempt in range(1, attempts + 1):
+    async def attempt(n: int) -> Dict[str, Any]:
         try:
             resp = await client.get(full)
         except httpx.HTTPError as exc:
-            last_exc = exc
             logger.warning(
                 "Olinda request error %s attempt=%d/%d: %s",
-                url, attempt, attempts, exc,
+                url, n, attempts, exc,
             )
-            if attempt < attempts:
-                await asyncio.sleep(delay * attempt)
-            continue
+            raise Retry(exc) from exc
 
         if resp.status_code in _OLINDA_RETRY_STATUSES:
-            last_exc = BacenFetchError(f"{url}: HTTP {resp.status_code}")
             logger.warning(
                 "Olinda HTTP %s attempt=%d/%d: %s",
-                resp.status_code, attempt, attempts, url,
+                resp.status_code, n, attempts, url,
             )
-            if attempt < attempts:
-                await asyncio.sleep(delay * attempt)
-            continue
+            raise Retry(BacenFetchError(f"{url}: HTTP {resp.status_code}"))
 
         if resp.status_code != 200:
             # 4xx (and other non-retryable statuses) are not blips. Parse so
@@ -222,8 +215,13 @@ async def _olinda_request(
 
         return _olinda_parse(resp.text, url)
 
-    raise BacenFetchError(
-        f"{url}: failed after {attempts} attempts: {last_exc}"
+    return await retry_async(
+        attempt,
+        attempts=attempts,
+        backoff=linear(delay),
+        exhausted=lambda last, n: BacenFetchError(
+            f"{url}: failed after {n} attempts: {last}"
+        ),
     )
 
 
@@ -414,23 +412,16 @@ async def _sgs_request(
     full = f"{url}?{urlencode(params)}"
     where = f"SGS {label} ({code})"
 
-    last_exc: Optional[BaseException] = None
-    for attempt in range(1, attempts + 1):
+    async def attempt(n: int) -> List[Dict[str, Any]]:
         try:
             resp = await client.get(full)
         except httpx.HTTPError as exc:
-            last_exc = exc
-            logger.warning("%s request error attempt=%d/%d: %s", where, attempt, attempts, exc)
-            if attempt < attempts:
-                await asyncio.sleep(delay * attempt)
-            continue
+            logger.warning("%s request error attempt=%d/%d: %s", where, n, attempts, exc)
+            raise Retry(exc) from exc
 
         if resp.status_code in _OLINDA_RETRY_STATUSES:
-            last_exc = BacenFetchError(f"{where}: HTTP {resp.status_code}")
-            logger.warning("%s HTTP %s attempt=%d/%d", where, resp.status_code, attempt, attempts)
-            if attempt < attempts:
-                await asyncio.sleep(delay * attempt)
-            continue
+            logger.warning("%s HTTP %s attempt=%d/%d", where, resp.status_code, n, attempts)
+            raise Retry(BacenFetchError(f"{where}: HTTP {resp.status_code}"))
 
         if resp.status_code == 404 and any(m in resp.text for m in _SGS_NOT_FOUND_MARKERS):
             return []
@@ -445,11 +436,8 @@ async def _sgs_request(
             # series 432, gone on the next request. A page is not data;
             # treat it as transient like a 503 and retry. Exhausted retries
             # still raise — never an empty window.
-            last_exc = BacenFetchError(f"{where}: response is not JSON: {resp.text[:200]}")
-            logger.warning("%s non-JSON 200 attempt=%d/%d: %s", where, attempt, attempts, resp.text[:80].replace("\n", " "))
-            if attempt < attempts:
-                await asyncio.sleep(delay * attempt)
-            continue
+            logger.warning("%s non-JSON 200 attempt=%d/%d: %s", where, n, attempts, resp.text[:80].replace("\n", " "))
+            raise Retry(BacenFetchError(f"{where}: response is not JSON: {resp.text[:200]}")) from exc
         if not isinstance(payload, list):
             # A JSON object on a 200 is BACEN's error envelope — {"erro":{}}
             # with no message for a window it will not serve (series 432,
@@ -460,10 +448,13 @@ async def _sgs_request(
             )
         return payload
 
-    message = f"{where}: failed after {attempts} attempts: {last_exc}"
-    if _is_name_not_found(last_exc):
-        raise BacenHostUnresolved(message)
-    raise BacenFetchError(message)
+    def exhausted(last: Optional[BaseException], n: int) -> BaseException:
+        message = f"{where}: failed after {n} attempts: {last}"
+        if _is_name_not_found(last):
+            return BacenHostUnresolved(message)
+        return BacenFetchError(message)
+
+    return await retry_async(attempt, attempts=attempts, backoff=linear(delay), exhausted=exhausted)
 
 # ---------------------------------------------------------------------------
 # Client

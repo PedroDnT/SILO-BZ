@@ -22,7 +22,7 @@ still failing after the engine's one retry; no PDF, retry later), 500 anything e
 ## Build and run locally
 
 From the repository root (the build context must be the root; the whitelist in
-`Dockerfile.dockerignore` sends only `src/portfolio/` and the requirements):
+`Dockerfile.dockerignore` sends only `src/portfolio/`, `src/cnpj.py` (the one CNPJ helper) and the requirements):
 
 ```bash
 docker build -f deploy/cloudflare/engine/Dockerfile -t silo-engine .

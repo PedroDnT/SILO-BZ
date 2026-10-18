@@ -65,9 +65,13 @@ import base64
 import json
 import logging
 import time
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List
 
 import requests
+
+from src import cnpj as cnpj_text
+
+from .http import Retry, exponential, retry_sync
 
 logger = logging.getLogger(__name__)
 
@@ -161,8 +165,8 @@ class B3CorporateEventsFetcher:
         which is a fabricated fact.
         """
         url = f"{BASE_URL}/{endpoint}/{self._token(payload)}"
-        last_error: Optional[Exception] = None
-        for attempt in range(1, self.max_retries + 1):
+
+        def attempt(n: int) -> Any:
             try:
                 response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
@@ -186,14 +190,17 @@ class B3CorporateEventsFetcher:
                 return self._decode(text)
             except B3SupplementEmpty:
                 raise
-            except Exception as exc:  # noqa: BLE001 - re-raised below
-                last_error = exc
-                if attempt < self.max_retries:
-                    time.sleep(self.sleep_between * (2 ** attempt))
-        raise RuntimeError(
-            f"B3 {endpoint} failed after {self.max_retries} attempts "
-            f"for {payload!r}: {last_error}"
-        ) from last_error
+            except Exception as exc:  # noqa: BLE001 - re-raised by retry_sync once the budget is spent
+                raise Retry(exc) from exc
+
+        return retry_sync(
+            attempt,
+            attempts=self.max_retries,
+            backoff=exponential(self.sleep_between),
+            exhausted=lambda last, n: RuntimeError(
+                f"B3 {endpoint} failed after {n} attempts for {payload!r}: {last}"
+            ),
+        )
 
     # -- public surface -----------------------------------------------------
     def list_companies(self, page_size: int = 120) -> Iterator[Dict[str, Any]]:
@@ -241,8 +248,8 @@ class B3CorporateEventsFetcher:
                 # zeros (Banco do Brasil 00000000000191 arrives as "191").
                 # Restoring them is formatting, not inference: a CNPJ is 14
                 # digits by definition. Anything longer is left empty.
-                digits = "".join(ch for ch in str(row.get("cnpj") or "") if ch.isdigit())
-                cnpj = digits.zfill(14) if 0 < len(digits) <= 14 else ""
+                padded = cnpj_text.pad(row.get("cnpj"))
+                cnpj = padded if padded and len(padded) == cnpj_text.LENGTH else ""
                 entries.append({"trading_name": name, "cnpj": cnpj})
         return names
 

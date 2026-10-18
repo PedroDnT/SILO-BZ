@@ -781,8 +781,12 @@ a decision first.
   `CVM_CACHE_DIR`, CDA months M..M+5 re-read only when a file changed.
 - `COPY` into a staging table, then one `INSERT … ON CONFLICT … WHERE IS DISTINCT
 FROM`, instead of `execute_values`.
-- One HTTP session per run, one shared retry helper (11 fetchers copy the loop),
-  one CNPJ helper (8 copies).
+- ~~One HTTP session per run, one shared retry helper (11 fetchers copy the loop),
+  one CNPJ helper (8 copies).~~ Done (#876): `src/fetchers/http.py` holds the retry
+  policy and a CVM download keeps one session across its attempts (a session per
+  download, not per run); `src/cnpj.py` is the CNPJ helper. Still copied: the
+  check-digit math (`validation.py`, `statement_ocr.py`) and the row hash
+  (`mapping.py`, `ingest_fii.py`).
 
 **Data gaps**
 

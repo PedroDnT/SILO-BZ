@@ -68,7 +68,6 @@ HTTP 400 for every BDI table name.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging
@@ -77,6 +76,8 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+from .http import Retry, linear, retry_async
 
 logger = logging.getLogger(__name__)
 
@@ -170,27 +171,23 @@ class B3BdiFetcher:
         return text
 
     async def _post(self, url: str, payload: Dict[str, Any], *, label: str) -> str:
-        last_exc: Optional[BaseException] = None
         attempts = max(1, self.max_retries)
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout), follow_redirects=True, headers=_HEADERS
         ) as client:
-            for attempt in range(1, attempts + 1):
+
+            async def attempt(n: int) -> str:
                 try:
                     resp = await client.post(url, content=json.dumps(payload))
                 except httpx.HTTPError as exc:
-                    last_exc = exc
                     logger.warning("B3 BDI %s transport error attempt=%d/%d: %s",
-                                   label, attempt, attempts, exc)
-                    await self._backoff(attempt, attempts)
-                    continue
+                                   label, n, attempts, exc)
+                    raise Retry(exc) from exc
 
                 if resp.status_code in _RETRY_STATUSES:
-                    last_exc = B3BdiFetchError(f"{label} returned HTTP {resp.status_code}")
                     logger.warning("B3 BDI %s HTTP %s attempt=%d/%d (Cloudflare throttle?)",
-                                   label, resp.status_code, attempt, attempts)
-                    await self._backoff(attempt, attempts)
-                    continue
+                                   label, resp.status_code, n, attempts)
+                    raise Retry(B3BdiFetchError(f"{label} returned HTTP {resp.status_code}"))
 
                 if resp.status_code != 200:
                     raise B3BdiFetchError(
@@ -202,19 +199,20 @@ class B3BdiFetcher:
                     raise B3BdiFetchError(f"{label} returned an empty body")
                 if _looks_like_html(text):
                     # A challenge page served with 200. Same remedy as a 403.
-                    last_exc = B3BdiFetchError(f"{label} returned an HTML challenge page")
-                    logger.warning("B3 BDI %s got an HTML body attempt=%d/%d", label, attempt, attempts)
-                    await self._backoff(attempt, attempts)
-                    continue
+                    logger.warning("B3 BDI %s got an HTML body attempt=%d/%d", label, n, attempts)
+                    raise Retry(B3BdiFetchError(f"{label} returned an HTML challenge page"))
 
                 logger.info("B3 BDI fetched %s (%d bytes)", label, len(text))
                 return text
 
-        raise B3BdiFetchError(f"Failed to export {label} after {attempts} attempts: {last_exc}")
-
-    async def _backoff(self, attempt: int, attempts: int) -> None:
-        if attempt < attempts:
-            await asyncio.sleep(self.retry_delay * attempt)
+            return await retry_async(
+                attempt,
+                attempts=attempts,
+                backoff=linear(self.retry_delay),
+                exhausted=lambda last, n: B3BdiFetchError(
+                    f"Failed to export {label} after {n} attempts: {last}"
+                ),
+            )
 
     # ── index portfolio (free float + B3 sector) ──────────────────────────
 
@@ -263,27 +261,31 @@ class B3BdiFetcher:
         return rows
 
     async def _get_json(self, url: str, *, label: str) -> Dict[str, Any]:
-        last_exc: Optional[BaseException] = None
         attempts = max(1, self.max_retries)
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout), follow_redirects=True,
             headers={**_HEADERS, "Accept": "application/json"},
         ) as client:
-            for attempt in range(1, attempts + 1):
+
+            async def attempt(n: int) -> Dict[str, Any]:
                 try:
                     resp = await client.get(url)
                 except httpx.HTTPError as exc:
-                    last_exc = exc
-                    await self._backoff(attempt, attempts)
-                    continue
+                    raise Retry(exc) from exc
                 if resp.status_code in _RETRY_STATUSES:
-                    last_exc = B3BdiFetchError(f"{label} returned HTTP {resp.status_code}")
-                    await self._backoff(attempt, attempts)
-                    continue
+                    raise Retry(B3BdiFetchError(f"{label} returned HTTP {resp.status_code}"))
                 if resp.status_code != 200:
                     raise B3BdiFetchError(f"{label} returned HTTP {resp.status_code}")
                 try:
                     return resp.json()
                 except ValueError as exc:
                     raise B3BdiFetchError(f"{label} returned a non-JSON body: {exc}") from exc
-        raise B3BdiFetchError(f"Failed to read {label} after {attempts} attempts: {last_exc}")
+
+            return await retry_async(
+                attempt,
+                attempts=attempts,
+                backoff=linear(self.retry_delay),
+                exhausted=lambda last, n: B3BdiFetchError(
+                    f"Failed to read {label} after {n} attempts: {last}"
+                ),
+            )

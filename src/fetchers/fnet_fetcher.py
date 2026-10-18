@@ -68,6 +68,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from .http import Retry, linear, retry_async
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://fnet.bmfbovespa.com.br/fnet/publico"
@@ -132,34 +134,36 @@ class FnetFetcher:
     async def _get_page(self, client: httpx.AsyncClient, params: Dict[str, Any], label: str) -> Dict[str, Any]:
         url = f"{self.base_url}/pesquisarGerenciadorDocumentosDados"
         attempts = max(1, self.max_retries)
-        last_exc: Optional[BaseException] = None
-        for attempt in range(1, attempts + 1):
+
+        async def attempt(n: int) -> Dict[str, Any]:
             await self._pace()
             try:
                 resp = await client.get(url, params=params)
             except httpx.HTTPError as exc:
-                last_exc = exc
-                logger.warning("FNET %s transport error attempt=%d/%d: %s", label, attempt, attempts, exc)
-            else:
-                if resp.status_code in _RETRY_STATUSES:
-                    last_exc = FnetFetchError(f"{label} returned HTTP {resp.status_code}")
-                    logger.warning("FNET %s HTTP %s attempt=%d/%d", label, resp.status_code, attempt, attempts)
-                elif resp.status_code != 200:
-                    raise FnetFetchError(f"{label} returned HTTP {resp.status_code}: {resp.text[:300]}")
-                else:
-                    try:
-                        body = resp.json()
-                    except ValueError as exc:
-                        # An HTML challenge page served with 200: same remedy as a 403.
-                        last_exc = FnetFetchError(f"{label} returned a non-JSON body: {resp.text[:120]!r}")
-                        logger.warning("FNET %s non-JSON body attempt=%d/%d", label, attempt, attempts)
-                    else:
-                        if not isinstance(body, dict) or "data" not in body or "recordsTotal" not in body:
-                            raise FnetFetchError(f"{label}: unexpected body keys {sorted(body)[:10] if isinstance(body, dict) else type(body)}")
-                        return body
-            if attempt < attempts:
-                await asyncio.sleep(self.retry_delay * attempt)
-        raise FnetFetchError(f"FNET {label} failed after {attempts} attempts: {last_exc!r}")
+                logger.warning("FNET %s transport error attempt=%d/%d: %s", label, n, attempts, exc)
+                raise Retry(exc) from exc
+            if resp.status_code in _RETRY_STATUSES:
+                logger.warning("FNET %s HTTP %s attempt=%d/%d", label, resp.status_code, n, attempts)
+                raise Retry(FnetFetchError(f"{label} returned HTTP {resp.status_code}"))
+            if resp.status_code != 200:
+                raise FnetFetchError(f"{label} returned HTTP {resp.status_code}: {resp.text[:300]}")
+            try:
+                body = resp.json()
+            except ValueError as exc:
+                # An HTML challenge page served with 200: same remedy as a 403.
+                logger.warning("FNET %s non-JSON body attempt=%d/%d", label, n, attempts)
+                raise Retry(FnetFetchError(
+                    f"{label} returned a non-JSON body: {resp.text[:120]!r}")) from exc
+            if not isinstance(body, dict) or "data" not in body or "recordsTotal" not in body:
+                raise FnetFetchError(f"{label}: unexpected body keys {sorted(body)[:10] if isinstance(body, dict) else type(body)}")
+            return body
+
+        return await retry_async(
+            attempt,
+            attempts=attempts,
+            backoff=linear(self.retry_delay),
+            exhausted=lambda last, n: FnetFetchError(f"FNET {label} failed after {n} attempts: {last!r}"),
+        )
 
     async def search(
         self,
@@ -258,30 +262,32 @@ class FnetFetcher:
         label = f"download id={fnet_id}"
         url = f"{self.base_url}/downloadDocumento"
         attempts = max(1, self.max_retries)
-        last_exc: Optional[BaseException] = None
-        for attempt in range(1, attempts + 1):
+
+        async def attempt(n: int) -> Tuple[bytes, Optional[str], Optional[str]]:
             await self._pace()
             try:
                 resp = await client.get(url, params={"id": int(fnet_id)}, headers={"Accept": "*/*"})
             except httpx.HTTPError as exc:
-                last_exc = exc
-                logger.warning("FNET %s transport error attempt=%d/%d: %s", label, attempt, attempts, exc)
-            else:
-                ctype = resp.headers.get("content-type")
-                if resp.status_code in _RETRY_STATUSES:
-                    last_exc = FnetFetchError(f"{label} returned HTTP {resp.status_code}")
-                    logger.warning("FNET %s HTTP %s attempt=%d/%d", label, resp.status_code, attempt, attempts)
-                elif resp.status_code != 200:
-                    raise FnetFetchError(f"{label} returned HTTP {resp.status_code}: {resp.text[:300]}")
-                elif not resp.content or "html" in (ctype or "").lower():
-                    last_exc = FnetFetchError(
-                        f"{label} returned {len(resp.content)} bytes of {ctype!r}: {resp.content[:120]!r}")
-                    logger.warning("FNET %s empty or HTML body attempt=%d/%d", label, attempt, attempts)
-                else:
-                    return resp.content, ctype, _filename(resp.headers.get("content-disposition"))
-            if attempt < attempts:
-                await asyncio.sleep(self.retry_delay * attempt)
-        raise FnetFetchError(f"FNET {label} failed after {attempts} attempts: {last_exc!r}")
+                logger.warning("FNET %s transport error attempt=%d/%d: %s", label, n, attempts, exc)
+                raise Retry(exc) from exc
+            ctype = resp.headers.get("content-type")
+            if resp.status_code in _RETRY_STATUSES:
+                logger.warning("FNET %s HTTP %s attempt=%d/%d", label, resp.status_code, n, attempts)
+                raise Retry(FnetFetchError(f"{label} returned HTTP {resp.status_code}"))
+            if resp.status_code != 200:
+                raise FnetFetchError(f"{label} returned HTTP {resp.status_code}: {resp.text[:300]}")
+            if not resp.content or "html" in (ctype or "").lower():
+                logger.warning("FNET %s empty or HTML body attempt=%d/%d", label, n, attempts)
+                raise Retry(FnetFetchError(
+                    f"{label} returned {len(resp.content)} bytes of {ctype!r}: {resp.content[:120]!r}"))
+            return resp.content, ctype, _filename(resp.headers.get("content-disposition"))
+
+        return await retry_async(
+            attempt,
+            attempts=attempts,
+            backoff=linear(self.retry_delay),
+            exhausted=lambda last, n: FnetFetchError(f"FNET {label} failed after {n} attempts: {last!r}"),
+        )
 
 
 _FILENAME_RE = re.compile(r"""filename\*?=(?:UTF-8'')?"?([^";]+)"?""", re.IGNORECASE)

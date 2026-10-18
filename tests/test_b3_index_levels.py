@@ -86,7 +86,7 @@ def test_two_nulls_then_data_still_succeeds_and_the_pause_backs_off():
     with patch.object(
         fetcher.session, "get",
         side_effect=[_Response(null), _Response(null), _Response(good)],
-    ) as get, patch("src.fetchers.b3_index_fetcher.time.sleep") as sleep:
+    ) as get, patch("time.sleep") as sleep:
         assert fetcher.fetch_year("UTIL", 2012)["results"]
     assert get.call_count == 3
     assert [c.args[0] for c in sleep.call_args_list] == [1.0, 2.0]
