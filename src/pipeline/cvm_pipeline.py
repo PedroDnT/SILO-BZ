@@ -500,8 +500,22 @@ _NOT_PUBLISHED_MARKERS = (
 )
 
 
+# A re-fetch of a period that lands under half of its last 'ok' load is a broken
+# source file, not a smaller month: CVM files grow or stay the same. Measured on
+# cvm_ingest_log 2026-08-20..26 (#978): fi/inf_diario 2026-07 went 585,154 → 0
+# rows, fidc tab X_4, perfil, CDA and ~16 more the same week, all logged 'ok'.
+# The lookback makes a genuine shrink self-heal: once the old load is older than
+# this, the new count is the baseline. ITR/DFP are skipped because their weekday
+# read loads only new versions (#961), so a small count there is by design.
+_SHRINK_RATIO = 0.5
+_SHRINK_MIN_ROWS = 100
+_SHRINK_LOOKBACK_DAYS = 30
+_INCREMENTAL_SLICES = frozenset({("cia_aberta", "itr"), ("cia_aberta", "dfp")})
+
+
 def _classify_finish(
-    error: Optional[str], fetched: Optional[int], rows: int
+    error: Optional[str], fetched: Optional[int], rows: int,
+    previous: Optional[int] = None,
 ) -> Tuple[str, Optional[str]]:
     """Audit status for a finished slice, and the message to store with it.
 
@@ -515,8 +529,11 @@ def _classify_finish(
     * 'error' — anything else that raised, PLUS the data-contract case: the
       source returned rows but none survived parsing/validation. Logging that
       'ok' is exactly how cvm_fiagro_mensal sat empty behind 34 'ok' slices.
+    * 'error' too when ``previous`` (the rows of the latest 'ok' load of the
+      same period) is at least _SHRINK_MIN_ROWS and this load is under
+      _SHRINK_RATIO of it, an empty file included (#978).
     * 'ok' — rows landed, or the published file was genuinely empty
-      (fetched == 0).
+      (fetched == 0) for a period that never held rows.
     """
     if error and any(marker in error for marker in _NOT_PUBLISHED_MARKERS):
         return "skipped", error
@@ -527,6 +544,11 @@ def _classify_finish(
             f"fetched {fetched} source row(s) but upserted 0 — every row was "
             f"dropped (check the field map against the current source header "
             f"and the DataValidator rules)"
+        )
+    if previous is not None and previous >= _SHRINK_MIN_ROWS and rows < previous * _SHRINK_RATIO:
+        return "error", (
+            f"upserted {rows} row(s) for a period whose last ok load held "
+            f"{previous} — the source file is likely truncated or empty"
         )
     return "ok", None
 
@@ -723,6 +745,7 @@ class CVMIngestor:
         error: Optional[str] = None,
         fetched: Optional[int] = None,
         deleted: Optional[int] = None,
+        previous: Optional[int] = None,
     ) -> str:
         # Returns the status it resolved: 'ok', 'skipped' or 'error'.
         # `deleted` is how many stored rows a per-fund replace removed (the
@@ -742,7 +765,7 @@ class CVMIngestor:
         # The fetcher composes that wording only when the siblings are there;
         # a renamed or missing member with no siblings keeps the fatal wording
         # and stays 'error'. See _classify_finish and health run 33558708450.
-        status, error = _classify_finish(error, fetched, rows)
+        status, error = _classify_finish(error, fetched, rows, previous)
         # Single point where a slice becomes a run-level failure: exactly the
         # branches above that resolve to 'error', so the ledger and the audit
         # table can never disagree, and 'skipped' (unpublished month) is never
@@ -876,12 +899,46 @@ class CVMIngestor:
             return 0
         rows, fetched = result if isinstance(result, tuple) else (result, None)
         extra = {} if stats is None else {"deleted": stats.get("rows_deleted", 0)}
+        if (entity, doc_type) not in _INCREMENTAL_SLICES:
+            previous = self._previous_ok_rows(entity, doc_type, year, month)
+            if previous is not None:
+                extra["previous"] = previous
         status = self._log_finish(run_id, rows, fetched=fetched, **extra)
         if status == "error":
             # The data contract: source rows fetched, none upserted.
             raise CVMSliceError([self.failures[-1]])
         logger.info("%s: %d rows", name, rows)
         return rows
+
+    def _previous_ok_rows(
+        self, entity: str, doc_type: str, year: Optional[int], month: Optional[int],
+    ) -> Optional[int]:
+        """Rows of the latest 'ok' load of this period, within the lookback (#978).
+
+        None when there is none, or when the lookup fails: the shrink check then
+        does not apply and the slice is classified as before. Best-effort like
+        the audit writes it guards, and logged, not swallowed.
+        """
+        try:
+            with self._supabase.cursor() as cur:
+                cur.execute(
+                    "SELECT rows_upserted FROM cvm_ingest_log"
+                    " WHERE entity=%s AND doc_type=%s"
+                    " AND period_year IS NOT DISTINCT FROM %s"
+                    " AND period_month IS NOT DISTINCT FROM %s"
+                    " AND status='ok' AND started_at > now() - make_interval(days => %s)"
+                    " ORDER BY started_at DESC LIMIT 1",
+                    (entity, doc_type, year, month, _SHRINK_LOOKBACK_DAYS),
+                )
+                row = cur.fetchone()
+        except Exception as e:
+            logger.warning(
+                "previous-load lookup failed for %s/%s %s-%s (%s); shrink check skipped",
+                entity, doc_type, year, month, _describe(e),
+            )
+            return None
+        value = row[0] if row else None
+        return value if isinstance(value, int) else None
 
     async def _isolated(self, operation: Awaitable[int]) -> int:
         """Await one slice for an orchestrator; a failed slice counts 0 rows.
