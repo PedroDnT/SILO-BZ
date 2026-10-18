@@ -276,7 +276,7 @@ async def test_ingestor_method_logs_under_mensal_tab_x7_and_picks_the_archive(mo
 
 
 @pytest.mark.asyncio
-async def test_daily_update_schedules_garantia_in_the_fidc_window(monkeypatch):
+async def test_daily_update_does_not_schedule_garantia(monkeypatch):
     from unittest.mock import AsyncMock, MagicMock
 
     from src.pipeline.cvm_pipeline import CVMIngestor
@@ -296,6 +296,8 @@ async def test_daily_update_schedules_garantia_in_the_fidc_window(monkeypatch):
 
     totals = await ing.daily_update()
 
-    assert ("fidc", "mensal_tab_x7") in seen
-    ing.ingest_fidc_garantia.assert_awaited_with(2026, 8)
-    assert totals["cvm_fidc_garantia"] == 1
+    # #877: nothing reads cvm_fidc_garantia, so the daily run no longer writes it.
+    assert ("fidc", "mensal_tab_x7") not in seen
+    assert ("fidc", "mensal_tab_x") in seen, "the neighbouring tabs still run"
+    ing.ingest_fidc_garantia.assert_not_awaited()
+    assert totals["cvm_fidc_garantia"] == 0

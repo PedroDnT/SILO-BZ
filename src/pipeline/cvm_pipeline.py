@@ -10,8 +10,8 @@ Tables written:
   cvm_fiagro_mensal    FIAGRO monthly snapshot
   cvm_fip_periodic     FIP quarterly/four-monthly reports
   cvm_fii_mensal       FII monthly reports
-  cvm_fii_periodic     FII quarterly/annual/dfin reports
-  cvm_securit_mensal   SECURIT CRA/CRI/OTS monthly emissions
+  (not run since #877, tables and rows kept: cvm_fii_periodic, cvm_securit_mensal,
+   cvm_fidc_garantia, cvm_registro_fundo/_classe/_subclasse)
   cvm_securit_serie    SECURIT per-series characteristics
   cvm_securit_fluxo    SECURIT per-tranche cash flows
   cvm_securit_dfin     SECURIT CRA/CRI financial statements
@@ -1595,36 +1595,31 @@ class CVMIngestor:
         return await self._audited(entity, "cad", None, None, work)
 
     async def ingest_fund_registry_cvm175(self) -> int:
-        """Ingest the CVM-175 unified registry: registro_fundo, registro_classe
-        and registro_subclasse, three members of one zip (one download, cached).
+        """Ingest the CVM-175 unified registry: registro_fundo and registro_classe,
+        two members of one zip (one download, cached).
 
         Covers the post-2023 active universe across all fund families; entity_type
         and is_active are derived per row. Runs after the legacy cad ingest so the
         current CVM-175 status wins for any shared CNPJ.
 
-        Each member is one slice and one cvm_ingest_log row. registro_fundo and
-        registro_classe are written twice from the same parsed file: to
+        Each member is one slice and one cvm_ingest_log row; both write
         cvm_fund_registry (keyed on cnpj, entity_type, what the dashboards and
-        api read) and to their level table cvm_registro_fundo / _classe (keyed on
-        the registry ids, migration 67), so a class can be walked to its fund. A
-        failure in either write logs the slice 'error'; rows_upserted counts the
-        level-table rows, the measure of what this slice made walkable.
-        registro_subclasse has no CNPJ and goes to cvm_registro_subclasse only.
+        api read). The level tables cvm_registro_fundo / _classe / _subclasse
+        (migration 67) are no longer written (#877, owner decision 2026-10-18:
+        nothing reads them); they keep their rows, and registro_subclasse, which
+        has no CNPJ and fed only its level table, is no longer fetched.
+        ingest_misc.ingest_registro_level stays for a future re-enable.
         """
-        from src.pipeline.ingest_misc import (
-            ingest_fund_registry_cvm175, ingest_registro_level,
-        )
+        from src.pipeline.ingest_misc import ingest_fund_registry_cvm175
 
-        # Three slices; a failed member does not stop the other two, and the
-        # call raises once, after all three ran.
+        # Two slices; a failed member does not stop the other, and the call
+        # raises once, after both ran.
         total = 0
         failed: List[SliceFailure] = []
-        for doc_type in ("registro_fundo", "registro_classe", "registro_subclasse"):
+        for doc_type in ("registro_fundo", "registro_classe"):
             async def work(doc_type: str = doc_type):
                 raw_rows = await self._fetch_all_pages("fi", doc_type, None, None)
-                if doc_type != "registro_subclasse":
-                    ingest_fund_registry_cvm175(self._supabase, raw_rows)
-                return ingest_registro_level(self._supabase, raw_rows, doc_type), len(raw_rows)
+                return ingest_fund_registry_cvm175(self._supabase, raw_rows), len(raw_rows)
             try:
                 total += await self._audited("fi", doc_type, None, None, work)
             except CVMSliceError as exc:
@@ -2233,7 +2228,7 @@ class CVMIngestor:
                 ("x",    "cvm_fidc_scr",     "scr",     self.ingest_fidc_scr),
                 ("viii", "cvm_fidc_sacado",  "sacado",  self.ingest_fidc_sacado),
                 ("i",    "cvm_fidc_cedente", "cedente", self.ingest_fidc_cedente),
-                ("x7",   "cvm_fidc_garantia", "garantia", self.ingest_fidc_garantia),
+                # x7 (cvm_fidc_garantia) is not run: nothing reads it (#877).
             ):
                 for year, month in _iter_month_pairs(
                     years, today, available_from=_FIDC_TAB_FIRST_PERIOD[tab],
@@ -2289,13 +2284,7 @@ class CVMIngestor:
                         f"fii/{doc_type} {year}",
                         self.ingest_fii_mensal(doc_type, year),
                     ))
-            for doc_type in FII_PERIODIC_DOC_TYPES:
-                for year in years:
-                    tasks.append(IngestTask(
-                        "cvm_fii_periodic",
-                        f"fii/{doc_type} {year}",
-                        self.ingest_fii_periodic(doc_type, year),
-                    ))
+            # cvm_fii_periodic (FII_PERIODIC_DOC_TYPES) is not run: nothing reads it (#877).
             for year in years:
                 tasks.append(IngestTask(
                     "cvm_fii_imovel",
@@ -2307,13 +2296,7 @@ class CVMIngestor:
         # -- SECURIT ------------------------------------------------------
         if _want("securit"):
             tasks: List[IngestTask] = []
-            for t in SECURIT_MENSAL_TYPES:
-                for year in years:
-                    tasks.append(IngestTask(
-                        "cvm_securit_mensal",
-                        f"securit/{t} {year}",
-                        self.ingest_securit_mensal(t, year),
-                    ))
+            # cvm_securit_mensal (SECURIT_MENSAL_TYPES) is not run: nothing reads it (#877).
             for t in SECURIT_SERIE_TYPES:
                 for year in years:
                     tasks.append(IngestTask(
@@ -2460,7 +2443,7 @@ class CVMIngestor:
                 ("cvm_fidc_scr", "fidc", "mensal_tab_x", "scr", self.ingest_fidc_scr),
                 ("cvm_fidc_sacado", "fidc", "mensal_tab_viii", "sacado", self.ingest_fidc_sacado),
                 ("cvm_fidc_cedente", "fidc", "mensal_tab_i", "cedente", self.ingest_fidc_cedente),
-                ("cvm_fidc_garantia", "fidc", "mensal_tab_x7", "garantia", self.ingest_fidc_garantia),
+                # mensal_tab_x7 (cvm_fidc_garantia) is not run: nothing reads it (#877).
             ]
         if "fiagro" in daily_entities:
             monthly_specs.append(
@@ -2509,12 +2492,7 @@ class CVMIngestor:
                         f"fii/{doc_type} {fii_year}",
                         self.ingest_fii_mensal(doc_type, fii_year),
                     ))
-                for doc_type in FII_PERIODIC_DOC_TYPES:
-                    tasks.append(IngestTask(
-                        "cvm_fii_periodic",
-                        f"fii/{doc_type} {fii_year}",
-                        self.ingest_fii_periodic(doc_type, fii_year),
-                    ))
+                # cvm_fii_periodic (FII_PERIODIC_DOC_TYPES) is not run: nothing reads it (#877).
                 tasks.append(IngestTask(
                     "cvm_fii_imovel",
                     f"fii/trimestral_imovel {fii_year}",
@@ -2569,12 +2547,7 @@ class CVMIngestor:
 
         # SECURIT — refresh current year
         if "securit" in daily_entities:
-            for t in SECURIT_MENSAL_TYPES:
-                tasks.append(IngestTask(
-                    "cvm_securit_mensal",
-                    f"securit/{t} {year}",
-                    self.ingest_securit_mensal(t, year),
-                ))
+            # cvm_securit_mensal (SECURIT_MENSAL_TYPES) is not run: nothing reads it (#877).
             for t in SECURIT_SERIE_TYPES:
                 tasks.append(IngestTask(
                     "cvm_securit_serie",

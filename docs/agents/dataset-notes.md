@@ -102,6 +102,10 @@ The fee columns (`vl_taxa_administracao` and its parts, `vl_taxa_performance`, .
 fee in 81781001/81781056 and nothing in the management (`vl_taxa_gestao`) or distribution
 split, so a NULL part is not a zero fee.
 
+**Stopped 2026-10-18 (#877):** nothing reads the level tables, `cvm_fidc_garantia`, `cvm_fii_periodic`,
+`cvm_securit_mensal`, `rj_case` or `rj_document`, so the daily run and the backfill no longer write them;
+rows are kept, and `cvm_fund_registry` is still fed from the registry ZIP. Notes below describe the code as it stands.
+
 **The CVM 175 levels** (migration 67, #543): `cvm_registro_fundo`, `cvm_registro_classe` and
 `cvm_registro_subclasse` are the three members of `registro_fundo_classe.zip`, one table each,
 keyed on CVM's own ids (TEXT, as filed). Walk class → fund by `cvm_registro_classe.id_registro_fundo`

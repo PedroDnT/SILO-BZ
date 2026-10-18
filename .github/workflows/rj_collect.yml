@@ -1,5 +1,9 @@
 name: RJ document links
 
+# OFF since #877 (owner decision 2026-10-18): nothing reads rj_case / rj_document,
+# so the schedule is removed and the watchdog no longer heals RJ. The tables and
+# their rows stay; dispatch this workflow by hand to collect again.
+#
 # Daily collector for epic #841 / #845 / #846: reads the case pages of administrador
 # judicial websites (src/fetchers/rj/sites.py) and stores the LINKS to each
 # recuperação judicial case's documents in rj_case / rj_document. No file is
@@ -11,8 +15,6 @@ name: RJ document links
 # A site that fails, or that suddenly lists no case, turns the run red.
 
 on:
-  schedule:
-    - cron: "7 11 * * *"
   workflow_dispatch:
     inputs:
       sites:

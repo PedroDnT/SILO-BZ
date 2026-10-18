@@ -108,14 +108,13 @@ OTHER_DAILY_JOBS = {
 WATCHDOG_JOBS = {
     WATCHDOG_JOB: "re-runs the daily ingest job's steps.",
     "fnet-diff": "daily_ingest.yml's fnet-diff job, gated on heal_fnet_diff.",
-    "rj": "rj_collect.yml's collect job for every site, gated on heal_rj.",
 }
 
 # Job keys that may differ between the two jobs.
 ALLOWED_JOB_KEY_DIFFS = {
     "name": "each job names itself.",
     "timeout-minutes": "may differ; both are 180 since recovery also runs FNET (#870).",
-    "outputs": "the watchdog hands heal_fnet_diff / heal_rj to its fnet-diff and rj jobs.",
+    "outputs": "the watchdog hands heal_fnet_diff to its fnet-diff job.",
     "steps": "compared step by step below.",
 }
 
@@ -271,7 +270,7 @@ def test_recovery_does_not_rebuild_analytics():
     assert "VERCEL" not in text.upper()
 
 
-# ── #870: triggers, and the FNET-diff and RJ recovery jobs ──────────────────
+# ── #870: triggers, and the FNET-diff recovery job (RJ has none since #877) ──────────────────
 
 
 def _on(workflow: str) -> dict:
@@ -315,35 +314,12 @@ def test_fnet_diff_recovery_job_twins_the_daily_job():
     ]
 
 
-def test_rj_recovery_job_runs_what_rj_collect_runs():
-    collect = _load("rj_collect.yml")["jobs"]["collect"]
-    rj = _job("watchdog.yml", "rj")
-    assert rj["needs"] == WATCHDOG_JOB
-    assert "!cancelled()" in rj["if"] and "heal_rj" in rj["if"]
-    for key in ("runs-on", "timeout-minutes", "env"):
-        assert collect[key] == rj[key], f"rj {key!r} differs from rj_collect.yml"
-
-    def modules(job):
-        return [
-            s["run"].split("python -m ", 1)[1].split()[0]
-            for s in job["steps"] if "python -m " in (s.get("run") or "")
-        ]
-
-    assert modules(rj) == modules(collect) == [
-        "src.pipeline.ingest_rj", "src.pipeline.ingest_rj_djen", "src.pipeline.resolve_rj",
-    ]
-    assert any(s.get("uses") == "./.github/actions/apply-schema" for s in rj["steps"]), (
-        "the watchdog job skips its schema apply on an RJ-only day"
-    )
-    djen = {s["name"]: s for s in rj["steps"] if s.get("name")}["Discover RJ cases on DJEN"]
-    collect_djen = {s["name"]: s for s in collect["steps"] if s.get("name")}[
-        "Discover RJ cases on DJEN"
-    ]
-    for var in ("DJEN_RELAY_URL", "DJEN_RELAY_TOKEN", "BR_PROXY_URL"):
-        assert djen["env"][var] == collect_djen["env"][var]
-    rj_text = (WORKFLOWS / "watchdog.yml").read_text().split("\n  rj:", 1)[1]
-    for ref in ("{{ inputs.", "!inputs."):
-        assert ref not in rj_text, "the watchdog has no rj_collect inputs"
+def test_rj_has_no_recovery_job_and_no_schedule():
+    """#877: nothing reads the RJ tables, so rj_collect is dispatch-only and unhealed."""
+    assert "rj" not in _load("watchdog.yml")["jobs"]
+    assert "heal_rj" not in (WORKFLOWS / "watchdog.yml").read_text().replace("heal_rj` is gone", "")
+    assert "schedule" not in _on("rj_collect.yml")
+    assert "workflow_dispatch" in _on("rj_collect.yml")
 
 
 def test_heal_flags_gate_their_own_recovery():
@@ -354,7 +330,7 @@ def test_heal_flags_gate_their_own_recovery():
     assert "heal_fnet ==" in steps["Refresh FNET document register (recovery)"]["if"]
     assert "heal_fnet" not in steps["Probe dados.cvm.gov.br"]["if"], "the probe gates CVM only"
     noop = steps["Report no-op"]["if"]
-    for flag in ("heal_fnet ", "heal_fnet_diff", "heal_rj"):
+    for flag in ("heal_fnet ", "heal_fnet_diff"):
         assert flag in noop
     outputs = _job("watchdog.yml", WATCHDOG_JOB)["outputs"]
-    assert set(outputs) == {"heal_fnet_diff", "heal_rj"}
+    assert set(outputs) == {"heal_fnet_diff"}

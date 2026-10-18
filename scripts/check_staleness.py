@@ -20,11 +20,12 @@ Exit codes (consumed by the workflow's `if:` steps):
           ingest errors remain → re-run daily ingest
     11  — only the monthly ANBIMA/ETF slice is stale → re-run daily ingest
 
-FNET, FNET diffs and RJ (#870) are not healed by run_daily, so they are kept
+FNET and FNET diffs (#870) are not healed by run_daily, so they are kept
 out of the exit code and out of the counts above. Each gets its own verdict,
 printed and, under GitHub Actions, written to $GITHUB_OUTPUT as
-``heal_fnet`` / ``heal_fnet_diff`` / ``heal_rj``; the watchdog re-runs only the
-source whose flag is ``true``. Before #870 an FNET error re-ran run_daily,
+``heal_fnet`` / ``heal_fnet_diff``; the watchdog re-runs only the
+source whose flag is ``true``. RJ is no longer collected (#877) and has no
+verdict, but stays out of the exit code: its old log rows are still there. Before #870 an FNET error re-ran run_daily,
 which never touches FNET, so it could never heal.
 
 Run standalone:
@@ -95,14 +96,15 @@ EXIT_MONTHLY_STALE = 11
 # not write them, so they never count toward the exit code above. name ->
 # (entity, doc_types whose errors/stuck rows count (None = every doc_type),
 # doc_type whose latest ok/skipped row is the freshness signal (None = any)).
-# FNET and fnet-diff run in every scheduled daily run and rj_collect runs every
-# day, so none is weekday-gated. A run that wants no work still writes ok.
+# FNET and fnet-diff run in every scheduled daily run, so none is weekday-gated. A run that wants no work still writes ok.
 SIDE_SOURCES = {
     "fnet": ("fnet", ("register", "fund_link"), "register"),
     "fnet_diff": ("fnet", ("diff",), "diff"),
-    "rj": ("rj", None, None),
 }
-SIDE_ENTITIES = tuple(sorted({entity for entity, _, _ in SIDE_SOURCES.values()}))
+# Entities no workflow writes any more (#877: the RJ collector is off). Their old
+# cvm_ingest_log rows would otherwise count toward the daily run's verdict.
+RETIRED_ENTITIES = ("rj",)
+SIDE_ENTITIES = tuple(sorted({entity for entity, _, _ in SIDE_SOURCES.values()} | set(RETIRED_ENTITIES)))
 SIDE_THRESHOLD_HOURS = 26           # one daily period + slack, like the FI slice
 
 
