@@ -100,14 +100,23 @@ def ingest_etf_registry(
         if not ticker or not cnpj:
             continue
         enrich = cad_index.get(cnpj, {})
-        # Status/cancel: live cad_fi (mostly cancelled legacy funds) takes
-        # precedence; otherwise fall back to the seed (sourced from the CVM-175
-        # registry at generation time, which has the active universe).
-        situacao = enrich.get("situacao") or (s.get("situacao") or "").strip() or None
-        dt_cancel = enrich.get("dt_cancel") or coerce(s.get("dt_cancel"), "date")
+        # Status: the seed wins, as in scripts/build_etf_seed.py. It comes from
+        # the CVM-175 registry, the active universe. cad_fi holds legacy
+        # registrations, many CANCELADA for funds that live on under CVM 175
+        # (GOVE11, #899), so it decides only when the seed has no status.
+        seed_situacao = (s.get("situacao") or "").strip() or None
+        situacao = seed_situacao or enrich.get("situacao")
         is_active = derive_is_active(situacao)
         if is_active is None:
             is_active = coerce(s.get("is_active"), "bool") if s.get("is_active") else None
+        cad_active = derive_is_active(enrich.get("situacao"))
+        if seed_situacao and cad_active is not None and cad_active != derive_is_active(seed_situacao):
+            logger.warning(
+                "etf/registry %s: seed says %r, cad_fi says %r; using the seed",
+                ticker, seed_situacao, enrich.get("situacao"),
+            )
+        # An active fund has no cancel date; the seed can carry the legacy one.
+        dt_cancel = None if is_active else (enrich.get("dt_cancel") or coerce(s.get("dt_cancel"), "date"))
         records.append({
             "ticker":           ticker,
             "cnpj":             cnpj,

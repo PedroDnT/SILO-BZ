@@ -126,6 +126,46 @@ class TestEtfIngest:
         assert rec["is_active"] is False
         assert str(rec["dt_cancel"]) == "2022-03-15"   # discontinued ETF retained
 
+    def _run(self, seed_extra, cad_rows):
+        captured = {}
+
+        def _fake_upsert(conn, table, rows, **kw):
+            captured["rows"] = rows
+            return len(rows)
+
+        seed = [{**self._seed()[0], **seed_extra}]
+        with patch("src.pipeline.ingest_etf.upsert_rows", side_effect=_fake_upsert):
+            ingest_etf_registry(object(), seed, cad_rows)
+        return captured["rows"][0]
+
+    def test_seed_active_beats_cad_fi_cancelled_and_logs_the_conflict(self, caplog):
+        # GOVE11 (#899): legacy cad_fi says CANCELADA, the CVM-175 seed says active.
+        seed = {"situacao": "Em Funcionamento Normal", "is_active": "True", "dt_cancel": "2011-10-03"}
+        cad = [{"CNPJ_FUNDO": "10406511000161", "SIT": "CANCELADA", "DT_CANCEL": "2011-10-03",
+                "ADMIN": "BTG PACTUAL"}]
+        with caplog.at_level("WARNING", logger="src.pipeline.ingest_etf"):
+            rec = self._run(seed, cad)
+        assert rec["situacao"] == "Em Funcionamento Normal"
+        assert rec["is_active"] is True
+        assert rec["dt_cancel"] is None           # an active fund has no cancel date
+        assert rec["admin"] == "BTG PACTUAL"      # cad_fi still enriches
+        assert len([r for r in caplog.records if "BOVA11" in r.getMessage()]) == 1
+
+    def test_seed_and_cad_fi_both_cancelled_keeps_the_cad_fi_date(self, caplog):
+        seed = {"situacao": "CANCELADA", "is_active": "False", "dt_cancel": "2024-01-01"}
+        cad = [{"CNPJ_FUNDO": "10406511000161", "SIT": "CANCELADA", "DT_CANCEL": "2024-09-06"}]
+        with caplog.at_level("WARNING", logger="src.pipeline.ingest_etf"):
+            rec = self._run(seed, cad)
+        assert rec["is_active"] is False
+        assert str(rec["dt_cancel"]) == "2024-09-06"
+        assert not [r for r in caplog.records if "seed says" in r.getMessage()]
+
+    def test_seed_without_situacao_falls_back_to_cad_fi(self):
+        cad = [{"CNPJ_FUNDO": "10406511000161", "SIT": "CANCELADA", "DT_CANCEL": "2022-03-15"}]
+        rec = self._run({}, cad)
+        assert rec["situacao"] == "CANCELADA"
+        assert rec["is_active"] is False
+
     def test_ingest_without_cad_rows_leaves_enrichment_null(self):
         captured = {}
 
