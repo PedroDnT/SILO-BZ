@@ -38,15 +38,15 @@ NULL; any other non-numeric value is a contract change and raises.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import os
 import re
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+
+from .http import Retry, env_retry_config, linear, retry_async
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +85,7 @@ class SidraFetchError(RuntimeError):
 
 
 def _retry_config() -> Tuple[int, float]:
-    attempts = max(1, int(os.getenv("IBGE_SIDRA_MAX_RETRIES", "4")))
-    delay = float(os.getenv("IBGE_SIDRA_RETRY_DELAY", "2"))
-    return attempts, delay
+    return env_retry_config("IBGE_SIDRA", attempts="4", delay="2")
 
 
 def _yyyymm(d: date) -> str:
@@ -147,26 +145,20 @@ async def fetch_ipca_items(
     """
     url = _url(table, period_from, period_to)
     attempts, delay = _retry_config()
-    last_exc: Optional[BaseException] = None
     async with httpx.AsyncClient(timeout=180.0) as client:
-        for attempt in range(1, attempts + 1):
+
+        async def attempt(n: int) -> List[Dict[str, Any]]:
             try:
                 resp = await client.get(url)
             except httpx.HTTPError as exc:
-                last_exc = exc
                 logger.warning("SIDRA t/%s %s..%s request error attempt=%d/%d: %s",
-                               table, period_from, period_to, attempt, attempts, exc)
-                if attempt < attempts:
-                    await asyncio.sleep(delay * attempt)
-                continue
+                               table, period_from, period_to, n, attempts, exc)
+                raise Retry(exc) from exc
 
             if resp.status_code in _RETRY_STATUSES:
-                last_exc = SidraFetchError(f"SIDRA t/{table}: HTTP {resp.status_code}")
                 logger.warning("SIDRA t/%s HTTP %s attempt=%d/%d",
-                               table, resp.status_code, attempt, attempts)
-                if attempt < attempts:
-                    await asyncio.sleep(delay * attempt)
-                continue
+                               table, resp.status_code, n, attempts)
+                raise Retry(SidraFetchError(f"SIDRA t/{table}: HTTP {resp.status_code}"))
 
             if resp.status_code != 200:
                 raise SidraFetchError(
@@ -179,13 +171,10 @@ async def fetch_ipca_items(
             except json.JSONDecodeError:
                 # SIDRA answers overload with an HTML page on a 200; a page
                 # is not data, treat it as transient.
-                last_exc = SidraFetchError(
+                logger.warning("SIDRA t/%s non-JSON 200 attempt=%d/%d", table, n, attempts)
+                raise Retry(SidraFetchError(
                     f"SIDRA t/{table}: response is not JSON: {resp.text[:200]}"
-                )
-                logger.warning("SIDRA t/%s non-JSON 200 attempt=%d/%d", table, attempt, attempts)
-                if attempt < attempts:
-                    await asyncio.sleep(delay * attempt)
-                continue
+                ))
 
             if not isinstance(payload, list) or not payload:
                 raise SidraFetchError(
@@ -199,9 +188,14 @@ async def fetch_ipca_items(
                 )
             return [row for row in payload[1:] if isinstance(row, dict)]
 
-    raise SidraFetchError(
-        f"SIDRA t/{table} {period_from}..{period_to}: failed after {attempts} attempts: {last_exc}"
-    )
+        return await retry_async(
+            attempt,
+            attempts=attempts,
+            backoff=linear(delay),
+            exhausted=lambda last, n: SidraFetchError(
+                f"SIDRA t/{table} {period_from}..{period_to}: failed after {n} attempts: {last}"
+            ),
+        )
 
 
 def _value(raw: Any, *, where: str) -> Optional[float]:

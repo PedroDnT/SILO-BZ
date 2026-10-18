@@ -461,3 +461,83 @@ async def test_cvm_a_server_error_is_not_retried(cvm, tmp_path, sleeps):
     finally:
         await cleanup()
     assert calls == 1 and sleeps == []
+
+
+# --- one session per download, not per attempt (#876) ------------------------------------------------
+
+async def _count_builds(cvm, tmp_path, nameservers):
+    import aiohttp
+
+    keys: List[int] = []
+    real = cvm._build_session
+
+    async def build(timeout, rotation):
+        keys.append(rotation)
+        return aiohttp.ClientSession(timeout=timeout)
+
+    cvm._build_session = build
+    cvm.dns_nameservers = nameservers
+    with pytest.raises(RuntimeError, match="cannot connect"):
+        await cvm._download_uncached("http://127.0.0.1:1/f.zip", str(tmp_path / "c"), str(tmp_path / "m"))
+    cvm._build_session = real
+    return keys
+
+
+async def test_cvm_attempts_share_one_session(cvm, tmp_path, sleeps):
+    assert await _count_builds(cvm, tmp_path, []) == [0]  # three attempts, one session
+
+
+async def test_cvm_rotated_dns_orders_get_a_session_each(cvm, tmp_path, sleeps):
+    # attempts 0, 1, 2 use orders 0, 1, 0: two sessions, not three
+    assert await _count_builds(cvm, tmp_path, ["1.1.1.1", "8.8.8.8"]) == [0, 1]
+
+
+async def test_session_holder_closes_every_session_it_opened():
+    from src.fetchers.http import SessionHolder
+
+    closed: List[str] = []
+
+    class Session:
+        def __init__(self, name):
+            self.name = name
+
+        async def close(self):
+            closed.append(self.name)
+
+    async def build(key):
+        return Session(f"s{key}")
+
+    async with SessionHolder(build) as holder:
+        assert await holder.get(0) is await holder.get(0)
+        await holder.get(1)
+    assert sorted(closed) == ["s0", "s1"]
+
+
+async def test_session_holder_closes_on_error():
+    from src.fetchers.http import SessionHolder
+
+    closed: List[int] = []
+
+    class Session:
+        async def close(self):
+            closed.append(1)
+
+    async def build(key):
+        return Session()
+
+    with pytest.raises(KeyError):
+        async with SessionHolder(build) as holder:
+            await holder.get()
+            raise KeyError("boom")
+    assert closed == [1]
+
+
+def test_env_retry_config_reads_the_environment_each_call(monkeypatch):
+    from src.fetchers.http import env_retry_config
+
+    monkeypatch.delenv("X_MAX_RETRIES", raising=False)
+    monkeypatch.delenv("X_RETRY_DELAY", raising=False)
+    assert env_retry_config("X", attempts="4", delay="2") == (4, 2.0)
+    monkeypatch.setenv("X_MAX_RETRIES", "0")
+    monkeypatch.setenv("X_RETRY_DELAY", "0.5")
+    assert env_retry_config("X") == (1, 0.5)  # never below one attempt

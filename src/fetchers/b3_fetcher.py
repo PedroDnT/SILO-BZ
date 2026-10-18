@@ -12,13 +12,14 @@ slices `skipped`. Any other HTTP/network error raises.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from datetime import date
 from typing import Optional
 
 import httpx
+
+from .http import Retry, linear, retry_async
 
 logger = logging.getLogger(__name__)
 
@@ -70,37 +71,29 @@ class B3CotahistFetcher:
         return await self._download(self._url(yearly_filename(year)), label=yearly_filename(year))
 
     async def _download(self, url: str, *, label: str) -> bytes:
-        last_exc: Optional[BaseException] = None
         attempts = max(1, self.max_retries)
         timeout = httpx.Timeout(self.timeout)
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            for attempt in range(1, attempts + 1):
+
+            async def attempt(n: int) -> bytes:
                 try:
                     resp = await client.get(url)
                 except httpx.HTTPError as exc:
-                    last_exc = exc
                     logger.warning(
                         "B3 COTAHIST download error %s attempt=%d/%d: %s",
-                        label, attempt, attempts, exc,
+                        label, n, attempts, exc,
                     )
-                    if attempt < attempts:
-                        await asyncio.sleep(self.retry_delay * attempt)
-                    continue
+                    raise Retry(exc) from exc
 
                 if resp.status_code == 404:
                     raise B3CotahistNotFound(f"Data not found at {url}")
 
                 if resp.status_code in _RETRY_STATUSES:
-                    last_exc = B3CotahistFetchError(
-                        f"{url} returned HTTP {resp.status_code}"
-                    )
                     logger.warning(
                         "B3 COTAHIST %s HTTP %s attempt=%d/%d",
-                        label, resp.status_code, attempt, attempts,
+                        label, resp.status_code, n, attempts,
                     )
-                    if attempt < attempts:
-                        await asyncio.sleep(self.retry_delay * attempt)
-                    continue
+                    raise Retry(B3CotahistFetchError(f"{url} returned HTTP {resp.status_code}"))
 
                 if resp.status_code != 200:
                     raise B3CotahistFetchError(
@@ -113,6 +106,11 @@ class B3CotahistFetcher:
                 logger.info("B3 COTAHIST fetched %s (%d bytes)", label, len(content))
                 return content
 
-        raise B3CotahistFetchError(
-            f"Failed to download {url} after {attempts} attempts: {last_exc}"
-        )
+            return await retry_async(
+                attempt,
+                attempts=attempts,
+                backoff=linear(self.retry_delay),
+                exhausted=lambda last, n: B3CotahistFetchError(
+                    f"Failed to download {url} after {n} attempts: {last}"
+                ),
+            )

@@ -34,13 +34,14 @@ Why this source exists, and what it is checked against: migration 57.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from datetime import date
 from typing import Optional
 
 import httpx
+
+from .http import Retry, linear, retry_async
 
 logger = logging.getLogger(__name__)
 
@@ -132,28 +133,31 @@ class B3TradeConsolidatedFetcher:
         no_session_on_400: bool = False,
     ) -> httpx.Response:
         attempts = max(1, self.max_retries)
-        last_exc: Optional[BaseException] = None
-        for attempt in range(1, attempts + 1):
+
+        async def attempt(n: int) -> httpx.Response:
             try:
                 resp = await client.get(url, params=params)
             except httpx.HTTPError as exc:
-                last_exc = exc
-                logger.warning("B3 %s network error attempt=%d/%d: %s", label, attempt, attempts, exc)
-            else:
-                if resp.status_code == 200:
-                    return resp
-                if resp.status_code == 400 and no_session_on_400 and _is_problem(resp):
-                    raise B3TradeConsolidatedNoSession(
-                        f"{label}: B3 answered HTTP 400 (no session that day, or not published yet)"
-                    )
-                if resp.status_code not in _RETRY_STATUSES:
-                    raise B3TradeConsolidatedFetchError(f"{url} returned HTTP {resp.status_code}")
-                last_exc = B3TradeConsolidatedFetchError(f"{url} returned HTTP {resp.status_code}")
-                logger.warning("B3 %s HTTP %s attempt=%d/%d", label, resp.status_code, attempt, attempts)
-            if attempt < attempts:
-                await asyncio.sleep(self.retry_delay * attempt)
-        raise B3TradeConsolidatedFetchError(
-            f"{label}: failed after {attempts} attempts: {last_exc}"
+                logger.warning("B3 %s network error attempt=%d/%d: %s", label, n, attempts, exc)
+                raise Retry(exc) from exc
+            if resp.status_code == 200:
+                return resp
+            if resp.status_code == 400 and no_session_on_400 and _is_problem(resp):
+                raise B3TradeConsolidatedNoSession(
+                    f"{label}: B3 answered HTTP 400 (no session that day, or not published yet)"
+                )
+            if resp.status_code not in _RETRY_STATUSES:
+                raise B3TradeConsolidatedFetchError(f"{url} returned HTTP {resp.status_code}")
+            logger.warning("B3 %s HTTP %s attempt=%d/%d", label, resp.status_code, n, attempts)
+            raise Retry(B3TradeConsolidatedFetchError(f"{url} returned HTTP {resp.status_code}"))
+
+        return await retry_async(
+            attempt,
+            attempts=attempts,
+            backoff=linear(self.retry_delay),
+            exhausted=lambda last, n: B3TradeConsolidatedFetchError(
+                f"{label}: failed after {n} attempts: {last}"
+            ),
         )
 
 
