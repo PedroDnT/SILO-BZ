@@ -27,8 +27,8 @@ it read-only. Four infrastructures, four products.
 | `src/store`            | The one writer and pool factory (`pg_client`, also `serve/`'s pool and the scripts' connections), schema, migrations.                      |
 | `src/store/analytical` | Views, matviews and schema `api`. |
 | `src/portfolio`        | The diagnosis: statement readers, engine, report, investigator. |
-| `deploy/cloudflare`    | The Worker, the engine Container and private R2 for traces. |
-| `sdk/`                 | `silo_client`, the typed Python caller of `api.*`. |
+| `deploy/cloudflare`    | The Worker, the engine Container and private R2 for traces.                                                   |
+| `sdk/`                 | `silo_client`, the typed Python caller of `api.*`.                                                            |
 | `.github/workflows`    | Schedules, recovery and checks.                                                                               |
 
 ## Boundaries that matter
