@@ -75,6 +75,17 @@ jobs:
       # day, one day in arrears. 7 calendar days absorbs a long weekend plus a
       # holiday; older than that, the BACEN refresh is not landing.
       MAX_SGS_AGE_DAYS: "7"
+      # The other sources a research backtest reads (check 4e), in calendar
+      # days. COTAHIST and PTAX publish every B3/BACEN business day; the longest
+      # normal gap is Carnival (last Friday to Ash Wednesday, 5 days), so 6.
+      # Focus is weekly in practice and BACEN itself paused it 2026-10-09..18
+      # (its API's latest survey date on 2026-10-18), so 14 days: a source
+      # pause must not read as our outage. IPCA items publish around the 10th
+      # of M+1 for month M, about 70 days after M starts at the latest, so 75.
+      MAX_COTAHIST_AGE_DAYS: "6"
+      MAX_PTAX_AGE_DAYS: "6"
+      MAX_FOCUS_AGE_DAYS: "14"
+      MAX_IPCA_ITEM_AGE_DAYS: "75"
       # A cvm_ingest_log row still 'running' after this many hours belongs to
       # a process that died (job timeout, SIGKILL, runner loss). The longest
       # ingest job is backfill.yml's 300-minute FI matrix, so 6 h is past any
@@ -443,6 +454,62 @@ jobs:
             echo "- ✅ bacen_sgs fresh ($sgs_age days, CDI/Selic)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+          # 4e. Freshness of the other sources a backtest reads (#980).
+          #
+          # Check 4c covers only CDI/Selic. A COTAHIST, PTAX, Focus or IPCA-item
+          # refresh that stopped landing stayed green, the same way SGS did on
+          # 2026-09-03. Same guard shape: a non-numeric age (missing table, no
+          # rows) fails rather than passes.
+          for spec in \
+            "b3_cotahist|trade_date|b3_cotahist WHERE trade_date > CURRENT_DATE - 60|$MAX_COTAHIST_AGE_DAYS" \
+            "bacen_ptax|reference_date|bacen_ptax|$MAX_PTAX_AGE_DAYS" \
+            "bacen_expectativas (Focus)|reference_date|bacen_expectativas|$MAX_FOCUS_AGE_DAYS" \
+            "ibge_ipca_item_monthly|reference_month|ibge_ipca_item_monthly|$MAX_IPCA_ITEM_AGE_DAYS"; do
+            IFS='|' read -r label col from limit <<<"$spec"
+            age=$(q "SELECT (CURRENT_DATE - max($col))::int FROM $from")
+            echo "$label age: ${age:-<none>} days (limit ${limit}d)"
+            if ! printf '%s' "${age:-}" | grep -Eq '^-?[0-9]+$'; then
+              echo "FAIL: $label did not answer (missing table or no rows)" >&2
+              echo "- ❌ $label not queryable / empty" >> "$GITHUB_STEP_SUMMARY"
+              fail=1
+            elif [ "$age" -gt "$limit" ]; then
+              echo "FAIL: $label is $age days old (limit ${limit}d) — check its slices in cvm_ingest_log, then whether the source itself has published (a source pause is not our outage)" >&2
+              echo "- ❌ $label stale by $age days" >> "$GITHUB_STEP_SUMMARY"
+              fail=1
+            else
+              echo "- ✅ $label fresh ($age days)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+          # 4f. No missed B3 session (#980).
+          #
+          # COTAHIST logs a 404 as 'skipped' and its window is 7 days, so a
+          # session B3 never served looks exactly like a holiday and then falls
+          # out of the window. The lending gap check builds its calendar from
+          # COTAHIST's dates, so it hides that day's lending gap too, and B3
+          # keeps lending data only ~21 sessions. The calendar here is CDI's
+          # (series 12): BACEN publishes it every national business day. Since
+          # 2025-01-01 the only CDI days with no B3 session were 12-24 and
+          # 12-31, when B3 closes, so those two are excluded. A slow CDI only
+          # shortens the list; check 4c catches that.
+          missed=$(q "SELECT coalesce(string_agg(s.reference_date::text, ',' ORDER BY s.reference_date), '')
+                        FROM bacen_sgs s
+                       WHERE s.series_code = 12
+                         AND s.reference_date > CURRENT_DATE - 35
+                         AND to_char(s.reference_date, 'MM-DD') NOT IN ('12-24', '12-31')
+                         AND NOT EXISTS (SELECT 1 FROM b3_cotahist c WHERE c.trade_date = s.reference_date)")
+          if [ $? -ne 0 ]; then
+            echo "FAIL: the B3 session probe did not answer" >&2
+            echo "- ❌ B3 session probe failed" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          elif [ -n "$missed" ]; then
+            echo "FAIL: no b3_cotahist rows for business day(s) $missed — re-run daily_ingest mode b3-backfill for them now; their lending data expires after ~21 sessions" >&2
+            echo "- ❌ B3 sessions missing: $missed" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          else
+            echo "- ✅ every business day in the last 35 days has a B3 session" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
           # 4d. Yearly partitions — every `_future` catch-all must be EMPTY.
           #
           # cvm_fi_diario, cia_account and b3_cotahist are partitioned by year
@@ -634,3 +701,35 @@ jobs:
               echo "(skipped: failed or exceeded ${DIAG_TIMEOUT:-90s} — see $f)"
             fi
           done
+
+  # A red DB Health run used to be visible only in the Actions tab (#980).
+  # Unattended runs (after the daily ingest, and the 07:30 UTC-3 fallback) now
+  # file or bump one tracking issue, the same pattern as daily_ingest's
+  # notify-failure: issue-per-incident, comment-per-run, no new secret. A
+  # manual dispatch is watched by whoever started it and files nothing.
+  notify-failure:
+    name: File failure issue
+    needs: [health]
+    if: ${{ failure() && github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Create or update tracking issue
+        run: |
+          set -euo pipefail
+          title="DB Health is failing"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
+              --body "DB Health failed again: $RUN_URL"
+          else
+            body=$(printf '%s\n\n%s' \
+              "DB Health failed: $RUN_URL" \
+              "The run summary lists each failed check with what to do. Common causes: an unhealed error slice in the daily window, a stale source (check whether the source itself published before treating it as our outage), a missed B3 session (re-run it before its lending data expires), or disk above 90%. This issue gets one comment per failing run; close it once DB Health is green.")
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi

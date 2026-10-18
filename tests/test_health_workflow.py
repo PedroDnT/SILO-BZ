@@ -756,3 +756,75 @@ def test_health_runs_when_the_daily_run_completes_with_a_fallback_cron():
     minute, hour = (int(x) for x in crons[0].split()[:2])
     assert (hour, minute) > (10, 0), "after the daily workflow's latest finish (~10:00 UTC)"
     assert "workflow_dispatch" in on
+
+
+# ── 4e / 4f: other-source freshness and missed B3 sessions (#980) ──────────
+
+def _block_4e_4f() -> str:
+    script = _step("Health checks")["run"]
+    start, end = script.index("# 4e."), script.index("# 4d.")
+    return script[start:end]
+
+
+def _run_4e_4f(answers: dict) -> tuple[int, str]:
+    """Run the real 4e/4f shell with q() answering by a substring of its SQL."""
+    env = _spec()["jobs"]["health"]["env"]
+    fake_q = "q() { case \"$1\" in\n" + "".join(
+        f"  *\"{key}\"*) printf '%s' {value!r} ;;\n" for key, value in answers.items()
+    ) + "  *) return 1 ;;\nesac; }\n"
+    exports = "".join(f"export {k}={v!r}\n" for k, v in env.items() if k.startswith("MAX_"))
+    script = (
+        "set +e\nset -uo pipefail\nfail=0\nGITHUB_STEP_SUMMARY=/dev/null\n"
+        + exports + fake_q + _block_4e_4f() + "\necho FAIL=$fail\n"
+    )
+    out = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    return int(out.stdout.strip().rsplit("FAIL=", 1)[1]), out.stdout + out.stderr
+
+
+FRESH = {
+    "b3_cotahist WHERE trade_date > CURRENT_DATE - 60": "2",
+    "FROM bacen_ptax": "2",
+    "FROM bacen_expectativas": "9",
+    "FROM ibge_ipca_item_monthly": "47",
+    "series_code = 12": "",
+}
+
+
+def test_fresh_sources_and_no_missed_session_pass():
+    fail, out = _run_4e_4f(FRESH)
+    assert fail == 0, out
+
+
+@pytest.mark.parametrize("key, value", [
+    ("b3_cotahist WHERE trade_date > CURRENT_DATE - 60", "7"),
+    ("FROM bacen_ptax", "7"),
+    ("FROM bacen_expectativas", "15"),
+    ("FROM ibge_ipca_item_monthly", "76"),
+])
+def test_a_stale_source_fails(key, value):
+    fail, out = _run_4e_4f({**FRESH, key: value})
+    assert fail == 1 and "days old" in out, out
+
+
+def test_an_empty_source_fails_rather_than_passes():
+    fail, out = _run_4e_4f({**FRESH, "FROM bacen_ptax": ""})
+    assert fail == 1 and "did not answer" in out, out
+
+
+def test_a_missed_b3_session_fails_and_names_the_day():
+    fail, out = _run_4e_4f({**FRESH, "series_code = 12": "2026-10-14"})
+    assert fail == 1 and "2026-10-14" in out and "b3-backfill" in out, out
+
+
+def test_the_session_calendar_excludes_the_days_b3_closes():
+    block = _block_4e_4f()
+    assert "NOT IN ('12-24', '12-31')" in block
+    assert "series_code = 12" in block
+
+
+def test_unattended_failures_file_an_issue():
+    job = _spec()["jobs"]["notify-failure"]
+    assert job["needs"] == ["health"]
+    assert "failure()" in job["if"] and "workflow_dispatch" in job["if"]
+    assert job["permissions"] == {"issues": "write"}
+    assert "gh issue create" in job["steps"][0]["run"]
