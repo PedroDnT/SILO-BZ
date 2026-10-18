@@ -10,8 +10,13 @@ research agent can read with DuckDB or polars, and pin by its snapshot id:
 
 Datasets are read as stored, never filled or derived here. Prices come from
 api.quote_history, the same function the API serves, so close_adj and
-close_total_return keep its rules: a ticker the function refuses is listed under
-`refused` in the manifest with its message, not exported with raw closes.
+close_total_return keep its rules. When the function refuses them for a ticker
+(its corporate events are not proven complete, or one is unsupported), the ticker
+is still exported, with its RAW close only (#987): close_adj and
+close_total_return stay empty, adj_status is 'refused', and the manifest keeps the
+function's message under `refused`. A raw close jumps at splits; close_unit is
+that raw close per single share. Nothing raw is ever put in close_adj. A ticker
+the function will not serve even raw is listed under `unavailable`.
 
 Consistent: the whole export is ONE read-only REPEATABLE READ transaction, so
 every dataset, and every price page, sees the same committed state. The
@@ -72,10 +77,12 @@ TABLES: List[Tuple[str, str]] = [
      " n_sessions, setor_current FROM public.mv_research_universe ORDER BY ticker, isin"),
 ]
 
-PRICE_FIELDS = ["isin", "close", "close_adj", "close_total_return", "volume"]
+ADJ_FIELDS = ["isin", "close", "close_unit", "close_adj", "close_total_return", "volume"]
+RAW_FIELDS = ["isin", "close", "close_unit", "volume"]
 PRICE_SCHEMA = {
     "ticker": pl.String, "trade_date": pl.Date, "isin": pl.String, "close": pl.Float64,
-    "close_adj": pl.Float64, "close_total_return": pl.Float64, "volume": pl.Float64,
+    "close_unit": pl.Float64, "close_adj": pl.Float64, "close_total_return": pl.Float64,
+    "volume": pl.Float64, "adj_status": pl.String,
 }
 PAGE = 1000
 
@@ -110,14 +117,14 @@ def export_table(conn: Any, name: str, sql: str, out: str) -> Dict[str, Any]:
     return {"file": f"{name}.parquet", "rows": df.height, "sha256": _sha256(path), "sql": sql}
 
 
-def _price_pages(conn: Any, ticker: str) -> List[Dict[str, Any]]:
+def _price_pages(conn: Any, ticker: str, fields: Sequence[str]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     after = ""
     while True:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT r FROM api.quote_history(%s, NULL, CURRENT_DATE, NULL, %s, %s) r",
-                (ticker, after, PRICE_FIELDS),
+                (ticker, after, list(fields)),
             )
             page = [r[0] for r in cur.fetchall()]
         for row in page:
@@ -128,33 +135,63 @@ def _price_pages(conn: Any, ticker: str) -> List[Dict[str, Any]]:
         after = page[-1]["trade_date"].isoformat()
 
 
+def _try(conn: Any, work: Callable[[], List[Dict[str, Any]]]) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+    """Run one price call inside a savepoint: (rows, None) or (None, the function's message).
+
+    A refusal raises, and an error aborts the transaction; rolling back to the
+    savepoint keeps the one consistent snapshot alive for the next call.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SAVEPOINT q")
+    try:
+        rows = work()
+    except Exception as exc:  # the function's refusal, kept with its words
+        with conn.cursor() as cur:
+            cur.execute("ROLLBACK TO SAVEPOINT q")
+        return None, " ".join(str(exc).split())[:500]
+    with conn.cursor() as cur:
+        cur.execute("RELEASE SAVEPOINT q")
+    return rows, None
+
+
 def export_prices(
     conn: Any, out: str, tickers: Sequence[str],
-    pages: Callable[[Any, str], List[Dict[str, Any]]] = _price_pages,
+    pages: Callable[[Any, str, Sequence[str]], List[Dict[str, Any]]] = _price_pages,
 ) -> Dict[str, Any]:
-    """Every universe ticker's history through api.quote_history; refusals are listed."""
+    """Every universe ticker's history through api.quote_history.
+
+    Adjusted rows carry adj_status 'ok'. A refused ticker is retried for its raw
+    close and exported with adj_status 'refused' and no close_adj (#987).
+    """
     records: List[Dict[str, Any]] = []
     refused: Dict[str, str] = {}
+    unavailable: Dict[str, str] = {}
+    raw_only_rows = 0
     for ticker in tickers:
-        # A refusal raises, and an error aborts the transaction; the savepoint
-        # keeps the one snapshot alive for the next ticker.
-        with conn.cursor() as cur:
-            cur.execute("SAVEPOINT q")
-        try:
-            records.extend(pages(conn, ticker))
-            with conn.cursor() as cur:
-                cur.execute("RELEASE SAVEPOINT q")
-        except Exception as exc:  # the function's refusal, kept with its words
-            with conn.cursor() as cur:
-                cur.execute("ROLLBACK TO SAVEPOINT q")
-            refused[ticker] = " ".join(str(exc).split())[:500]
+        rows, message = _try(conn, lambda: pages(conn, ticker, ADJ_FIELDS))
+        if rows is not None:
+            for row in rows:
+                row["adj_status"] = "ok"
+            records.extend(rows)
+            continue
+        refused[ticker] = message or ""
+        rows, message = _try(conn, lambda: pages(conn, ticker, RAW_FIELDS))
+        if rows is None:
+            unavailable[ticker] = message or ""
+            continue
+        for row in rows:
+            row.update(close_adj=None, close_total_return=None, adj_status="refused")
+        raw_only_rows += len(rows)
+        records.extend(rows)
     df = pl.DataFrame(records, schema=PRICE_SCHEMA, strict=False) if records else pl.DataFrame(schema=PRICE_SCHEMA)
     path = os.path.join(out, "equity_prices.parquet")
     df.write_parquet(path)
     return {
         "file": "equity_prices.parquet", "rows": df.height, "sha256": _sha256(path),
-        "sql": f"api.quote_history(ticker, NULL, CURRENT_DATE, NULL, <page>, {PRICE_FIELDS}) per research_universe ticker",
-        "tickers": len(tickers), "refused": refused,
+        "sql": (f"api.quote_history(ticker, NULL, CURRENT_DATE, NULL, <page>, {ADJ_FIELDS}) per research_universe "
+                f"ticker; a refused ticker again with {RAW_FIELDS} (adj_status 'refused')"),
+        "tickers": len(tickers), "refused": refused, "raw_only_rows": raw_only_rows,
+        "unavailable": unavailable,
     }
 
 
