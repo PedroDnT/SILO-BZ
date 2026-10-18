@@ -59,6 +59,14 @@
 			"bucket_name": "silo-diagnosis-traces"
 		}
 	],
+	// #892: the Workers Rate Limiting binding, keyed in src/index.ts on the token plus the route (not the IP) and
+	// counted per Cloudflare location. period is 10 or 60 s; LIMIT_PERIOD_SECONDS (src/index.ts) is the Retry-After
+	// and must equal it. namespace_id is any positive integer, unique in the account. /diagnose starts a Container
+	// and a paid LLM call: 5 a minute (max_instances is 3). The owner's trace page makes a few reads per view.
+	"ratelimits": [
+		{ "name": "DIAGNOSE_LIMITER", "namespace_id": "8921", "simple": { "limit": 5, "period": 60 } },
+		{ "name": "TRACES_LIMITER", "namespace_id": "8922", "simple": { "limit": 60, "period": 60 } }
+	],
 	"durable_objects": {
 		"bindings": [
 			{
