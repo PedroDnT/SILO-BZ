@@ -14,7 +14,7 @@ source. A new decision that is hard to reverse gets its own file in
 | Gate health on `landed_at`, not `complete_through` | The source's calendar is not our outage | [AGENTS.md](../../AGENTS.md) |
 | FII filings keep every version | Restatements sit beside originals; read `*_latest` views | migration 43 |
 | No backfill for the B3 BDI group | B3 keeps about 21 business days; a start year would promise the impossible | `B3Ingestor.backfill` docstring |
-| Every weekday scheduled run whose analytical apply succeeds rebuilds the dashboard | Weekday snapshot is at most a day old (2026-09-14); a red source does not block it | `daily_ingest.yml` (#473) |
+| Every Monday scheduled run whose analytical apply succeeds rebuilds the dashboard | The data step is about 20 min of the build, so the snapshot is at most a week old (2026-10-18); a red source does not block it | `daily_ingest.yml` (#473, #976) |
 | FNET, market and B3 event steps run after publishing | Slow foreign hosts must not block the apply or deploy | `daily_ingest.yml` (2026-09-25, 2026-09-30) |
 | A ticker is active only if it trades; history follows the company across an ISIN change only by strict rules | `is_active` reflects trading, not a stale register | [ADR 0002](../adr/0002-ticker-activity-and-lineage.md) |
 | Portfolio analysis stores no user portfolios | Stateless by design | [ADR 0001](../adr/0001-stateless-portfolio-analysis.md) |
