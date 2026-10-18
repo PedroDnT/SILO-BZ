@@ -61,7 +61,7 @@ false`), and GitHub keeps only ONE pending run per group.** A queued run is ther
 
 | When                 | Command                                      | Looking for                                                                                                               |
 | -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Daily 07:30 UTC      | Actions → **DB Health** (`health.yml`)       | unhealed ingest errors, stalled monthly families, `api.catalog()`/`coverage()`, disk size (warns from 85%, fails above 90%; `PLAN_DISK_GB=135`) |
+| Daily 07:30 UTC      | Actions → **DB Health** (`health.yml`)       | unhealed ingest errors, stalled monthly families, `api.catalog()`/`coverage()`, freshness of CDI/Selic, COTAHIST, PTAX, Focus and IPCA items, missed B3 sessions (check 4f), disk size (warns from 85%, fails above 90%; `PLAN_DISK_GB=135`); an unattended red run files or bumps "DB Health is failing" |
 | After any run        | `python scripts/check_staleness.py`          | exit `0` fresh · `10` daily stale **or unhealed errors** · `11` monthly (ANBIMA) stale                                    |
 | Weekly               | `python scripts/verify_pipeline.py`          | presence, field-population rates, sample business metrics per entity                                                      |
 | Weekly               | the audit-log triage query (§3)              | `error` slices, slices stuck `running`, entities missing entirely                                                         |
