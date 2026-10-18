@@ -36,6 +36,9 @@ interface Env {
 	ENGINE: DurableObjectNamespace<HealthContainer>;
 	// Private R2 bucket silo-diagnosis-traces (wrangler.jsonc).
 	TRACES: R2Bucket;
+	// Workers Rate Limiting bindings (`ratelimits` in wrangler.jsonc, #892), one per route family.
+	DIAGNOSE_LIMITER: RateLimit;
+	TRACES_LIMITER: RateLimit;
 	DEMO_ACCESS_TOKEN?: string;
 	OPENAI_API_KEY?: string;
 	// Engine 1.12 (#605): the investigator of official documents and its web fallback (Exa).
@@ -195,6 +198,8 @@ async function diagnose(request: Request, env: Env, ctx: ExecutionContext): Prom
 	if (!(await tokenMatches(givenToken(request), env.DEMO_ACCESS_TOKEN))) {
 		return erro(401, "Acesso não autorizado.");
 	}
+	const limited = await overLimit(env.DIAGNOSE_LIMITER, env, "/diagnose");
+	if (limited) return limited;
 	const declared = Number(request.headers.get("content-length") ?? "0");
 	if (declared > MAX_UPLOAD_BYTES) return erro(413, "Arquivo grande demais: o limite é 10 MB.");
 	const body = await readCapped(request.body);
@@ -372,6 +377,20 @@ async function ownerOnly(request: Request, env: Env): Promise<Response | null> {
 	return null;
 }
 
+// #892: a request over the limit gets 429 with Retry-After. The key is the SHA-256 of the token plus the route
+// (Cloudflare's advice: not the IP), so the raw token is never handed to the binding. It runs after the token
+// check, so it counts the token that spends money; the window (`period` in wrangler.jsonc) is counted per
+// Cloudflare location and is the Retry-After. A missing binding fails closed, like a missing secret.
+const LIMIT_PERIOD_SECONDS = 60;
+async function overLimit(limiter: RateLimit | undefined, env: Env, route: string): Promise<Response | null> {
+	if (!limiter) return erro(503, "Serviço não configurado.");
+	const hex = [...new Uint8Array(await digest(env.DEMO_ACCESS_TOKEN as string))].map((b) => b.toString(16).padStart(2, "0")).join("");
+	const { success } = await limiter.limit({ key: `${route}:${hex}` });
+	if (success) return null;
+	return reply(429, JSON.stringify({ erro: "Muitas requisições: tente de novo em instantes." }),
+		"application/json; charset=utf-8", { "retry-after": String(LIMIT_PERIOD_SECONDS) });
+}
+
 function json(status: number, body: unknown): Response {
 	return reply(status, JSON.stringify(body), "application/json; charset=utf-8");
 }
@@ -511,6 +530,8 @@ export default {
 		if (pathname.startsWith("/api/traces") && request.method === "GET") {
 			const denied = await ownerOnly(request, env);
 			if (denied) return denied;
+			const limited = await overLimit(env.TRACES_LIMITER, env, pathname);
+			if (limited) return limited;
 			const url = new URL(request.url);
 			try {
 				if (pathname === "/api/traces") return await listTraces(url, env);

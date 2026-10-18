@@ -155,7 +155,19 @@ cut. The OpenAI provider's limit is 32,000 since (owner's choice, 2026-10-04).
 
 - Workers Logs (persisted) cannot be searched from the workflow; the tail probe
   covers the live stream only.
-- No custom domain, no rate limit beyond the token, `max_instances` and the
-  provider's spend limit.
+- No custom domain, no daily spend cap beyond `max_instances` and the
+  provider's spend limit (the Durable Object count was left out, #892).
+
+## Rate limit (#892)
+
+The Workers Rate Limiting binding (`ratelimits` in `wrangler.jsonc`) runs after
+the token check. The key is the SHA-256 of the token plus the route, not the IP,
+so the raw token never reaches the binding. `POST /diagnose` (`DIAGNOSE_LIMITER`)
+allows 5 a minute; each `/api/traces*` route (`TRACES_LIMITER`) allows 60 a
+minute. Over the limit the Worker answers `429` with `Retry-After: 60` and starts
+nothing. The count is per Cloudflare location, so it bounds a leaked token's
+spend rather than metering it exactly. The window (`period`, 10 or 60 s) and
+`LIMIT_PERIOD_SECONDS` in `src/index.ts` must match. A missing binding answers
+`503`. `/` and `/health` are not limited. Tests: `tests/test_worker_rate_limit.py`.
 
 The upload UI requests HTML, shows the brief and optional declared client constraints, and uses the browser print/save dialog only on request. API PDF callers remain supported; HTML-only traces have no PDF artifact. See `docs/reference/portfolio/brief-client-fit.md`.

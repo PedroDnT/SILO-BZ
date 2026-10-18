@@ -97,7 +97,7 @@ const bucket = {
 };
 const response = await x.default.fetch(new Request("https://worker.invalid/diagnose", {
   method: "POST", headers: { "x-demo-token": secret }, body: "synthetic upload"
-}), { ENGINE: {}, TRACES: scenario === "no_bucket" ? undefined : bucket, DEMO_ACCESS_TOKEN: secret },
+}), { ENGINE: {}, DIAGNOSE_LIMITER: { async limit() { return { success: true }; } }, TRACES: scenario === "no_bucket" ? undefined : bucket, DEMO_ACCESS_TOKEN: secret },
 { waitUntil(promise) { pending.push(promise); } });
 const body = await response.text();
 const responseBeforePersistence = puts.length === 0;
