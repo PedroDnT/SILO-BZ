@@ -48,9 +48,9 @@ Where each dataset lands, at what grain and what is ingested but not yet served:
 Fetch (`src/fetchers/`, HTTP only), parse (`src/parsers/`, validated rows), store (`src/store/pg_client.py`, upsert on the natural key), orchestrated by `src/pipeline/`. Everything runs in GitHub Actions against Supabase; there is no server to keep up. Times are UTC-3, with UTC in parentheses.
 
 - **03:00 UTC-3 (06:00 UTC), `daily_ingest.yml`:** schema and migrations, `run_daily`, `ANALYZE`, analytical rebuild, dashboard deploy hook, then four parallel jobs (B3 events, rates and market data, ETF snapshot, FNET register; #868). If a source fails the run goes red, but the last three steps still run; only a failed schema apply or analytical apply holds them back. A failed CVM probe skips only the CVM sources, and the run still goes red (#866).
-- **When the daily run completes, `health.yml` and `watchdog.yml`** (fallback crons 07:30 and 07:40 UTC-3, 10:30 and 10:40 UTC): health reads the audit log and the tables and fails loudly when they disagree; the watchdog re-runs stale slices, and FNET, FNET diffs and RJ each on its own flag.
+- **When the daily run completes, `health.yml` and `watchdog.yml`** (fallback crons 07:30 and 07:40 UTC-3, 10:30 and 10:40 UTC): health reads the audit log and the tables and fails loudly when they disagree; the watchdog re-runs stale slices, and FNET and FNET diffs each on its own flag.
 - **05:00 UTC-3 (08:00 UTC), `publish_check.yml`:** confirms the public URL serves the new build.
-- **08:07 UTC-3 (11:07 UTC), `rj_collect.yml`:** judicial-recovery cases from administrator sites and the DJEN court notices (DJEN goes through the `djen-relay` Edge Function and needs the `DJEN_RELAY_TOKEN` secret).
+- **On demand only since #877, `rj_collect.yml`** (no schedule; nothing reads its tables): judicial-recovery cases from administrator sites and the DJEN court notices (DJEN goes through the `djen-relay` Edge Function and needs the `DJEN_RELAY_TOKEN` secret).
 - **On demand, `backfill.yml`:** one entity and year range at a time.
 
 The system in four short pages, in `docs/architecture/`:

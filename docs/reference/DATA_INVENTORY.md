@@ -36,7 +36,7 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | FI      | `cvm_fi_cda_cotas`       | fund × month × **held fund**         | CDA block 2                          | 2005                     |
 | FI      | `cvm_fi_cda_debentures`  | fund × month × **issuer** × maturity | CDA block 6                          | 2005                     |
 | FI      | `cvm_fund_registry`      | fund (static)                        | CVM-175 registry ZIP                 | current                  |
-| FI      | `cvm_registro_fundo`, `cvm_registro_classe`, `cvm_registro_subclasse` | CVM 175 fund / class / subclass, keyed on the registry ids (migration 67) | the same CVM-175 registry ZIP, three members | current |
+| FI      | `cvm_registro_fundo`, `cvm_registro_classe`, `cvm_registro_subclasse` | CVM 175 fund / class / subclass, keyed on the registry ids (migration 67) | the same CVM-175 registry ZIP, three members | **stopped 2026-10-18 (#877)**; rows kept |
 | FIDC    | `cvm_fidc_mensal`        | fund × month                         | monthly 2025+, yearly HIST ≤2024     | 2019                     |
 | FIDC    | `cvm_fidc_tranche`       | fund × month × tranche               | tabs X2/X3/X6, monthly 2025+, HIST ≤2024 | 2013 (issue #556)    |
 | FIDC    | `cvm_fidc_tranche_flows` | fund × month × tranche               | tab X4, monthly 2025+, HIST ≤2024    | 2013 (issue #556)        |
@@ -45,13 +45,13 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | FIDC    | `cvm_fidc_sacado`        | fund × month × **rank** (1–25)       | tab VIII, monthly 2025+, HIST ≤2024  | 2013                     |
 | FIDC    | `cvm_fidc_cedente`       | fund × month × block × slot (1–9)    | tab I cedente slots, unpivoted       | 2019-11 (slots appear)   |
 | FIDC    | `cvm_fidc_scr`           | fund × month                         | tab X, monthly 2025+, HIST ≤2024     | 2023-10 (member appears) |
-| FIDC    | `cvm_fidc_garantia`      | fund × month                         | tab X_7, monthly 2025+, HIST ≤2024   | 2019-11 (member appears) |
+| FIDC    | `cvm_fidc_garantia`      | fund × month                         | tab X_7, monthly 2025+, HIST ≤2024   | 2019-11 (member appears); **stopped 2026-10-18 (#877)**, rows kept |
 | FII     | `cvm_fii_mensal`         | fund × month × subtype × **version** | yearly ZIP                           | 2021                     |
-| FII     | `cvm_fii_periodic`       | fund × quarter/year × doc × **version** | yearly ZIP, 4 members             | 2019                     |
+| FII     | `cvm_fii_periodic`       | fund × quarter/year × doc × **version** | yearly ZIP, 4 members             | 2019; **stopped 2026-10-18 (#877)**, rows kept |
 | FII     | `cvm_fii_imovel`         | fund × quarter × **property**        | yearly ZIP                           | 2019                     |
 | FIAGRO  | `cvm_fiagro_mensal`      | fund × month                         | monthly ZIP                          | **2025-05**              |
 | FIP     | `cvm_fip_periodic`       | fund × **filing date** × share class | yearly CSV                           | 2010                     |
-| SECURIT | `cvm_securit_mensal`     | certificate × month × **occurrence** | yearly ZIP                           | 2019                     |
+| SECURIT | `cvm_securit_mensal`     | certificate × month × **occurrence** | yearly ZIP                           | 2019; **stopped 2026-10-18 (#877)**, rows kept |
 | SECURIT | `cvm_securit_serie`      | certificate × month × series × class × **occurrence** | yearly ZIP          | 2019                     |
 | SECURIT | `cvm_securit_fluxo`      | vehicle × series × flow date         | yearly ZIP                           | 2019                     |
 | SECURIT | `cvm_securit_dfin`       | certificate × reference date         | yearly CSV                           | 2019                     |
@@ -471,22 +471,32 @@ endpoint. Listed with what serving it would take.
 | `mkt_series`, IC-Br in `bacen_sgs` | UST / Brent / OFR FSI, IC-Br (migration 48) | **No.** Landed for the DUSTIN-BR research dataset (`research_examples/dustin_br/`). The DI1 contracts and B3 curves beside them are served since v42 (`future_curve`, `future_series`, `curve`, `curve_history`). VIX is not ingested at all (Cboe licence); IC-Br would join `macro_series`' registry. |
 | `cvm_fi_cda` | CDA block 1, government bonds per fund-month (one row per bond since migration 49) | **Partly.** `portfolio_lookthrough` lists block 1 bonds per fund (repo collateral apart); there is no endpoint of its own. `/fi` and `/rates` read it. Blocks 4, 2 and 6 are served. |
 
-### Read by nothing
+### Read by nothing, and no longer ingested
 
-Checked on 2026-10-13: each table below is written by its ingest and read by no
+Checked on 2026-10-13: each table below was written by its ingest and read by no
 view an endpoint or a page uses, no `api.*` function and no `dashboard/` source.
 A grep for each name over `src/store/analytical/`, `serve/`,
 `supabase/functions/`, `dashboard/` and `sdk/` finds only the grants file or a
 comment.
 
-| Held | Written by | Note |
+**Owner decision 2026-10-18 (#877): stop ingesting the eight tables marked below.**
+`daily_update`, `backfill` and the workflows no longer run their slices. The
+tables, their schema, migrations and rows are kept; nothing was dropped or
+deleted, and the `ingest_*` functions stay in `src/pipeline/` for a future
+re-enable (the wiring is the only thing removed). The rows are frozen at the last
+run, so read them as history, not as current. `cvm_fund_registry` is still
+written from the same registry ZIP; only the level tables stopped. The RJ
+collector (`rj_collect.yml`) has no schedule, only `workflow_dispatch`, and the
+watchdog no longer heals RJ.
+
+| Held | Last written by | Note |
 | ---- | ---------- | ---- |
-| `cvm_registro_fundo`, `cvm_registro_classe`, `cvm_registro_subclasse` | `src/pipeline/ingest_misc.py` `ingest_registro_level` | The CVM 175 levels. `cvm_fund_registry`, written in the same slice, is what everything reads. |
-| `cvm_fidc_garantia` | `src/pipeline/ingest_fidc.py` `ingest_fidc_garantia` | The one CVM table checked by `DataValidator` on CNPJ, date and number. |
-| `cvm_fii_periodic` | `src/pipeline/ingest_fii.py` `ingest_fii_periodic` | `vw_fii_periodic_latest` has no reader. |
-| `cvm_securit_mensal` | `src/pipeline/ingest_securit.py` `ingest_securit_mensal` | `instrument_activity` (migration 43) reads it and is read only by `scripts/queries/`. |
+| `cvm_registro_fundo`, `cvm_registro_classe`, `cvm_registro_subclasse` | `src/pipeline/ingest_misc.py` `ingest_registro_level` | **Stopped (#877).** The CVM 175 levels. `cvm_fund_registry`, written in the same slice, is what everything reads. |
+| `cvm_fidc_garantia` | `src/pipeline/ingest_fidc.py` `ingest_fidc_garantia` | **Stopped (#877).** The one CVM table checked by `DataValidator` on CNPJ, date and number. |
+| `cvm_fii_periodic` | `src/pipeline/ingest_fii.py` `ingest_fii_periodic` | **Stopped (#877).** `vw_fii_periodic_latest` has no reader. |
+| `cvm_securit_mensal` | `src/pipeline/ingest_securit.py` `ingest_securit_mensal` | **Stopped (#877).** `instrument_activity` (migration 43) reads it and is read only by `scripts/queries/`. |
 | `fnet_document_body` | `src/pipeline/fnet_diff.py` | A cache of downloaded bodies; `fnet_document_pair` and `fnet_document_diff` are what is served. |
-| `rj_case`, `rj_document` | `src/pipeline/ingest_rj.py`, `ingest_rj_djen.py` | Read only by `public.rj_document_new` and `public.rj_coverage`, both revoked from the client roles. `api.rj_listed_documents` reads `cia_event`, not these. |
+| `rj_case`, `rj_document` | `src/pipeline/ingest_rj.py`, `ingest_rj_djen.py` | **Stopped (#877).** Read only by `public.rj_document_new` and `public.rj_coverage`, both revoked from the client roles. `api.rj_listed_documents` reads `cia_event`, not these. |
 | `cvm_fi_balancete` | nothing since migration 62 | Emptied, not dropped, because migration 22 still alters it. |
 
 ### Shown on the dashboard, not served

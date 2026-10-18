@@ -196,7 +196,8 @@ def test_a_row_without_its_parent_id_is_dropped_not_filled(captured):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_the_daily_registry_step_ingests_all_three_members(monkeypatch, captured):
+async def test_the_daily_registry_step_writes_the_registry_only(monkeypatch, captured):
+    """#877: the level tables are not written any more; the fund registry still is."""
     from src.pipeline.cvm_pipeline import CVMIngestor
 
     monkeypatch.setattr("src.pipeline.ingest_misc.upsert_rows", lambda conn, table, rows, **kw: (
@@ -210,11 +211,10 @@ async def test_the_daily_registry_step_ingests_all_three_members(monkeypatch, ca
 
     total = await ingestor.ingest_fund_registry_cvm175()
 
-    assert [c.args[2] for c in ingestor._log_start.call_args_list] == list(MEMBERS)
-    assert len(ingestor._log_finish.call_args_list) == 3
+    # registro_subclasse has no CNPJ and fed only its level table: not fetched.
+    assert [c.args[2] for c in ingestor._log_start.call_args_list] == ["registro_fundo", "registro_classe"]
     finishes = [(c.args[1], c.kwargs.get("fetched")) for c in ingestor._log_finish.call_args_list]
-    assert finishes == [(2, 2), (3, 3), (3, 3)]
-    assert total == 8
-    # The subclass file has no CNPJ, so it never reaches cvm_fund_registry.
+    assert finishes == [(2, 2), (3, 3)]
+    assert total == 5
     assert len(captured["cvm_fund_registry"]["rows"]) == 5
-    assert len(captured["cvm_registro_subclasse"]["rows"]) == 3
+    assert not {"cvm_registro_fundo", "cvm_registro_classe", "cvm_registro_subclasse"} & set(captured)

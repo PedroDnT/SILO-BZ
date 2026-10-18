@@ -680,6 +680,28 @@ class TestCdaRefreshFloor:
         assert targets == [(2026, m) for m in range(5, 11)]
 
 
+class TestUnreadTablesAreNotPlanned:
+    """#877: nothing reads these tables, so no daily slice writes them. Tables and rows stay."""
+
+    UNREAD = {"cvm_fidc_garantia", "cvm_fii_periodic", "cvm_securit_mensal"}
+
+    def test_daily_plan_has_no_unread_table(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+        ingestor = CVMIngestor(service=object(), cia_fetcher=object(), client=_FakeClient())
+        today = date(2026, 10, 3)
+        entities = {"fidc", "fii", "securit"}
+        tasks = ingestor._plan_daily_monthly_tasks(entities, today)
+        tasks += ingestor._plan_daily_annual_tasks(entities, today.year, today)
+        try:
+            tables = {task.table for task in tasks}
+        finally:
+            for task in tasks:
+                task.operation.close()
+        assert tables, "the plan must still run the neighbours"
+        assert not tables & self.UNREAD
+        assert {"cvm_fidc_cedente", "cvm_fii_mensal", "cvm_securit_serie"} <= tables
+
+
 class TestFiiPreviousYearInQ1:
     """January to March, the daily run also re-reads last year's FII files (#551)."""
 
@@ -697,11 +719,11 @@ class TestFiiPreviousYearInQ1:
     def test_february_plans_both_years(self):
         from src.pipeline.cvm_pipeline import FII_MENSAL_DOC_TYPES, FII_PERIODIC_DOC_TYPES
         descriptions = self._fii_descriptions(date(2027, 2, 10))
-        per_year = len(FII_MENSAL_DOC_TYPES) + len(FII_PERIODIC_DOC_TYPES) + 1
+        per_year = len(FII_MENSAL_DOC_TYPES) + 1  # cvm_fii_periodic is not run (#877)
         assert len(descriptions) == 2 * per_year
         for year in (2026, 2027):
             assert {f"fii/{d} {year}" for d in FII_MENSAL_DOC_TYPES} <= set(descriptions)
-            assert {f"fii/{d} {year}" for d in FII_PERIODIC_DOC_TYPES} <= set(descriptions)
+            assert not {f"fii/{d} {year}" for d in FII_PERIODIC_DOC_TYPES} & set(descriptions)
             assert f"fii/trimestral_imovel {year}" in descriptions
 
     def test_march_still_plans_previous_year_and_april_does_not(self):

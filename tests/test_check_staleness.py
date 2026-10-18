@@ -277,7 +277,8 @@ def test_side_sources_name_what_the_pipelines_log():
     assert cs.SIDE_SOURCES["fnet"][0] == "fnet"
     assert set(cs.SIDE_SOURCES["fnet"][1]) == {"register", "fund_link"}
     assert cs.SIDE_SOURCES["fnet_diff"][:2] == ("fnet", ("diff",))
-    assert cs.SIDE_SOURCES["rj"][0] == "rj"
+    assert "rj" not in cs.SIDE_SOURCES, "RJ is no longer collected (#877)"
+    # ...but its old log rows stay out of the daily verdict.
     assert cs.SIDE_ENTITIES == ("fnet", "rj")
 
 
@@ -327,7 +328,7 @@ def test_side_sources_fresh_write_false_flags(monkeypatch, tmp_path, capsys):
     with p:
         assert cs.main() == cs.EXIT_FRESH
     assert out.read_text().splitlines() == [
-        "heal_fnet=false", "heal_fnet_diff=false", "heal_rj=false",
+        "heal_fnet=false", "heal_fnet_diff=false",
     ]
 
 
@@ -340,7 +341,7 @@ def test_stale_side_source_flags_heal_without_rerunning_daily(monkeypatch, tmp_p
     with p:
         assert cs.main() == cs.EXIT_FRESH, "a stale FNET/RJ must not re-run run_daily"
     assert "heal_fnet=true" in out.read_text()
-    assert "heal_rj=true" in out.read_text()
+    assert "heal_rj" not in out.read_text()
     assert "last ok 40h ago" in capsys.readouterr().out
 
 
@@ -349,13 +350,13 @@ def test_side_errors_flag_only_their_source(monkeypatch):
 
     def unhealed(conn, hours=0, scope=cs.MAIN_SCOPE):
         seen.append(scope)
-        return 2 if scope == cs._scope(entity="rj", doc_types=None) else 0
+        return 2 if scope == cs._scope(entity="fnet", doc_types=("diff",)) else 0
 
     monkeypatch.setattr(cs, "unhealed_error_slices", unhealed)
     monkeypatch.setattr(cs, "stuck_running_slices", lambda *a, **k: 0)
     monkeypatch.setattr(cs, "side_success_age_hours", lambda *a: 1.0)
     verdicts = cs.side_source_verdicts(object())
-    assert verdicts == {"fnet": "", "fnet_diff": "", "rj": "2 unhealed error slice(s)"}
+    assert verdicts == {"fnet": "", "fnet_diff": "2 unhealed error slice(s)"}
     assert cs.MAIN_SCOPE not in seen
 
 

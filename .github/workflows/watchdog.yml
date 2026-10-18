@@ -12,10 +12,10 @@ name: Ingest Watchdog
 # skips the CVM scope instead of writing another round of error rows, still
 # heals the other sources, and ends red (#866).
 #
-# FNET, FNET diffs and RJ are not written by run_daily, so the staleness check
-# judges each on its own (heal_fnet / heal_fnet_diff / heal_rj) and only a
-# flagged one is re-run: the FNET register step in this job, the fnet-diff and
-# rj jobs below (#870).
+# FNET and FNET diffs are not written by run_daily, so the staleness check
+# judges each on its own (heal_fnet / heal_fnet_diff) and only a flagged one is
+# re-run: the FNET register step in this job, the fnet-diff job below (#870).
+# RJ is no longer collected, so it has no recovery job (#877).
 #
 # This lives entirely in GitHub Actions and reuses the existing POSTGRES_URL
 # secret — no GitHub PAT in the database, no pg_net. See scripts/check_staleness.py.
@@ -59,7 +59,6 @@ jobs:
     timeout-minutes: 180
     outputs:
       heal_fnet_diff: ${{ steps.staleness.outputs.heal_fnet_diff }}
-      heal_rj: ${{ steps.staleness.outputs.heal_rj }}
     env:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
       CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
@@ -184,7 +183,7 @@ jobs:
           exit 1
 
       - name: Report no-op
-        if: ${{ steps.staleness.outputs.stale == 'false' && steps.staleness.outputs.heal_fnet != 'true' && steps.staleness.outputs.heal_fnet_diff != 'true' && steps.staleness.outputs.heal_rj != 'true' && github.event.inputs.force != 'true' }}
+        if: ${{ steps.staleness.outputs.stale == 'false' && steps.staleness.outputs.heal_fnet != 'true' && steps.staleness.outputs.heal_fnet_diff != 'true' && github.event.inputs.force != 'true' }}
         run: echo "All ingest slices are fresh — watchdog took no action."
 
   # FNET restatement diffs: the same job as daily_ingest.yml's fnet-diff, run
@@ -212,46 +211,3 @@ jobs:
 
       - name: Diff restated FIDC informes
         run: python -m src.pipeline.fnet_diff
-
-  # RJ document links: rj_collect.yml's three parts for every site, run only
-  # when the staleness check flags RJ. Its own schema apply, because the
-  # watchdog job skips its own on a day only RJ needs healing.
-  rj:
-    name: Collect RJ document links (recovery)
-    needs: watchdog
-    if: ${{ !cancelled() && (needs.watchdog.outputs.heal_rj == 'true' || github.event.inputs.force == 'true') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    env:
-      POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
-      TZ: "America/Sao_Paulo"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Apply schema + migrations
-        uses: ./.github/actions/apply-schema
-        with:
-          postgres-url: ${{ secrets.POSTGRES_URL }}
-
-      - name: Collect
-        run: python -m src.pipeline.ingest_rj
-
-      - name: Discover RJ cases on DJEN
-        if: ${{ !cancelled() }}
-        env:
-          DJEN_RELAY_URL: https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/djen-relay
-          DJEN_RELAY_TOKEN: ${{ secrets.DJEN_RELAY_TOKEN }}
-          BR_PROXY_URL: ${{ secrets.BR_PROXY_URL }}
-        run: python -m src.pipeline.ingest_rj_djen
-
-      - name: Resolve DJEN cases on their AJ sites
-        if: ${{ !cancelled() }}
-        run: python -m src.pipeline.resolve_rj

@@ -714,7 +714,7 @@ through the Edge Function `djen-relay` in `sa-east-1`; September 2026 was backfi
 courts, all `ok`). Coverage is in `public.rj_coverage` and the epic status comment (#841).
 `BR_PROXY_URL` stays as an optional fallback.
 
-Assessment 2026-10-13 (item 24): `rj_case` and `rj_document` are not served. The watchdog heals RJ on its own flag since branch `orchestrator/870-health-on-workflow-run` (#870).
+Assessment 2026-10-13 (item 24): `rj_case` and `rj_document` are not served. The watchdog healed RJ on its own flag from #870 until #877; since 2026-10-18 the RJ collector is dispatch-only and the watchdog no longer heals it.
 
 ## 24. Assessment 2026-10-13: proposed tickets (#862)
 
@@ -790,9 +790,11 @@ FROM`, instead of `execute_values`.
 
 **Data gaps**
 
-- Decide, per table read by nothing, to serve it, show it or stop ingesting it:
+- ~~Decide, per table read by nothing, to serve it, show it or stop ingesting it:
   `cvm_registro_fundo/_classe/_subclasse`, `cvm_fidc_garantia`,
-  `cvm_fii_periodic`, `cvm_securit_mensal`, `rj_case`, `rj_document`. **owner**.
+  `cvm_fii_periodic`, `cvm_securit_mensal`, `rj_case`, `rj_document`. **owner**.~~
+  Done 2026-10-18 (#877): the owner chose to stop ingesting all eight; the slices
+  are off, tables and rows kept (`docs/reference/DATA_INVENTORY.md` section 3).
 - Serve the dashboard-only tables, or record why not: `cvm_fi_perfil`,
   `cvm_securit_fluxo`, `cvm_securit_dfin`, `mkt_series`,
   `b3_investor_participation_monthly`.

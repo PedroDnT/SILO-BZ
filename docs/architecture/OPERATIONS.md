@@ -13,13 +13,14 @@ Times in UTC-3, with UTC in parentheses.
                parallel jobs after ingest, even if red (≤75 min): B3 events · rates · ETF · FNET → fnet-diff
 after daily    health         read-only: errors, stuck, freshness, B3 sessions, disk, anon
 after daily    watchdog       stale/unhealed? re-run run_daily, B3 events, market, ETF;
-                              FNET, fnet-diff, RJ on own flags; fallback crons 07:30/07:40 (10:30/10:40)
+                              FNET, fnet-diff on own flags; fallback crons 07:30/07:40 (10:30/10:40)
 05:00 (08:00)  publish_check  public URL stale? promote; ERRORed → red
 after a run    publish_check  green daily run, or red with hook done: wait ≤45 min, promote
                               (no-op today; item 8)
-08:07 (11:07)  rj_collect     RJ: AJ sites + DJEN + resolver; red on failure
 Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 ```
+
+`rj_collect` (RJ: AJ sites, DJEN, resolver) is dispatch-only since #877.
 
 ## A red day
 
