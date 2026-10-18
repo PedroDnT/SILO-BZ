@@ -38,6 +38,8 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
+from src import cnpj as cnpj_text
+
 # Bump when a rule below changes what a diff row says; stored on every pair
 # and diff row, so rows from an older rule are visible and re-runnable.
 DIFF_VERSION = 1
@@ -68,7 +70,6 @@ _NUMERIC_PREFIXES = ("VL_", "VLR_", "QT_", "QNT_", "PR_", "PRC_", "TX_", "DESEMP
 # Holder counts by investor type: short codes with no numeric prefix.
 _NUMERIC_PARENTS = frozenset({"CLS_SENIOR", "CLS_SUBORDINADA"})
 _NUMBER_RE = re.compile(r"[+-]?\d+(?:[.,]\d+)?")
-_CNPJ_DIGITS_RE = re.compile(r"\d{14}")
 _XSI_NIL = "{http://www.w3.org/2001/XMLSchema-instance}nil"
 
 PATH, KEY, POSITION = 0, 1, 2
@@ -131,7 +132,6 @@ def parse_body(content: bytes, content_type: Optional[str] = None) -> ParsedBody
         return ParsedBody(UNSUPPORTED_ROOT, root_element=tag)
     head_el = root.find("CAB_INFORM")
     cnpj_raw = _text(head_el.find("NR_CNPJ_FUNDO")) if head_el is not None else None
-    digits = re.sub(r"\D", "", cnpj_raw or "")
     lines = canonical_lines(root)
     return ParsedBody(
         PARSE_OK,
@@ -140,7 +140,7 @@ def parse_body(content: bytes, content_type: Optional[str] = None) -> ParsedBody
         declared_cnpj_raw=cnpj_raw,
         # Decision 5: exactly 14 digits or NULL. A 13-digit CNPJ with its
         # leading zero dropped stays as printed in declared_cnpj_raw only.
-        declared_cnpj=digits if _CNPJ_DIGITS_RE.fullmatch(digits) else None,
+        declared_cnpj=cnpj_text.exact(cnpj_raw),
         declared_reference_raw=_text(head_el.find("DT_COMPT")) if head_el is not None else None,
         leaf_count=len(lines),
         canonical_sha256=hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest(),

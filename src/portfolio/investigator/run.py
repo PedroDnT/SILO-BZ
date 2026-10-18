@@ -31,6 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from src import cnpj as cnpj_text
 from src.portfolio.investigator import coordinators
 from src.portfolio.investigator import extract as ex
 from src.portfolio.report import llm
@@ -192,7 +193,7 @@ def _iso_from_text(value: str) -> str | None:
 
 
 def _digits(s: Any) -> str:
-    return re.sub(r"\D", "", str(s or ""))
+    return cnpj_text.digits(s)
 
 
 class Investigator:
@@ -712,10 +713,7 @@ def find_triggers(lines: list[Any], doc: dict[str, Any]) -> list[_Trigger]:
 
 
 def _cnpj_forms(c: str) -> tuple[str, ...]:
-    d = _digits(c)
-    if len(d) != 14:
-        return ()
-    return (d, f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}")
+    return cnpj_text.forms(c)
 
 
 def _page_names_the_asset(t: _Trigger, text: str) -> bool:

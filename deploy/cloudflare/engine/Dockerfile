@@ -25,6 +25,7 @@ COPY deploy/cloudflare/engine/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
 COPY src/__init__.py src/__init__.py
+COPY src/cnpj.py src/cnpj.py
 COPY src/portfolio src/portfolio
 COPY deploy/cloudflare/engine/start.sh /app/start.sh
 

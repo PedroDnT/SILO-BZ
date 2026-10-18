@@ -21,14 +21,14 @@ it read-only. Four infrastructures, four products.
 
 | Part                   | Owns                                                                                                          |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `src/fetchers`         | Talking to sources. A 404 means "not published yet". DJEN goes out via the `djen-relay` Edge Function (sa-east-1). |
-| `src/parsers`          | Bytes to typed rows. Invalid rows are dropped.                                                                |
-| `src/pipeline`         | Slices, the `cvm_ingest_log` audit, the entrypoints.                                                          |
+| `src/fetchers`         | Talking to sources, with one retry policy and session holder (`http.py`). A 404 means "not published yet". DJEN goes out via the `djen-relay` Edge Function (sa-east-1). |
+| `src/parsers`          | Bytes to typed rows. Invalid rows are dropped. CNPJ text is stripped and padded in `src/cnpj.py` only. |
+| `src/pipeline`         | Slices, the `cvm_ingest_log` audit, the entrypoints. |
 | `src/store`            | The one writer and pool factory (`pg_client`, also `serve/`'s pool and the scripts' connections), schema, migrations.                      |
-| `src/store/analytical` | Views, matviews and schema `api`.                                                                             |
+| `src/store/analytical` | Views, matviews and schema `api`. |
 | `src/portfolio`        | The diagnosis: statement readers, engine, report, investigator. |
-| `deploy/cloudflare`    | The Worker, the engine Container and private R2 for traces.                                                   |
-| `sdk/`                 | `silo_client`, the typed Python caller of `api.*`.                                                            |
+| `deploy/cloudflare`    | The Worker, the engine Container and private R2 for traces. |
+| `sdk/`                 | `silo_client`, the typed Python caller of `api.*`. |
 | `.github/workflows`    | Schedules, recovery and checks.                                                                               |
 
 ## Boundaries that matter

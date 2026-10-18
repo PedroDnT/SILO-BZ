@@ -33,6 +33,7 @@ from uuid import uuid4
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+from src import cnpj as cnpj_text
 from src.fetchers.cvm_fetcher import CVMFetcher
 from src.store.pg_client import get_pg_client, upsert_rows
 from src.pipeline.ingest_log import describe, finish as _finish_row, lineage
@@ -103,7 +104,7 @@ _describe = describe
 # ---------------------------------------------------------------------------
 
 def _normalize_cnpj(raw: str) -> str:
-    return re.sub(r"\D", "", str(raw)) if raw else ""
+    return cnpj_text.digits(raw)
 
 
 def _find_field(row: Dict[str, Any], *candidates: str) -> Optional[str]:

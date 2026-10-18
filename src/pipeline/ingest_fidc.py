@@ -19,6 +19,7 @@ import logging
 from collections import Counter
 from typing import Any, Dict, List
 
+from src import cnpj as cnpj_text
 from src.parsers.mapping import _norm, apply_map, assert_map_matches, coerce
 from src.parsers.field_maps import fidc_garantia as _garantia
 from src.parsers.field_maps import fidc_mensal as _mensal
@@ -50,7 +51,7 @@ def cedente_identifier(raw: Any) -> str | None:
     whose check digits verify: that is a recovered formatting loss, which the
     checksum makes verifiable, not a guess. Everything else is dropped.
     """
-    digits = "".join(ch for ch in str(raw or "") if ch.isdigit())
+    digits = cnpj_text.digits(raw)
     if not digits:
         return None
     candidates = []

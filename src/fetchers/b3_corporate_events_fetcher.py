@@ -69,6 +69,8 @@ from typing import Any, Dict, Iterator, List
 
 import requests
 
+from src import cnpj as cnpj_text
+
 from .http import Retry, exponential, retry_sync
 
 logger = logging.getLogger(__name__)
@@ -246,8 +248,8 @@ class B3CorporateEventsFetcher:
                 # zeros (Banco do Brasil 00000000000191 arrives as "191").
                 # Restoring them is formatting, not inference: a CNPJ is 14
                 # digits by definition. Anything longer is left empty.
-                digits = "".join(ch for ch in str(row.get("cnpj") or "") if ch.isdigit())
-                cnpj = digits.zfill(14) if 0 < len(digits) <= 14 else ""
+                padded = cnpj_text.pad(row.get("cnpj"))
+                cnpj = padded if padded and len(padded) == cnpj_text.LENGTH else ""
                 entries.append({"trading_name": name, "cnpj": cnpj})
         return names
 

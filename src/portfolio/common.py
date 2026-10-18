@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+from src import cnpj as cnpj_text
 from src.portfolio.client import SiloClient, ToolError
 
 STATUS_COMPLETE = "complete"
@@ -307,7 +308,4 @@ def b3_issuer_code(isin: str | None) -> str | None:
 
 
 def cnpj_root(cnpj: str | None) -> str | None:
-    if not cnpj:
-        return None
-    d = re.sub(r"\D", "", str(cnpj))
-    return d[:8] if len(d) == 14 else None
+    return cnpj_text.root(cnpj)

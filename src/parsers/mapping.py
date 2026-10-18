@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
+from src import cnpj as cnpj_text
+
 logger = logging.getLogger(__name__)
 
 CoerceType = str  # one of: text, cnpj, int, numeric, pct, date, bool
@@ -61,8 +63,7 @@ def coerce(value: Any, type_: CoerceType) -> Any:
         return s if s else None
 
     if type_ == "cnpj":
-        digits = "".join(ch for ch in s if ch.isdigit())
-        return digits.zfill(14) if digits else None
+        return cnpj_text.pad(s)
 
     if type_ == "cd_cvm":
         digits = "".join(ch for ch in s if ch.isdigit()).lstrip("0")
