@@ -16,14 +16,15 @@ after daily    watchdog       stale/unhealed? re-run run_daily, B3 events, marke
                               FNET, fnet-diff, RJ on own flags; fallback crons 07:30/07:40 (10:30/10:40)
 05:00 (08:00)  publish_check  public URL stale? promote; ERRORed → red
 after a run    publish_check  green daily run, or red with hook done: wait ≤45 min, promote
-                              (no-op while Vercel auto-assigns; item 8)
+                              (no-op today; item 8)
 08:07 (11:07)  rj_collect     RJ: AJ sites + DJEN + resolver; red on failure
+Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 ```
 
 ## A red day
 
 - Landed rows stay. After a failed `run_daily`, ANALYZE, the apply and deploy
-  hook still run. Matviews, `api.panel` and the dashboard may be partly stale; the run stays red.
+  hook still run. Matviews, `api.panel` and the dashboard may be partly stale; the run is red.
   `landed_at` and `api.coverage()` show freshness by source.
 - Schema/apply failures hold back publication until a successful run or
   `mode=analytics-only` with `rebuild_dashboard=true`.
@@ -36,14 +37,14 @@ after a run    publish_check  green daily run, or red with hook done: wait ≤45
 
 ## Changes
 
-- PR → `test.yml` (pytest, SQL compile on ephemeral Postgres) → auto-merge.
+- PR → `test.yml` (pytest, SQL compile) → auto-merge.
   Hook/PR CI share a sanitized dotenv/DB-password guard; CI checks PR additions.
   A PR touching `src/portfolio/` or `deploy/cloudflare/engine/` also runs
   `engine_image.yml` (builds and smokes the image, publishes nothing).
 - A merge deploys nothing to the database. Migrations apply on the next
   workflow run, analytical SQL on the next scheduled run or `analytics-only`.
-  `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo (`deploy/cloudflare/`,
-  Worker + engine Container) needs `deploy_cloudflare.yml`, which ends with a
+  `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo
+  (`deploy/cloudflare/`) needs `deploy_cloudflare.yml`, which ends with a
   paid end-to-end report.
 - Dashboard merges do not publish (`vercel.json` disables production Git
   deploys); the deploy hook does, after a weekday scheduled apply or
@@ -54,7 +55,7 @@ after a run    publish_check  green daily run, or red with hook done: wait ≤45
   trace last, logs fixed codes and keeps reports on failure.
 - Schema replay skips matching indexes and absent constraints.
 - DEB: daily/watchdog pass `vars.B3_CREDIT_ENABLED`; only `1` enables
-  seven-day refresh with smaller-slice recovery. `mode=b3-credit` loads
+  7-day refresh with smaller-slice recovery. `mode=b3-credit` loads
   one owner-approved slice, 7 days at most (item 18).
   [Contract](../reference/research/debenture-secondary-market-capture.md).
 

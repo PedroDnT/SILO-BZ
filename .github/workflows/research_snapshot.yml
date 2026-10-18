@@ -1,0 +1,78 @@
+name: Research snapshot
+
+# A frozen, reproducible copy of the data a research agent backtests on (#984):
+# fund monthly quotas and NAV, the fund register, BACEN SGS, PTAX, Focus, IPCA
+# items, the research universe and every universe ticker's api.quote_history
+# (close, close_adj, close_total_return). Parquet plus manifest.json, written by
+# scripts/export_research_snapshot.py in ONE read-only REPEATABLE READ
+# transaction, so every file is the same committed state. A backtest pins the
+# manifest's snapshot_id instead of reading a warehouse that moves daily.
+#
+# Read-only against the database. Sundays 12:17 UTC-3 (15:17 UTC), when no
+# ingest runs, only while the repository variable SNAPSHOT_ENABLED is 1. A manual
+# dispatch always runs and keeps the files as a workflow artifact (14 days), so
+# the export can be checked before any storage exists. With the R2 secrets and
+# the variable R2_BUCKET set, the files also go to
+# snapshots/<snapshot_id>/ in that bucket, and snapshots/latest.json names it.
+
+on:
+  schedule:
+    - cron: "17 15 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: silo-research-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    name: Export research snapshot
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.SNAPSHOT_ENABLED == '1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Export
+        id: export
+        run: |
+          set -euo pipefail
+          python scripts/export_research_snapshot.py --out snapshot
+          echo "id=$(python -c 'import json;print(json.load(open("snapshot/manifest.json"))["snapshot_id"])')" >> "$GITHUB_OUTPUT"
+          ls -l snapshot >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep as a workflow artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: research-snapshot-${{ steps.export.outputs.id }}
+          path: snapshot/
+          retention-days: 14
+
+      # Off until the owner creates the R2 bucket and secrets (#982, #984).
+      - name: Publish to R2
+        if: ${{ vars.R2_BUCKET != '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          SNAPSHOT_ID: ${{ steps.export.outputs.id }}
+        run: |
+          set -euo pipefail
+          aws --endpoint-url "$R2_ENDPOINT" s3 cp --recursive snapshot "s3://$R2_BUCKET/snapshots/$SNAPSHOT_ID/"
+          printf '{"snapshot_id": "%s"}\n' "$SNAPSHOT_ID" > latest.json
+          aws --endpoint-url "$R2_ENDPOINT" s3 cp latest.json "s3://$R2_BUCKET/snapshots/latest.json"
+          echo "published snapshots/$SNAPSHOT_ID/" >> "$GITHUB_STEP_SUMMARY"
