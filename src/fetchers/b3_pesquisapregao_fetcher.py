@@ -31,7 +31,6 @@ A date that is not a session, or not published yet, answers HTTP 200 with a
 
 from __future__ import annotations
 
-import asyncio
 import io
 import logging
 import os
@@ -41,6 +40,8 @@ from datetime import date
 from typing import Optional, Tuple
 
 import httpx
+
+from .http import Retry, linear, retry_async
 
 logger = logging.getLogger(__name__)
 
@@ -152,28 +153,28 @@ class B3PesquisaPregaoFetcher:
         return unwrap_taxa_swap(await self._download(name), name)
 
     async def _download(self, name: str) -> bytes:
-        last_exc: Optional[BaseException] = None
         attempts = max(1, self.max_retries)
         async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout), follow_redirects=True) as client:
-            for attempt in range(1, attempts + 1):
+
+            async def attempt(n: int) -> bytes:
                 try:
                     resp = await client.get(self.base_url, params={"filelist": name})
                 except httpx.HTTPError as exc:
-                    last_exc = exc
-                    logger.warning("B3 %s transport error attempt=%d/%d: %s", name, attempt, attempts, exc)
-                    if attempt < attempts:
-                        await asyncio.sleep(self.retry_delay * attempt)
-                    continue
+                    logger.warning("B3 %s transport error attempt=%d/%d: %s", name, n, attempts, exc)
+                    raise Retry(exc) from exc
                 if resp.status_code in _RETRY_STATUSES:
-                    last_exc = B3FileFetchError(f"{name}: HTTP {resp.status_code}")
-                    logger.warning("B3 %s HTTP %s attempt=%d/%d", name, resp.status_code, attempt, attempts)
-                    if attempt < attempts:
-                        await asyncio.sleep(self.retry_delay * attempt)
-                    continue
+                    logger.warning("B3 %s HTTP %s attempt=%d/%d", name, resp.status_code, n, attempts)
+                    raise Retry(B3FileFetchError(f"{name}: HTTP {resp.status_code}"))
                 if resp.status_code != 200:
                     raise B3FileFetchError(f"{name}: HTTP {resp.status_code}")
                 if not resp.content:
                     raise B3FileFetchError(f"{name}: empty body")
                 logger.info("B3 fetched %s (%d bytes)", name, len(resp.content))
                 return resp.content
-        raise B3FileFetchError(f"{name}: failed after {attempts} attempts: {last_exc}")
+
+            return await retry_async(
+                attempt,
+                attempts=attempts,
+                backoff=linear(self.retry_delay),
+                exhausted=lambda last, n: B3FileFetchError(f"{name}: failed after {n} attempts: {last}"),
+            )

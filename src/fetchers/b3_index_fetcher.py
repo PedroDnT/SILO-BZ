@@ -36,10 +36,11 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import time
 from typing import Any, Dict, Optional
 
 import requests
+
+from .http import Retry, exponential, retry_sync
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +101,8 @@ class B3IndexFetcher:
         year.
         """
         url = f"{BASE_URL}/GetPortfolioDay/{self._token(index_code, year)}"
-        last_error: Optional[Exception] = None
-        for attempt in range(1, self.max_retries + 1):
+
+        def attempt(n: int) -> Dict[str, Any]:
             try:
                 response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
@@ -124,16 +125,23 @@ class B3IndexFetcher:
                         f"{index_code} {year}"
                     )
                 return payload
-            except Exception as exc:  # noqa: BLE001 - re-raised below
-                last_error = exc
-                if attempt < self.max_retries:
-                    time.sleep(self.sleep_between * (2 ** attempt))
-        if isinstance(last_error, B3IndexNoResults):
-            raise B3IndexNoResults(
-                f"GetPortfolioDay returned results=null for {index_code} "
-                f"{year} on all {self.max_retries} attempts"
-            ) from last_error
-        raise RuntimeError(
-            f"B3 GetPortfolioDay failed after {self.max_retries} attempts for "
-            f"{index_code} {year}: {last_error}"
-        ) from last_error
+            except Exception as exc:  # noqa: BLE001 - re-raised by retry_sync once the budget is spent
+                raise Retry(exc) from exc
+
+        def exhausted(last: Optional[BaseException], n: int) -> BaseException:
+            if isinstance(last, B3IndexNoResults):
+                return B3IndexNoResults(
+                    f"GetPortfolioDay returned results=null for {index_code} "
+                    f"{year} on all {n} attempts"
+                )
+            return RuntimeError(
+                f"B3 GetPortfolioDay failed after {n} attempts for "
+                f"{index_code} {year}: {last}"
+            )
+
+        return retry_sync(
+            attempt,
+            attempts=self.max_retries,
+            backoff=exponential(self.sleep_between),
+            exhausted=exhausted,
+        )

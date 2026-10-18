@@ -30,6 +30,7 @@ import dns.resolver
 from aiohttp.abc import AbstractResolver
 
 from .cvm_config import config, dataset_config
+from .http import Retry, SessionHolder, linear, retry_async
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +257,10 @@ class CVMFetcher:
         shift = attempt % len(self.dns_nameservers)
         return self.dns_nameservers[shift:] + self.dns_nameservers[:shift]
 
+    def _rotation_key(self, attempt: int) -> int:
+        """Which DNS order attempt ``attempt`` (0-based) uses; attempts with the same key share a session."""
+        return attempt % len(self.dns_nameservers) if self.dns_nameservers else 0
+
     async def _build_session(self, timeout: aiohttp.ClientTimeout, attempt: int) -> aiohttp.ClientSession:
         rotated = self._rotated_nameservers(attempt)
         if not rotated:
@@ -391,10 +396,20 @@ class CVMFetcher:
         # Cheapest possible check, before any socket or backoff: if the breaker
         # has already latched, this download cannot succeed either.
         self._raise_if_host_unreachable()
-        for attempt in range(self.max_retries):
-            try:
-                timeout = aiohttp.ClientTimeout(total=self.timeout)
-                async with await self._build_session(timeout, attempt) as session:
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+
+        async def build(rotation: int) -> aiohttp.ClientSession:
+            return await self._build_session(timeout, rotation)
+
+        # One session per DNS order, shared by every attempt that uses that
+        # order and closed when the download ends. It used to be a new session
+        # (new pool, new TLS handshake) for every attempt.
+        async with SessionHolder(build) as sessions:
+
+            async def attempt(n: int) -> bytes:
+                # n is 1-based; the DNS order rotates from 0, as it always has.
+                session = await sessions.get(self._rotation_key(n - 1))
+                try:
                     async with session.get(url) as response:
                         # Any HTTP response proves the host answered, so it clears
                         # the connect-failure breaker even when the status is an
@@ -409,43 +424,47 @@ class CVMFetcher:
                         await self._save_cache(cache_path, meta_path, content, url)
                         self._note_success()
                         return content
-            except aiohttp.ClientConnectorError as exc:
-                # Connect-level refusal: the TCP/TLS handshake never happened, so
-                # this is the host or our IP, not the file. Retry locally (could be
-                # a blip) but count it — the breaker aborts the run once it is
-                # clearly systemic rather than repeating this for every slice.
-                self._note_connect_failure(url, exc)
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay * (attempt + 1))
-                    continue
-                raise RuntimeError(
-                    f"Download failed after {self.max_retries} attempts "
-                    f"(cannot connect to host): {exc}"
-                ) from exc
-            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-                # asyncio.TimeoutError is listed EXPLICITLY: it is not an
-                # aiohttp.ClientError. aiohttp enforces ClientTimeout(total=)
-                # with its own timer and raises a bare asyncio.TimeoutError
-                # (== builtins.TimeoutError on 3.11+), so before this clause
-                # named it, a total-timeout escaped the loop on attempt 0 and
-                # max_retries never applied. That is the whole story behind the
-                # 2026-08-27 balancete backfill: 32 monthly slices died with a
-                # message-less "TimeoutError" after a single try. (Connect and
-                # sock-read timeouts were always retried — aiohttp raises
-                # ServerTimeoutError for those, which IS a ClientError.)
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay * (attempt + 1))
-                    continue
+                except aiohttp.ClientConnectorError as exc:
+                    # Connect-level refusal: the TCP/TLS handshake never happened, so
+                    # this is the host or our IP, not the file. Retry locally (could be
+                    # a blip) but count it — the breaker aborts the run once it is
+                    # clearly systemic rather than repeating this for every slice.
+                    self._note_connect_failure(url, exc)
+                    raise Retry(exc) from exc
+                except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                    # asyncio.TimeoutError is listed EXPLICITLY: it is not an
+                    # aiohttp.ClientError. aiohttp enforces ClientTimeout(total=)
+                    # with its own timer and raises a bare asyncio.TimeoutError
+                    # (== builtins.TimeoutError on 3.11+), so before this clause
+                    # named it, a total-timeout escaped the loop on attempt 0 and
+                    # max_retries never applied. That is the whole story behind the
+                    # 2026-08-27 balancete backfill: 32 monthly slices died with a
+                    # message-less "TimeoutError" after a single try. (Connect and
+                    # sock-read timeouts were always retried — aiohttp raises
+                    # ServerTimeoutError for those, which IS a ClientError.)
+                    raise Retry(exc) from exc
+
+            def exhausted(last: Optional[BaseException], n: int) -> BaseException:
+                if last is None:
+                    return RuntimeError(f"Download failed for {url}")
+                if isinstance(last, aiohttp.ClientConnectorError):
+                    return RuntimeError(
+                        f"Download failed after {n} attempts "
+                        f"(cannot connect to host): {last}"
+                    )
                 # A bare TimeoutError stringifies to "", so name the type and
                 # the budget or the audit row says nothing diagnosable.
-                detail = f"{type(exc).__name__}: {exc}" if str(exc) else (
-                    f"{type(exc).__name__} after {self.timeout}s"
+                detail = f"{type(last).__name__}: {last}" if str(last) else (
+                    f"{type(last).__name__} after {self.timeout}s"
                 )
-                raise RuntimeError(
-                    f"Download failed after {self.max_retries} attempts: {detail}"
-                ) from exc
+                return RuntimeError(f"Download failed after {n} attempts: {detail}")
 
-        raise RuntimeError(f"Download failed for {url}")
+            return await retry_async(
+                attempt,
+                attempts=self.max_retries,
+                backoff=linear(self.retry_delay),
+                exhausted=exhausted,
+            )
 
     # ---------------------------------------------------------------- parse
     def _select_zip_member(self, files: List[str], expected: str) -> str:
