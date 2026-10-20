@@ -23,7 +23,9 @@ as COTAHIST's freshness, and a DI1 run must never answer for the quote tape.
 
 A B3 date that is not a session answers with an empty archive and is logged
 ``skipped``. Every other failure writes an ``error`` row and fails the run at
-the end — after the other sources have had their turn.
+the end. The daily run loads Treasury, EIA and OFR first, then both B3 loops
+inside ``MARKET_B3_TIME_BUDGET_SECONDS`` (default 900); a date the budget did
+not reach is an ``error`` row too (#997).
 
 A value that changes on re-fetch is counted and written onto the ``ok`` audit
 row ("revised N stored observations"), so a publisher's correction is visible
@@ -41,6 +43,7 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -65,6 +68,10 @@ EARLIEST = {
     "b3_price_report": date(2018, 1, 2),
     "b3_reference_rate": date(2008, 1, 2),
 }
+
+
+class TimeBudgetExceeded(Exception):
+    """The B3 requests of a daily run used up their time budget (#997)."""
 
 
 def vix_licensed() -> bool:
@@ -325,8 +332,8 @@ class MarketIngestor:
         """
         today = today or datetime.now(timezone.utc).date()
         lookback = int(os.getenv("MARKET_DAILY_LOOKBACK_DAYS", "7"))
-        b3_start = today - timedelta(days=lookback - 1)
-        totals = await self.backfill(("b3_price_report", "b3_reference_rate"), b3_start, today)
+        totals: Dict[str, int] = {}
+        # The cheap, independent sources go first: a slow B3 must not starve them.
         years = {today.year} | ({today.year - 1} if today.timetuple().tm_yday <= 7 else set())
         totals["us_treasury"] = 0
         for year in sorted(years):
@@ -337,7 +344,45 @@ class MarketIngestor:
             totals["cboe_vix"] = await self.ingest_cboe_vix(today - timedelta(days=30), today)
         else:
             logger.info("Cboe VIX not fetched: no licence (CBOE_VIX_LICENSED unset)")
+        # The run starts before the session of its own day, so that file cannot exist yet.
+        b3_start, b3_end = today - timedelta(days=lookback - 1), today - timedelta(days=1)
+        totals.update(await self._b3_daily(b3_start, b3_end))
         return totals
+
+    async def _b3_daily(self, start: date, end: date) -> Dict[str, int]:
+        """Both B3 loops under one shared time budget (``MARKET_B3_TIME_BUDGET_SECONDS``).
+
+        A date still unfinished when the budget runs out is not requested; it
+        gets its own ``error`` audit row and a collected failure, so the run
+        stays red and a later run can fill it. A request in flight at the
+        deadline is cancelled and recorded the same way.
+        """
+        budget = float(os.getenv("MARKET_B3_TIME_BUDGET_SECONDS", "900"))
+        deadline = time.monotonic() + budget
+        totals = {"b3_price_report": 0, "b3_reference_rate": 0}
+        steps = (("b3_price_report", "price report", self.ingest_price_report),
+                 ("b3_reference_rate", "reference rates", self.ingest_reference_rates))
+        out_of_time = False
+        for doc_type, name, ingest in steps:
+            for d in weekdays(max(start, EARLIEST[doc_type]), end):
+                remaining = deadline - time.monotonic()
+                if not out_of_time and remaining > 0:
+                    try:
+                        totals[doc_type] += await asyncio.wait_for(ingest(d), timeout=remaining)
+                        continue
+                    except asyncio.TimeoutError:
+                        out_of_time = True
+                        self.failures.append(f"{name} {d}: time budget of {budget:g}s exhausted during the request")
+                        logger.error("%s %s: B3 time budget of %gs exhausted during the request", name, d, budget)
+                        continue
+                out_of_time = True
+                await self._budget_error(doc_type, f"{name} {d}", d, budget)
+        return totals
+
+    async def _budget_error(self, doc_type: str, label: str, session: date, budget: float) -> None:
+        async def work() -> ingest_log.Outcome:
+            raise TimeBudgetExceeded(f"time budget of {budget:g}s for the B3 requests spent before {label}; not requested")
+        await self._slice(doc_type, label, session, work)
 
 
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:

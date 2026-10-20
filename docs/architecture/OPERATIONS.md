@@ -10,7 +10,7 @@ Times in UTC-3, with UTC in parentheses.
                              ├─ ANALYZE               skipped only if the schema apply failed
                              ├─ apply_analytical.sh   refresh matviews/api; smoke guards
                              └─ Vercel deploy hook    dashboard build, 17-45 min; needs the apply green
-               parallel jobs after ingest, even if red (≤75 min): B3 events · rates · ETF · FNET → fnet-diff
+               parallel jobs after ingest, even if red (≤75 min): B3 events · rates (B3 ≤15m) · ETF · FNET → fnet-diff
 after daily    health         read-only: errors, stuck, freshness, B3 sessions, disk, anon
 after daily    watchdog       stale/unhealed? re-run run_daily, B3 events, market, ETF;
                               FNET, fnet-diff on own flags; fallback crons 07:30/07:40 (10:30/10:40)
@@ -20,16 +20,16 @@ after a run    publish_check  green daily run, or red with hook done: wait ≤45
 Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 ```
 
-`rj_collect` (RJ: AJ sites, DJEN, resolver) is dispatch-only since #877.
+`rj_collect` (RJ: AJ sites, DJEN, resolver) is dispatch-only (#877).
 
 ## A red day
 
 - Landed rows stay. After a failed `run_daily`, ANALYZE, the apply and deploy
-  hook still run. Matviews, `api.panel` and the dashboard may be partly stale; the run is red.
+  hook still run. Matviews, `api.panel`, the dashboard may be partly stale; run is red.
   `landed_at` and `api.coverage()` show freshness by source.
 - Schema/apply failures hold back publication until a successful run or
   `mode=analytics-only` with `rebuild_dashboard=true`.
-- Plain views (quotes, short interest) show new data at once, but not their
+- Plain views (quotes, short interest) show new data at once, not their
   matview-fed columns: `days_to_cover` joins `mv_b3_adtv_21`;
   `fund_type` in `api.fund_quotas` falls back to `mv_b3_isin_subtype`.
 - Issue "Daily ingest is failing" or "DB Health is failing" opens or updates.
