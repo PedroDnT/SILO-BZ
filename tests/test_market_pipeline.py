@@ -619,3 +619,55 @@ def test_icbr_is_fetched_with_sgs_but_kept_out_of_the_served_registry():
         ing._client.get_sgs_series = fake
         _run(ing.ingest_sgs("2026-08-01", "2026-09-27"))
     assert seen["ICBR"] == 27574 and seen["SELIC_META"] == 432
+
+
+# ---------------------------------------------------------------------------
+# #997: a slow B3 must not use up the job's time or starve the other sources
+# ---------------------------------------------------------------------------
+
+def test_a_slow_failing_b3_stays_inside_its_budget_and_every_unfinished_date_is_an_error(monkeypatch):
+    import time
+    monkeypatch.setenv("MARKET_B3_TIME_BUDGET_SECONDS", "0.5")
+    monkeypatch.delenv("CBOE_VIX_LICENSED", raising=False)
+    ing, b3, mkt = _ingestor()
+    _daily_fetchers(b3, mkt)
+    asked: List[date] = []
+
+    async def slow_500(session):
+        asked.append(session)
+        await asyncio.sleep(0.3)
+        raise B3FileFetchError("PR: HTTP 500")
+    b3.fetch_price_report.side_effect = slow_500
+    b3.fetch_taxa_swap.side_effect = slow_500
+    t0 = time.monotonic()
+    with patch.object(mp, "upsert_rows", side_effect=lambda c, t, rows, conflict_columns=None: len(rows)) as up:
+        totals = _run(ing.daily_update(today=date(2026, 9, 30)))
+    assert time.monotonic() - t0 < 2.0
+    assert totals["us_treasury"] > 0 and totals["eia_brent"] > 0 and totals["ofr_fsi"] > 0
+    # 7-day window ending the day before today: weekdays 09-24, 25, 28, 29 for each of the two loops
+    wanted = {(dt, d) for dt in ("b3_price_report", "b3_reference_rate")
+              for d in (date(2026, 9, 24), date(2026, 9, 25), date(2026, 9, 28), date(2026, 9, 29))}
+    errors = {(r["doc_type"], date(r["period_year"], r["period_month"], 1)) for r in _audit(up)
+              if r["status"] == "error" and r["entity"] == "market"
+              and r["doc_type"] in ("b3_price_report", "b3_reference_rate")}
+    assert {(dt, d.replace(day=1)) for dt, d in wanted} <= errors
+    budget_rows = [r for r in _audit(up) if r["status"] == "error" and "time budget" in (r["error_msg"] or "")]
+    # every date of both loops ends in an error row; none is skipped silently
+    assert len(ing.failures) == 8 and sum("time budget" in f for f in ing.failures) >= 4
+    assert budget_rows
+
+
+def test_the_daily_run_does_not_request_the_session_of_the_day_it_starts(monkeypatch):
+    monkeypatch.delenv("CBOE_VIX_LICENSED", raising=False)
+    ing, b3, mkt = _ingestor()
+    _daily_fetchers(b3, mkt)
+    asked: List[date] = []
+
+    async def record(session):
+        asked.append(session)
+        raise B3FileNotPublished("empty")
+    b3.fetch_price_report.side_effect = record
+    b3.fetch_taxa_swap.side_effect = record
+    with patch.object(mp, "upsert_rows", side_effect=lambda c, t, rows, conflict_columns=None: len(rows)):
+        _run(ing.daily_update(today=date(2026, 9, 30)))      # a Wednesday
+    assert date(2026, 9, 30) not in asked and date(2026, 9, 29) in asked
