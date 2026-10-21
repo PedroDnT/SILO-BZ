@@ -3,6 +3,56 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-10-21 · cclaude/compassionate-turing-hejjp3 · handoff (freeze cleanup, orchestrator runs, dollar futures)
+
+This entry is the handoff for the next Claude session. Read it, then check the live state with `gh api repos/PedroDnT/SILO-BZ/...`
+before you trust any line below. Times are UTC-3.
+
+**Owner rules in force.** Development is frozen from 2026-10-18 except data reliability, ingest correctness, cost and build
+reduction, security and the `adj_status 'refused'` safeguard. Only P0 and P1 protect an issue. The owner merges every PR that
+changes ingest, a gate file or production behavior (no auto-merge). Dollar futures (DOL, WDO) are an explicit owner priority.
+Production steps (analytics apply, `deploy_mcp.yml`, a backfill) need the owner's word each time.
+
+**Done 2026-10-18 to 2026-10-21.**
+- Issue cleanup: 18 issues parked in #990 (closed). #986, #991 and #875 closed (#875: COPY into staging gained 1.1x to 1.3x at pool size 4, numbers on the issue).
+- Merged by the orchestrator: #989 (ETF status, #899), #992 (Worker rate limit, #892), #993 (shared fetch helpers, #876), #994 (stop 8 unread tables, #877), #995 (conditional CVM download, #874), #998 (market job time budget, #997), #1001 (DOL and WDO ingest, #999).
+- The scheduled daily runs of 10-20 and 10-21 are green. The 10-18 and 10-19 runs were red from a BACEN SGS 432 outage and a B3 price-report outage (HTTP 500 after about 2 minutes per request); the market job then hit its 30-minute limit. The job showed `cancelled` and the GitHub annotation said "exceeded the maximum execution time". #998 bounds it.
+
+**Dollar futures, state at the time of writing.** Part A (#999, ingest) is merged. Part B (#1000, `api.future_curve` and `api.future_series` for DI1, DOL and WDO, catalog v76) is PR #1002: green, conflict with #1001 resolved, waiting for the owner's merge. Record merged, applied and deployed separately:
+
+| Step | State |
+|---|---|
+| #1001 merged | yes |
+| #1002 merged | check; at writing: open |
+| `market_backfill.yml`, sources `b3_price_report`, 2018 to 2026 | not run |
+| `daily_ingest.yml`, `mode=analytics-only` (applies the SQL) | not run |
+| `deploy_mcp.yml` | not run |
+
+The owner said "run the action when ready" on 2026-10-21. After #1002 merges: dispatch the analytics apply, then `deploy_mcp.yml`, then the backfill.
+The backfill uses the default roots (DI1, DOL, WDO) because `market_backfill.yml` sets no `B3_FUTURES_ROOTS`; this was read from the workflow, not tested. It also reloads DI1 (idempotent) and can take hours per year. Keep the 03:00 daily run in mind: one writer at a time, and a newer dispatch cancels an older pending one.
+Afterwards check `api.future_curve('DOL')` returns rows, and that `api.future_curve()` for DI1 is unchanged.
+
+**Facts about the data, so you do not redo the work.**
+- DOL, WDO and DDI are in the B3 Price Report (`PR<yymmdd>.zip`) from 2018-01-02 to today. COTAHIST has no futures; its `DOL*` codes are ETFs and a BDR (`DOLA11`, `DOLB11`, `DOLX11`, `DOLL39`).
+- `DOLX11` has the shape of a DOL contract (X is the November letter). Part A drops a DOL or WDO ticker whose maturity is before the session month.
+- Options on the future (`DOLF27C004000`) are dropped on purpose. DDI is not stored (the cupom curve is `DOC` in `b3_reference_rate`).
+- Units (DOL USD 50,000, WDO USD 10,000, BRL per USD 1,000) were reported by the agent from b3.com.br. I did not verify them. The price bound 0 to 100,000 is a sanity bound, not B3's.
+
+**Traps met in this session.**
+- Plan mode switches on in the middle of a session. Subagents inherit it, stop, and write a plan. Tell them plan mode is off and resume them with SendMessage.
+- A finished subagent can keep sending the same "waiting on background work" notice. Stop it with TaskStop after its hand-back.
+- GraphQL, `gh issue` and the search API return 403. Use `gh api repos/PedroDnT/SILO-BZ/...`. A bot assignee cannot be removed through REST; an issue update that sends the full assignee list works.
+- A `git push` blocks the whole Bash command when a pre-push hook objects. Run it alone. The README and planning check comes once per branch.
+- The open-issue list lags a few seconds after a close. Read it twice.
+- A job conclusion `cancelled` can be a timeout. Read `repos/.../check-runs/<job id>/annotations`.
+- The B3 host is reachable from the sandbox at times, and serves a file at one hour that returned HTTP 500 the hour before.
+
+**Parked, not planned.** #996 (the price-report fetcher fails on B3 holidays while the rates fetcher skips them). Tolerating BACEN's XHTML page for a few days. A per-slice hash to skip unchanged rows before sending them (the idea left from #875). DDI and options on the dollar future. The lookback still re-requests weekdays already stored. `scripts/verify_pipeline.py` still reads `cvm_securit_mensal`.
+
+**Left on the sandbox disk (not in the repo).** Agent worktrees under `.claude/worktrees/`, a benchmark Postgres data directory at `/var/tmp/pgdata_875` (port 5433) and a scratch cluster at `/tmp/pgscratch`. Remove them when you want the space back.
+
+**Not verified by me.** Any SQL against the live database (the Supabase connection was not authorized in this session), the DOL and WDO units, and the 2018 backfill path.
+
 ## 2026-10-09 · codex/mrv-april-source-forensics · issuer workbook validation
 
 **Done.** The owner supplied OPEA's `Memória de Cálculo.xlsx` from the issuer page for 24I1980390. The daily
