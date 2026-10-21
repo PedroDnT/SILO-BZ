@@ -249,7 +249,10 @@ Nothing in wave 2 that depends on these starts until each has an answer.
   (research doc §10, missing sessions). **Served since catalog v42** (`27_api_rates.sql`):
   `future_curve`, `future_series`, `curve`, `curve_history`, live after the
   next analytics apply and a `deploy_mcp.yml` run. **Shown on the dashboard's
-  `/rates` page since 2026-09-30** (curves, breakevens, DI1 open interest). The futures arm of
+  `/rates` page since 2026-09-30** (curves, breakevens, DI1 open interest). **Dollar futures (DOL, WDO)
+  2026-10-21 (owner priority; #999 ingest, #1000 serving, catalog v76):** the daily run loads them; the history
+  from 2018 is a one-time `market_backfill.yml` dispatch (owner approval); serving goes live with the analytics
+  apply and a `deploy_mcp.yml` run. COTAHIST has no futures; its `DOL*` codes are ETFs. The futures arm of
   `api.panel` (`id_type='future'`, phase B) is built (catalog v61). Owner decision: whether
   2021-01-04's DI1 may come from that day's earlier, well-formed versions of
   the Price Report. Owner-only, only if VIX itself is wanted: a signed Cboe
