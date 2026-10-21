@@ -35,9 +35,9 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - A re-read CDA month replaces the rows of each fund in the file, so a dropped
   or re-filed position goes (`cvm_ingest_log.rows_deleted`); absent funds keep theirs.
 - B3 BDI (lending, investor flow): a ratchet, no backfill ([SYSTEM](SYSTEM.md)).
-- OTC DEB (migration 74): raw CSV + knowledge time; missing sessions fail it.
-- ANBIMA debentures (migration 80, Playwright, manual): terms, agenda, 5-session
-  rates; one capture row per page, raw text only if the parse fails.
+- OTC DEB (74): raw CSV + knowledge time; missing sessions fail it.
+- ANBIMA debentures (80, Playwright, manual): terms, agenda, 5-session
+  rates; raw text only on a parse failure. CVM offerings (81): backfill.
 
 ## Analytical
 
@@ -74,4 +74,4 @@ per settlement/classification.
 | dashboard | `public`, at build | last successful build |
 | research job | landing tables | when dispatched |
 
-[API](../reference/API.md); [inventory](../reference/DATA_INVENTORY.md).
+[API](../reference/API.md), [inventory](../reference/DATA_INVENTORY.md).

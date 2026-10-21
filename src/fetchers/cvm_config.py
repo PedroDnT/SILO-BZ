@@ -632,6 +632,23 @@ class DatasetConfig:
         },
     }
 
+    # Public offerings (OFERTA/DISTRIB): one zip, refreshed daily, two members
+    # (#1005, read 2026-10-21). Both are whole-file snapshots with no year.
+    OFERTA_DATASETS: Dict[str, Dict] = {
+        "distrib_160": {
+            "url_pattern": "{base_url}/OFERTA/DISTRIB/DADOS/oferta_distribuicao.zip",
+            "is_zip": True,
+            "csv_name_pattern": "oferta_resolucao_160.csv",
+            "description": "Resolução CVM 160 offerings (2023+), one row per Numero_Requerimento",
+        },
+        "distrib": {
+            "url_pattern": "{base_url}/OFERTA/DISTRIB/DADOS/oferta_distribuicao.zip",
+            "is_zip": True,
+            "csv_name_pattern": "oferta_distribuicao.csv",
+            "description": "Legacy ICVM 400/476 offerings (1989-2025); only registered ICVM 400 debentures are loaded",
+        },
+    }
+
     @classmethod
     def get_dataset_config(cls, entity: str, doc_type: str) -> Dict:
         entity_map = {
@@ -642,6 +659,7 @@ class DatasetConfig:
             "fii": cls.FII_DATASETS,
             "securit": cls.SECURIT_DATASETS,
             "cia_aberta": cls.CIA_ABERTA_DATASETS,
+            "oferta": cls.OFERTA_DATASETS,
         }
         datasets = entity_map.get(entity.lower())
         if not datasets:
@@ -664,6 +682,7 @@ class DatasetConfig:
             "fii": list(cls.FII_DATASETS.keys()),
             "securit": list(cls.SECURIT_DATASETS.keys()),
             "cia_aberta": list(cls.CIA_ABERTA_DATASETS.keys()),
+            "oferta": list(cls.OFERTA_DATASETS.keys()),
         }
         return entity_map.get(entity.lower(), [])
 

@@ -42,6 +42,7 @@ on:
           - fip
           - securit
           - cia_aberta
+          - oferta
           - etf
           - all
       fi_doc_type:
@@ -479,14 +480,15 @@ jobs:
   backfill-other:
     name: "${{ matrix.entity }} ${{ inputs.start_year }}-${{ inputs.end_year }}"
     needs: [apply-schema, inspect-coverage, cvm-preflight]
-    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || contains(fromJSON('["fidc","fii","fiagro","fip","securit","cia_aberta"]'), inputs.entity)) && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
+    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || contains(fromJSON('["fidc","fii","fiagro","fip","securit","cia_aberta","oferta"]'), inputs.entity)) && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
-        entity: [fidc, fii, fiagro, fip, securit, cia_aberta]
+        # oferta: the OFERTA/DISTRIB snapshot zip; years are ignored (#1005).
+        entity: [fidc, fii, fiagro, fip, securit, cia_aberta, oferta]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
