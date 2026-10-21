@@ -822,7 +822,7 @@ PETR's DFP 2023 v1 was received 2024-03-08 and the ITR 2023-09-30 on 2023-11-09,
 so `as_of = 2024-02-29` returns that ITR; the filter costs about 450 ms over six
 years of PETR's consolidated lines.
 
-### DI futures and B3 reference curves (catalog v42)
+### DI and dollar futures, and B3 reference curves (catalog v42; dollar futures v76)
 
 `api.future_curve`, `api.future_series`, `api.curve` and `api.curve_history`
 (`27_api_rates.sql`) serve the two B3 landing tables of migration 48
@@ -835,6 +835,24 @@ The operator half:
   B3's month letters (the same `_MONTH_LETTERS` the Price Report parser keeps
   outright contracts with). DI1 is quoted in rate, so the quote columns are
   % a.a.; `settlement_price` is the PU.
+- **`future_curve` and `future_series` serve DI1, DOL and WDO** (v76, #1000;
+  the ingest of DOL and WDO is #999). `p_root` is one of the three, any other
+  raises `22023` with the list; `future_series` takes an outright code of
+  those roots (`DI1F27`, `DOLF27`, `WDOF27`). The columns, their order and
+  the DI1 values do not change. The default session of `future_curve` is the
+  newest one *of the root asked*, so a session only DOL has never empties
+  DI1's default. **DOL and WDO are quoted in price**, BRL per USD 1,000
+  (B3's contract specification, read 2026-10-21: DOL USD 50,000 per contract,
+  WDO the mini at USD 10,000, both maturing on the first business day of the
+  contract month): `open_px`...`close_px` and `settlement_price` are that
+  price as the Price Report prints it, `settlement_rate` and
+  `prev_settlement_rate` are NULL where B3 prints none (they are for the
+  dollar futures), and nothing is converted. A function comment says per root
+  what each column means; read it before treating a price column as a rate.
+  `coverage()`'s `di_futures` row is bounded to DI1 tickers, so landing DOL
+  or WDO never moves its dates. The panel's futures arm keeps its DI1 text:
+  a DOL or WDO id yields `settlement_price` and `open_interest` rows and no
+  `settlement_rate` rows. A coverage row of their own is not added here.
 - **`curve` / `curve_history` read only the curves in `api.curve_registry()`**,
   which `tests/test_rates_contract.py` pins to `DEFAULT_CURVES` in
   `src/parsers/b3_taxa_swap.py`, with each curve's `rate_basis` (`DOC` is

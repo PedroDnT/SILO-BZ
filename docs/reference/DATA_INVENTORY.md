@@ -129,15 +129,22 @@ IPCA runs from 1980-01, the cores and groups from 1991-01, once the SGS
 history has been loaded with
 `run_backfill --bacen-only --bacen-sources sgs --bacen-start 1980-01-01`.
 
-### B3 — DI1 futures and reference curves (`b3.com.br/pesquisapregao`)
+### B3 — DI1, DOL and WDO futures, and reference curves (`b3.com.br/pesquisapregao`)
 
 Migration 48. Contract: `src/fetchers/b3_pesquisapregao_fetcher.py`; why these
 files: `docs/reference/research/dustin_br_data_sources.md` (B3 retired the old
 www2.bmf.com.br pages on 2025-12-10).
 
+> **COTAHIST has no futures, and its `DOL*` codes are ETFs.** The tape carries
+> cash, options, termo and auction prints only. The only `DOL*` codes in
+> `b3_cotahist` are ETFs (DOLA11, DOLB11, DOLX11, DOLL39), not the dollar
+> future: never read them as DOL. The dollar futures (DOL, and WDO the mini)
+> are in the Price Report below, checked 2026-10-21: outright DOL and WDO on
+> every session sampled from 2018-01-02.
+
 | Table                   | Grain                                   | Notes                                                                                                                                                                              |
 | ----------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `b3_futures_settlement` | session × outright futures ticker (DI1) | Price Report `BVBG.086.01`: trades, contracts, open interest, OHLC **as rates**, settlement PU and rate, as published. From **2018-01-02** (older files are empty)                 |
+| `b3_futures_settlement` | session × outright futures ticker (DI1; DOL and WDO from #999) | Price Report `BVBG.086.01`: trades, contracts, open interest, OHLC, settlement price and rate, as published. DI1 OHLC and `settlement_rate` are **rates**; DOL and WDO are quoted in **price** (BRL per USD 1,000), with `settlement_rate` NULL where B3 prints none. From **2018-01-02** (older files are empty); served by `future_curve` / `future_series` |
 | `b3_reference_rate`     | session × curve × calendar days         | TaxaSwap `PRE` (DI x pré; its moving vertices sit on every DI1 maturity at the settlement rate, and B3 extrapolates past the last one), `DOC` (onshore dollar coupon) and `DPL` (IPCA clean coupon, for implied inflation). From **2008-01-02**                             |
 
 ### Global market series (`mkt_series`)
@@ -280,7 +287,7 @@ Not variations on COTAHIST; separate files with separate shapes.
 
 | Source                      | What it gives                       | Why it matters                                                                          |
 | --------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------- |
-| Futures settlement (DI1)    | daily settlement per contract       | **ingested since migration 48** (`b3_futures_settlement`, from 2018), served since v42 (`future_curve`, `future_series`) |
+| Futures settlement (DI1, DOL, WDO) | daily settlement per contract | **ingested since migration 48** (`b3_futures_settlement`, from 2018; DOL and WDO load with #999), served since v42 for DI1 and v76 for DOL and WDO (`future_curve`, `future_series`) |
 | Reference-rate curves (PRE) | the published yield curve           | **ingested since migration 48** (`b3_reference_rate`, `PRE`, `DOC` and `DPL`, from 2008), served since v42 (`curve`, `curve_history`) |
 | Index composition           | IBOV/IBRX/SMLL membership + weights | benchmark-relative performance; without it "beat the index" is unanswerable             |
 

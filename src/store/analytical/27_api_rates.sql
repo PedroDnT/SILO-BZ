@@ -3,15 +3,16 @@
 -- The Brazilian rate curve, served through schema `api` (catalog v42;
 -- INSTRUMENTS.md phases B and C; OPEN_ITEMS B8):
 --
---   api.future_curve   every DI1 contract on one B3 session, nearest first
---   api.future_series  one DI1 contract through time
+--   api.future_curve   every contract of one root (DI1, DOL, WDO) on one B3
+--                      session, nearest first
+--   api.future_series  one contract of those roots through time
 --   api.curve          one B3 reference curve (PRE, DOC, DPL) on one session
 --   api.curve_history  one of B3's FIXED vertices of a curve through time
 --
 -- Sources (migration 48; docs/reference/research/dustin_br_data_sources.md):
 -- b3_futures_settlement is B3's Price Report (BVBG.086.01), one row per
--- session and outright DI1 contract, from 2018-01-02 (older reports are
--- empty); b3_reference_rate is B3's reference-rate file (TaxaSwap.txt), one
+-- session and outright contract of the roots held (DI1, and from #1000 the
+-- dollar futures DOL and WDO), from 2018-01-02 (older reports are empty); b3_reference_rate is B3's reference-rate file (TaxaSwap.txt), one
 -- row per session, curve and vertex, from 2008-01-02.
 --
 -- NOTHING IS DERIVED, with one labelled exception: contract_month, the month
@@ -22,6 +23,17 @@
 -- and settlement_rate are % a.a. on 252 business days, so the low rate is the
 -- high price, and settlement_price is the PU (R$ per contract, 100,000 at
 -- maturity). Everything is served as B3 published it.
+--
+-- DOL AND WDO (#1000) ARE QUOTED IN PRICE, NOT RATE. B3's contract
+-- specification (b3.com.br, read 2026-10-21): DOL is USD 50,000 per contract
+-- and WDO (the mini) USD 10,000, both quoted in BRL per USD 1,000, maturing
+-- on the first business day of the contract month, every month of the year.
+-- So open/low/high/avg/close_px and settlement_price are that price as the
+-- Price Report prints it (a live DOLF27 settles at 5080.966); settlement_rate
+-- is NULL where B3 prints none, which is the case for the dollar futures; and
+-- nothing is converted. A dollar future's low price is the low price (the
+-- inversion above is DI1's alone). One shared month-letter reading
+-- (contract_month) serves the three roots, which all have a three-letter root.
 --
 -- B3 EXTRAPOLATES THE LONG END OF EVERY CURVE. Manual de Curvas v21
 -- (2025-12-12): past the last maturity of the contract that anchors a curve
@@ -94,21 +106,21 @@ COMMENT ON FUNCTION api.curve_registry() IS
 -- future_curve — every DI1 contract on one session, nearest maturity first
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION api.future_curve(
-    p_root       TEXT DEFAULT 'DI1',   -- the contract root; only DI1 is held
+    p_root       TEXT DEFAULT 'DI1',   -- the contract root: DI1, DOL or WDO
     p_trade_date DATE DEFAULT NULL     -- a B3 session; NULL = the newest session held
 )
 RETURNS TABLE (
     trade_date           DATE,
     ticker               TEXT,      -- B3's code, e.g. DI1F27
     contract_month       DATE,      -- first day of the month the code names (B3's month letters)
-    settlement_rate      NUMERIC,   -- % a.a., 252 business days (AdjstdQtTax)
-    settlement_price     NUMERIC,   -- PU, R$ (AdjstdQt)
-    prev_settlement_rate NUMERIC,   -- the previous session's settlement rate, as B3 prints it
+    settlement_rate      NUMERIC,   -- DI1: % a.a., 252 business days (AdjstdQtTax); DOL, WDO: NULL where B3 prints none
+    settlement_price     NUMERIC,   -- DI1: PU, R$ (AdjstdQt); DOL, WDO: the settlement price as published, BRL per USD 1,000
+    prev_settlement_rate NUMERIC,   -- the previous session's settlement rate, as B3 prints it (NULL where none)
     open_interest        BIGINT,
     contracts            BIGINT,    -- contracts traded in the session
     trades               INT,
     notional_brl         NUMERIC,
-    open_px              NUMERIC,   -- DI1 is quoted in rate: % a.a.
+    open_px              NUMERIC,   -- DI1 is quoted in rate (% a.a.); DOL and WDO in price (BRL per USD 1,000), as published
     low_px               NUMERIC,
     high_px              NUMERIC,
     avg_px               NUMERIC,
@@ -125,18 +137,24 @@ AS $fn$
 DECLARE
     v_root TEXT := upper(btrim(COALESCE(p_root, '')));
     v_date DATE := p_trade_date;
+    v_rx   TEXT;
 BEGIN
-    IF v_root <> 'DI1' THEN
+    IF v_root NOT IN ('DI1', 'DOL', 'WDO') THEN
         RAISE EXCEPTION
-            'future_curve: root % is not held; b3_futures_settlement holds DI1 (B3 Price Report, outright contracts, from 2018-01-02)',
+            'future_curve: root % is not held; b3_futures_settlement holds DI1, DOL and WDO (B3 Price Report, outright contracts, from 2018-01-02)',
             COALESCE(p_root, 'NULL')
             USING ERRCODE = '22023';
     END IF;
+    -- v_root is one of the three literals above, so it is safe in the pattern.
+    v_rx := '^' || v_root || '[FGHJKMNQUVXZ][0-9]{2}$';
 
     IF v_date IS NULL THEN
+        -- The newest session OF THIS ROOT: a session another root has and
+        -- this one lacks must not become this root's default.
         SELECT f.trade_date INTO v_date
           FROM public.b3_futures_settlement f
          WHERE f.trade_date <= CURRENT_DATE
+           AND f.ticker ~ v_rx
          ORDER BY f.trade_date DESC
          LIMIT 1;
     END IF;
@@ -153,7 +171,7 @@ BEGIN
                f.settlement_status
         FROM public.b3_futures_settlement f
         WHERE f.trade_date = v_date
-          AND f.ticker ~ '^DI1[FGHJKMNQUVXZ][0-9]{2}$'
+          AND f.ticker ~ v_rx
         ORDER BY m
         LIMIT 1001
     )
@@ -173,13 +191,13 @@ GRANT EXECUTE ON FUNCTION api.future_curve(TEXT, DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION api.future_curve(TEXT, DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.future_curve(TEXT, DATE) IS
-    'Every outright DI1 futures contract on one B3 session (B3 Price Report BVBG.086.01, b3_futures_settlement), nearest maturity first, as published: settlement_rate (% a.a., 252 business days) and settlement_price (the PU, R$; 100,000 at maturity), the previous settlement rate, open_interest, contracts traded, trades, notional_brl and the session''s open/low/high/avg/close — which for DI1 are RATES, because B3 quotes DI1 in rate (the low rate is the high price). contract_month is the one derived column: the first day of the month the ticker names, read with B3''s month letters (F = January … Z = December); the contract matures on that month''s first business day. p_root is DI1 (the only root held); p_trade_date NULL = the newest session held, and a date with no session (a holiday, or before 2018-01-02, when B3''s Price Report history starts) returns no rows. More than 1000 rows RAISES 22023 (never trimmed); one session holds about 50.';
+    'Every outright futures contract of one root on one B3 session (B3 Price Report BVBG.086.01, b3_futures_settlement), nearest maturity first, as published. p_root is DI1, DOL or WDO; any other root RAISES 22023 listing the three. The columns are the same for every root but do not mean the same thing. DI1 (QUOTED IN RATE): settlement_rate is % a.a. on 252 business days, settlement_price the PU (R$; 100,000 at maturity), prev_settlement_rate the previous session''s rate, and open/low/high/avg/close are RATES (the low rate is the high price). DOL (dollar future, USD 50,000 per contract) and WDO (mini dollar future, USD 10,000): QUOTED IN PRICE, BRL per USD 1,000 (B3 contract specification, read 2026-10-21; they mature on the first business day of the contract month, every month). Their open/low/high/avg/close_px and settlement_price are that price as the Price Report prints it, no conversion; settlement_rate and prev_settlement_rate are NULL where B3 prints none, which is the dollar futures'' case. Every root: open_interest, contracts traded, trades, notional_brl and settlement_status as published. contract_month is the one derived column: the first day of the month the ticker names, read with B3''s month letters (F = January … Z = December). p_trade_date NULL = the newest session held for that root, and a date with no session (a holiday, or before 2018-01-02, when B3''s Price Report history starts) returns no rows. More than 1000 rows RAISES 22023 (never trimmed); one session holds about 50 DI1 contracts and fewer dollar ones.';
 
 -- ---------------------------------------------------------------------------
 -- future_series — one DI1 contract through time
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION api.future_series(
-    p_ticker TEXT,                -- an outright DI1 code, e.g. DI1F27 (future_curve lists a session's)
+    p_ticker TEXT,                -- an outright DI1, DOL or WDO code, e.g. DI1F27, DOLF27 (future_curve lists a session's)
     p_from   DATE DEFAULT NULL,   -- NULL = 12 months before p_to
     p_to     DATE DEFAULT NULL    -- NULL = today
 )
@@ -213,9 +231,9 @@ DECLARE
     v_to     DATE := COALESCE(p_to, CURRENT_DATE);
     v_from   DATE;
 BEGIN
-    IF v_ticker !~ '^DI1[FGHJKMNQUVXZ][0-9]{2}$' THEN
+    IF v_ticker !~ '^(DI1|DOL|WDO)[FGHJKMNQUVXZ][0-9]{2}$' THEN
         RAISE EXCEPTION
-            'future_series needs an outright DI1 code such as DI1F27 (root, B3 month letter, two-digit year), got %; future_curve lists the contracts of a session',
+            'future_series needs an outright code of a root held (DI1, DOL or WDO) such as DI1F27 or DOLF27 (root, B3 month letter, two-digit year), got %; future_curve lists the contracts of a session',
             COALESCE(p_ticker, 'NULL')
             USING ERRCODE = '22023';
     END IF;
@@ -258,7 +276,7 @@ GRANT EXECUTE ON FUNCTION api.future_series(TEXT, DATE, DATE) TO anon, authentic
 GRANT EXECUTE ON FUNCTION api.future_series(TEXT, DATE, DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.future_series(TEXT, DATE, DATE) IS
-    'One DI1 futures contract through time, oldest session first, with the same columns as api.future_curve (B3 Price Report, b3_futures_settlement, from 2018-01-02): settlement rate and PU, open interest, volume and the session''s quotes, which for DI1 are RATES (% a.a., 252 business days). p_ticker is an outright code such as DI1F27 — root, B3 month letter (F = January … Z = December), two-digit year — and anything else raises 22023; future_curve lists the contracts of a session. A contract is listed years before it matures and stops at maturity, so a window outside its life returns no rows. Nothing is rolled, spliced or made continuous: a constant-maturity rate is B3''s own curve (api.curve, api.curve_history). Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.';
+    'One futures contract through time, oldest session first, with the same columns as api.future_curve (B3 Price Report, b3_futures_settlement, from 2018-01-02). p_ticker is an outright DI1, DOL or WDO code such as DI1F27 or DOLF27 — root, B3 month letter (F = January … Z = December), two-digit year — and anything else raises 22023; future_curve lists the contracts of a session. Per root, as in future_curve: DI1 is QUOTED IN RATE, so settlement_rate and the open/low/high/avg/close columns are RATES (% a.a., 252 business days) and settlement_price is the PU; DOL and WDO are QUOTED IN PRICE, BRL per USD 1,000 (DOL USD 50,000 per contract, WDO USD 10,000; B3 contract specification, read 2026-10-21), so their quote columns and settlement_price are that price as published, and settlement_rate is NULL where B3 prints none. A contract is listed years before it matures and stops at maturity, so a window outside its life returns no rows. Nothing is rolled, spliced or made continuous: a constant-maturity rate is B3''s own curve (api.curve, api.curve_history). Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.';
 
 -- ---------------------------------------------------------------------------
 -- curve — one B3 reference curve on one session, shortest vertex first

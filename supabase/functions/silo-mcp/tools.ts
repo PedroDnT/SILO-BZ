@@ -100,8 +100,8 @@ export const TOOL_TITLES: ToolSpec[] = [
   t("macro_series", "Macro series (BACEN SGS)"),
   t("ptax", "PTAX exchange rates (BACEN)"),
   // The Brazilian rate curve (B3).
-  t("future_curve", "DI1 futures curve (B3)"),
-  t("future_series", "DI1 futures contract history (B3)"),
+  t("future_curve", "DI1, DOL and WDO futures curve (B3)"),
+  t("future_series", "DI1, DOL or WDO futures contract history (B3)"),
   t("curve", "B3 reference curve (PRE, DOC, DPL)"),
   t("curve_history", "B3 reference curve fixed-vertex history"),
   // The research universe (listed shares and units, from the B3 tape).
