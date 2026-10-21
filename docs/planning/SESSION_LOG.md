@@ -25,10 +25,12 @@ Production steps (analytics apply, `deploy_mcp.yml`, a backfill) need the owner'
 | #1001 and #1002 merged | yes |
 | SQL applied: `daily_ingest.yml`, `mode=analytics-only`, run 39612323250 | yes, 36 files applied, 0 warnings, 0 failures (`27_api_rates.sql` ok) |
 | MCP deployed: `deploy_mcp.yml`, run 39616858547 | yes, "Live contract matches this commit" passed |
-| History loaded: `market_backfill.yml`, `b3_price_report`, 2018 to 2026, `max_parallel` 1, run 39617548892 | dispatched 11:31, still queued or running when this was written; check it |
+| History loaded: `market_backfill.yml`, `b3_price_report`, 2018 to 2026, `max_parallel` 1, run 39617548892 | yes, finished 18:08. 8 of 9 years green; the 2021 job is red on one file, `PR210104` (`ParseError: mismatched tag`), the known malformed file of B8. The run shows `failure` only for that job |
 
 What to do next: read run 39617548892 (one job per year, up to 300 minutes each, 2018 first). When the 2018 job is done, call `future_series` for a DOL ticker of 2018 through the API. When all years are done, call `future_curve('DOL')` (newest session) and `future_curve()` for DI1 (must be unchanged). Nothing has read DOL or WDO rows through the API yet. The backfill reloads DI1 too (idempotent). It holds the `supabase-ingest` group, so the 03:00 daily run waits behind it.
 Then: close or update this state table, and consider adding a `coverage()` row for the dollar futures (not done).
+
+**Update 2026-10-21, 18:30 (checked through the Supabase MCP, read-only).** DOL and WDO cover 2018-01-02 to 2026-10-20 with the same session count as DI1 in every year (245 to 251 a year, 200 in 2026). `future_curve('DOL', '2018-03-01')` returns DOLH18 at 3244.9 BRL per USD 1,000; the newest session, 2026-10-20, has DOLX26 and WDOX26 at 5026.324. `future_curve()` for DI1 still returns 44 contracts. 2021-01-04 (malformed file) and 2021-06-10 (empty archive) are missing for every root, as they were for DI1 before. The owner decided on 2026-10-21 to keep that gap and not rerun 2021. Still not done: a `coverage()` row for the dollar futures.
 
 **Facts about the data, so you do not redo the work.**
 - DOL, WDO and DDI are in the B3 Price Report (`PR<yymmdd>.zip`) from 2018-01-02 to today. COTAHIST has no futures; its `DOL*` codes are ETFs and a BDR (`DOLA11`, `DOLB11`, `DOLX11`, `DOLL39`).
