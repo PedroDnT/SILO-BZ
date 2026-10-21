@@ -158,10 +158,13 @@ class MarketIngestor:
         async def work():
             name, xml = await self._b3.fetch_price_report(session)
             rows, counts = pr.parse_price_report(xml, session=session, roots=self.futures_roots, origin=name)
-            if not rows:
+            missing = tuple(root for root in self.futures_roots
+                            if not any(r["ticker"].startswith(root) for r in rows))
+            if missing:
                 # A published report with no contract of a configured root is a
-                # source change (or a wrong root), not a quiet day.
-                raise pr.PriceReportFormatError(f"{name}: no {self.futures_roots} contract in the report")
+                # source change (or a wrong root), not a quiet day. Checked per
+                # root: DI1 present does not excuse an absent DOL.
+                raise pr.PriceReportFormatError(f"{name}: no {missing} contract in the report")
             n = upsert_rows(self._supabase, pr.TABLE, rows, conflict_columns=",".join(pr.CONFLICT))
             note = None
             if counts["dropped_invalid"] or counts["dropped_non_outright"]:
