@@ -40,7 +40,17 @@ logger = logging.getLogger(__name__)
 
 TABLE = "b3_futures_settlement"
 CONFLICT = ("trade_date", "ticker")
-DEFAULT_ROOTS: Tuple[str, ...] = ("DI1",)
+DEFAULT_ROOTS: Tuple[str, ...] = ("DI1", "DOL", "WDO")
+
+# Dollar futures (DOL, WDO) are quoted as a price in BRL per USD 1,000 (about
+# 5,000 in 2026), never as a rate. B3's contract specification gives the quote
+# unit and the tick (0.5 point) but no hard price bound, so this is a wide
+# sanity bound, not a limit taken from B3: 0 < price < 100,000 (R$100 per USD
+# and R$100,000 per USD 1,000 are both far outside any plausible dollar).
+# Out of range is dropped and counted, never clipped.
+DOLLAR_ROOTS: Tuple[str, ...] = ("DOL", "WDO")
+DOLLAR_PRICE_BOUND = (Decimal("0"), Decimal("100000"))
+_PRICE_COLUMNS = ("open_px", "low_px", "high_px", "close_px", "settlement_price", "prev_settlement_price")
 
 _MONTH_LETTERS = "FGHJKMNQUVXZ"
 _validator = DataValidator()
@@ -79,6 +89,19 @@ def outright_pattern(roots: Sequence[str]) -> re.Pattern:
     return re.compile(rf"^(?:{alt})[{_MONTH_LETTERS}][0-9]{{2}}$")
 
 
+def _matured(ticker: str, session: date) -> bool:
+    """True when a dollar-future ticker names a month before the session's.
+
+    The report carries no segment field that tells a future from an equity
+    (both are ``Tp`` 8, stream ``E``), and the ETF ``DOLX11`` matches the
+    outright pattern because X is the November letter. A listed future is not
+    reported after its maturity month, so a maturity before the session month
+    is another instrument. Applied to DOL and WDO only; DI1 is unchanged.
+    """
+    year = 2000 + int(ticker[-2:])
+    return (year, _MONTH_LETTERS.index(ticker[-3]) + 1) < (session.year, session.month)
+
+
 def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
@@ -104,14 +127,22 @@ def _valid(row: Dict[str, Any]) -> bool:
     )
     if errors:
         return False
-    # Impossible values: a PU is positive; a DI rate outside (-5, 100) % is
-    # not a DI rate. Dropped and counted, never clipped.
+    # Impossible values are dropped and counted, never clipped. Per root:
+    # a DI1 PU is positive and its rates lie in (-5, 100) % a.a.; a dollar
+    # future (DOL, WDO) has prices only, inside DOLLAR_PRICE_BOUND.
     if row["settlement_price"] <= 0:
         return False
-    for col in ("settlement_rate", "prev_settlement_rate", "open_px", "low_px", "high_px", "close_px"):
-        v = row.get(col)
-        if v is not None and not (Decimal("-5") < v < Decimal("100")):
-            return False
+    if row["ticker"].startswith(DOLLAR_ROOTS):
+        lo, hi = DOLLAR_PRICE_BOUND
+        for col in _PRICE_COLUMNS:
+            v = row.get(col)
+            if v is not None and not (lo < v < hi):
+                return False
+    else:
+        for col in ("settlement_rate", "prev_settlement_rate", "open_px", "low_px", "high_px", "close_px"):
+            v = row.get(col)
+            if v is not None and not (Decimal("-5") < v < Decimal("100")):
+                return False
     for col in ("open_interest", "contracts", "trades"):
         v = row.get(col)
         if v is not None and v < 0:
@@ -130,7 +161,7 @@ def parse_price_report(
 
     Returns ``(rows, counts)`` where counts has ``kept``, ``dropped_invalid``
     (failed validation) and ``dropped_non_outright`` (same root, not an
-    outright ticker). A row dated anything but ``session`` raises: the file
+    outright ticker, or a DOL/WDO name with a maturity before the session). A row dated anything but ``session`` raises: the file
     answered a different day than the one asked for. A ticker repeated within
     the file raises too — the natural key must be unique at the source.
     """
@@ -151,6 +182,9 @@ def parse_price_report(
         if not any(ticker.startswith(r) for r in roots):
             continue
         if not outright.match(ticker):
+            counts["dropped_non_outright"] += 1
+            continue
+        if ticker.startswith(DOLLAR_ROOTS) and _matured(ticker, session):
             counts["dropped_non_outright"] += 1
             continue
         dt_text = leaves.get("Dt")

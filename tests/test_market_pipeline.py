@@ -39,6 +39,10 @@ from src.pipeline import market_pipeline as mp
 FIX = Path(__file__).parent / "fixtures"
 PR_2026 = (FIX / "b3_price_report_20260925_sample.xml").read_bytes()
 PR_2018 = (FIX / "b3_price_report_20180102_sample.xml").read_bytes()
+# Real DOL and WDO reports of 2026-10-20 (PR261020): traded and untraded
+# outrights, plus the ETF DOLX11 whose ticker looks like a November future.
+PR_DOL_WDO = (FIX / "b3_price_report_20261020_dol_wdo_sample.xml").read_bytes()
+S_DOL = date(2026, 10, 20)
 TS_2026 = (FIX / "b3_taxaswap_20260925_sample.txt").read_text(encoding="latin-1")
 # The complete PRE, DOC and DPL curves of the same file (858 vertices).
 TS_CURVES = (FIX / "b3_taxaswap_20260925_curves.txt").read_text(encoding="latin-1")
@@ -61,7 +65,7 @@ EMPTY_ZIP = _zip({})
 # ---------------------------------------------------------------------------
 
 def test_price_report_keeps_the_published_di1_fields():
-    rows, counts = pr.parse_price_report(PR_2026, session=S_2026, origin="fixture")
+    rows, counts = pr.parse_price_report(PR_2026, session=S_2026, roots=("DI1",), origin="fixture")
     by = {r["ticker"]: r for r in rows}
     assert set(by) == {"DI1F27", "DI1J27", "DI1F29", "DI1F32", "DI1F37"}
     assert counts == {"kept": 5, "dropped_invalid": 0, "dropped_non_outright": 0}
@@ -93,10 +97,74 @@ def test_an_untraded_contract_keeps_null_prices_never_zero():
 def test_the_settlement_rate_and_pu_agree_on_a_whole_number_of_business_days():
     """PU = 100000 / (1 + r)^(du/252): the published pair implies an integer
     du. A file where it does not would mean a column moved."""
-    rows, _ = pr.parse_price_report(PR_2026, session=S_2026)
+    rows, _ = pr.parse_price_report(PR_2026, session=S_2026, roots=("DI1",))
     for r in rows:
         du = 252 * math.log(100000 / float(r["settlement_price"])) / math.log(1 + float(r["settlement_rate"]) / 100)
         assert abs(du - round(du)) < 0.05, (r["ticker"], du)
+
+
+def test_default_roots_hold_di1_dol_and_wdo():
+    assert pr.DEFAULT_ROOTS == ("DI1", "DOL", "WDO")
+
+
+def test_a_traded_dollar_future_is_kept_with_its_published_prices():
+    rows, counts = pr.parse_price_report(PR_DOL_WDO, session=S_DOL, roots=("DOL", "WDO"), origin="fixture")
+    by = {r["ticker"]: r for r in rows}
+    dol = by["DOLX26"]
+    assert (dol["open_px"], dol["low_px"], dol["high_px"], dol["close_px"]) == (
+        Decimal("5055.5"), Decimal("5015.5"), Decimal("5057.5"), Decimal("5035.5"))
+    assert dol["settlement_price"] == Decimal("5026.324") and dol["settlement_rate"] is None
+    assert dol["contracts"] == 255645 and dol["open_interest"] == 1006727
+    assert by["WDOX26"]["contracts"] == 2484976
+    assert {"DOLX26", "DOLZ26", "WDOX26", "WDOF27"} <= set(by)
+    assert counts["dropped_invalid"] == 0
+
+
+def test_an_untraded_dollar_future_keeps_null_prices_never_zero():
+    rows, _ = pr.parse_price_report(PR_DOL_WDO, session=S_DOL, roots=("DOL", "WDO"))
+    by = {r["ticker"]: r for r in rows}
+    for t in ("DOLF29", "WDON28"):
+        assert by[t]["settlement_price"] > 0
+        for col in ("trades", "contracts", "open_px", "low_px", "high_px", "close_px", "avg_px"):
+            assert by[t][col] is None, (t, col)
+
+
+def test_the_etf_dolx11_is_never_stored_as_a_future():
+    """DOLX11 (an equity-segment ETF) matches the outright pattern because X is
+    the November month letter. A future cannot mature before the session."""
+    rows, counts = pr.parse_price_report(PR_DOL_WDO, session=S_DOL, roots=("DOL", "WDO"))
+    assert "DOLX11" not in {r["ticker"] for r in rows}
+    assert counts["dropped_non_outright"] == 1 and counts["kept"] == 6
+    # Even if the ETF carried a settlement price, the maturity guard drops it.
+    xml = _reports("DOLX11", dt="2026-10-20", adj="46.8")
+    rows, counts = pr.parse_price_report(xml, session=S_DOL, roots=("DOL",))
+    assert rows == [] and counts["dropped_non_outright"] == 1
+    # A contract maturing in the session month is still listed that day.
+    rows, _ = pr.parse_price_report(_reports("DOLV26", dt="2026-10-20", adj="5000"), session=S_DOL, roots=("DOL",))
+    assert [r["ticker"] for r in rows] == ["DOLV26"]
+
+
+def test_dollar_price_bounds_drop_and_count_never_clip():
+    for adj in ("0", "-1", "100000", "1000000"):
+        rows, counts = pr.parse_price_report(_reports("DOLZ26", dt="2026-10-20", adj=adj), session=S_DOL, roots=("DOL",))
+        assert rows == [] and counts["dropped_invalid"] == 1, adj
+    bad_px = _reports("WDOZ26", dt="2026-10-20", adj="5000").replace(
+        b"</FinInstrmAttrbts>", b"<LastPric>5000000</LastPric></FinInstrmAttrbts>")
+    rows, counts = pr.parse_price_report(bad_px, session=S_DOL, roots=("WDO",))
+    assert rows == [] and counts["dropped_invalid"] == 1
+
+
+def test_di1_keeps_its_rate_range_a_dollar_price_is_not_a_di_rate():
+    xml = _reports("DI1F27", dt="2026-10-20", adj="96000").replace(
+        b"</FinInstrmAttrbts>", b"<LastPric>5000</LastPric></FinInstrmAttrbts>")
+    rows, counts = pr.parse_price_report(xml, session=S_DOL, roots=("DI1",))
+    assert rows == [] and counts["dropped_invalid"] == 1
+
+
+def test_options_on_the_dollar_future_stay_non_outright():
+    xml = _reports("DOLF27C004000", "WDOF27P005000", dt="2026-10-20", adj="100")
+    rows, counts = pr.parse_price_report(xml, session=S_DOL, roots=("DOL", "WDO"))
+    assert rows == [] and counts["dropped_non_outright"] == 2
 
 
 def _reports(*tickers: str, dt: str = "2026-09-25", adj: str = "96726.67") -> bytes:
@@ -207,7 +275,7 @@ def test_pre_equals_the_di1_settlement_rate_at_each_contract_maturity():
     """The measured property the research layer leans on: B3's PRE curve has a
     moving vertex at every DI1 maturity, at that contract's settlement rate."""
     curve = {r["business_days"]: r for r in ts.parse_taxa_swap(TS_CURVES, session=S_2026)[0] if r["curve"] == "PRE"}
-    rows, _ = pr.parse_price_report(PR_2026, session=S_2026)
+    rows, _ = pr.parse_price_report(PR_2026, session=S_2026, roots=("DI1",))
     checked = 0
     for r in rows:
         du = round(252 * math.log(100000 / float(r["settlement_price"])) / math.log(1 + float(r["settlement_rate"]) / 100))
@@ -458,6 +526,7 @@ def test_reference_rates_land_with_their_natural_key():
 
 def test_a_report_without_any_di1_contract_is_an_error_not_an_empty_day():
     ing, b3, _ = _ingestor()
+    ing.futures_roots = ("DI1",)
 
     async def other_only(session):
         return "x.xml", _one_report("DOLV26")
@@ -465,6 +534,29 @@ def test_a_report_without_any_di1_contract_is_an_error_not_an_empty_day():
     with patch.object(mp, "upsert_rows"):
         _run(ing.ingest_price_report(S_2026))
     assert ing.failures and "no ('DI1',) contract" in ing.failures[0]
+
+
+def test_a_report_missing_one_configured_root_is_an_error_even_if_others_are_present():
+    ing, b3, _ = _ingestor()
+
+    async def di1_only(session):
+        return "x.xml", _one_report("DI1F27")
+    b3.fetch_price_report.side_effect = di1_only
+    with patch.object(mp, "upsert_rows"):
+        _run(ing.ingest_price_report(S_2026))
+    assert ing.failures and "no ('DOL', 'WDO') contract" in ing.failures[0]
+
+
+def test_a_report_with_every_root_lands_all_of_them():
+    ing, b3, _ = _ingestor()
+    xml = _reports("DI1F27", "DOLV26", "WDOV26")
+
+    async def full(session):
+        return "x.xml", xml
+    b3.fetch_price_report.side_effect = full
+    with patch.object(mp, "upsert_rows", side_effect=lambda c, t, rows, conflict_columns=None: len(rows)) as up:
+        n = _run(ing.ingest_price_report(S_2026))
+    assert n == 3 and not ing.failures
 
 
 def test_a_revised_value_is_counted_on_the_ok_row():
