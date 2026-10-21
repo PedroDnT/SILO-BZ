@@ -40,7 +40,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 75  # v75 adds the rj_listed_documents read (listed companies' RJ documents, #842; no SDK wrapper); history in serve.catalog.py.
+KNOWN_CATALOG_VERSION = 76  # v76 serves the DOL and WDO dollar futures through future_curve / future_series (#1000; no new wrapper); history in serve.catalog.py.
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -1584,25 +1584,31 @@ class SiloClient:
 
     def future_curve(self, root: str = "DI1",
                      trade_date: Datish = None) -> List[Dict[str, Any]]:
-        """Every outright DI1 contract on one B3 session, nearest maturity first.
+        """Every outright contract of one root on one B3 session, nearest first.
 
-            silo.future_curve()                          # the newest session
+            silo.future_curve()                          # DI1, the newest session
             silo.future_curve(trade_date="2026-09-25")
+            silo.future_curve("DOL")                     # or "WDO"
 
+        `root` is DI1, DOL or WDO; any other raises a `SiloError` (22023).
         DI1 is QUOTED IN RATE: settlement_rate and the open/low/high/avg/close
         columns are % a.a. on 252 business days, settlement_price is the PU.
-        contract_month is read from the ticker with B3's month letters. From
-        2018-01-02 (B3 Price Report); a date with no session returns [].
+        DOL and WDO (the mini) are QUOTED IN PRICE, BRL per USD 1,000: their
+        quote columns and settlement_price are that price as published, and
+        settlement_rate is None where B3 prints none. contract_month is read
+        from the ticker with B3's month letters. From 2018-01-02 (B3 Price
+        Report); a date with no session returns [].
         """
         return self.rpc("future_curve", p_root=root, p_trade_date=_iso(trade_date))
 
     def future_series(self, ticker: str, start: Datish = None,
                       end: Datish = None) -> List[Dict[str, Any]]:
-        """One DI1 contract through time, oldest session first.
+        """One DI1, DOL or WDO contract through time, oldest session first.
 
             silo.future_series("DI1F27", start="2026-01-01")
+            silo.future_series("DOLF27", start="2026-01-01")
 
-        The same columns as `future_curve`. Nothing is rolled into a
+        The same columns, and the same per-root units, as `future_curve`. Nothing is rolled into a
         continuous series: constant maturities are B3's own curve (`curve`,
         `curve_history`). A malformed code is a `SiloError` (22023). Default
         window 12 months.

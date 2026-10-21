@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "75";
+export const CONTRACT_VERSION = "76";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -2937,7 +2937,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "future_curve": {
     "kind": "rpc",
     "path": "/rpc/future_curve",
-    "description": "Every outright DI1 futures contract on one B3 session (B3 Price Report BVBG.086.01, b3_futures_settlement), nearest maturity first, as published: settlement_rate (% a.a., 252 business days) and settlement_price (the PU, R$; 100,000 at maturity), the previous settlement rate, open_interest, contracts traded, trades, notional_brl and the session's open/low/high/avg/close — which for DI1 are RATES, because B3 quotes DI1 in rate (the low rate is the high price). contract_month is the one derived column: the first day of the month the ticker names, read with B3's month letters (F = January … Z = December); the contract matures on that month's first business day. p_root is DI1 (the only root held); p_trade_date NULL = the newest session held, and a date with no session (a holiday, or before 2018-01-02, when B3's Price Report history starts) returns no rows. More than 1000 rows RAISES 22023 (never trimmed); one session holds about 50.",
+    "description": "Every outright futures contract of one root on one B3 session (B3 Price Report BVBG.086.01, b3_futures_settlement), nearest maturity first, as published. p_root is DI1, DOL or WDO; any other root RAISES 22023 listing the three. The columns are the same for every root but do not mean the same thing. DI1 (QUOTED IN RATE): settlement_rate is % a.a. on 252 business days, settlement_price the PU (R$; 100,000 at maturity), prev_settlement_rate the previous session's rate, and open/low/high/avg/close are RATES (the low rate is the high price). DOL (dollar future, USD 50,000 per contract) and WDO (mini dollar future, USD 10,000): QUOTED IN PRICE, BRL per USD 1,000 (B3 contract specification, read 2026-10-21; they mature on the first business day of the contract month, every month). Their open/low/high/avg/close_px and settlement_price are that price as the Price Report prints it, no conversion; settlement_rate and prev_settlement_rate are NULL where B3 prints none, which is the dollar futures' case. Every root: open_interest, contracts traded, trades, notional_brl and settlement_status as published. contract_month is the one derived column: the first day of the month the ticker names, read with B3's month letters (F = January … Z = December). p_trade_date NULL = the newest session held for that root, and a date with no session (a holiday, or before 2018-01-02, when B3's Price Report history starts) returns no rows. More than 1000 rows RAISES 22023 (never trimmed); one session holds about 50 DI1 contracts and fewer dollar ones.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2947,7 +2947,13 @@ export const CONTRACT: Record<string, ContractEntry> = {
             "null"
           ],
           "description": "Defaults to `'DI1'::text`.",
-          "default": "DI1"
+          "default": "DI1",
+          "enum": [
+            "DI1",
+            "DOL",
+            "WDO",
+            null
+          ]
         },
         "p_trade_date": {
           "type": [
@@ -2965,7 +2971,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "future_series": {
     "kind": "rpc",
     "path": "/rpc/future_series",
-    "description": "One DI1 futures contract through time, oldest session first, with the same columns as api.future_curve (B3 Price Report, b3_futures_settlement, from 2018-01-02): settlement rate and PU, open interest, volume and the session's quotes, which for DI1 are RATES (% a.a., 252 business days). p_ticker is an outright code such as DI1F27 — root, B3 month letter (F = January … Z = December), two-digit year — and anything else raises 22023; future_curve lists the contracts of a session. A contract is listed years before it matures and stops at maturity, so a window outside its life returns no rows. Nothing is rolled, spliced or made continuous: a constant-maturity rate is B3's own curve (api.curve, api.curve_history). Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.",
+    "description": "One futures contract through time, oldest session first, with the same columns as api.future_curve (B3 Price Report, b3_futures_settlement, from 2018-01-02). p_ticker is an outright DI1, DOL or WDO code such as DI1F27 or DOLF27 — root, B3 month letter (F = January … Z = December), two-digit year — and anything else raises 22023; future_curve lists the contracts of a session. Per root, as in future_curve: DI1 is QUOTED IN RATE, so settlement_rate and the open/low/high/avg/close columns are RATES (% a.a., 252 business days) and settlement_price is the PU; DOL and WDO are QUOTED IN PRICE, BRL per USD 1,000 (DOL USD 50,000 per contract, WDO USD 10,000; B3 contract specification, read 2026-10-21), so their quote columns and settlement_price are that price as published, and settlement_rate is NULL where B3 prints none. A contract is listed years before it matures and stops at maturity, so a window outside its life returns no rows. Nothing is rolled, spliced or made continuous: a constant-maturity rate is B3's own curve (api.curve, api.curve_history). Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.",
     "inputSchema": {
       "type": "object",
       "properties": {

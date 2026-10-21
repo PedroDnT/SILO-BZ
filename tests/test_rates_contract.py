@@ -155,18 +155,78 @@ def test_month_letters_are_the_ones_the_ingest_keeps():
         assert f"'{pr._MONTH_LETTERS}'" in _strip(_chunk(name))
 
 
-def test_future_series_refuses_anything_but_an_outright_di1_code():
+def test_future_series_accepts_the_held_roots_and_refuses_anything_else():
     body = _strip(_chunk("future_series"))
-    assert "v_ticker !~ '^DI1[FGHJKMNQUVXZ][0-9]{2}$'" in body
+    assert "v_ticker !~ '^(DI1|DOL|WDO)[FGHJKMNQUVXZ][0-9]{2}$'" in body
     assert "f.ticker = v_ticker" in body
+    # The refusal names what is held, and is a 22023.
+    raised = _chunk("future_series")
+    assert "DI1, DOL or WDO" in raised and "ERRCODE = '22023'" in raised
 
 
-def test_future_curve_serves_di1_only_and_says_the_quotes_are_rates():
+def test_future_curve_whitelists_three_roots_and_lists_them_when_it_refuses():
     body = _strip(_chunk("future_curve"))
-    assert "IF v_root <> 'DI1' THEN" in body
-    comment = _comment("future_curve")
+    assert "IF v_root NOT IN ('DI1', 'DOL', 'WDO') THEN" in body
+    assert "holds DI1, DOL and WDO" in body
+    assert "ERRCODE = '22023'" in body
+    # The pattern is built from the whitelisted root only, after the check.
+    assert body.index("NOT IN ('DI1', 'DOL', 'WDO')") < body.index("v_rx := '^' || v_root")
+    assert "AND f.ticker ~ v_rx" in body
+
+
+def test_future_curve_default_session_is_the_newest_of_the_root_asked():
+    # A session that only another root has must not become DI1's default:
+    # DI1 output stays what it was once DOL/WDO sessions exist.
+    body = _strip(_chunk("future_curve"))
+    start = body.index("IF v_date IS NULL THEN")
+    probe = body[start: body.index("END IF;", start)]
+    assert "f.ticker ~ v_rx" in probe
+    assert "ORDER BY f.trade_date DESC" in probe
+
+
+def test_future_curve_default_root_is_di1_and_the_di1_columns_are_unchanged():
+    sig = _signature("future_curve")
+    assert "p_root       TEXT DEFAULT 'DI1'" in sig
+    cols = re.findall(r"^\s+(\w+)\s+(?:DATE|TEXT|NUMERIC|BIGINT|INT),?", _chunk("future_curve").split("RETURNS TABLE (")[1].split(")\nLANGUAGE")[0], re.M)
+    assert cols == [
+        "trade_date", "ticker", "contract_month", "settlement_rate", "settlement_price",
+        "prev_settlement_rate", "open_interest", "contracts", "trades", "notional_brl",
+        "open_px", "low_px", "high_px", "avg_px", "close_px", "settlement_status", "source",
+    ]
+    # The same columns, in the same order, from future_series.
+    series = _chunk("future_series").split("RETURNS TABLE (")[1].split(")\nLANGUAGE")[0]
+    assert re.findall(r"^\s+(\w+)\s+(?:DATE|TEXT|NUMERIC|BIGINT|INT),?", series, re.M) == cols
+
+
+@pytest.mark.parametrize("name", ("future_curve", "future_series"))
+def test_dollar_futures_are_priced_not_rated_and_nothing_is_converted(name):
+    comment = _comment(name)
+    # DI1 is a rate, DOL and WDO a price, and the comment says which is which.
     assert "RATES" in comment and "PU" in comment
+    assert "DOL" in comment and "WDO" in comment
+    assert "BRL per USD 1,000" in comment
+    assert "USD 50,000" in comment and "USD 10,000" in comment
+    assert "NULL where B3 prints none" in comment
+    body = _body(name).lower()
+    # contract_month is still the only derived column: no conversion appears.
+    for token in ("* 1000", "/ 1000", "*1000", "/1000", "fx", "ptax", "usd"):
+        assert token not in body, f"{name} converts something ({token})"
+
+
+def test_future_curve_comment_keeps_the_start_date_and_the_cap():
+    comment = _comment("future_curve")
     assert "2018-01-02" in comment
+    assert "RAISES 22023" in comment
+    body = _strip(_chunk("future_curve"))
+    assert "api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'future_curve')" in body
+    assert "LIMIT 1001" in body and "LIMIT 1000;" in body
+
+
+def test_coverage_di_futures_row_is_bounded_to_di1_tickers():
+    cov = _coverage()
+    seg = cov[cov.index("SELECT 'di_futures'::text"):]
+    seg = seg[: seg.index("UNION ALL")]
+    assert seg.count("f.ticker LIKE 'DI1%'") == 3
 
 
 # ---------------------------------------------------------------------------
@@ -250,8 +310,12 @@ def test_catalog_publishes_the_four():
         assert payload["postgrest"][name] == f"POST /rest/v1/rpc/{name}"
         assert name in payload["limits"]["page"]["all"]
         assert name in payload["limits"]["page"]["functions"]["raise_only"]
-    (c,) = [c for c in CONSTRAINTS if c.startswith("DI FUTURES AND B3'S REFERENCE CURVES")]
+    (c,) = [c for c in CONSTRAINTS if c.startswith("DI AND DOLLAR FUTURES AND B3'S REFERENCE CURVES")]
     assert "EXTRAPOLATION" in c and "LINEAR on 360" in c and "QUOTED IN RATE" in c
+    # #1000: the dollar futures are priced, and COTAHIST's DOL* codes are ETFs.
+    assert "QUOTED IN PRICE" in c and "BRL per USD 1,000" in c
+    assert "COTAHIST has no futures" in c and "ETFs" in c
+    assert CATALOG_VERSION >= 76
 
 
 def test_sdk_sends_exactly_the_declared_parameters():
@@ -270,6 +334,8 @@ def test_sdk_sends_exactly_the_declared_parameters():
             return []
 
     c = Stub()
+    c.future_curve("DOL", trade_date="2026-09-25")
+    assert sent["future_curve"]["p_root"] == "DOL"
     c.future_curve(trade_date="2026-09-25")
     c.future_series("DI1F27", start="2026-01-01")
     c.curve("DOC")
