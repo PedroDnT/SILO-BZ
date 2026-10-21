@@ -35,13 +35,13 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - A re-read CDA month replaces the rows of each fund in the file, so a dropped
   or re-filed position goes (`cvm_ingest_log.rows_deleted`); absent funds keep theirs.
 - B3 BDI (lending, investor flow): a ratchet, no backfill ([SYSTEM](SYSTEM.md)).
-- OTC DEB (migration 74): `b3_credit_capture` saves raw CSV and knowledge time;
-  `fact_credit_market` stores long metrics; missing sessions/drops fail it.
-  Daily capture opt-in; history weekly.
+- OTC DEB (migration 74): raw CSV + knowledge time; missing sessions fail it.
+- ANBIMA debentures (migration 80, Playwright, manual): terms, agenda, 5-session
+  rates; one capture row per page, raw text only if the parse fails.
 
 ## Analytical
 
-- Plain views change as rows land.
+- Views change as rows land.
 - Matviews (`dim_fund`, `fact_fund_monthly`, `mv_period_completeness`, …) change
   only when `scripts/apply_analytical.sh` recreates them.
 - `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`,
@@ -60,7 +60,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   ETFs via `portfolio_class_index` (reviewed YAML) and `etf_market_snapshot`. `class_return_distribution` reads `fact_fund_monthly`;
   `portfolio_equivalents` reads the same view (approved pairs), `cvm_etf_registry`
   and `etf_market_snapshot`.
-- pg_cron is absent (2026-09-29): its schedules do not run.
+- pg_cron is absent (2026-09-29).
 
 ## Serving
 
