@@ -24,6 +24,10 @@ requests==2.34.2
 # Storage
 psycopg2-binary==2.9.13
 
+# Headless Chromium for ANBIMA's public debenture pages (src/fetchers/anbima_debenture_fetcher.py);
+# run `playwright install chromium` once, or set ANBIMA_CHROMIUM_PATH.
+playwright==1.55.0
+
 # Config / runtime
 python-dotenv==1.2.4
 
