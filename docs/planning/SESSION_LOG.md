@@ -11,26 +11,24 @@ before you trust any line below. Times are UTC-3.
 **Owner rules in force.** Development is frozen from 2026-10-18 except data reliability, ingest correctness, cost and build
 reduction, security and the `adj_status 'refused'` safeguard. Only P0 and P1 protect an issue. The owner merges every PR that
 changes ingest, a gate file or production behavior (no auto-merge). Dollar futures (DOL, WDO) are an explicit owner priority.
-Production steps (analytics apply, `deploy_mcp.yml`, a backfill) need the owner's word each time.
+Production steps (analytics apply, `deploy_mcp.yml`, a backfill) need the owner's word each time; for the dollar futures he gave it on 2026-10-21.
 
 **Done 2026-10-18 to 2026-10-21.**
 - Issue cleanup: 18 issues parked in #990 (closed). #986, #991 and #875 closed (#875: COPY into staging gained 1.1x to 1.3x at pool size 4, numbers on the issue).
-- Merged by the orchestrator: #989 (ETF status, #899), #992 (Worker rate limit, #892), #993 (shared fetch helpers, #876), #994 (stop 8 unread tables, #877), #995 (conditional CVM download, #874), #998 (market job time budget, #997), #1001 (DOL and WDO ingest, #999).
+- Merged by the orchestrator: #989 (ETF status, #899), #992 (Worker rate limit, #892), #993 (shared fetch helpers, #876), #994 (stop 8 unread tables, #877), #995 (conditional CVM download, #874), #998 (market job time budget, #997), #1001 (DOL and WDO ingest, #999), #1002 (DOL and WDO through the API, #1000), #1003 (this handoff).
 - The scheduled daily runs of 10-20 and 10-21 are green. The 10-18 and 10-19 runs were red from a BACEN SGS 432 outage and a B3 price-report outage (HTTP 500 after about 2 minutes per request); the market job then hit its 30-minute limit. The job showed `cancelled` and the GitHub annotation said "exceeded the maximum execution time". #998 bounds it.
 
-**Dollar futures, state at the time of writing.** Part A (#999, ingest) is merged. Part B (#1000, `api.future_curve` and `api.future_series` for DI1, DOL and WDO, catalog v76) is PR #1002: green, conflict with #1001 resolved, waiting for the owner's merge. Record merged, applied and deployed separately:
+**Dollar futures, state at the time of writing (2026-10-21, 11:35).** Part A (#999, ingest, PR #1001) and part B (#1000, `api.future_curve` and `api.future_series` for DI1, DOL and WDO, catalog v76, PR #1002) are merged. The owner said "run the action when ready"; I ran the production steps in this order. Merged, applied, deployed and loaded are four different states:
 
 | Step | State |
 |---|---|
-| #1001 merged | yes |
-| #1002 merged | check; at writing: open |
-| `market_backfill.yml`, sources `b3_price_report`, 2018 to 2026 | not run |
-| `daily_ingest.yml`, `mode=analytics-only` (applies the SQL) | not run |
-| `deploy_mcp.yml` | not run |
+| #1001 and #1002 merged | yes |
+| SQL applied: `daily_ingest.yml`, `mode=analytics-only`, run 39612323250 | yes, 36 files applied, 0 warnings, 0 failures (`27_api_rates.sql` ok) |
+| MCP deployed: `deploy_mcp.yml`, run 39616858547 | yes, "Live contract matches this commit" passed |
+| History loaded: `market_backfill.yml`, `b3_price_report`, 2018 to 2026, `max_parallel` 1, run 39617548892 | dispatched 11:31, still queued or running when this was written; check it |
 
-The owner said "run the action when ready" on 2026-10-21. After #1002 merges: dispatch the analytics apply, then `deploy_mcp.yml`, then the backfill.
-The backfill uses the default roots (DI1, DOL, WDO) because `market_backfill.yml` sets no `B3_FUTURES_ROOTS`; this was read from the workflow, not tested. It also reloads DI1 (idempotent) and can take hours per year. Keep the 03:00 daily run in mind: one writer at a time, and a newer dispatch cancels an older pending one.
-Afterwards check `api.future_curve('DOL')` returns rows, and that `api.future_curve()` for DI1 is unchanged.
+What to do next: read run 39617548892 (one job per year, up to 300 minutes each, 2018 first). When the 2018 job is done, call `future_series` for a DOL ticker of 2018 through the API. When all years are done, call `future_curve('DOL')` (newest session) and `future_curve()` for DI1 (must be unchanged). Nothing has read DOL or WDO rows through the API yet. The backfill reloads DI1 too (idempotent). It holds the `supabase-ingest` group, so the 03:00 daily run waits behind it.
+Then: close or update this state table, and consider adding a `coverage()` row for the dollar futures (not done).
 
 **Facts about the data, so you do not redo the work.**
 - DOL, WDO and DDI are in the B3 Price Report (`PR<yymmdd>.zip`) from 2018-01-02 to today. COTAHIST has no futures; its `DOL*` codes are ETFs and a BDR (`DOLA11`, `DOLB11`, `DOLX11`, `DOLL39`).
