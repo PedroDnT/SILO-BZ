@@ -252,7 +252,7 @@ Nothing in wave 2 that depends on these starts until each has an answer.
   `/rates` page since 2026-09-30** (curves, breakevens, DI1 open interest). **Dollar futures (DOL, WDO)
   2026-10-21 (owner priority; #999 ingest, #1000 serving, catalog v76):** merged, **analytics applied and MCP
   deployed 2026-10-21** (runs 39612323250 and 39616858547); the daily run loads them and the history from 2018 is a
-  one-time `market_backfill.yml` run (39617548892, dispatched 2026-10-21; check it). COTAHIST has no futures; its
+  one-time `market_backfill.yml` run (39617548892), **loaded 2026-10-21**: 2018-01-02 to 2026-10-20, the same sessions as DI1; the 2021 job is red only on `PR210104`, and the owner keeps that gap. COTAHIST has no futures; its
   `DOL*` codes are ETFs. The futures arm of
   `api.panel` (`id_type='future'`, phase B) is built (catalog v61). Owner decision: whether
   2021-01-04's DI1 may come from that day's earlier, well-formed versions of
