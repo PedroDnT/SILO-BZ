@@ -1,0 +1,60 @@
+name: ANBIMA Capture
+
+# One manual capture of ANBIMA's public debenture or CRI/CRA pages for a list
+# of codes (#1006, #1014): characteristics, event agenda and the 5-session
+# indicative rates, into the private anbima_debenture* or anbima_cri_cra*
+# tables. One cvm_ingest_log row (anbima/<asset>); any failed page turns the
+# run red with the rows that did land. The rows are never served. Not
+# scheduled: the daily run gets it only after the owner approves.
+on:
+  workflow_dispatch:
+    inputs:
+      asset:
+        description: "debentures or cri_cra"
+        type: choice
+        default: debentures
+        options:
+          - debentures
+          - cri_cra
+      codes:
+        description: "Comma-separated ANBIMA codes, e.g. CGOSA2,AESLA8 or CRA019001E7,22F0315398"
+        required: true
+
+# Same writer group as daily_ingest.yml and backfill.yml: one writer at a time.
+concurrency:
+  group: supabase-ingest
+  cancel-in-progress: false
+
+jobs:
+  # Applies migrations 80 and 82 when the daily run has not yet done so.
+  apply-schema:
+    name: "Apply schema"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Apply schema + migrations
+        uses: ./.github/actions/apply-schema
+        with:
+          postgres-url: ${{ secrets.POSTGRES_URL }}
+
+  capture:
+    name: "Capture ${{ inputs.asset }}"
+    needs: [apply-schema]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Capture
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          ASSET: ${{ inputs.asset }}
+          CODES: ${{ inputs.codes }}
+        # The CLI rejects any code that is not alphanumeric.
+        run: python -m src.pipeline.anbima_debenture_pipeline --asset "$ASSET" --codes "$CODES"
