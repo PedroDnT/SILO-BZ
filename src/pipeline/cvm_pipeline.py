@@ -53,6 +53,7 @@ from src.pipeline.ingest_fi import (
     ingest_fi_balancete,
     ingest_fund_registry_fi,
 )
+from src.pipeline.ingest_oferta import ingest_oferta_160, ingest_oferta_400
 from src.pipeline.ingest_fidc import (
     ingest_fidc_mensal,
     ingest_fidc_tranche,
@@ -192,7 +193,10 @@ _ALL_TABLES: List[str] = [
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
     "cia_company", "cia_event", "cia_filing", "cia_account", "cia_ticker",
     "cvm_fund_registry", "cvm_etf_registry",
+    "cvm_oferta_distrib_160", "cvm_oferta_distrib_400",
 ]
+# The daily scope. oferta (#1005) is backfill-only until the owner approves it
+# for the daily run, so it is not here.
 _ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta", "etf"}
 # ETF is a distinct entity (curated registry, not a CVM dataset). It self-fetches
 # the cad_fi it enriches from, so it is independent of the FI ingest and kept in
@@ -1344,6 +1348,24 @@ class CVMIngestor:
         return await self._audited("fi", "lamina", year, month, work)
 
     # ------------------------------------------------------------------
+    # OFERTA - public offerings (OFERTA/DISTRIB), two snapshot members (#1005)
+    # ------------------------------------------------------------------
+
+    async def ingest_oferta(self, doc_type: str) -> int:
+        """One member of oferta_distribuicao.zip, whole file, one audit row.
+
+        distrib_160 → cvm_oferta_distrib_160; distrib → cvm_oferta_distrib_400
+        (registered ICVM 400 debentures only). No year or month.
+        """
+        fn = {"distrib_160": ingest_oferta_160, "distrib": ingest_oferta_400}[doc_type]
+
+        async def work():
+            raw_rows = await self._fetch_all_pages("oferta", doc_type, None, None)
+            rows_inserted = await self._store(fn, self._supabase, raw_rows)
+            return rows_inserted, len(raw_rows)
+        return await self._audited("oferta", doc_type, None, None, work)
+
+    # ------------------------------------------------------------------
     # FI - Extrato das Informacoes (CVM fi-doc-extrato): the fees and terms a fund files
     # ------------------------------------------------------------------
 
@@ -2465,6 +2487,11 @@ class CVMIngestor:
                 "CIA_ABERTA ITR/DFP backfill",
             )
 
+        # -- OFERTA: two snapshot members of one zip, no year loop ----------
+        if _want("oferta"):
+            totals["cvm_oferta_distrib_160"] += await self._isolated(self.ingest_oferta("distrib_160"))
+            totals["cvm_oferta_distrib_400"] += await self._isolated(self.ingest_oferta("distrib"))
+
         # Refresh the materialized ETF metrics once the underlying data is in.
         # etf_daily is a matview over cvm_fi_diario, so an FI-only backfill makes
         # it stale too — refresh when either entity ran. CI's parallel matrix
@@ -2731,7 +2758,7 @@ if __name__ == "__main__":
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     bf = sub.add_parser("backfill", help="Historical backfill")
-    bf.add_argument("--entity", help="fi | fidc | fip | fiagro | fii | securit | cia_aberta | etf (all if omitted)")
+    bf.add_argument("--entity", help="fi | fidc | fip | fiagro | fii | securit | cia_aberta | etf | oferta (all if omitted)")
     bf.add_argument("--start", type=int, default=2019, help="Start year (default 2019)")
     bf.add_argument("--end", type=int, help="End year (default current year)")
 
