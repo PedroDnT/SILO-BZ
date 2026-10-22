@@ -1,12 +1,15 @@
 # Notebooks
 
-Eleven runnable notebooks. Each one answers a real question end to end rather
+Twelve runnable notebooks. Each one answers a real question end to end rather
 than touring methods. The first ten run over the SILO public read API, and each
 opens by calling `coverage()` and printing the as-of dates it is about to rely
 on — so a stale warehouse shows up in the output instead of being silently
 baked into a number. The eleventh, `10_dustin_br_model`, scores a model on the
 matrix the Research Build workflow uploads: its machinery cells run anywhere,
-and its warehouse cells need that matrix (`DUSTIN_BR_CSV`).
+and its warehouse cells need that matrix (`DUSTIN_BR_CSV`). The twelfth,
+`11_debentures_internal`, is for the owner only: it reads private tables
+directly with `POSTGRES_URL`, never the public API, and its output must not be
+shared.
 
 Start at `00_start_here`.
 
@@ -23,6 +26,7 @@ Start at `00_start_here`.
 | 8 | [`08_short_interest`](08_short_interest.ipynb) | Who is short, how expensive is the borrow, who is lending — and who was buying? |
 | 9 | [`09_dustin_br_rates`](09_dustin_br_rates.ipynb) | Which public data can support a model of where the Brazilian rate curve goes over the next month, and how is it assembled so that no row ever uses information that was not yet public on its date? |
 | 10 | [`10_dustin_br_model`](10_dustin_br_model.ipynb) | Can that data call the curve's next month better than knowing the base rates? |
+| 11 | [`11_debentures_internal`](11_debentures_internal.ipynb) | Internal only: what does ANBIMA say about a debenture (indexer, spread, schedule, indicative rate), and which CVM offering issued it? |
 
 ## Running them
 
