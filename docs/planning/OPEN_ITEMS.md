@@ -650,7 +650,7 @@ authority remain unchanged; elapsed history cannot be accelerated by local code.
 REUNE traded
 rates/access and benchmark conventions (#661) remain separate dependencies under
 ADR 0004. ANBIMA's public pages publish indicative, not traded, rates for the last
-5 sessions only; a forward capture exists but is not scheduled (#1006, 2026-10-21). Neither #662 nor #628 is closed by this pilot recovery.
+5 sessions only; a forward capture exists for debentures (#1006, 2026-10-21) and CRI/CRA (#1014, 2026-10-22) but is not scheduled. Neither #662 nor #628 is closed by this pilot recovery.
 
 Historical [local capture/storage measurements](../reference/research/debenture-secondary-market-validation.md)
 and [schema-lock recovery](../reference/research/ingest-recovery-2026-10-07.md)

@@ -36,7 +36,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   or re-filed position goes (`cvm_ingest_log.rows_deleted`); absent funds keep theirs.
 - B3 BDI (lending, investor flow): a ratchet, no backfill ([SYSTEM](SYSTEM.md)).
 - OTC DEB (74): raw CSV + knowledge time; missing sessions fail it.
-- ANBIMA debentures (80, Playwright, manual): terms, agenda, 5-session
+- ANBIMA debentures, CRI/CRA (80, 82, Playwright, manual): terms, agenda, 5-session
   rates; raw text only on a parse failure. CVM offerings (81): backfill.
 
 ## Analytical

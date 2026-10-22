@@ -139,13 +139,13 @@ _SECTIONS = {"CONDIÇÕES GERAIS DA SÉRIE", "INCENTIVO", "EMISSOR", "CONDIÇÕE
 _CNPJ_LINE = re.compile(r"^\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}$")
 
 
-def _block(lines: list[str], start: str) -> list[str]:
+def _block(lines: list[str], start: str, sections: frozenset | set = _SECTIONS) -> list[str]:
     """Lines under an upper-case section heading, up to the next heading."""
     try:
         i = lines.index(start)
     except ValueError:
         return []
-    j = next((k for k in range(i + 1, len(lines)) if lines[k] in _SECTIONS), len(lines))
+    j = next((k for k in range(i + 1, len(lines)) if lines[k] in sections), len(lines))
     return lines[i + 1:j]
 
 
@@ -266,21 +266,25 @@ _RATES = {"data": "data_referencia", "intervalo indic min": "intervalo_min_pct",
           "% reune": "pct_reune", "referencia ntn b": "referencia_ntnb"}
 
 
-def parse_precos(capture) -> list[dict[str, Any]]:
-    """The last-5-sessions table. A bond without indicative prices yields []."""
+def parse_precos(capture, columns: dict[str, str] = _RATES) -> list[dict[str, Any]]:
+    """The last-5-sessions table. A bond without indicative prices yields [].
+
+    ``columns`` is the header set the page must show, each exactly once: the
+    CRI/CRA table has no indicative interval, the debenture table has one.
+    """
     table = _table(capture, "taxa indicativa")
     if table is None:
         if not any(_table(capture, h) for h in ("vna",)):
             raise AnbimaParseError(f"{capture.codigo}: price page rendered no table")
         return []
-    idx = _columns(table, _RATES, capture.codigo)
+    idx = _columns(table, columns, capture.codigo)
     rows = []
     for cells in table["rows"]:
         r = {col: cells[i] for col, i in idx.items()}
         row = {"codigo": capture.codigo, "data_referencia": day(r["data_referencia"])}
         if row["data_referencia"] is None:
             raise AnbimaParseError(f"{capture.codigo}: rate row without date: {cells}")
-        for col in _RATES.values():
+        for col in columns.values():
             if col not in row:
                 row[col] = day(r[col]) if col == "referencia_ntnb" else num(r[col])
         rows.append(row)
