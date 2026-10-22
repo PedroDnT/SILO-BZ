@@ -82,7 +82,7 @@ One per published endpoint. Dates accept `date` objects or ISO strings; `None` m
 | `anbima_classes(category, metric, level, start, end)` | `anbima_classes` | industry aggregates, no fund join |
 | `inflation(series, family, start, end)` · `inflation_items(level, item, start, end)` | [inflation](/api-docs/inflation) | as published, in percent; `acc_12m` and `contribution` are the derived columns |
 | `macro_series(series, start, end)` · `ptax(currency, start, end)` | [Macro series and PTAX](/api-docs/macro) | as published; read `unit` on every row |
-| `future_curve(root, trade_date)` · `future_series(ticker, start, end)` · `curve(curve, trade_date)` · `curve_history(curve, tenor_days, start, end)` | [DI futures and B3 reference curves](/api-docs/rates) | as published; DI1 quotes are rates, read `rate_basis` on the curves |
+| `future_curve(root, trade_date)` · `future_series(ticker, start, end)` · `curve(curve, trade_date)` · `curve_history(curve, tenor_days, start, end)` | [DI and dollar futures, and B3 reference curves](/api-docs/rates) | as published; DI1 quotes are rates, DOL and WDO prices (BRL per USD 1,000); read `rate_basis` on the curves |
 | `short_interest(...)` · `short_interest_by_sector(...)` · `lending_trades(...)` · `lending_participants(...)` · `investor_flow(...)` | [lending](/api-docs/lending) · [flows](/api-docs/flows) | view readers, PostgREST filters passed through |
 | `view(name, **filters)` · `view_all(name, **filters)` · `iter_view(...)` | the 13 views | filter syntax passed through verbatim |
 

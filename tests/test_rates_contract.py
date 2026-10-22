@@ -229,6 +229,17 @@ def test_coverage_di_futures_row_is_bounded_to_di1_tickers():
     assert seg.count("f.ticker LIKE 'DI1%'") == 3
 
 
+def test_coverage_has_a_dollar_futures_row_of_its_own():
+    cov = _coverage()
+    seg = cov[cov.index("SELECT 'dollar_futures'::text"):]
+    seg = seg[: seg.index("UNION ALL")]
+    assert seg.count("f.ticker LIKE 'DOL%'") == 3
+    assert seg.count("f.ticker LIKE 'WDO%'") == 3
+    assert "DI1" not in seg.split("'b3'::text")[0]
+    assert "'*market_price_report*'::text" in seg
+    assert "BRL per USD 1,000" in seg
+
+
 # ---------------------------------------------------------------------------
 # Reference curves
 # ---------------------------------------------------------------------------

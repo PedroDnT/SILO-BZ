@@ -1,6 +1,6 @@
 ---
-title: "DI futures and B3 reference curves"
-description: "Every DI1 futures contract per session from 2018, and B3's own reference curves (DI x pré, the onshore dollar coupon, the IPCA coupon) per vertex from 2008 — as B3 publishes them."
+title: "DI and dollar futures, and B3 reference curves"
+description: "Every DI1, DOL and WDO futures contract per session from 2018, and B3's own reference curves (DI x pré, the onshore dollar coupon, the IPCA coupon) per vertex from 2008 — as B3 publishes them."
 icon: "chart-line"
 ---
 
@@ -33,6 +33,52 @@ silo.future_series("DI1F27", start="2026-01-01")
 silo.curve("DPL", "2026-09-25")                  # the IPCA coupon
 silo.curve_history("PRE", 360)                   # B3's 360-day vertex, 12 months
 ```
+
+### Calling them
+
+The same four functions answer on every surface. Pick the root or the curve
+with one argument; leave the date out for the newest session.
+
+| You want | Call |
+| --- | --- |
+| The DI1 curve on a session | `future_curve` with `p_root` `DI1` (the default) |
+| The dollar futures on a session | `future_curve` with `p_root` `DOL` or `WDO` |
+| One contract through time | `future_series` with `p_ticker` such as `DI1F27`, `DOLF27`, `WDOF27` |
+| B3's DI x pré, dollar coupon or IPCA coupon curve | `curve` with `p_curve` `PRE`, `DOC` or `DPL` |
+| One fixed vertex through time | `curve_history` with `p_curve` and `p_tenor_days` (30, 90, 360, 720 …) |
+
+<CodeGroup>
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/future_curve" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" \
+  -d '{"p_root": "DOL", "p_trade_date": "2026-10-20"}'
+
+curl -s -X POST "$SILO_URL/rpc/curve_history" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" \
+  -d '{"p_curve": "DOC", "p_tenor_days": 360, "p_from": "2025-01-01"}'
+```
+
+```python SDK
+from silo_client import SiloClient
+
+silo = SiloClient()                               # public project and key built in
+silo.future_curve("WDO")                          # newest session
+silo.future_series("DOLF27", start="2026-01-01")
+silo.curve("DOC", "2026-10-20")
+silo.rpc("future_curve", p_root="DI1", p_trade_date="2026-10-20")  # same call, SQL names
+```
+
+```text MCP
+Tools future_curve, future_series, curve and curve_history, with the same
+argument names (p_root, p_ticker, p_curve, p_tenor_days, p_from, p_to,
+p_trade_date). Ask, for example: "call future_curve with p_root DOL".
+```
+</CodeGroup>
+
+The SDK methods take friendlier names (`root`, `ticker`, `start`, `end`);
+`silo.rpc(name, **params)` takes the SQL names and checks them before sending.
+The local `serve/` adapter has no `/v1` route for these four: use the Data API,
+the SDK or the [MCP server](/api-docs/mcp).
 
 ### DI1 futures
 
@@ -105,9 +151,11 @@ method for `PRE` and `DPL` is flat-forward on 252 business days.
 
 ### Freshness
 
-[`coverage()`](/api-docs/coverage) has a `di_futures` row and a
-`reference_curves` row. Each `landed_at` is its own ingest (the Price Report and
-the reference-rate file log separately under the market ingest). History comes
+[`coverage()`](/api-docs/coverage) has a `di_futures` row (DI1), a
+`dollar_futures` row (DOL and WDO) and a `reference_curves` row. The two futures
+rows read the same file, so they share a `landed_at`; the reference-rate file
+logs its own. Both futures histories miss 2021-01-04 (B3 serves a malformed
+file) and 2021-06-10 (an empty one). History comes
 from a backfill, so a span that starts later than the dates above was not
 loaded; it is not missing at B3.
 

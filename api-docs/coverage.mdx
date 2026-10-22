@@ -48,7 +48,7 @@ api.coverage()
 | `company_events` | The newest IPE delivery date held ([company events](/api-docs/company-events)); `complete_through` is null. History starts in 2015; filings CVM published without a protocol number are not held. `landed_at` is the IPE ingest alone. |
 | `macro_series` | The newest elapsed observation of any of the nine [macro series](/api-docs/macro); `newest_period` can sit in the future (the Selic target is published ahead). `landed_at` is the SGS ingest. |
 | `ptax` | The newest PTAX business day held; `landed_at` is the PTAX ingest alone, never an SGS run. |
-| `di_futures` / `reference_curves` | The newest B3 session held for the [DI1 contracts and reference curves](/api-docs/rates); each `landed_at` is its own file's ingest. History starts 2018-01-02 and 2008-01-02; long curve vertices are B3's extrapolation. |
+| `di_futures` / `dollar_futures` / `reference_curves` | The newest B3 session held for the [DI1 contracts, the DOL and WDO dollar futures, and the reference curves](/api-docs/rates); the two futures rows share the Price Report's `landed_at`, the curves have their own. History starts 2018-01-02, 2018-01-02 and 2008-01-02; long curve vertices are B3's extrapolation. |
 
 **Not covered**: `fund_holdings` and `fund_debentures` have no row yet; read the newest `period` off the rows themselves.
 
