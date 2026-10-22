@@ -4427,6 +4427,15 @@ AS $$
                'B3 Price Report (BVBG.086.01), outright DI1 futures, one row per session and contract (future_curve, future_series), from 2018-01-02: B3''s older reports are empty. DI1 is quoted in RATE, so the quote columns are % a.a. on 252 business days and settlement_price is the PU. History comes from market_backfill.yml, so a span that starts late was not loaded, not missing at B3.'::text,
                (SELECT MAX(f.trade_date) FROM public.b3_futures_settlement f WHERE f.ticker LIKE 'DI1%'), '*market_price_report*'::text
         UNION ALL
+        -- The dollar futures (#999, #1000) in the same table, their own row so
+        -- landing them never moves the DI1 dates. Same prefix probes.
+        SELECT 'dollar_futures'::text,
+               (SELECT MAX(f.trade_date) FROM public.b3_futures_settlement f WHERE f.trade_date <= CURRENT_DATE AND (f.ticker LIKE 'DOL%' OR f.ticker LIKE 'WDO%')),
+               (SELECT MAX(f.trade_date) FROM public.b3_futures_settlement f WHERE f.trade_date <= CURRENT_DATE AND (f.ticker LIKE 'DOL%' OR f.ticker LIKE 'WDO%')),
+               'b3'::text,
+               'B3 Price Report (BVBG.086.01), outright DOL (USD 50,000) and WDO (mini, USD 10,000) dollar futures, one row per session and contract (future_curve, future_series with p_root DOL or WDO), from 2018-01-02. QUOTED IN PRICE, BRL per USD 1,000: the quote columns and settlement_price are that price as published, and settlement_rate is NULL. 2021-01-04 (a malformed B3 file) and 2021-06-10 (an empty one) hold no session, as for DI1. History comes from market_backfill.yml.'::text,
+               (SELECT MAX(f.trade_date) FROM public.b3_futures_settlement f WHERE f.ticker LIKE 'DOL%' OR f.ticker LIKE 'WDO%'), '*market_price_report*'::text
+        UNION ALL
         SELECT 'reference_curves'::text,
                (SELECT MAX(r.trade_date) FROM public.b3_reference_rate r WHERE r.trade_date <= CURRENT_DATE),
                (SELECT MAX(r.trade_date) FROM public.b3_reference_rate r WHERE r.trade_date <= CURRENT_DATE),

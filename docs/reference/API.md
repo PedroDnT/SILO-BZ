@@ -852,7 +852,9 @@ The operator half:
   `coverage()`'s `di_futures` row is bounded to DI1 tickers, so landing DOL
   or WDO never moves its dates. The panel's futures arm keeps its DI1 text:
   a DOL or WDO id yields `settlement_price` and `open_interest` rows and no
-  `settlement_rate` rows. A coverage row of their own is not added here.
+  `settlement_rate` rows. Their own `coverage()` row is `dollar_futures`
+  (DOL or WDO tickers, the same three prefix probes, the same
+  `*market_price_report*` landed_at).
 - **`curve` / `curve_history` read only the curves in `api.curve_registry()`**,
   which `tests/test_rates_contract.py` pins to `DEFAULT_CURVES` in
   `src/parsers/b3_taxa_swap.py`, with each curve's `rate_basis` (`DOC` is
