@@ -1,4 +1,4 @@
-"""Headless-browser reads of ANBIMA's public debenture pages (#1006).
+"""Headless-browser reads of ANBIMA's public debenture, CRI and CRA pages (#1006, #1014).
 
 data.anbima.com.br is a Next.js site: plain HTTP returns an empty shell and its
 JSON backend needs a token, so this drives Chromium with Playwright and reads
@@ -28,6 +28,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://data.anbima.com.br/debentures"
+CRI_CRA_BASE_URL = "https://data.anbima.com.br/certificado-de-recebiveis"
 PAGES = ("caracteristicas", "agenda", "precos")
 AGENDA_PAGE_SIZE = 100
 _SHOWN = re.compile(r"Exibindo\s+(\d+)\s*-\s*(\d+)\s+de\s+(\d+)\s+resultados")
@@ -69,7 +70,12 @@ class AnbimaDebentureFetcher:
 
     def __init__(self, *, concurrency: int = 2, timeout_s: float = 45.0,
                  rate_wait_s: float = 10.0, max_retries: int = 2,
-                 executable_path: Optional[str] = None):
+                 executable_path: Optional[str] = None, base_url: str = BASE_URL,
+                 ready_selector: str = "text=CNPJ"):
+        # A CRI/CRA characteristics page prints the CNPJs without the word
+        # "CNPJ", so it waits for its issue block instead.
+        self.base_url = base_url
+        self.ready_selector = ready_selector
         self.timeout_ms = int(timeout_s * 1000)
         self.rate_wait_ms = int(rate_wait_s * 1000)
         self.max_retries = max_retries
@@ -109,10 +115,10 @@ class AnbimaDebentureFetcher:
         try:
             if page == "agenda":
                 return await self._agenda(tab, codigo)
-            url = f"{BASE_URL}/{codigo}/{page}"
+            url = f"{self.base_url}/{codigo}/{page}"
             await self._goto(tab, url)
             if page == "caracteristicas":
-                await self._wait(tab, "text=CNPJ", url)
+                await self._wait(tab, self.ready_selector, url)
                 # The page fills in progressively: '--' marks a value still
                 # loading (a published blank is '-'). Never read it half-done.
                 try:
@@ -134,9 +140,9 @@ class AnbimaDebentureFetcher:
 
     async def _agenda(self, tab, codigo: str) -> PageCapture:
         texts, rows, headers, total, n = [], [], None, None, 1
-        first_url = f"{BASE_URL}/{codigo}/agenda?page=1&size={AGENDA_PAGE_SIZE}"
+        first_url = f"{self.base_url}/{codigo}/agenda?page=1&size={AGENDA_PAGE_SIZE}"
         while True:
-            url = f"{BASE_URL}/{codigo}/agenda?page={n}&size={AGENDA_PAGE_SIZE}"
+            url = f"{self.base_url}/{codigo}/agenda?page={n}&size={AGENDA_PAGE_SIZE}"
             await self._goto(tab, url)
             await self._wait(tab, "text=/Exibindo|Nenhum/", url)
             text = await self._text(tab)

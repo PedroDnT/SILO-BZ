@@ -26,7 +26,7 @@ Start at `00_start_here`.
 | 8 | [`08_short_interest`](08_short_interest.ipynb) | Who is short, how expensive is the borrow, who is lending — and who was buying? |
 | 9 | [`09_dustin_br_rates`](09_dustin_br_rates.ipynb) | Which public data can support a model of where the Brazilian rate curve goes over the next month, and how is it assembled so that no row ever uses information that was not yet public on its date? |
 | 10 | [`10_dustin_br_model`](10_dustin_br_model.ipynb) | Can that data call the curve's next month better than knowing the base rates? |
-| 11 | [`11_debentures_internal`](11_debentures_internal.ipynb) | Internal only: what does ANBIMA say about a debenture (indexer, spread, schedule, indicative rate), and which CVM offering issued it? |
+| 11 | [`11_debentures_internal`](11_debentures_internal.ipynb) | Internal only: what does ANBIMA say about a debenture, CRI or CRA (indexer, spread, schedule, indicative rate), and which CVM offering issued it? |
 
 ## Running them
 
