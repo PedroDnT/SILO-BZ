@@ -20,7 +20,7 @@ after a run    publish_check  green daily run, or red with hook done: wait ≤45
 Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 ```
 
-`rj_collect` (RJ: AJ sites, DJEN, resolver) is dispatch-only (#877).
+`rj_collect` (RJ, #877) and `anbima_capture` (#1006, #1014) are dispatch-only.
 
 ## A red day
 
