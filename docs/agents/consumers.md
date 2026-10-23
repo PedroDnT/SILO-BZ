@@ -5,15 +5,15 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 `@evidence-dev/postgres` and only read — never write.
 
 - **`dashboard/`** — fund **and market** analytics at
-  [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/), 20
+  [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/), 22
   pages. Industry and backdrop: Overview (`/`), Industry Structure (`/industry`),
-  Macro Context (`/macro`), Rates and Curves (`/rates`), B3 Markets (`/markets`),
+  Macro Context (`/macro`), Rates and Curves (`/rates`), B3 Markets (`/markets`), B3 Options (`/options`),
   Short Monitor (`/short`), Follow the Money (`/flows`). By asset class: FI (`/fi`), FIDC Credit Monitor
   (`/fidc`), FII Market (`/fii`), Securitization (`/securit`), ETF (`/etf`).
   Granular: Managers (`/managers`), Fund Explorer (`/fund`), Fund Holdings
   (`/holdings`), Performance (`/performance`), Suspicious Screens (`/suspicious`), Dormant Funds (`/dormant`),
   Filing Behaviour (`/filings`).
-  Plus Pipeline Ops (`/ops`).
+  Plus Recent Data (`/recent`) and Pipeline Ops (`/ops`).
   Evidence static snapshot (parquet at build). The Vercel project in team
   `deloslabs` is named `silo-bz` (renamed from `silo` on 2026-09-17, so older
   planning docs and changelog rows still say `silo`); that is the

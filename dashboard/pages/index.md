@@ -144,6 +144,7 @@ In sidebar order.
 | [Macro Context](/macro)         | SELIC, CDI, inflation, PTAX and the BACEN Focus consensus                                                                         | Units are BACEN's and are **not converted** — % a.a. and % a.d. sit side by side                   |
 | [Rates and Curves](/rates)      | B3 nominal (PRE) and real (DPL) curves, breakeven inflation since 2008 vs the Focus survey, DI1 open interest, NTN-B held by funds, global backdrop | Breakeven is **derived** at B3's fixed vertices and includes any risk premium; the long end is extrapolated by B3 |
 | [B3 Markets](/markets)          | Exchange session prints from the COTAHIST tape: volume by board and instrument type, options                                      | Quotes are **unadjusted** and some papers quote per lot (`fator_cotacao` ≠ 1)                      |
+| [B3 Options](/options)          | Listed options over the last 90 days: premium per session, put/call ratio, top underlyings, expiry months                          | Premium, **not notional**; COTAHIST has **no open interest**                                       |
 | [Short Monitor](/short)         | Securities lending: short interest by ticker, % of free float, days to cover, borrow rates, sector concentration                  | History starts when SILO began capturing — B3 keeps ~21 business days and **cannot be backfilled** |
 | [Follow the Money](/flows)      | Net flow by investor type (foreign, institutional, retail) and B3 cash-market ADTV                                                | Flow is **derived** from B3's month-to-date snapshots and lags **T+2**; there is no YTD column     |
 
@@ -173,6 +174,7 @@ In sidebar order.
 
 | Page                 | What it answers                                                                    | Watch out for                                                       |
 | -------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| [Recent Data](/recent) | The newest data per dataset, and when our ingest last landed it | An old **Data Through** is usually the source's filing calendar, not an outage |
 | [Pipeline Ops](/ops) | Whether the ingest ran, whether it succeeded, and whether the data actually landed | A recent `ok` over a stale table is the disagreement worth catching |
 
 ---

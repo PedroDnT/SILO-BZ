@@ -5,10 +5,10 @@ Evidence.dev analytics dashboard backed by the Supabase Postgres pipeline.
 
 ## Pages
 
-Twenty routes in four groups, ordered broad → granular → operational. `/` is
+Twenty-two routes in four groups, ordered broad → granular → operational. `/` is
 the entry point: it carries the headline figures, a "start here" reading path,
 and the grouped index. The sidebar order is the `sidebar_position` in each page's
-frontmatter (1–19 below; Evidence sorts alphabetically without it), and
+frontmatter (1–21 below; Evidence sorts alphabetically without it), and
 `index.md`'s "Pages" tables and this table repeat the same order —
 `tests/test_dashboard_nav_order.py` keeps the three in step.
 
@@ -21,36 +21,38 @@ frontmatter (1–19 below; Evidence sorts alphabetically without it), and
 | 2   | Macro Context      | `/macro`    | SELIC / CDI / IPCA / IGP-M series, IPCA headline vs all five cores, IPCA-15, 12-month, monitored vs free, what moved the IPCA (IBGE contribution by group, its history, a group drill to items), monthly GDP, PTAX FX and spreads, BACEN Focus consensus + dispersion and forward paths, SGS inventory |
 | 3   | Rates and Curves   | `/rates`    | B3 nominal (PRE) and real (DPL) reference curves on fixed vertices, implied breakeven inflation at 1y/2y/5y/10y, weekly 1y and 5y real yield and breakeven since 2008, 1y breakeven vs the Focus 12-month IPCA median, DI1 open interest by maturity, NTN-B held by investment funds (CVM CDA), US Treasury curve, Brent and the OFR stress index |
 | 4   | B3 Markets         | `/markets`  | B3 tape as a market: monthly traded volume (standard vs odd lot), volume by instrument type, most traded tickers over 90 days, options activity — all from `b3_cotahist`, unadjusted                                   |
-| 5   | Short Monitor      | `/short`    | B3's securities-lending book: short interest per ticker, % of free float (basis labelled), days to cover vs 21-session ADTV, borrow rates, sector concentration. **No backfill exists** — B3 retains ~21 business days |
-| 6   | Follow the Money   | `/flows`    | Net flow by investor type, derived from B3's month-to-date participation snapshots (T+2), plus cash-market ADTV from the tape. ANBIMA fund-class flows are not on the dashboard; ANBIMA ETF flows are on the ETF page         |
+| 5   | B3 Options         | `/options`  | Listed options over the last 90 days of COTAHIST option tape: latest-session call and put premium, daily premium and put/call premium ratio, top 20 underlyings, premium by expiry month. Premium, not notional; no open interest |
+| 6   | Short Monitor      | `/short`    | B3's securities-lending book: short interest per ticker, % of free float (basis labelled), days to cover vs 21-session ADTV, borrow rates, sector concentration. **No backfill exists** — B3 retains ~21 business days |
+| 7   | Follow the Money   | `/flows`    | Net flow by investor type, derived from B3's month-to-date participation snapshots (T+2), plus cash-market ADTV from the tape. ANBIMA fund-class flows are not on the dashboard; ANBIMA ETF flows are on the ETF page         |
 
 **By asset class** — one page per CVM family, plus the securitisation market.
 
 | #   | Page                | Path       | What it shows                                                                                                                                 |
 | --- | ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7   | FI Industry         | `/fi`      | Net assets, daily flow, quotaholder base, investor mix (`cvm_fi_perfil`), single-holder screen, allocation (`cvm_fi_cda`)                     |
-| 8   | FIDC Credit Monitor | `/fidc`    | Sector delinquency, worst funds, delinquency drivers (Δ R$ vs Δ rate), both aging bands, tranche promised-vs-realised, subordination, flows   |
-| 9   | FII Market          | `/fii`     | FII vs FIAGRO net assets, yield distribution, top payers, filing coverage, payout coverage, property explorer                                 |
-| 10  | Securitização       | `/securit` | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series                                       |
-| 11  | ETF                 | `/etf`     | ETF universe by provider / segment / index from `cvm_etf_registry`, the 46 Brazilian fixed income ETFs by index family (CVM net assets) and their exchange prints (B3 consolidated trade file), ANBIMA ETF net assets since 2006 and flows since 2025, plus the scraped market snapshot (NAV/return largely absent post-CVM-175) |
+| 8   | FI Industry         | `/fi`      | Net assets, daily flow, quotaholder base, investor mix (`cvm_fi_perfil`), single-holder screen, allocation (`cvm_fi_cda`)                     |
+| 9   | FIDC Credit Monitor | `/fidc`    | Sector delinquency, worst funds, delinquency drivers (Δ R$ vs Δ rate), both aging bands, tranche promised-vs-realised, subordination, flows   |
+| 10  | FII Market          | `/fii`     | FII vs FIAGRO net assets, yield distribution, top payers, filing coverage, payout coverage, property explorer                                 |
+| 11  | Securitização       | `/securit` | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series                                       |
+| 12  | ETF                 | `/etf`     | ETF universe by provider / segment / index from `cvm_etf_registry`, the 46 Brazilian fixed income ETFs by index family (CVM net assets) and their exchange prints (B3 consolidated trade file), ANBIMA ETF net assets since 2006 and flows since 2025, plus the scraped market snapshot (NAV/return largely absent post-CVM-175) |
 
 **Houses, funds, rankings and screens** — the granular views.
 
 | #   | Page               | Path           | What it shows                                                                                                                           |
 | --- | ------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 12  | Managers           | `/managers`    | Administrator and gestor league tables by net assets and net flow, led by the registry-name coverage disclosure                         |
-| 13  | Fund Explorer      | `/fund`        | Searchable fund universe first, then net assets / quota / return / flow series for the largest funds                                    |
-| 14  | Fund Holdings      | `/holdings`    | Largest stock holdings by ticker, debentures by issuer code and same-group holdings, on the last complete CDA month                    |
-| 15  | Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                                 |
-| 16  | Suspicious Screens | `/suspicious`  | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated                                       |
-| 17  | Dormant Funds      | `/dormant`     | Funds with zero subscriptions and redemptions for 3 consecutive complete months (definition stated first), the count at every month-end over 36 months, where the money stands still, by administrator, and the empty shells |
-| 18  | Filing Behaviour   | `/filings`     | FNET documents delivered per day, late filers against the CVM 175 deadline, silent filers (active in the registry, no informe), frequent restaters, the latest restatements by type, and the field-level diff of FIDC informe restatements, with what each screen does not support stated |
+| 13  | Managers           | `/managers`    | Administrator and gestor league tables by net assets and net flow, led by the registry-name coverage disclosure                         |
+| 14  | Fund Explorer      | `/fund`        | Searchable fund universe first, then net assets / quota / return / flow series for the largest funds                                    |
+| 15  | Fund Holdings      | `/holdings`    | Largest stock holdings by ticker, debentures by issuer code and same-group holdings, on the last complete CDA month                    |
+| 16  | Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                                 |
+| 17  | Suspicious Screens | `/suspicious`  | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated                                       |
+| 18  | Dormant Funds      | `/dormant`     | Funds with zero subscriptions and redemptions for 3 consecutive complete months (definition stated first), the count at every month-end over 36 months, where the money stands still, by administrator, and the empty shells |
+| 19  | Filing Behaviour   | `/filings`     | FNET documents delivered per day, late filers against the CVM 175 deadline, silent filers (active in the registry, no informe), frequent restaters, the latest restatements by type, and the field-level diff of FIDC informe restatements, with what each screen does not support stated |
 
 **Operations** — whether the numbers landed.
 
 | #   | Page            | Path   | What it shows                                                                                        |
 | --- | --------------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| 19  | Pipeline Health | `/ops` | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage |
+| 20  | Recent Data     | `/recent` | Newest data per dataset from `api.coverage()`: data through, complete through, when our ingest last landed (UTC-3), and each dataset's caveats. No red/green verdict |
+| 21  | Pipeline Health | `/ops` | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage |
 
 ### Page conventions
 

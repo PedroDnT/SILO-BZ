@@ -1,7 +1,7 @@
 ---
 title: Fund Holdings
 hide_title: true
-sidebar_position: 14
+sidebar_position: 15
 ---
 
 <!--

@@ -170,6 +170,8 @@ yAxisTitle="Volume (R$bn)"
 > of the option itself, not notional exercised; exercises print on separate
 > boards and are excluded. Series count is distinct option tickers that printed
 > at least once in the month.
+>
+> The last 90 days by session, underlying and expiry are on [B3 Options](/options).
 
 <AreaChart
 data={b3_options_activity}
