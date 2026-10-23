@@ -1,12 +1,16 @@
 name: ANBIMA Capture
 
-# One manual capture of ANBIMA's public debenture or CRI/CRA pages for a list
-# of codes, or for every code ANBIMA prices that day (#1006, #1014): characteristics, event agenda and the 5-session
+# A capture of ANBIMA's public debenture or CRI/CRA pages for a list of codes,
+# or for every code ANBIMA prices that day (#1006, #1014): characteristics, event agenda and the 5-session
 # indicative rates, into the private anbima_debenture* or anbima_cri_cra*
 # tables. One cvm_ingest_log row (anbima/<asset>); any failed page turns the
-# run red with the rows that did land. The rows are never served. Not
-# scheduled: the daily run gets it only after the owner approves.
+# run red with the rows that did land. The rows are never served.
+# Weekly by owner decision (2026-10-23): every priced code, all pages, both
+# assets. The 5 sessions on each price page cover the week.
 on:
+  schedule:
+    # Saturdays 09:00 UTC-3 (12:00 UTC), after the daily run.
+    - cron: "0 12 * * 6"
   workflow_dispatch:
     inputs:
       asset:
@@ -44,8 +48,14 @@ jobs:
           postgres-url: ${{ secrets.POSTGRES_URL }}
 
   capture:
-    name: "Capture ${{ inputs.asset }}"
+    name: "Capture ${{ matrix.asset }}"
     needs: [apply-schema]
+    # One asset at a time; a red debenture run still lets CRI/CRA run.
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        asset: ${{ github.event_name == 'schedule' && fromJSON('["debentures","cri_cra"]') || fromJSON(format('["{0}"]', inputs.asset)) }}
     runs-on: ubuntu-latest
     # All pages of every priced code take about 1h45 (about 1.3 s a page).
     timeout-minutes: 180
@@ -60,9 +70,9 @@ jobs:
       - name: Capture
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
-          ASSET: ${{ inputs.asset }}
+          ASSET: ${{ matrix.asset }}
           CODES: ${{ inputs.codes }}
-          PAGES: ${{ inputs.pages }}
+          PAGES: ${{ inputs.pages || 'caracteristicas,agenda,precos' }}
         # The CLI rejects any code that is not alphanumeric.
         run: |
           if [ -n "$CODES" ]; then which=(--codes "$CODES"); else which=(--all-priced); fi
