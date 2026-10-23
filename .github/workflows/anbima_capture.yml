@@ -1,7 +1,7 @@
 name: ANBIMA Capture
 
 # One manual capture of ANBIMA's public debenture or CRI/CRA pages for a list
-# of codes (#1006, #1014): characteristics, event agenda and the 5-session
+# of codes, or for every code ANBIMA prices that day (#1006, #1014): characteristics, event agenda and the 5-session
 # indicative rates, into the private anbima_debenture* or anbima_cri_cra*
 # tables. One cvm_ingest_log row (anbima/<asset>); any failed page turns the
 # run red with the rows that did land. The rows are never served. Not
@@ -17,8 +17,13 @@ on:
           - debentures
           - cri_cra
       codes:
-        description: "Comma-separated ANBIMA codes, e.g. CGOSA2,AESLA8 or CRA019001E7,22F0315398"
-        required: true
+        description: "Comma-separated ANBIMA codes, e.g. CGOSA2,AESLA8 or CRA019001E7,22F0315398. Blank: every code with an indicative PU on ANBIMA's search list today (about 1,250 debentures or 330 CRI/CRA)."
+        required: false
+        default: ""
+      pages:
+        description: "Pages to read: caracteristicas,agenda,precos (all) or a subset, e.g. precos"
+        required: false
+        default: "caracteristicas,agenda,precos"
 
 # Same writer group as daily_ingest.yml and backfill.yml: one writer at a time.
 concurrency:
@@ -42,7 +47,8 @@ jobs:
     name: "Capture ${{ inputs.asset }}"
     needs: [apply-schema]
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # All pages of every priced code take about 1h45 (about 1.3 s a page).
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -56,5 +62,8 @@ jobs:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
           ASSET: ${{ inputs.asset }}
           CODES: ${{ inputs.codes }}
+          PAGES: ${{ inputs.pages }}
         # The CLI rejects any code that is not alphanumeric.
-        run: python -m src.pipeline.anbima_debenture_pipeline --asset "$ASSET" --codes "$CODES"
+        run: |
+          if [ -n "$CODES" ]; then which=(--codes "$CODES"); else which=(--all-priced); fi
+          python -m src.pipeline.anbima_debenture_pipeline --asset "$ASSET" "${which[@]}" --pages "$PAGES"

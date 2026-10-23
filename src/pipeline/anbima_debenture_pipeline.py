@@ -11,10 +11,12 @@ A page that does not load or does not parse never stops the other pages, but
 the run then ends as an error with the rows that did land, so a partial run is
 never read as complete. Raw text is kept only for a parse failure.
 
-Not wired into the daily run: the owner approves that after a green manual run
-and after confirming the ANBIMA permission covers automated collection.
+``--all-priced`` reads ANBIMA's search list first and captures every code
+that shows an indicative PU that day. The list must hold exactly the total
+that ANBIMA states, or the run fails before any page is read.
 
     python -m src.pipeline.anbima_debenture_pipeline --codes CGOSA2,AESLA8
+    python -m src.pipeline.anbima_debenture_pipeline --all-priced --pages precos
     python -m src.pipeline.anbima_debenture_pipeline --codes CGOSA2 --dry-run
     python -m src.pipeline.anbima_debenture_pipeline --asset cri_cra --codes CRA019001E7
 """
@@ -89,20 +91,23 @@ class AnbimaDebentureIngestor:
         self.conn = conn if conn is not None else get_pg_client()
         self.fetcher_factory = fetcher_factory or fetcher_for(self.asset)
 
-    async def ingest(self, codes: Iterable[str], pages: Iterable[str] = PAGES) -> int:
-        codes, pages = list(codes), list(pages)
+    async def ingest(self, codes: Optional[Iterable[str]], pages: Iterable[str] = PAGES) -> int:
+        """Capture ``codes``; ``None`` captures every code ANBIMA prices today."""
+        codes, pages = (None if codes is None else list(codes)), list(pages)
         capture_id = str(uuid.uuid4())  # the audit run id, never an asset id
 
         async def work() -> int:
             status: Counter = Counter()
             landed = 0
             async with self.fetcher_factory() as fetcher:
+                todo = codes if codes is not None else await self._priced(fetcher)
+
                 async def one(code: str, page: str) -> None:
                     nonlocal landed
                     s, n = await self._page(fetcher, capture_id, code, page)
                     status[s] += 1
                     landed += n
-                results = await asyncio.gather(*(one(c, p) for c in codes for p in pages),
+                results = await asyncio.gather(*(one(c, p) for c in todo for p in pages),
                                                return_exceptions=True)
             # A database error is not a page failure: it ends the run at once,
             # with the rows that did land.
@@ -125,6 +130,14 @@ class AnbimaDebentureIngestor:
         return await ingest_log.audited(
             self.conn, "anbima", self.asset.doc_type, work, upsert=upsert_rows, run_id=capture_id,
         )
+
+    async def _priced(self, fetcher) -> list[str]:
+        listed = await fetcher.list_codes()
+        priced = [x.codigo for x in listed if x.priced]
+        logger.info("ANBIMA %s list: %d listed, %d priced", self.asset.doc_type, len(listed), len(priced))
+        if not priced:
+            raise P.AnbimaParseError(f"ANBIMA {self.asset.doc_type} list: no code shows an indicative PU")
+        return priced
 
     async def _page(self, fetcher, capture_id: str, code: str, page: str) -> tuple[str, int]:
         table, key, parse = self.asset.targets[page]
@@ -174,16 +187,21 @@ def main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--asset", choices=sorted(ASSETS), default="debentures",
                         help="debentures (default) or cri_cra")
-    parser.add_argument("--codes", required=True, help="Comma-separated ANBIMA codes, e.g. CGOSA2,AESLA8")
+    which = parser.add_mutually_exclusive_group(required=True)
+    which.add_argument("--codes", help="Comma-separated ANBIMA codes, e.g. CGOSA2,AESLA8")
+    which.add_argument("--all-priced", action="store_true",
+                       help="Every code with an indicative PU on ANBIMA's search list today")
     parser.add_argument("--pages", default=",".join(PAGES), help=f"Subset of {','.join(PAGES)}")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and parse only, no database")
     args = parser.parse_args(argv)
-    codes = parse_codes(args.codes)
+    codes = None if args.all_priced else parse_codes(args.codes)
     pages = [p.strip() for p in args.pages.split(",") if p.strip()]
     if not pages or set(pages) - set(PAGES):
         raise SystemExit(f"--pages must be a subset of {PAGES}")
     logging.basicConfig(level=logging.INFO)
     if args.dry_run:
+        if codes is None:
+            raise SystemExit("--dry-run needs --codes")
         print(json.dumps(asyncio.run(dry_run(codes, pages, args.asset)), indent=2))
     else:
         asyncio.run(AnbimaDebentureIngestor(asset=args.asset).ingest(codes, pages))

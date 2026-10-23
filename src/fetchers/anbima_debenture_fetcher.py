@@ -31,6 +31,7 @@ BASE_URL = "https://data.anbima.com.br/debentures"
 CRI_CRA_BASE_URL = "https://data.anbima.com.br/certificado-de-recebiveis"
 PAGES = ("caracteristicas", "agenda", "precos")
 AGENDA_PAGE_SIZE = 100
+LIST_PAGE_SIZE = 100
 _SHOWN = re.compile(r"Exibindo\s+(\d+)\s*-\s*(\d+)\s+de\s+(\d+)\s+resultados")
 
 # Every table on the page as {"headers": [...], "rows": [[...], ...]}.
@@ -185,3 +186,39 @@ class AnbimaDebentureFetcher:
     async def _text(tab) -> str:
         main = await tab.query_selector("main")
         return await (main.inner_text() if main else tab.inner_text("body"))
+
+    async def list_codes(self) -> list:
+        """Every code on ANBIMA's search list for this asset, with whether it
+        is priced today. Raises unless the pages hold exactly the total that
+        ANBIMA states, so a partial list is never read as the universe."""
+        from src.parsers.anbima_listing import parse_listing
+
+        kind = self.base_url.rstrip("/").rsplit("/", 1)[1]
+        seen: dict = {}
+        n, total, expect = 0, None, 1  # the search list counts pages from 0
+        tab = await self._browser.new_page()
+        try:
+            while True:
+                # Sorted by the unique code: the default CRI/CRA sort (issue
+                # date) has ties, so its pages repeat and skip codes.
+                url = (f"{self.base_url.rsplit('/', 1)[0]}/busca/{kind}?page={n}&size={LIST_PAGE_SIZE}"
+                       "&field=codigo_b3&order=asc")
+                await self._goto(tab, url)
+                await self._wait(tab, "text=/Exibindo/", url)
+                listing = parse_listing(await self._text(tab))
+                if listing.first != expect:
+                    raise AnbimaPageError(f"{url}: shows {listing.first}-{listing.last}, expected {expect} first")
+                expect = listing.last + 1
+                if total is not None and listing.total != total:
+                    raise AnbimaPageError(f"{url}: total changed from {total} to {listing.total} mid-list")
+                total = listing.total
+                for item in listing.items:
+                    seen[item.codigo] = item
+                if listing.last >= total:
+                    break
+                n += 1
+        finally:
+            await tab.close()
+        if len(seen) != total:
+            raise AnbimaPageError(f"{kind} list: {len(seen)} distinct codes, ANBIMA states {total}")
+        return list(seen.values())
