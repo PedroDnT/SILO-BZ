@@ -17,10 +17,11 @@ after daily    watchdog       stale/unhealed? re-run run_daily, B3 events, marke
 05:00 (08:00)  publish_check  public URL stale? promote; ERRORed → red
 after a run    publish_check  green daily run, or red with hook done: wait ≤45 min, promote
                               (no-op today; item 8)
+Sat 09:00 (12:00) anbima_capture priced codes; private
 Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 ```
 
-`rj_collect` (RJ, #877) and `anbima_capture` (#1006, #1014) are dispatch-only.
+`rj_collect` (RJ, #877) is dispatch-only.
 
 ## A red day
 
@@ -45,7 +46,7 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 - A merge deploys nothing to the database. Migrations apply on the next
   workflow run, analytical SQL on the next scheduled run or `analytics-only`.
   `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo
-  (`deploy/cloudflare/`) needs `deploy_cloudflare.yml`, which ends with a
+  needs `deploy_cloudflare.yml`, which ends with a
   paid end-to-end report.
 - Dashboard merges do not publish (`vercel.json` disables production Git
   deploys); the deploy hook does, after a weekday scheduled apply or
