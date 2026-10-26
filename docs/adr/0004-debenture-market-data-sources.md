@@ -38,3 +38,27 @@ and is not needed once REUNE's traded rates can be stored.
   permission removes the source; a fork of this repo does not inherit it.
 - B3's terms restrict redistribution; the owner accepted the same posture as COTAHIST.
 - `ConsolidatedRecords` is a slow ratchet: a month not captured within 18 months is lost.
+
+## Amendment, 2026-10-26 (#1007, owner decision of 2026-10-21)
+
+Two parts of this ADR did not survive contact with the source, and one is lifted on purpose.
+
+- **REUNE gives indicative rates, not traded ones** (#1006). ANBIMA's public pages show only the
+  last 5 sessions of an indicative rate, a model value, and its full history is the paid ANBIMA
+  Feed. SILO captures those 5 sessions weekly, forward only, into `anbima_debenture_indicative`,
+  as published. The "daily min/avg/max traded rate from 2018-01-01" above does not exist for free.
+- **"No cash-flow engine in V1" is lifted for one derivative.** `b3_credit_implied_rate` holds, for
+  each B3 traded average PU in `fact_credit_market`, the yield that discounts the bond's published
+  agenda (`anbima_debenture_event`) to that PU. Each row is marked calculated and carries its
+  `method_version`, the B3 capture id and every input. It is deterministic, so the same inputs give
+  the same row. It sits in its own table: the source rows are never changed, and a column of
+  `fact_credit_market` never holds it. A bond or input it cannot price writes no row and is counted
+  in the `cvm_ingest_log` note, never guessed. The method is `docs/reference/research/debenture-implied-rate.md`.
+- **Why this does not break #605.** That rule bans numbers from a language model. This is a
+  published calculation, as a yield from a price is. It is still not an observation: a label
+  says so, and the rate is never presented as a traded or contracted rate.
+- **Checked against ANBIMA** on 2026-10-21 (6 bonds: PRE, DI+, % of DI, IPCA+): gaps 0.0 to 2.9
+  basis points. The interest ANBIMA lists as paid is reproduced to the cent.
+- **Still internal.** The table is private (no grant, RLS on). Nothing from it reaches schema
+  `api`, `serve/`, the MCP or the dashboard until the owner approves. The ANBIMA permission covers
+  collection and storage only, and the calculation reads ANBIMA's agenda.

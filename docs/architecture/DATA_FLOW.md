@@ -32,12 +32,13 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   otherwise. Deep history is manual: `backfill.yml`, `market_backfill.yml`,
   `daily_ingest` modes `b3-backfill`, `b3-trade-consolidated` (kept from
   2025-06-10), `b3-credit`, `b3-corporate-events-full`.
-- A re-read CDA month replaces the rows of each fund in the file, so a dropped
+- A re-read CDA month replaces each fund's rows in the file, so a dropped
   or re-filed position goes (`cvm_ingest_log.rows_deleted`); absent funds keep theirs.
 - B3 BDI (lending, investor flow): a ratchet, no backfill ([SYSTEM](SYSTEM.md)).
 - OTC DEB (74): raw CSV + knowledge time; missing sessions fail it.
-- ANBIMA debentures, CRI/CRA (80, 82, Playwright, manual): terms, agenda, 5-session
-  rates; raw text only on a parse failure. CVM offerings (81): backfill.
+- ANBIMA debentures, CRI/CRA (80, 82, Playwright): terms, agenda, 5-session
+  rates; raw text only on a parse failure. CVM offerings (81): backfill. B3 DEB
+  implied rates (83): calculated, private.
 
 ## Analytical
 
@@ -48,7 +49,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   because a view depends on the first. The same apply refreshes them
   (`22_b3_tape_matviews.sql`) and `mv_b3_cash_event` (migration 56; it reads
   `cia_ticker`): the cash events behind `close_total_return`, resolved once
-  because the ISIN join costs seconds per call.
+  (the ISIN join is slow).
 - `mv_fund_holdings_monthly` (`30_fund_holdings.sql`) is the one daily pass over
   the CDA holdings tables (no period index); `/holdings` reads it.
 - `mv_fund_name_history` (`31_api_portfolio.sql`) holds every name a fund ever
@@ -60,7 +61,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   ETFs via `portfolio_class_index` (reviewed YAML) and `etf_market_snapshot`. `class_return_distribution` reads `fact_fund_monthly`;
   `portfolio_equivalents` reads the same view (approved pairs), `cvm_etf_registry`
   and `etf_market_snapshot`.
-- pg_cron is absent (2026-09-29).
+- pg_cron is absent.
 
 ## Serving
 
