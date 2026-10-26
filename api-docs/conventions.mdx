@@ -48,7 +48,7 @@ Sign in with GitHub at [silo-bz-deloslabs.vercel.app/signin.html](https://silo-b
 - **Exceeding an id ceiling is an error, not a trim.** `22023` (HTTP 400) naming the limit.
 - **The token lasts about an hour, and expiry is silent.** No `401`: you drop back to the anonymous tier, and a four-id `panel` starts raising `22023`.
 
-**Not reachable**: landing tables (`cvm_*`, `b3_cotahist`, `cia_*`, `bacen_*`) carry no grant for either role (`Accept-Profile: public` returns `401`). Schema `api` is the whole public surface; the list for your server is `catalog().postgrest`. If `api` is not the default schema, add `Accept-Profile: api` to GET and `Content-Profile: api` to POST.
+**Not reachable**: landing tables (`cvm_*`, `b3_cotahist`, `cia_*`, `bacen_*`) carry no grant for either role (`Accept-Profile: public` returns `401`). `api.ptax_daily` is a view on top of `bacen_ptax`; the table itself stays closed. Schema `api` is the whole public surface; the list for your server is `catalog().postgrest`. If `api` is not the default schema, add `Accept-Profile: api` to GET and `Content-Profile: api` to POST.
 
 ### Two shapes of endpoint
 

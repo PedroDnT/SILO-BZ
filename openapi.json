@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "76",
+    "version": "77",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
     "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Fifty-nine set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other fifty-four ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Three other functions (`search_funds`,\n  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
@@ -1719,6 +1719,219 @@
                           "string",
                           "null"
                         ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Content-Range": {
+                "description": "`0-999/*` means the page was cut at 1000. Send `Prefer: count=exact` for the total.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — a malformed filter or an unparseable argument.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/di_settlement": {
+      "get": {
+        "operationId": "get_di_settlement",
+        "summary": "di_settlement",
+        "description": "DI1 futures settlement per B3 session and contract (b3_futures_settlement, B3 Price Report, from 2018-01-02): rate_pct and prev_rate_pct are B3's settlement rate today and the session before, % a.a. on 252 business days, with open interest, contracts and trades. DI1 only; the dollar futures are api.future_curve / api.future_series. Nothing is derived. A GET returns at most 1000 rows, the OLDEST first: filter on trade_date or ticker and read Content-Range.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
+        "tags": [
+          "Rates"
+        ],
+        "parameters": [
+          {
+            "name": "select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Columns to return, comma separated. Omit for all of them."
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Sort, e.g. `trade_date.desc`. Always order a paged read, or `limit`/`offset` walk an undefined sequence."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000
+            },
+            "description": "Rows to return. The server cuts every response at 1000 whatever you ask for."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Rows to skip. Pairs with `limit` and `order` to page."
+          },
+          {
+            "name": "trade_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `trade_date` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `trade_date=eq.<value>`)."
+          },
+          {
+            "name": "ticker",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `ticker` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `ticker=eq.<value>`)."
+          },
+          {
+            "name": "rate_pct",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `rate_pct` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `rate_pct=eq.<value>`)."
+          },
+          {
+            "name": "prev_rate_pct",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `prev_rate_pct` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `prev_rate_pct=eq.<value>`)."
+          },
+          {
+            "name": "open_interest",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `open_interest` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `open_interest=eq.<value>`)."
+          },
+          {
+            "name": "contracts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `contracts` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `contracts=eq.<value>`)."
+          },
+          {
+            "name": "trades",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `trades` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `trades=eq.<value>`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "trade_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "ticker": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "rate_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "prev_rate_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "open_interest": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "contracts": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "trades": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
                       }
                     }
                   }
@@ -3942,6 +4155,171 @@
         }
       }
     },
+    "/ptax_daily": {
+      "get": {
+        "operationId": "get_ptax_daily",
+        "summary": "ptax_daily",
+        "description": "BACEN's PTAX buy and sell rate per business day and currency (bacen_ptax), BRL per ONE unit of the currency, as published. The same rows as api.ptax, for every currency at once, filtered with PostgREST syntax (?currency=eq.USD&date=gte.2026-01-01). Nothing is derived or filled. A GET returns at most 1000 rows, the OLDEST first: filter on currency and date and read Content-Range.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
+        "tags": [
+          "Macro"
+        ],
+        "parameters": [
+          {
+            "name": "select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Columns to return, comma separated. Omit for all of them."
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Sort, e.g. `trade_date.desc`. Always order a paged read, or `limit`/`offset` walk an undefined sequence."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000
+            },
+            "description": "Rows to return. The server cuts every response at 1000 whatever you ask for."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Rows to skip. Pairs with `limit` and `order` to page."
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `date` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `date=eq.<value>`)."
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `currency` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `currency=eq.<value>`)."
+          },
+          {
+            "name": "buy_rate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `buy_rate` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `buy_rate=eq.<value>`)."
+          },
+          {
+            "name": "sell_rate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `sell_rate` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `sell_rate=eq.<value>`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "currency": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "buy_rate": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "sell_rate": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Content-Range": {
+                "description": "`0-999/*` means the page was cut at 1000. Send `Prefer: count=exact` for the total.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — a malformed filter or an unparseable argument.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/quotes": {
       "get": {
         "operationId": "get_quotes",
@@ -4466,6 +4844,188 @@
                       "distribution_number": {
                         "type": [
                           "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Content-Range": {
+                "description": "`0-999/*` means the page was cut at 1000. Send `Prefer: count=exact` for the total.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — a malformed filter or an unparseable argument.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reference_rate": {
+      "get": {
+        "operationId": "get_reference_rate",
+        "summary": "reference_rate",
+        "description": "B3 reference-rate curves per session and vertex (b3_reference_rate, TaxaSwap.txt, from 2008-01-02), fixed and moving vertices together. rate_pct is as B3 publishes it, and its basis differs by curve: PRE and DPL are % a.a. on 252 business days, DOC is % a.a. linear on 360 calendar days (api.curve carries rate_basis on every row). The ingest holds PRE, DOC and DPL only. Long vertices are B3's extrapolation. A GET returns at most 1000 rows, the OLDEST first: filter on curve and trade_date and read Content-Range.\n\n**Paging.** A GET view pages normally with `limit`/`offset` (and `Range`). Every response is cut at 1000 rows server-side regardless of tier; read `Content-Range` to detect it (`0-999/*` is a truncated page, and `Prefer: count=exact` turns the `*` into the total).",
+        "tags": [
+          "Rates"
+        ],
+        "parameters": [
+          {
+            "name": "select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Columns to return, comma separated. Omit for all of them."
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Sort, e.g. `trade_date.desc`. Always order a paged read, or `limit`/`offset` walk an undefined sequence."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000
+            },
+            "description": "Rows to return. The server cuts every response at 1000 whatever you ask for."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Rows to skip. Pairs with `limit` and `order` to page."
+          },
+          {
+            "name": "trade_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `trade_date` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `trade_date=eq.<value>`)."
+          },
+          {
+            "name": "curve",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `curve` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `curve=eq.<value>`)."
+          },
+          {
+            "name": "business_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `business_days` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `business_days=eq.<value>`)."
+          },
+          {
+            "name": "calendar_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `calendar_days` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `calendar_days=eq.<value>`)."
+          },
+          {
+            "name": "rate_pct",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PostgREST filter on `rate_pct` — `eq.`, `neq.`, `gt.`, `gte.`, `lt.`, `lte.`, `in.`, `is.` (e.g. `rate_pct=eq.<value>`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "trade_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "curve": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "business_days": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "calendar_days": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "rate_pct": {
+                        "type": [
+                          "number",
                           "null"
                         ]
                       }

@@ -40,7 +40,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 76  # v76 serves the DOL and WDO dollar futures through future_curve / future_series (#1000; no new wrapper); history in serve.catalog.py.
+KNOWN_CATALOG_VERSION = 77  # v77 adds the GET views di_settlement, reference_rate and ptax_daily (no new wrapper); history in serve.catalog.py.
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.

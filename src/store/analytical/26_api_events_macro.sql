@@ -370,4 +370,24 @@ GRANT EXECUTE ON FUNCTION api.ptax(TEXT, DATE, DATE) TO silo_api;
 COMMENT ON FUNCTION api.ptax(TEXT, DATE, DATE) IS
     'BACEN''s PTAX rate for one currency, oldest first: buy_rate (compra) and sell_rate (venda) as published, BRL per ONE unit of the currency (JPY and ARS included; unit says so), one row per business day. BACEN prints up to five bulletins a day and the ingest keeps the last one received, which for a completed day is the Fechamento PTAX (measured 2026-09-22/23: USD venda equals SGS 1 and Olinda''s Fechamento to four decimals); the bulletin type is not stored. p_currency is an ISO code held in bacen_ptax; an unknown one raises 22023 listing the currencies held. Nothing is derived or filled — no mid rate, no cross rate, a holiday has no row. Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.';
 
+-- ---------------------------------------------------------------------------
+-- ptax_daily — every PTAX row as a GET view
+-- ---------------------------------------------------------------------------
+-- A view on bacen_ptax, which stays closed: the landing table has no client
+-- grant, and this view reads it as its owner. Created in the database first
+-- (2026-10) and written here so a rebuild keeps it.
+CREATE OR REPLACE VIEW api.ptax_daily AS
+SELECT
+    reference_date AS date,
+    currency,
+    buy_rate,
+    sell_rate
+FROM public.bacen_ptax;
+
+COMMENT ON VIEW api.ptax_daily IS
+    'BACEN''s PTAX buy and sell rate per business day and currency (bacen_ptax), BRL per ONE unit of the currency, as published. The same rows as api.ptax, for every currency at once, filtered with PostgREST syntax (?currency=eq.USD&date=gte.2026-01-01). Nothing is derived or filled. A GET returns at most 1000 rows, the OLDEST first: filter on currency and date and read Content-Range.';
+
+ALTER VIEW api.ptax_daily SET (security_invoker = false);
+GRANT SELECT ON api.ptax_daily TO anon, authenticated;
+
 COMMIT;

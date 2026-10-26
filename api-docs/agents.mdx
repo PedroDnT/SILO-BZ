@@ -41,6 +41,7 @@ Ceilings live in [Conventions & limits](/api-docs/conventions#authentication) an
 - **Exceeding a ceiling is a `22023` error, never a silent trim.**
 - **The token lasts about an hour and expiry is silent.** You drop to anonymous, so a four-id call starts raising `22023`. Durable per-user keys do not exist yet.
 - Landing tables (`cvm_*`, `b3_cotahist`, `cia_*`, `bacen_*`) are closed to both tiers.
+  `ptax_daily` is a view in schema `api` on top of `bacen_ptax`: you read the view, never the table.
 
 ### 3. First live call is `coverage`
 
@@ -117,4 +118,12 @@ Notebook [`04_fidc_credit`](https://github.com/PedroDnT/SILO-BZ/blob/main/notebo
 </Warning>
 
 - A fund's **name** is never a taxonomy. For "FIDCs exposed to sector X" use `fidc_portfolio` (sector and SCR ladders), `fidc_cedentes` (named originators) or `fidc_sacados` (anonymized top-25 debtors): [FIDC concentration](/api-docs/fidc).
+- Three plain `GET` views serve rates and FX rows with PostgREST filters. Each cuts at 1,000 rows and keeps the oldest, so filter on the date and read `Content-Range`. The capped functions on [Rates](/api-docs/rates) and [Macro](/api-docs/macro) stay the documented route.
+
+  | View | Rows | Same data as |
+  | --- | --- | --- |
+  | `di_settlement` | DI1 settlement per session and contract: `rate_pct`, `prev_rate_pct` (% a.a., 252 business days), `open_interest`, `contracts`, `trades` | `future_curve`, `future_series` |
+  | `reference_rate` | B3 reference curves per session and vertex: `curve`, `business_days`, `calendar_days`, `rate_pct` (basis differs by curve) | `curve`, `curve_history` |
+  | `ptax_daily` | PTAX per business day and currency: `date`, `currency`, `buy_rate`, `sell_rate` (BRL per one unit) | `ptax` |
+
 - Ingest (`run_daily`, landing tables) is out of scope for this API.

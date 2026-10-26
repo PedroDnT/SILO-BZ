@@ -139,6 +139,9 @@ export const TOOL_TITLES: ToolSpec[] = [
   t("lending_trades", "Lending trades (view)", RATCHET_LEAD()),
   t("lending_participants", "Lending participants (view)", RATCHET_LEAD()),
   t("investor_flow", "Investor flow (view)", RATCHET_LEAD()),
+  t("di_settlement", "DI1 settlement rates (view)"),
+  t("reference_rate", "B3 reference-rate curves (view)"),
+  t("ptax_daily", "PTAX buy and sell rates (view)"),
 ];
 
 /**
