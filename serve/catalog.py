@@ -600,7 +600,11 @@ __all__ = [
 # settlement_rate is NULL where B3 prints none. A root outside the three still
 # raises 22023, listing them. coverage()'s di_futures row is bounded to DI1.
 # No function added; capped count unchanged.
-CATALOG_VERSION = 76
+# v77: three GET views that were created in the database before the repo held
+# them: api.di_settlement (DI1 settlement rates, 27_api_rates.sql),
+# api.reference_rate (B3 reference curves, 27) and api.ptax_daily (PTAX, a view
+# on the closed bacen_ptax, 26_api_events_macro.sql). No function added.
+CATALOG_VERSION = 77
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -2141,6 +2145,12 @@ def catalog_payload() -> Dict[str, Any]:
             "lending_trades": "GET /rest/v1/lending_trades",
             "lending_participants": "GET /rest/v1/lending_participants",
             "investor_flow": "GET /rest/v1/investor_flow",
+            # Rates and FX as plain views (v77). The functions future_curve,
+            # curve and ptax stay the capped, documented route; these serve
+            # the same rows with PostgREST filters.
+            "di_settlement": "GET /rest/v1/di_settlement",
+            "reference_rate": "GET /rest/v1/reference_rate",
+            "ptax_daily": "GET /rest/v1/ptax_daily",
         },
     }
 

@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "76";
+export const CONTRACT_VERSION = "77";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -31,6 +31,7 @@ export const ENDPOINT_NAMES: string[] = [
   "credit_market_history",
   "curve",
   "curve_history",
+  "di_settlement",
   "equities",
   "fidc_aging",
   "fidc_cedentes",
@@ -77,9 +78,11 @@ export const ENDPOINT_NAMES: string[] = [
   "portfolio_movement",
   "portfolio_resolve",
   "ptax",
+  "ptax_daily",
   "quote_history",
   "quote_latest",
   "quotes",
+  "reference_rate",
   "research_universe",
   "rj_listed_documents",
   "screen_captive_vehicles",
@@ -643,6 +646,82 @@ export const CONTRACT: Record<string, ContractEntry> = {
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             },
             "distribution_number": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            }
+          },
+          "additionalProperties": false
+        },
+        "select": {
+          "type": "string",
+          "description": "Columns to return, comma separated. Omit for all.",
+          "pattern": "^[a-z_][a-z0-9_]*(,[a-z_][a-z0-9_]*)*$"
+        },
+        "order": {
+          "type": "string",
+          "description": "Sort, e.g. 'trade_date.desc,ticker.asc'. Always order a paged read, or limit/offset walk an undefined sequence.",
+          "pattern": "^[a-z_][a-z0-9_]*(\\.(asc|desc))?(\\.(nullsfirst|nullslast))?(,[a-z_][a-z0-9_]*(\\.(asc|desc))?(\\.(nullsfirst|nullslast))?)*$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Rows to return (the server cuts every response at 1000)."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Rows to skip. Pairs with limit and order to page."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "di_settlement": {
+    "kind": "view",
+    "path": "/di_settlement",
+    "description": "DI1 futures settlement per B3 session and contract (b3_futures_settlement, B3 Price Report, from 2018-01-02): rate_pct and prev_rate_pct are B3's settlement rate today and the session before, % a.a. on 252 business days, with open interest, contracts and trades. DI1 only; the dollar futures are api.future_curve / api.future_series. Nothing is derived. A GET returns at most 1000 rows, the OLDEST first: filter on trade_date or ticker and read Content-Range.",
+    "columns": [
+      "trade_date",
+      "ticker",
+      "rate_pct",
+      "prev_rate_pct",
+      "open_interest",
+      "contracts",
+      "trades"
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filters": {
+          "type": "object",
+          "description": "PostgREST column filters, column -> '<op>.<value>' with op in eq, neq, gt, gte, lt, lte, in, is (e.g. {\"ticker\": \"eq.PETR4\", \"trade_date\": \"gte.2026-09-01\"}; in takes 'in.(A,B)'; is takes 'is.null'). One filter per column.",
+          "properties": {
+            "trade_date": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "ticker": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "rate_pct": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "prev_rate_pct": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "open_interest": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "contracts": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "trades": {
               "type": "string",
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             }
@@ -1430,6 +1509,67 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "ptax_daily": {
+    "kind": "view",
+    "path": "/ptax_daily",
+    "description": "BACEN's PTAX buy and sell rate per business day and currency (bacen_ptax), BRL per ONE unit of the currency, as published. The same rows as api.ptax, for every currency at once, filtered with PostgREST syntax (?currency=eq.USD&date=gte.2026-01-01). Nothing is derived or filled. A GET returns at most 1000 rows, the OLDEST first: filter on currency and date and read Content-Range.",
+    "columns": [
+      "date",
+      "currency",
+      "buy_rate",
+      "sell_rate"
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filters": {
+          "type": "object",
+          "description": "PostgREST column filters, column -> '<op>.<value>' with op in eq, neq, gt, gte, lt, lte, in, is (e.g. {\"ticker\": \"eq.PETR4\", \"trade_date\": \"gte.2026-09-01\"}; in takes 'in.(A,B)'; is takes 'is.null'). One filter per column.",
+          "properties": {
+            "date": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "buy_rate": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "sell_rate": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            }
+          },
+          "additionalProperties": false
+        },
+        "select": {
+          "type": "string",
+          "description": "Columns to return, comma separated. Omit for all.",
+          "pattern": "^[a-z_][a-z0-9_]*(,[a-z_][a-z0-9_]*)*$"
+        },
+        "order": {
+          "type": "string",
+          "description": "Sort, e.g. 'trade_date.desc,ticker.asc'. Always order a paged read, or limit/offset walk an undefined sequence.",
+          "pattern": "^[a-z_][a-z0-9_]*(\\.(asc|desc))?(\\.(nullsfirst|nullslast))?(,[a-z_][a-z0-9_]*(\\.(asc|desc))?(\\.(nullsfirst|nullslast))?)*$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Rows to return (the server cuts every response at 1000)."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Rows to skip. Pairs with limit and order to page."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "quotes": {
     "kind": "view",
     "path": "/quotes",
@@ -1595,6 +1735,72 @@ export const CONTRACT: Record<string, ContractEntry> = {
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             },
             "distribution_number": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            }
+          },
+          "additionalProperties": false
+        },
+        "select": {
+          "type": "string",
+          "description": "Columns to return, comma separated. Omit for all.",
+          "pattern": "^[a-z_][a-z0-9_]*(,[a-z_][a-z0-9_]*)*$"
+        },
+        "order": {
+          "type": "string",
+          "description": "Sort, e.g. 'trade_date.desc,ticker.asc'. Always order a paged read, or limit/offset walk an undefined sequence.",
+          "pattern": "^[a-z_][a-z0-9_]*(\\.(asc|desc))?(\\.(nullsfirst|nullslast))?(,[a-z_][a-z0-9_]*(\\.(asc|desc))?(\\.(nullsfirst|nullslast))?)*$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Rows to return (the server cuts every response at 1000)."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Rows to skip. Pairs with limit and order to page."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "reference_rate": {
+    "kind": "view",
+    "path": "/reference_rate",
+    "description": "B3 reference-rate curves per session and vertex (b3_reference_rate, TaxaSwap.txt, from 2008-01-02), fixed and moving vertices together. rate_pct is as B3 publishes it, and its basis differs by curve: PRE and DPL are % a.a. on 252 business days, DOC is % a.a. linear on 360 calendar days (api.curve carries rate_basis on every row). The ingest holds PRE, DOC and DPL only. Long vertices are B3's extrapolation. A GET returns at most 1000 rows, the OLDEST first: filter on curve and trade_date and read Content-Range.",
+    "columns": [
+      "trade_date",
+      "curve",
+      "business_days",
+      "calendar_days",
+      "rate_pct"
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filters": {
+          "type": "object",
+          "description": "PostgREST column filters, column -> '<op>.<value>' with op in eq, neq, gt, gte, lt, lte, in, is (e.g. {\"ticker\": \"eq.PETR4\", \"trade_date\": \"gte.2026-09-01\"}; in takes 'in.(A,B)'; is takes 'is.null'). One filter per column.",
+          "properties": {
+            "trade_date": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "curve": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "business_days": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "calendar_days": {
+              "type": "string",
+              "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
+            },
+            "rate_pct": {
               "type": "string",
               "pattern": "^(eq|neq|gt|gte|lt|lte|in|is)\\."
             }

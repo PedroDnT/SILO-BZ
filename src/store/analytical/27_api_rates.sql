@@ -452,4 +452,44 @@ GRANT EXECUTE ON FUNCTION api.curve_history(TEXT, INT, DATE, DATE) TO silo_api;
 COMMENT ON FUNCTION api.curve_history(TEXT, INT, DATE, DATE) IS
     'One of B3''s FIXED vertices of a reference curve through time, oldest session first (b3_reference_rate, from 2008-01-02): a constant tenor exactly as B3 publishes it, never an interpolation. p_curve is PRE, DOC or DPL (see api.curve for what each is and its rate_basis, which rides on every row); p_tenor_days is the vertex''s NOMINAL tenor in calendar days (B3''s vertex_code: 1, 30, 60, 90 … 360 … 720 … 1800 … 10800), and calendar_days is its actual length that session, a day or two longer when the nominal date is not a business day. A tenor that is not one of B3''s fixed vertices raises 22023 listing the fixed tenors of the newest session; any other tenor is analysis — read api.curve and interpolate in the notebook. Long tenors sit in B3''s EXTRAPOLATED tail (past the last anchoring contract; B3 Manual de Curvas v21), which moves as contracts list and expire, so a long vertex can be extrapolation on one date and anchored on another. Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.';
 
+-- ---------------------------------------------------------------------------
+-- di_settlement, reference_rate — plain GET views over the same two tables
+-- ---------------------------------------------------------------------------
+-- Created in the database first (2026-10) and written here so a rebuild keeps
+-- them. No cap of their own: PostgREST cuts a GET at 1000 rows and keeps the
+-- OLDEST, so callers filter on trade_date and read Content-Range.
+CREATE OR REPLACE VIEW api.di_settlement AS
+SELECT
+    trade_date,
+    ticker,
+    settlement_rate      AS rate_pct,
+    prev_settlement_rate AS prev_rate_pct,
+    open_interest,
+    contracts,
+    trades
+FROM public.b3_futures_settlement
+WHERE ticker LIKE 'DI1%' AND settlement_rate IS NOT NULL;
+
+COMMENT ON VIEW api.di_settlement IS
+    'DI1 futures settlement per B3 session and contract (b3_futures_settlement, B3 Price Report, from 2018-01-02): rate_pct and prev_rate_pct are B3''s settlement rate today and the session before, % a.a. on 252 business days, with open interest, contracts and trades. DI1 only; the dollar futures are api.future_curve / api.future_series. Nothing is derived. A GET returns at most 1000 rows, the OLDEST first: filter on trade_date or ticker and read Content-Range.';
+
+ALTER VIEW api.di_settlement SET (security_invoker = false);
+GRANT SELECT ON api.di_settlement TO anon, authenticated;
+
+CREATE OR REPLACE VIEW api.reference_rate AS
+SELECT
+    trade_date,
+    curve,
+    business_days,
+    calendar_days,
+    rate AS rate_pct
+FROM public.b3_reference_rate
+WHERE curve IN ('PRE', 'DIC', 'DOL', 'DPL', 'DOC');
+
+COMMENT ON VIEW api.reference_rate IS
+    'B3 reference-rate curves per session and vertex (b3_reference_rate, TaxaSwap.txt, from 2008-01-02), fixed and moving vertices together. rate_pct is as B3 publishes it, and its basis differs by curve: PRE and DPL are % a.a. on 252 business days, DOC is % a.a. linear on 360 calendar days (api.curve carries rate_basis on every row). The ingest holds PRE, DOC and DPL only. Long vertices are B3''s extrapolation. A GET returns at most 1000 rows, the OLDEST first: filter on curve and trade_date and read Content-Range.';
+
+ALTER VIEW api.reference_rate SET (security_invoker = false);
+GRANT SELECT ON api.reference_rate TO anon, authenticated;
+
 COMMIT;

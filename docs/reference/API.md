@@ -1211,19 +1211,22 @@ POST /rest/v1/rpc/termo_history
 POST /rest/v1/rpc/trade_consolidated_history
 ```
 
-Views (13), read with `GET` and PostgREST filters:
+Views (16), read with `GET` and PostgREST filters:
 
 ```
 GET /rest/v1/auctions
 GET /rest/v1/bdrs
 GET /rest/v1/cash_securities
+GET /rest/v1/di_settlement
 GET /rest/v1/equities
 GET /rest/v1/fund_quotas
 GET /rest/v1/funds
 GET /rest/v1/investor_flow
 GET /rest/v1/lending_participants
 GET /rest/v1/lending_trades
+GET /rest/v1/ptax_daily
 GET /rest/v1/quotes
+GET /rest/v1/reference_rate
 GET /rest/v1/short_interest
 GET /rest/v1/short_interest_by_sector
 GET /rest/v1/units
