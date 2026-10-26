@@ -1,7 +1,8 @@
 # DUSTIN-BR research dataset
 
 One point-in-time row per B3 session for a Brazilian rates-regime model inspired
-by HSBC's DUSTIN framework. This builds **features only**: no model, no target.
+by HSBC's DUSTIN framework. The dataset step builds **features only**; Stage 4
+below adds the regime model, its targets and the walk-forward results.
 Sources, coverage and every availability rule:
 [`docs/reference/research/dustin_br_data_sources.md`](../../docs/reference/research/dustin_br_data_sources.md).
 
