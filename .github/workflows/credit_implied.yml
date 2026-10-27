@@ -1,0 +1,66 @@
+name: Credit Implied Rate
+
+# Implied rates of B3 traded debenture PUs into the private b3_credit_implied_rate
+# table (#1007, ADR 0004 amendment). Manual only: it is not scheduled until the
+# owner has seen a first green run. One cvm_ingest_log row (credit/implied_rate);
+# its note counts every reason a trade was not priced. The rows are calculated,
+# internal and never served.
+on:
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: "First trade date, YYYY-MM-DD"
+        required: true
+      date_to:
+        description: "Last trade date, YYYY-MM-DD"
+        required: true
+      codes:
+        description: "Comma-separated ANBIMA codes, e.g. CLAG13,RADL14. Blank: every bond with a stored agenda."
+        required: false
+        default: ""
+      refresh_holidays:
+        description: "Re-read ANBIMA's holiday list first (it is read once when the table is empty)"
+        type: boolean
+        default: false
+
+# Same writer group as daily_ingest.yml and backfill.yml: one writer at a time.
+concurrency:
+  group: supabase-ingest
+  cancel-in-progress: false
+
+jobs:
+  apply-schema:
+    name: "Apply schema"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Apply schema + migrations
+        uses: ./.github/actions/apply-schema
+        with:
+          postgres-url: ${{ secrets.POSTGRES_URL }}
+
+  compute:
+    name: "Compute implied rates"
+    needs: [apply-schema]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Compute
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          DATE_FROM: ${{ inputs.date_from }}
+          DATE_TO: ${{ inputs.date_to }}
+          CODES: ${{ inputs.codes }}
+          REFRESH: ${{ inputs.refresh_holidays }}
+        run: |
+          args=(--from "$DATE_FROM" --to "$DATE_TO")
+          if [ -n "$CODES" ]; then args+=(--codes "$CODES"); fi
+          if [ "$REFRESH" = "true" ]; then args+=(--refresh-holidays); fi
+          python -m src.pipeline.credit_implied_pipeline "${args[@]}"
