@@ -31,6 +31,7 @@ SELECT series_name,
          WHEN series_code IN (1, 21619, 25, 432) THEN 'daily-ish'
          WHEN series_code IN (433, 188, 189) THEN 'monthly'
          WHEN series_code = 4380 THEN 'monthly (GDP proxy)'
+         WHEN series_code IN (13762, 5793, 5727) THEN 'monthly, ~60 days late (fiscal)'
          ELSE 'unclassified'
        END                                                   AS cadence
   FROM bacen_sgs

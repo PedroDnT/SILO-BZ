@@ -1,9 +1,9 @@
 -- Coverage of every SGS series the pipeline is configured to ingest.
 --
 -- The driver is the literal series list from SGS_SERIES in
--- src/pipeline/bacen_pipeline.py (the ten policy / price / FX series plus the
--- 25 extra codes of INFLATION_SERIES), so the source always returns exactly
--- 35 rows and a series that has never been ingested shows up as an explicit
+-- src/pipeline/bacen_pipeline.py (the ten policy / price / FX series, the
+-- three fiscal series of FISCAL_SERIES and the 25 extra codes of
+-- INFLATION_SERIES), so the source always returns exactly 38 rows and a series that has never been ingested shows up as an explicit
 -- blank line rather than silently disappearing (or emptying the parquet and
 -- killing the build). Nothing is filled in for a missing series.
 -- tests/test_inflation_contract.py pins the inflation codes here to the
@@ -23,6 +23,9 @@ with configured (series_code, series_name, unit) as (
     (1,     'USDBRL',       'BRL per USD'),
     (21619, 'EURBRL',       'BRL per EUR'),
     (4380,  'PIB',          'R$ million, monthly, current prices'),
+    (13762, 'DBGG_PIB',          '% of GDP, monthly'),
+    (5793,  'NFSP_PRIMARIO_12M', '% of GDP, 12 months, positive = deficit'),
+    (5727,  'NFSP_NOMINAL_12M',  '% of GDP, 12 months, positive = deficit'),
     -- the IPCA set (INFLATION_SERIES); group codes 1640..1643 are
     -- Comunicação / Saúde / Despesas pessoais / Educação — measured, not IBGE's order
     (13522, 'IPCA_12M',                  '% accumulated 12 months'),

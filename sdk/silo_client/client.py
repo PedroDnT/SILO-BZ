@@ -40,7 +40,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 77  # v77 adds the GET views di_settlement, reference_rate and ptax_daily (no new wrapper); history in serve.catalog.py.
+KNOWN_CATALOG_VERSION = 78  # v78 adds three fiscal series (% of GDP) to macro_series (no new wrapper); history in serve.catalog.py.
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -1560,7 +1560,8 @@ class SiloClient:
         next Copom date), SELIC_DIARIA / CDI % per business day, IGPM / INPC %
         change in the month, POUPANCA the old-rule return over the month
         starting that anniversary day, USDBRL / EURBRL BRL per unit, PIB R$
-        millions. An IPCA code is refused (use `inflation`); an unknown series
+        millions, DBGG_PIB / NFSP_PRIMARIO_12M / NFSP_NOMINAL_12M % of GDP
+        (NFSP positive = deficit). An IPCA code is refused (use `inflation`); an unknown series
         is a `SiloError` (22023) listing what exists. Default window 12 months
         (daily series) or 120 (monthly). No cursor: narrow the window.
         """

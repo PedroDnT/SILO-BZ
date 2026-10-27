@@ -25,11 +25,11 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   (`cvm_source_validator`, 7 days) for CDA, FII, FIP, SECURIT, CIA IPE/FCA; a
   304 is `skipped`, `unchanged:`, fresh to `check_staleness.py`.
 - Daily windows heal late publication: CVM 4 months (gap-aware), the four CDA
-  blocks every month through M+5 (completed about 90 days late), last
+  blocks every month through M+5 (about 90 days late), last
   year's FII files in January-March, COTAHIST and B3's consolidated trade file
-  (in `run_b3_events`) 7 days, BACEN 30 days. Current-year ITR/DFP: full on
+  (in `run_b3_events`) 7 days, BACEN 30 days, fiscal SGS 150. Current-year ITR/DFP: full on
   Monday (CVM regenerates them Sunday), new documents and lineless headers
-  otherwise. Deep history is manual: `backfill.yml`, `market_backfill.yml`,
+  otherwise. Deep history: `backfill.yml`, `market_backfill.yml`,
   `daily_ingest` modes `b3-backfill`, `b3-trade-consolidated` (kept from
   2025-06-10), `b3-credit`, `b3-corporate-events-full`.
 - A re-read CDA month replaces each fund's rows in the file, so a dropped

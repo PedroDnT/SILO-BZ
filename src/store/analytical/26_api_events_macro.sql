@@ -44,6 +44,9 @@
 -- one value per anniversary day, each the return over the month that starts
 -- on that date — not a calendar-month figure; SELIC_DIARIA (11) and CDI (12)
 -- are percent per business day.
+-- The fiscal series (DBGG_PIB 13762, NFSP_PRIMARIO_12M 5793, NFSP_NOMINAL_12M
+-- 5727, % of GDP) were checked there on 2026-10-27; NFSP is a borrowing
+-- requirement, so positive = deficit.
 --
 -- ptax. bacen_ptax holds one row per (currency, day): BRL per ONE unit of the
 -- currency (JPY included), compra and venda. BACEN publishes up to five
@@ -207,14 +210,17 @@ AS $$
         ('POUPANCA',     25,    'pct_period',   'daily'),
         ('USDBRL',       1,     'brl_per_usd',  'daily'),
         ('EURBRL',       21619, 'brl_per_eur',  'daily'),
-        ('PIB',          4380,  'brl_million',  'monthly')
+        ('PIB',          4380,  'brl_million',  'monthly'),
+        ('DBGG_PIB',          13762, 'pct_gdp', 'monthly'),
+        ('NFSP_PRIMARIO_12M', 5793,  'pct_gdp', 'monthly'),
+        ('NFSP_NOMINAL_12M',  5727,  'pct_gdp', 'monthly')
     ) AS r(series, sgs_code, unit, frequency);
 $$;
 
 REVOKE ALL ON FUNCTION api.macro_registry() FROM PUBLIC;
 
 COMMENT ON FUNCTION api.macro_registry() IS
-    'Internal. The series api.macro_series serves — label, SGS code, unit, frequency — mirrored from SGS_SERIES minus INFLATION_SERIES in src/pipeline/bacen_pipeline.py. Units: pct_year = % a.a. (the Copom target), pct_day = % per business day, pct_month = % change in the month, pct_period = % over the month starting on that anniversary day (old-rule poupança), brl_per_usd / brl_per_eur = BRL per unit, brl_million = R$ millions at current prices.';
+    'Internal. The series api.macro_series serves — label, SGS code, unit, frequency — mirrored from SGS_SERIES minus INFLATION_SERIES in src/pipeline/bacen_pipeline.py. Units: pct_year = % a.a. (the Copom target), pct_day = % per business day, pct_month = % change in the month, pct_period = % over the month starting on that anniversary day (old-rule poupança), brl_per_usd / brl_per_eur = BRL per unit, brl_million = R$ millions at current prices, pct_gdp = % of GDP.';
 
 -- ---------------------------------------------------------------------------
 -- macro_series — one non-inflation SGS series, as published
@@ -300,7 +306,7 @@ GRANT EXECUTE ON FUNCTION api.macro_series(TEXT, DATE, DATE) TO anon, authentica
 GRANT EXECUTE ON FUNCTION api.macro_series(TEXT, DATE, DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.macro_series(TEXT, DATE, DATE) IS
-    'One non-inflation BACEN SGS series as published, oldest first, the unit on every row: SELIC_META (432, % a.a., the Copom target — dated per calendar day and published AHEAD to the next meeting, so an explicit p_to after today can return forward-dated rows), SELIC_DIARIA (11) and CDI (12, % per business day), IGPM (189) and INPC (188, % change in the month), POUPANCA (25, the OLD-RULE deposit return for deposits until 2012-05-03: one value per anniversary day, each the return over the month starting that day — not a calendar-month figure), USDBRL (1) and EURBRL (21619, BRL per unit, SGS''s selling rates; PTAX buy and sell per currency are api.ptax), PIB (4380, monthly GDP, R$ millions, current prices). p_series takes the label or the SGS code; an IPCA code is refused with a pointer to api.inflation, and an unknown series raises 22023 listing what exists. Nothing is derived, annualised or filled; a missing day stays missing. Default window 12 months for the daily series, 120 for the monthly ones. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.';
+    'One non-inflation BACEN SGS series as published, oldest first, the unit on every row: SELIC_META (432, % a.a., the Copom target — dated per calendar day and published AHEAD to the next meeting, so an explicit p_to after today can return forward-dated rows), SELIC_DIARIA (11) and CDI (12, % per business day), IGPM (189) and INPC (188, % change in the month), POUPANCA (25, the OLD-RULE deposit return for deposits until 2012-05-03: one value per anniversary day, each the return over the month starting that day — not a calendar-month figure), USDBRL (1) and EURBRL (21619, BRL per unit, SGS''s selling rates; PTAX buy and sell per currency are api.ptax), PIB (4380, monthly GDP, R$ millions, current prices), and three fiscal series in % of GDP, monthly, published about 60 days after the reference month: DBGG_PIB (13762, general-government gross debt, 2008 methodology), NFSP_PRIMARIO_12M (5793) and NFSP_NOMINAL_12M (5727), the consolidated public sector borrowing requirement over 12 months, primary and nominal result, without exchange devaluation — a positive value is a DEFICIT. p_series takes the label or the SGS code; an IPCA code is refused with a pointer to api.inflation, and an unknown series raises 22023 listing what exists. Nothing is derived, annualised or filled; a missing day stays missing. Default window 12 months for the daily series, 120 for the monthly ones. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.';
 
 -- ---------------------------------------------------------------------------
 -- ptax — PTAX buy / sell per currency, as published

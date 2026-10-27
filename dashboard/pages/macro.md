@@ -5,7 +5,7 @@ sidebar_position: 2
 ---
 
 <!--
-  BACEN side: bacen_sgs (35 SGS series incl. the 26-code IPCA set, api.inflation),
+  BACEN side: bacen_sgs (38 SGS series incl. the 26-code IPCA set, api.inflation),
   ibge_ipca_item_monthly (IPCA tree with weights, api.inflation_items), bacen_ptax,
   bacen_expectativas (Focus; baseCalculo=0 and Suavizada='N' are fetch-time filters,
   not key columns; the series query pins horizon = survey calendar year).
@@ -401,9 +401,9 @@ title="PTAX Month-End — USD, EUR, GBP"
 
 ## SGS Series Coverage
 
-> All 35 configured series, each with its own unit; a series with no observations shows blank counts. `Last Value` is in the unit on its own row: do not read the column down the page.
+> All 38 configured series, each with its own unit; a series with no observations shows blank counts. `Last Value` is in the unit on its own row: do not read the column down the page.
 
-<DataTable data={macro_series_inventory} rows=35>
+<DataTable data={macro_series_inventory} rows=38>
   <Column id=series_code title="SGS Code"/>
   <Column id=series_name title="Series"/>
   <Column id=unit title="Unit (as published)"/>

@@ -75,6 +75,19 @@ INFLATION_SERIES: Dict[str, tuple] = {
     "IPCA_G_EDUCACAO":          (1643,  "group",          "pct_month",  "IPCA - 8. Educação"),
 }
 
+# BACEN fiscal statistics (Estatísticas fiscais), served by api.macro_series.
+# Codes and names verified 2026-10-27 against api.bcb.gov.br (Aug/26: 82.87,
+# 0.62, 9.48). NFSP = necessidades de financiamento do setor público, so a
+# positive value is a deficit. Month M is dated 01/M and published about 60
+# days later: the daily 30-day window never reaches it, so ingest_sgs fetches
+# this set from SGS_LAGGED_LOOKBACK_DAYS back.
+FISCAL_SERIES: Dict[str, int] = {
+    "DBGG_PIB":          13762,  # Dívida bruta do governo geral (% PIB), metodologia a partir de 2008
+    "NFSP_PRIMARIO_12M": 5793,   # NFSP sem desvalorização cambial, 12 meses, resultado primário, setor público consolidado
+    "NFSP_NOMINAL_12M":  5727,   # the same, resultado nominal
+}
+SGS_LAGGED_LOOKBACK_DAYS = 150
+
 SGS_SERIES: Dict[str, int] = {
     "SELIC_META":   432,
     "SELIC_DIARIA": 11,
@@ -86,6 +99,9 @@ SGS_SERIES: Dict[str, int] = {
     "EURBRL":       21619,
     "POUPANCA":     25,
     "PIB":          4380,
+    # Fiscal, % of GDP, monthly: published about 60 days after the reference
+    # month, so ingest_sgs fetches them with a longer window (FISCAL_SERIES).
+    **FISCAL_SERIES,
     # The inflation set. IPCA (433) is in both and must agree.
     **{label: spec[0] for label, spec in INFLATION_SERIES.items()},
 }
@@ -263,13 +279,20 @@ class BacenIngestor:
         logger.info("SGS: start=%s end=%s series=%d", start, end, len(series))
         total = 0
 
-        # Fetch all series in one call (python-bcb returns a multi-column df)
+        # Two calls: the lagged fiscal set needs a window that reaches back past
+        # its publication delay; the rest keeps the normal (or catch-up) start.
+        lagged_start = min(
+            start, (today - timedelta(days=SGS_LAGGED_LOOKBACK_DAYS)).isoformat()
+        )
+        prompt = {k: v for k, v in series.items() if k not in FISCAL_SERIES}
+        fetched: List[tuple] = []
         try:
-            records = await self._client.get_sgs_series(
-                codes=series,
-                start=start,
-                end=end,
-            )
+            for codes, since in ((prompt, start), (FISCAL_SERIES, lagged_start)):
+                fetched.append((codes, await self._client.get_sgs_series(
+                    codes=codes,
+                    start=since,
+                    end=end,
+                ) or []))
         except BacenHostUnresolved as exc:
             # The one failure that is the source's and not ours: the host name
             # does not exist. Tolerated only while the last good load is recent;
@@ -291,28 +314,29 @@ class BacenIngestor:
             # exception; anything that reaches here is a broken fetch.
             raise RuntimeError(f"SGS fetch failed: {exc}") from exc
 
-        if not records:
+        if not any(records for _, records in fetched):
             # Every series empty for the window is possible only for a window
             # with no business day; visible, not silent.
             logger.warning("SGS: no data returned for %s–%s", start, end)
             return 0
 
-        # Flatten: one row per (series_name, date)
+        # Flatten: one row per (series_name, date), each call's own labels
         rows: List[Dict[str, Any]] = []
-        for rec in records:
-            ref_date = rec.get("date") or rec.get("Date")
-            if not ref_date:
-                continue
-            for series_name, series_code in series.items():
-                value = rec.get(series_name)
-                if value is None:
+        for codes, records in fetched:
+            for rec in records:
+                ref_date = rec.get("date") or rec.get("Date")
+                if not ref_date:
                     continue
-                rows.append({
-                    "series_code":    series_code,
-                    "series_name":    series_name,
-                    "reference_date": str(ref_date)[:10],  # keep only date part
-                    "value":          float(value) if value is not None else None,
-                })
+                for series_name, series_code in codes.items():
+                    value = rec.get(series_name)
+                    if value is None:
+                        continue
+                    rows.append({
+                        "series_code":    series_code,
+                        "series_name":    series_name,
+                        "reference_date": str(ref_date)[:10],  # keep only date part
+                        "value":          float(value) if value is not None else None,
+                    })
 
         total = upsert_rows(
             self._supabase, "bacen_sgs", rows,
