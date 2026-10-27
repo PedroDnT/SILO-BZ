@@ -30,7 +30,9 @@ import pytest
 
 from src.fetchers.bacen_fetcher import BacenClient, BacenFetchError, BacenHostUnresolved
 from src.pipeline.bacen_pipeline import (
+    FISCAL_SERIES,
     LOG_ENTITY,
+    SGS_LAGGED_LOOKBACK_DAYS,
     BacenIngestor,
     sgs_catchup_start,
 )
@@ -250,6 +252,7 @@ async def test_once_the_host_answers_the_days_missed_are_fetched_and_stored(monk
     fetch = AsyncMock(side_effect=[
         BacenHostUnresolved("SGS SELIC_META (432): failed after 4 attempts: Name or service not known"),
         records,
+        [],  # the lagged fiscal set, fetched in its own call
     ])
     ing = _ingestor(last_ok=last_ok, fetch=fetch)
     stored: List[Dict[str, Any]] = []
@@ -266,7 +269,46 @@ async def test_once_the_host_answers_the_days_missed_are_fetched_and_stored(monk
     assert isinstance(first, Outcome) and first.status == "skipped"
     assert second == 5 and len(stored) == 5
     assert {r["reference_date"] for r in stored} == {r["date"] for r in records}
-    starts = [call.kwargs["start"] for call in fetch.await_args_list]
+    starts = [call.kwargs["start"] for call in fetch.await_args_list
+              if call.kwargs["codes"] is not FISCAL_SERIES]
     assert starts == [(last_ok - timedelta(days=1)).isoformat()] * 2, (
         "both loads start at the last good one, not at the 30-day window"
     )
+
+
+# ── the lagged fiscal set ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_the_fiscal_set_is_fetched_from_past_its_publication_delay(monkeypatch):
+    """BACEN dates fiscal month M on 01/M and publishes it ~60 days later: a 30-day
+    window never reaches it, so the fiscal call starts SGS_LAGGED_LOOKBACK_DAYS back."""
+    monkeypatch.delenv("BACEN_SGS_CATCHUP_MAX_DAYS", raising=False)
+    month = _ago(70).replace(day=1).isoformat()
+
+    async def fetch(codes, start, end):
+        if codes is FISCAL_SERIES:
+            return [{"date": month, "DBGG_PIB": 82.87, "NFSP_PRIMARIO_12M": 0.62}]
+        return [{"date": _ago(1).isoformat(), "CDI": 0.055}]
+
+    ing = _ingestor(last_ok=_ago(1), fetch=AsyncMock(side_effect=fetch))
+    stored: List[Dict[str, Any]] = []
+    with patch("src.pipeline.bacen_pipeline.upsert_rows",
+               side_effect=lambda c, t, rows, **kw: stored.extend(rows) or len(rows)):
+        n = await ing.ingest_sgs(_ago(30).isoformat())
+
+    calls = {id(c.kwargs["codes"]): c.kwargs["start"] for c in ing._client.get_sgs_series.await_args_list}
+    assert calls[id(FISCAL_SERIES)] == _ago(SGS_LAGGED_LOOKBACK_DAYS).isoformat()
+    assert len(calls) == 2 and _ago(30).isoformat() in calls.values()
+    assert n == 3
+    assert {(r["series_code"], r["reference_date"]) for r in stored} == {
+        (12, _ago(1).isoformat()), (13762, month), (5793, month),
+    }
+
+
+def test_the_fiscal_set_is_served_and_the_lookback_outlasts_the_delay():
+    from src.pipeline.bacen_pipeline import INFLATION_SERIES, SGS_SERIES
+
+    assert FISCAL_SERIES == {"DBGG_PIB": 13762, "NFSP_PRIMARIO_12M": 5793, "NFSP_NOMINAL_12M": 5727}
+    assert all(SGS_SERIES[k] == v and k not in INFLATION_SERIES for k, v in FISCAL_SERIES.items())
+    assert SGS_LAGGED_LOOKBACK_DAYS >= 120

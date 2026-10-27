@@ -138,7 +138,7 @@ Each endpoint's page has the detail; this maps table to endpoint.
 | `fnet_document_pair`, `fnet_document_diff` | Since v40: `fund_restatement_diff` and `fund_restatements`' `diff_status` / `n_fields_changed`. Restatements delivered from 2026 on; no document body is kept. [Fund documents and restatements](/api-docs/fnet-documents) |
 | `cia_event` | Since v38: `company_events`, one `coverage()` row; from 2015, protocol-less filings are not held. [Company events](/api-docs/company-events) |
 | `b3_futures_settlement`, `b3_reference_rate` | Since v42: [`future_curve` / `future_series`](/api-docs/rates) (from 2018) and [`curve` / `curve_history`](/api-docs/rates) (from 2008; never interpolated; the long end is B3's extrapolation), two `coverage()` rows |
-| `bacen_sgs` (nine non-inflation series), `bacen_ptax` | Since v38: `macro_series` (unit on every row) and `ptax`, two `coverage()` rows. [Macro series and PTAX](/api-docs/macro) |
+| `bacen_sgs` (twelve non-inflation series, three of them fiscal in % of GDP since v78), `bacen_ptax` | Since v38: `macro_series` (unit on every row) and `ptax`, two `coverage()` rows. [Macro series and PTAX](/api-docs/macro) |
 | Forensic screens over `cvm_fidc_aging`, `cvm_fidc_mensal`, `cvm_fii_mensal`, `cvm_securit_serie`, `fact_fund_monthly` | Seven `screen_*` functions as signals; every row carries `screen` and `params`; no score. [Forensic screens](/api-docs/screens) |
 | FNET register and `dim_fund` / `cvm_fund_registry`, as filing behaviour | Since v37: `screen_restatements`, `screen_late_filers` (deadline from Resolução CVM 175, cited on every row), `screen_silent_filers`. [Filing-behaviour screens](/api-docs/filing-screens) |
 

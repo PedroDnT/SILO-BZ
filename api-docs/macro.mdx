@@ -41,12 +41,15 @@ arithmetic.
 | `USDBRL` | 1 | `brl_per_usd` | daily | SGS's BRL/USD selling rate |
 | `EURBRL` | 21619 | `brl_per_eur` | daily | SGS's BRL/EUR selling rate |
 | `PIB` | 4380 | `brl_million` | monthly | monthly GDP, R$ millions, current prices |
+| `DBGG_PIB` | 13762 | `pct_gdp` | monthly | general-government gross debt, % of GDP (2008 methodology) |
+| `NFSP_PRIMARIO_12M` | 5793 | `pct_gdp` | monthly | public sector borrowing requirement, primary, 12 months, % of GDP |
+| `NFSP_NOMINAL_12M` | 5727 | `pct_gdp` | monthly | the same, nominal result (interest included) |
 
 An IPCA label or code is refused with a pointer to `inflation`; anything else
-unknown raises `22023` listing the nine. Default window: 12 months for the daily
+unknown raises `22023` listing the twelve. Default window: 12 months for the daily
 series, 120 for the monthly ones.
 
-### Three series that are easy to misread
+### Four series that are easy to misread
 
 - **`SELIC_META` is published ahead.** BACEN dates the target per calendar day
   and carries it forward to the next Copom meeting (on 2026-09-25 the series
@@ -55,6 +58,9 @@ series, 120 for the monthly ones.
 - **`CDI` and `SELIC_DIARIA` are per business day.** `0.050788` is % per day,
   not per year. Compounding it to an annual rate is your calculation — do it in
   the notebook and say so.
+- **`NFSP_*` is a borrowing requirement.** A positive value is a deficit, a
+  negative one a surplus. BACEN dates the fiscal month on its first day and
+  publishes it about 60 days later, so the newest row is two months old.
 - **`POUPANCA` is the old-rule return, per anniversary day.** SGS 25 is BACEN's
   _Depósitos de poupança até 03.05.2012 – Rentabilidade no período_: one value
   per anniversary day, each the return over the month that starts on that date.
