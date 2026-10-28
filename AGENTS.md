@@ -78,6 +78,11 @@ before asking the owner a design or hosting question. If the answer is already i
 the code or recorded decisions, state what you found and ask only about the
 remaining ambiguity.
 
+### Public-facing output
+
+Do not name upstream data sources or vendors in public-facing output (docs, landing
+pages, commit messages) unless the owner says to.
+
 ### Discovery is not prioritization (owner's rule)
 
 An agent may discover problems, but discovering one does not make it the
