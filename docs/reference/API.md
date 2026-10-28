@@ -1130,6 +1130,41 @@ several groups can share a date. Raw captures and fact tables stay private.
 
 Rollout and evidence checklist: [credit serving acceptance](credit-market-serving-rollout.md).
 
+## Debenture implied rate (calculated)
+
+`api.credit_implied_rate(p_code, p_from, p_to)` (`38_api_credit_implied.sql`,
+catalog v79, #1007) serves the **calculated** yield of each B3 traded debenture
+average PU. It is not an observation: `is_calculated` is always true, and
+`method_version` says how (v1: 252 business days, the ANBIMA holiday table, a
+flat-forward pre curve from B3 TaxaSwap). The method and its first check are in
+[debenture-implied-rate.md](research/debenture-implied-rate.md). As with any
+new function, a merge alone does not apply analytical SQL or deploy the remote
+tool: check the live catalog.
+
+```json
+{"p_code": "TEST01", "p_from": "2026-10-02", "p_to": "2026-10-08"}
+```
+
+`TEST01` is an illustrative code. One row per `(trade_date, settlement_date,
+trade_classification, method_version)`, oldest first: `implied_rate_pct` and
+`rate_basis` (`pre_aa`, `ipca_real_aa`, `di_spread_aa` in percent a year;
+`pct_di` in percent of DI), the contracted `contract_rate_pct`, the PU,
+quantity, volume and trade count it came from, `flows_used`, the B3
+`b3_capture_id` and `computed_at`. It is the yield of an average PU, read as
+dirty, never a traded or contracted rate. A trade group the method cannot
+price has no row.
+
+Three tags say how far to trust a row: `confidence` (`checked`, `divergent` or
+`unchecked`), `outlier` and `thin_trade`. They come from a private comparison
+with ANBIMA's indicative rate of the same code and day: `checked` within 1 pp,
+`divergent` beyond it, `unchecked` when no comparable rate exists (ANBIMA
+keeps 5 sessions per capture). `unchecked` means no check was possible, not
+that the row is good. `outlier` is divergent by more than 5 pp; `thin_trade` is
+volume under BRL 20 thousand. **ANBIMA's own rate and the gap to it are not
+served.** Unknown codes raise `22023`; more than 1,000 rows raises `22023`
+without trimming: narrow the window. Executed check:
+`tests/sql/credit_implied_rate_behaviour.sql` in CI's `sql-compile` job.
+
 ## Endpoint index
 
 Every route in the `postgrest` section of `api.catalog()` (`serve/catalog.py`),
@@ -1149,6 +1184,7 @@ POST /rest/v1/rpc/class_return_distribution
 POST /rest/v1/rpc/company_events
 POST /rest/v1/rpc/company_financials
 POST /rest/v1/rpc/coverage
+POST /rest/v1/rpc/credit_implied_rate
 POST /rest/v1/rpc/credit_market_history
 POST /rest/v1/rpc/curve
 POST /rest/v1/rpc/curve_history

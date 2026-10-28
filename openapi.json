@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "78",
+    "version": "79",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
-    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Fifty-nine set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other fifty-four ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Three other functions (`search_funds`,\n  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
+    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Sixty set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other fifty-five ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Three other functions (`search_funds`,\n  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
       "name": "See repository",
       "url": "https://github.com/PedroDnT/SILO-BZ"
@@ -6634,6 +6634,238 @@
                         "format": "date-time"
                       },
                       "landed_git_sha": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/credit_implied_rate": {
+      "post": {
+        "operationId": "rpc_credit_implied_rate",
+        "summary": "credit_implied_rate",
+        "description": "CALCULATED, not observed: the yield that discounts a debenture's published agenda (coupons, amortisation, maturity) to the average PU of a B3 trade group (api.credit_market_history avg_price), one row per trade_date, settlement_date, trade_classification and method_version, oldest first. is_calculated is always true; method_version says how (v1: 252 business days, ANBIMA holiday table, flat-forward pre curve from B3 TaxaSwap). rate_basis says what implied_rate_pct is: pre_aa, ipca_real_aa and di_spread_aa are percent a year; pct_di is a percent of DI. contract_rate_pct is the contracted rate for comparison. The PU is read as dirty; the average PU of a group mixes the trades of the day, and a yield of an average is not an average of yields. A trade group the method cannot price has no row (the daily log counts why), never a guess. Check tags: confidence is checked, divergent or unchecked against ANBIMA's indicative rate of the same code and day (within 1 pp, more than 1 pp, or no comparable rate); outlier is divergent by more than 5 pp; thin_trade is volume under BRL 20 thousand. unchecked means no check was possible, not that the row is good. ANBIMA's own rate and the gap to it are not served. In the first run (2026-10-01 to 10-26) the median absolute gap to ANBIMA was 0.13 pp; the worst gaps were thin trades. Unknown code (no calculated rate) raises 22023; a known code with no rows in the window returns an empty set. Row cap: more than 1000 rows RAISES 22023, never trimmed; narrow p_from/p_to. No cursor.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Quotes"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `(CURRENT_DATE - 365)`."
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `CURRENT_DATE`."
+                  }
+                },
+                "required": [
+                  "p_code"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "instrument_code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "trade_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "settlement_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "trade_classification": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "method_version": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "is_calculated": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "pu_brl": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "quantity": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "volume_brl": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "trade_count": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "indexador": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "forma_remuneracao": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "contract_rate_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "implied_rate_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "rate_basis": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "flows_used": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "confidence": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "outlier": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "thin_trade": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "b3_capture_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      },
+                      "computed_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "source": {
                         "type": [
                           "string",
                           "null"

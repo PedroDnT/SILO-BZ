@@ -111,6 +111,7 @@ export const TOOL_TITLES: ToolSpec[] = [
   t("index_history", "Index levels (B3 total-return indices), by index code"),
   // B3's FORWARD segment: the fixed-income ETFs COTAHIST does not carry.
   t("credit_market_history", "Debenture market observations with audited capture cutoffs"),
+  t("credit_implied_rate", "Debenture implied rate: the CALCULATED yield of a B3 traded PU, with check tags"),
   t("trade_consolidated_history", "Fixed-income ETF prints (B3 FORWARD), close = last_price"),
   // The portfolio-diagnosis reads: statement lines to funds (ambiguity flagged,
   // never picked), disclosed fee beside a balancete estimate, look-through.

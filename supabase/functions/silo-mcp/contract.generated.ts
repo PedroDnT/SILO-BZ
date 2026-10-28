@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "78";
+export const CONTRACT_VERSION = "79";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -28,6 +28,7 @@ export const ENDPOINT_NAMES: string[] = [
   "company_events",
   "company_financials",
   "coverage",
+  "credit_implied_rate",
   "credit_market_history",
   "curve",
   "curve_history",
@@ -2190,6 +2191,42 @@ export const CONTRACT: Record<string, ContractEntry> = {
     "inputSchema": {
       "type": "object",
       "properties": {},
+      "additionalProperties": false
+    }
+  },
+  "credit_implied_rate": {
+    "kind": "rpc",
+    "path": "/rpc/credit_implied_rate",
+    "description": "CALCULATED, not observed: the yield that discounts a debenture's published agenda (coupons, amortisation, maturity) to the average PU of a B3 trade group (api.credit_market_history avg_price), one row per trade_date, settlement_date, trade_classification and method_version, oldest first. is_calculated is always true; method_version says how (v1: 252 business days, ANBIMA holiday table, flat-forward pre curve from B3 TaxaSwap). rate_basis says what implied_rate_pct is: pre_aa, ipca_real_aa and di_spread_aa are percent a year; pct_di is a percent of DI. contract_rate_pct is the contracted rate for comparison. The PU is read as dirty; the average PU of a group mixes the trades of the day, and a yield of an average is not an average of yields. A trade group the method cannot price has no row (the daily log counts why), never a guess. Check tags: confidence is checked, divergent or unchecked against ANBIMA's indicative rate of the same code and day (within 1 pp, more than 1 pp, or no comparable rate); outlier is divergent by more than 5 pp; thin_trade is volume under BRL 20 thousand. unchecked means no check was possible, not that the row is good. ANBIMA's own rate and the gap to it are not served. In the first run (2026-10-01 to 10-26) the median absolute gap to ANBIMA was 0.13 pp; the worst gaps were thin trades. Unknown code (no calculated rate) raises 22023; a known code with no rows in the window returns an empty set. Row cap: more than 1000 rows RAISES 22023, never trimmed; narrow p_from/p_to. No cursor.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 365)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        }
+      },
+      "required": [
+        "p_code"
+      ],
       "additionalProperties": false
     }
   },
