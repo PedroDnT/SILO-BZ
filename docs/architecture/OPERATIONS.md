@@ -15,8 +15,7 @@ after daily    health         read-only: errors, stuck, freshness, B3 sessions, 
 after daily    watchdog       stale/unhealed? re-run run_daily, B3 events, market, ETF;
                               FNET, fnet-diff on own flags; fallback crons 07:30/07:40 (10:30/10:40)
 05:00 (08:00)  publish_check  public URL stale? promote; ERRORed → red
-after a run    publish_check  green daily run, or red with hook done: wait ≤45 min, promote
-                              (no-op today; item 8)
+after a run    publish_check  green daily run, or red with hook done: wait ≤45 min, promote (no-op, item 8)
 Sat 09:00 (12:00) anbima_capture priced codes; private
 Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 ```
@@ -40,7 +39,7 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 ## Changes
 
 - PR → `test.yml` (pytest, SQL compile) → auto-merge.
-  Hook/PR CI share a sanitized dotenv/DB-password guard; CI checks PR additions.
+  Hook/PR CI share a dotenv/DB-password guard; CI checks PR additions.
   A PR touching `src/portfolio/` or `deploy/cloudflare/engine/` also runs
   `engine_image.yml` (build and smoke, no publish).
 - A merge deploys nothing to the database. Migrations apply on the next
@@ -55,10 +54,11 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
   publish_check may overlap.
 - Trace keys are pending. Background storage validates artifacts, writes the
   trace last, logs fixed codes and keeps reports on failure.
-- Schema replay skips matching indexes and absent constraints.
+- Schema replay skips matching indexes, absent constraints.
 - DEB: daily/watchdog pass `vars.B3_CREDIT_ENABLED`; only `1` enables
   7-day refresh with smaller-slice recovery. `mode=b3-credit` loads
-  one owner-approved slice, 7 days at most (item 18).
+  one owner-approved slice, 7 days at most (item 18). `credit_implied`
+  follows at 06:00 (09:00).
   [Contract](../reference/research/debenture-secondary-market-capture.md).
 
 ## Not automated
