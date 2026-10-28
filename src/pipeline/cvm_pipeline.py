@@ -135,17 +135,11 @@ def _find_inadimpl(row: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _period_to_date(period_str: Optional[str], year: int, month: int) -> str:
-    """Normalise a period string to ISO date. Falls back to first-of-month."""
-    if period_str:
-        try:
-            # CVM uses YYYY-MM-DD for DT_COMPTC
-            parts = period_str.split("-")
-            if len(parts) == 3:
-                return period_str
-        except Exception:
-            pass
-    return f"{year}-{month:02d}-01"
+def _period_to_date(period_str: Optional[str]) -> str:
+    """Normalise a CVM DT_COMPTC (YYYY-MM-DD) to an ISO date; raise if missing or malformed."""
+    if not period_str:
+        raise ValueError("period is missing; refusing to invent one")
+    return date.fromisoformat(period_str).isoformat()
 
 # ---------------------------------------------------------------------------
 # Entity / doc-type matrix  (only endpoints that actually exist on CVM server)
