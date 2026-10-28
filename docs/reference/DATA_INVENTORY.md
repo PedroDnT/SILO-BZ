@@ -530,7 +530,9 @@ analytical views directly, at build time. These are served and on no page:
 - **Per instrument:** the `quote_history` family, `option_chain` /
   `_history` / `_exercises`, `termo_history`, `index_history`
   (`b3_index_level`), `lending_trades` / `lending_participants`
-  (`b3_lending_trade`), `credit_market_history` (`fact_credit_market`).
+  (`b3_lending_trade`), `credit_market_history` (`fact_credit_market`),
+  `credit_implied_rate` (`b3_credit_implied_rate`, calculated; the ANBIMA
+  comparison behind its tags stays private).
 - **Corporate actions:** `b3_corporate_event`, `b3_cash_dividend` (only inside
   `close_adj` and `close_total_return`).
 - **Fund documents:** `cvm_fi_cda_debentures` (`fund_debentures`; `/holdings`

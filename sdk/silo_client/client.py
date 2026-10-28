@@ -40,7 +40,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 78  # v78 adds three fiscal series (% of GDP) to macro_series (no new wrapper); history in serve.catalog.py.
+KNOWN_CATALOG_VERSION = 79  # v79 adds api.credit_implied_rate (reachable through silo.rpc, no wrapper); history in serve.catalog.py.
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.

@@ -771,6 +771,12 @@ jobs:
       - name: credit implied check behaves (executed, not just compiled)
         run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/credit_implied_check_behaviour.sql
 
+      # api.credit_implied_rate (38_api_credit_implied.sql, catalog v79, #1007),
+      # executed on synthetic rows: the calculated rows with their check tags,
+      # no ANBIMA rate or gap, the refusals, the row cap and the grants. Rolled back.
+      - name: credit implied rate serving behaves (executed, not just compiled)
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/credit_implied_rate_behaviour.sql
+
       - name: identical index replay preserves indexes; required widening still applies
         run: |
           python3 scripts/guard_noop_ddl.py tests/sql/guard_index_replay_behaviour.sql > /tmp/guard-index-test.sql

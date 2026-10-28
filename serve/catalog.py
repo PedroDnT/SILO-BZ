@@ -607,7 +607,11 @@ __all__ = [
 # v78: #1029. api.macro_series serves three BACEN fiscal series in % of GDP:
 # DBGG_PIB (13762), NFSP_PRIMARIO_12M (5793) and NFSP_NOMINAL_12M (5727).
 # New unit pct_gdp. Same signature and columns; no function added.
-CATALOG_VERSION = 78
+# v79: #1007. New api.credit_implied_rate(p_code, p_from, p_to): the CALCULATED
+# yield of each B3 traded debenture average PU (38_api_credit_implied.sql), with
+# confidence, outlier and thin_trade tags; ANBIMA's own rate and the gap stay
+# private. Capped count +1.
+CATALOG_VERSION = 79
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -968,6 +972,8 @@ _CAPPED_FUNCTIONS: List[str] = [
     # v73: a set of debenture tickers, 13 rows each, one portfolio call.
     "portfolio_debenture_returns",
     "credit_market_history",
+    # v79: the calculated yield of a debenture's traded PU — a window to narrow.
+    "credit_implied_rate",
     # v75: RJ documents of listed companies — a window to narrow.
     "rj_listed_documents",
 ]
@@ -1105,6 +1111,7 @@ CONSTRAINTS = [
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "CIA, FII AND FOCUS HELD DATA. api.financial_statement_history returns raw CIA account lines across all stored filing versions for one required statement and company id; `financials` remains latest-version only. Filing header metadata is present only on an exact key match. Values are already scaled at ingest and remain in filed currency. api.fii_property_history filters one exact fund CNPJ and reference-date window; CVM publishes no stable property id, so row_hash identifies a source row, not a durable asset. Nullable measurements remain NULL. api.focus_expectations returns the weekly path across BCB survey dates for one exact endpoint and required forecast horizon, with an optional indicator. The stored key retains each date/horizon; `baseCalculo=0` is the trailing 30-day respondent sample and 12-month inflation is unsmoothed. It is not a vintage archive of corrected old reports, and migration 16-era missing horizons may await re-fetch. All three endpoints refuse above 1,000 rows.",
     "DEBENTURE MARKET OBSERVATIONS: api.credit_market_history preserves instrument code, trade date, settlement date and trade classification, with nine nullable metrics, units, capture/raw/row hashes and actual observation/audit timestamps. Select complete successfully audited captures per trade date BEFORE filtering a code; a removed row stays removed. p_as_of filters both observation and audit completion, not original publication-time PIT. Group min/avg/max prices, quantity/count/volume differ from repeated instrument-wide last/reference prices; reference may be modeled and never substitutes for a trade. No summed repeated prices, inferred issuer CNPJ/stock ticker, yield, spread, outstanding or coupon-adjusted return. Known empty windows stay empty; unknown code at cutoff raises 22023. Narrow the dates above 1000 groups; no date-only paging. Coverage reports a held span, not gap-free trading history.",
+    "A DEBENTURE'S IMPLIED RATE IS CALCULATED, NOT OBSERVED, AND CHECKED ONLY AGAINST ANBIMA. api.credit_implied_rate (v79, #1007) serves, per B3 trade group, the yield that discounts the bond's published agenda (coupons, amortisation, maturity) to the group's average PU: is_calculated is always true, method_version says how, and rate_basis says what implied_rate_pct is (pre_aa, ipca_real_aa and di_spread_aa in percent a year; pct_di in percent of DI). It is the yield of an AVERAGE PU, read as dirty, not an average of yields, and never a traded or contracted rate: contract_rate_pct is the contracted one. A group the method cannot price has no row, never a guess. confidence is checked, divergent or unchecked against ANBIMA's indicative rate of the same code and day (within 1 pp, more than 1 pp, no comparable rate); unchecked means no check was possible, not that the row is good. outlier is divergent by more than 5 pp; thin_trade is volume under BRL 20 thousand. ANBIMA's own rate and the gap to it are NOT served. First run, 2026-10-01 to 10-26: median absolute gap 0.13 pp. Unknown code raises 22023; more than 1000 rows raises 22023, never trimmed.",
     "Row caps — getting this wrong means silently analysing a TRUNCATED "
     "series, the exact fabrication this API exists to prevent. THE PAGE IS "
     "1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY "
@@ -1122,7 +1129,7 @@ CONSTRAINTS = [
     "fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, "
     "fund_restatements, fund_restatement_diff, company_events, macro_series, "
-    "ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, trade_consolidated_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers, class_return_distribution, portfolio_equivalents, portfolio_credit_returns, portfolio_debenture_returns, credit_market_history, rj_listed_documents and the "
+    "ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, trade_consolidated_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers, class_return_distribution, portfolio_equivalents, portfolio_credit_returns, portfolio_debenture_returns, credit_market_history, credit_implied_rate, rj_listed_documents and the "
     f"{_number_word(_N_SCREENS)} screen_* functions "
     "(`limits.page.all`). "
     f"{_number_word(len(_PAGED_CURSORS)).upper()} OF THEM PAGE with p_after: panel, quote_history, fund_nav, index_history and trade_consolidated_history. Send "
@@ -2124,6 +2131,8 @@ def catalog_payload() -> Dict[str, Any]:
             "index_history": "POST /rest/v1/rpc/index_history",
             "trade_consolidated_history": "POST /rest/v1/rpc/trade_consolidated_history",
             "credit_market_history": "POST /rest/v1/rpc/credit_market_history",
+            # The calculated yield of a debenture's traded PU (v79, #1007).
+            "credit_implied_rate": "POST /rest/v1/rpc/credit_implied_rate",
             # RJ documents of listed companies (v75, #842).
             "rj_listed_documents": "POST /rest/v1/rpc/rj_listed_documents",
             "portfolio_resolve": "POST /rest/v1/rpc/portfolio_resolve",
