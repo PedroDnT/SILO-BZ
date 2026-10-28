@@ -764,6 +764,13 @@ jobs:
       - name: rj_listed_documents behaves (executed, not just compiled)
         run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/rj_listed_documents_behaviour.sql
 
+      # The private check of the calculated debenture rates against ANBIMA
+      # (37_credit_implied_check.sql, #1007), executed on synthetic rows: the
+      # gap, the three confidence values, the outlier and thin_trade tags, no
+      # comparison for pct_di, and no client grant. Rolled back.
+      - name: credit implied check behaves (executed, not just compiled)
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/credit_implied_check_behaviour.sql
+
       - name: identical index replay preserves indexes; required widening still applies
         run: |
           python3 scripts/guard_noop_ddl.py tests/sql/guard_index_replay_behaviour.sql > /tmp/guard-index-test.sql

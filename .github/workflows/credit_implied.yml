@@ -1,11 +1,17 @@
 name: Credit Implied Rate
 
-# Implied rates of B3 traded debenture PUs into the private b3_credit_implied_rate
-# table (#1007, ADR 0004 amendment). Manual only: it is not scheduled until the
-# owner has seen a first green run. One cvm_ingest_log row (credit/implied_rate);
-# its note counts every reason a trade was not priced. The rows are calculated,
-# internal and never served.
+# Implied rates of B3 traded debenture PUs into the b3_credit_implied_rate table
+# (#1007, ADR 0004 amendment). One cvm_ingest_log row (credit/implied_rate); its
+# note counts every reason a trade was not priced. The rows are calculated.
+#
+# Daily at 06:00 UTC-3 (09:00 UTC), after the 06:00 UTC daily ingest, over the
+# last 10 calendar days (idempotent; it catches late B3 sessions and a method
+# rerun). The schedule runs only while the repo variable B3_CREDIT_ENABLED is
+# '1': without it the daily ingest lands no B3 credit and there is nothing
+# new to price. A dispatch always runs, with its own dates.
 on:
+  schedule:
+    - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       date_from:
@@ -31,6 +37,7 @@ concurrency:
 jobs:
   apply-schema:
     name: "Apply schema"
+    if: github.event_name != 'schedule' || vars.B3_CREDIT_ENABLED == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -60,6 +67,11 @@ jobs:
           CODES: ${{ inputs.codes }}
           REFRESH: ${{ inputs.refresh_holidays }}
         run: |
+          # A scheduled run has no inputs: the last 10 calendar days, Brasília.
+          if [ -z "$DATE_FROM" ]; then
+            DATE_FROM=$(TZ=America/Sao_Paulo date -d '10 days ago' +%F)
+            DATE_TO=$(TZ=America/Sao_Paulo date +%F)
+          fi
           args=(--from "$DATE_FROM" --to "$DATE_TO")
           if [ -n "$CODES" ]; then args+=(--codes "$CODES"); fi
           if [ "$REFRESH" = "true" ]; then args+=(--refresh-holidays); fi

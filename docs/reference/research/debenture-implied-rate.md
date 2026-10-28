@@ -78,10 +78,28 @@ Two checks that need no judgement, both in `tests/test_credit_implied_real_bonds
 | CHSF13 | IPCA + 6.767 | 7.1941 | 7.1951 | 0.1 bp |
 | CLAG13 | IPCA + 5.4806 | 7.7722 | 7.7437 | -2.9 bp |
 
-This validates the calculation, not yet the traded series: B3 credit data stops at 2026-10-08 and
-ANBIMA's captured sessions start on 2026-10-15, so no day has both. The comparison of a traded
-rate with ANBIMA's indicative rate of the same bond and day starts when the B3 catch-up and the
-weekly ANBIMA capture overlap.
+This validates the calculation. The traded series is checked below.
+
+## First traded run (2026-10-27, method v1)
+
+Trade dates 2026-10-01 to 2026-10-26: 21,147 trade groups, 16,083 priced. Not priced, counted in the
+`cvm_ingest_log` note: 52 with an incomplete agenda and 5,012 with an unsupported event type. Of the
+priced rows, 4,816 have an ANBIMA indicative rate of the same code on the same day (ANBIMA keeps 5
+sessions per capture, so these are 2026-10-15 to 10-26; `pct_di` is excluded, its ANBIMA unit is not
+proven the same). Gap = implied minus indicative, in percent a year:
+
+| Rate basis | Pairs | Median gap | Median absolute gap | 90th percentile |
+| --- | --- | --- | --- | --- |
+| DI + spread | 896 | 0.001 | 0.02 | 0.37 |
+| IPCA + spread | 3,740 | -0.007 | 0.15 | 0.93 |
+| Pre-fixed | 180 | -0.087 | 0.39 | 1.48 |
+| All | 4,816 | -0.001 | 0.13 | 0.89 |
+
+The volume-weighted mean absolute gap is 0.14 pp. 4,359 pairs sit within 1 pp, 388 between 1 and 5 pp
+and 69 beyond 5 pp. The 69 had a median traded volume of BRL 33 thousand against BRL 416 thousand for
+the pairs within 1 pp: the worst gaps are thin trades (a DI + spread bond implied at 61% to 75% against
+17% indicative). The tags in `public.credit_implied_vs_anbima` (`confidence`, `outlier`, `thin_trade`)
+use these thresholds. The view is private: the ANBIMA rate is collected, not redistributable.
 
 ## Limits
 
