@@ -96,6 +96,9 @@ concurrency:
   group: supabase-ingest
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   # Apply the (idempotent) schema + migrations before any ingest so a fresh DB
   # is bootstrapped. Every ingest job gates on this via `needs:` so the CREATE

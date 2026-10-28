@@ -35,6 +35,9 @@ concurrency:
   group: supabase-ingest
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   watchdog:
     name: Check staleness and self-heal

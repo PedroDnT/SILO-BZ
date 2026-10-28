@@ -36,6 +36,9 @@ concurrency:
   group: silo-health
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   health:
     name: Warehouse health

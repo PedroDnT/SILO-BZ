@@ -47,6 +47,9 @@ concurrency:
   group: supabase-ingest
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   ingest:
     name: Ingest CVM data
