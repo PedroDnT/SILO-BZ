@@ -1,1 +1,0 @@
-| 2026-10-30 | claude/project-thread-xabdqx | **Docs currency fixes.** `SiloClient.VIEWS` gains `di_settlement`, `reference_rate` and `ptax_daily` (view() refused them); README says `api.credit_implied_rate` serves the implied rate and the dashboard rebuilds on Mondays; `OPEN_ITEMS.md` item 18 records that credit capture is on since 2026-10-29. |

@@ -1,1 +1,0 @@
-| 2026-10-09 | codex/issue-684-ci-offline-guards | CI installs and verifies the PDF and Node tools required by tests; pytest blocks network sockets, and the CVM preflight classification test now simulates DNS failure without an external lookup. |

@@ -1,1 +1,0 @@
-| 2026-10-13 | claude/rj-846-relay-trim | **DJEN relay trims the token (#846):** `djen-relay` compares `DJEN_RELAY_TOKEN` after trimming whitespace on both sides, so a secret pasted with a trailing newline still matches, and logs only the two lengths on a mismatch (the first `rj_collect only=djen` run got HTTP 401 on all 27 courts). |
