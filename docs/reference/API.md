@@ -919,6 +919,30 @@ as `DETAIL` and `HINT`, which PostgREST returns as `details` / `hint`; the SDK's
 `SiloOverCap.server_hint` carries the latter. "more than 1000 rows" is
 load-bearing: `SiloOverCap` matches on it.
 
+### Lookup, holdings and periods say what they hold (catalog v80)
+
+Four fixes from the 2026-10-29 assessment, all additive: new columns are
+appended and the new parameter has a default, so no positional caller moves.
+
+- `lookup` matches a name when every word of the query is in it, in any order,
+  accents and case ignored. Exact ids come first, then companies (one with an
+  active B3 listing first), then funds. A ticker that CVM's FCA map publishes
+  for a company also returns the company row with its CNPJ. Before v80,
+  `lookup('Petrobras')` returned 20 funds and not PETRÓLEO BRASILEIRO S.A.
+  (cd_cvm 9512). It still returns at most 20 rows, and the new `truncated`
+  column is TRUE on every row when more matched.
+- `fund_holdings` appends `fund_name` (the holding fund) and `position_kind`
+  (`owned`, `lent`, `borrowed`, `derivative`, read from `tp_aplic` by an exact
+  list of CVM's labels; NULL for any other label). A `borrowed` row is the
+  fund's obligation for shares it received on loan, not shares it owns: do not
+  sum it with `owned` rows.
+- `company_financials` appends `period_kind` (`quarter`, `ytd`, `annual`, from
+  `period_months` 3, 6 or 9, 12) and takes `p_period_kind` to serve one span.
+  The default (NULL) still serves every span.
+- `curve`'s comment says that DOC's shortest vertices are not a rate level. DOC
+  is linear on 360 days, so a coupon over d days is multiplied by 360/d. In
+  the 12 months to 2026-10-30 the 1-day vertex ranged from -994% to +766%.
+
 ### Lineage: which code produced this data (catalog v34)
 
 Migration `44_ingest_lineage.sql` adds `git_sha` and `parser_version` to

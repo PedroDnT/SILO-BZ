@@ -67,6 +67,7 @@
     "p_as_of",
     "p_from",
     "p_id",
+    "p_period_kind",
     "p_scope",
     "p_to"
    ],

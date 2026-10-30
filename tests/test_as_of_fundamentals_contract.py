@@ -29,7 +29,8 @@ CODE = re.sub(r"--[^\n]*", "", SQL)
 
 FIVE = {
     "financials": "TEXT, TEXT, DATE, DATE, TEXT, TEXT, DATE",
-    "company_financials": "TEXT, DATE, DATE, TEXT, DATE",
+    # v80 appends p_period_kind after p_as_of (still no positional caller moves).
+    "company_financials": "TEXT, DATE, DATE, TEXT, DATE, TEXT",
     "income_statements": "TEXT, DATE, DATE, TEXT, TEXT, DATE",
     "balance_sheets": "TEXT, DATE, DATE, TEXT, TEXT, DATE",
     "cash_flow_statements": "TEXT, DATE, DATE, TEXT, TEXT, DATE",
@@ -49,7 +50,9 @@ def _internal() -> str:
 @pytest.mark.parametrize("fn", sorted(FIVE))
 def test_each_function_takes_a_trailing_nullable_as_of_date(fn: str) -> None:
     head = _create(fn)
-    assert re.search(r"p_as_of\s+DATE\s+DEFAULT\s+NULL\s*\)", head), fn
+    assert re.search(
+        r"p_as_of\s+DATE\s+DEFAULT\s+NULL\s*(\)|,\s*p_period_kind\s+TEXT\s+DEFAULT\s+NULL\s*\))", head
+    ), fn
     # Trailing: no existing positional caller moves.
     assert head.rstrip().endswith(")") and head.rindex("p_as_of") > head.rindex("p_scope")
 
