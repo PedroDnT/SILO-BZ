@@ -109,6 +109,10 @@ INTERNAL_FUNCTIONS = {
     "api.ticker_lineage",
     "api.assert_close_adj",
     "api.close_total_return_cash",
+    # fund_holdings' tp_aplic -> position_kind label list (v80).
+    "api.cda_position_kind",
+    # company_financials' p_period_kind refusal (v80).
+    "api.assert_period_kind",
 }
 
 
@@ -157,7 +161,7 @@ DELEGATING_FUNCTIONS = {"api.fund_profile", "api.fund_nav", "api.search_funds"}
 # is the one deliberate SECURITY INVOKER: DEFINER would grant owner rights for
 # nothing, and with no object references there is no search_path surface.
 # test_constant_functions_read_nothing keeps that justification honest.
-CONSTANT_FUNCTIONS = {"api.catalog", "api.quote_history_fields"}
+CONSTANT_FUNCTIONS = {"api.catalog", "api.quote_history_fields", "api.cda_position_kind", "api.assert_period_kind"}
 
 
 def test_every_definer_function_pins_an_immutable_search_path():
@@ -922,6 +926,47 @@ def test_lookup_escapes_like_and_ranks_before_the_limit():
     assert "ESCAPE" in stripped
     # The rank must be computed and ordered on before LIMIT cuts to 20.
     assert stripped.index("ORDER BY h.rank") < stripped.index("LIMIT 20")
+
+
+def test_lookup_finds_a_company_by_any_word_and_says_when_it_cuts():
+    # Assessment 2026-10-29: lookup('Petrobras') returned 20 funds and not
+    # PETRÓLEO BRASILEIRO S.A. - PETROBRAS (cd_cvm 9512), with no sign of a cut.
+    stripped = _strip_comments(FUNCS["api.lookup"])
+    # every word of the query must be in the name, accents folded
+    assert "LIKE ALL (w.pats)" in stripped
+    assert "regexp_split_to_table(q.folded" in stripped
+    assert stripped.count("'áàâãäéèêëíìîïóòôõöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn'") >= 5
+    # exact ids first, then companies (listed first), then funds
+    assert "ORDER BY h.rank > 0, h.class_order, h.unlisted, h.rank" in stripped
+    # a ticker of a company's FCA map reaches the company row
+    assert "vt.codneg = upper(q.raw)" in stripped
+    # the cut at 20 is signalled on every row
+    assert "(SELECT count(*) FROM hits) > 20" in stripped
+    assert re.search(r"truncated\s+BOOLEAN", FUNCS["api.lookup"])
+
+
+def test_fund_holdings_names_the_fund_and_flags_borrowed_shares():
+    # Assessment 2026-10-29: fund_holdings('PETR4') returned bare CNPJs, and 3
+    # of the top 5 rows were shares the fund had borrowed, listed beside owned
+    # shares with no flag.
+    body = _strip_comments(FUNCS["api.fund_holdings"])
+    assert body.count("api.cda_position_kind(h.tp_aplic)") == 2
+    assert body.count("FROM public.dim_fund d WHERE d.cnpj = h.cnpj") == 2
+    kind = _strip_comments(FUNCS["api.cda_position_kind"])
+    assert "'Obrigações por ações e outros TVM recebidos em empréstimo' THEN 'borrowed'" in kind
+    assert "'Ações e outros TVM cedidos em empréstimo' THEN 'lent'" in kind
+    # an unknown label is NULL, never a guessed kind
+    assert "ELSE" not in kind
+
+
+def test_company_financials_labels_and_filters_the_period_span():
+    # Assessment 2026-10-29: a 3-month and a year-to-date ROE for the same date
+    # sat side by side with only period_months to tell them apart.
+    body = _strip_comments(FUNCS["api.company_financials"])
+    assert re.search(r"p_period_kind\s+TEXT DEFAULT NULL", FUNCS["api.company_financials"])
+    assert body.count("WHEN 3 THEN 'quarter' WHEN 6 THEN 'ytd' WHEN 9 THEN 'ytd'") == 2
+    assert "api.assert_period_kind(p_period_kind)" in body
+    assert "ERRCODE = '22023'" in FUNCS["api.assert_period_kind"]
 
 
 def test_panel_cap_applies_after_deterministic_order():

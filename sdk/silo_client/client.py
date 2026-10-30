@@ -40,7 +40,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 79  # v79 adds api.credit_implied_rate (reachable through silo.rpc, no wrapper); history in serve.catalog.py.
+KNOWN_CATALOG_VERSION = 80  # v80: lookup.truncated, fund_holdings fund_name/position_kind, company_financials period_kind; history in serve.catalog.py.
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -1284,7 +1284,8 @@ class SiloClient:
     def company_financials(self, id: str, start: Datish = None,
                            end: Datish = None,
                            scope: str = "con",
-                           as_of: Datish = None) -> List[Dict[str, Any]]:
+                           as_of: Datish = None,
+                           period_kind: Optional[str] = None) -> List[Dict[str, Any]]:
         """Headline financials for one company, one row per filed period.
 
         The convenience shape over :meth:`financials`: revenue, gross profit,
@@ -1312,10 +1313,15 @@ class SiloClient:
 
         Every value is in absolute reais; the filed currency scale is applied
         at ingest, so do not scale by thousands again.
+
+        `period_kind` on every row says which span it is: ``quarter`` (3
+        months), ``ytd`` (an ITR's 6 or 9 months to date) or ``annual`` (12).
+        Pass `period_kind="quarter"` to get one span only; the default (None)
+        returns every span, so never compare a quarter row with a ytd row.
         """
         return self.rpc(
             "company_financials", p_id=id, p_from=_iso(start), p_to=_iso(end),
-            p_scope=scope, p_as_of=_iso(as_of),
+            p_scope=scope, p_as_of=_iso(as_of), p_period_kind=period_kind,
         )
 
     def financial_statement_history(self, id: str, statement: str,

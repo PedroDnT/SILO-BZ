@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "79";
+export const CONTRACT_VERSION = "80";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -2130,7 +2130,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "company_financials": {
     "kind": "rpc",
     "path": "/rpc/company_financials",
-    "description": "Headline financials for one company, one row per filed period, latest stored version of each document. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.",
+    "description": "Headline financials for one company, one row per filed period, latest stored version of each document. An ITR files a 3-month span and a year-to-date span for the same date: period_kind says which (quarter, ytd, annual; NULL for another span), and p_period_kind serves one of them (NULL = every span). roe_pct and net_margin_pct are for the row's own span and are not annualised, so never compare a quarter row with a ytd row. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2176,6 +2176,20 @@ export const CONTRACT: Record<string, ContractEntry> = {
           "format": "date",
           "description": "Defaults to `NULL::date`.",
           "default": null
+        },
+        "p_period_kind": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "enum": [
+            "quarter",
+            "ytd",
+            "annual",
+            null
+          ]
         }
       },
       "required": [
@@ -2277,7 +2291,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "curve": {
     "kind": "rpc",
     "path": "/rpc/curve",
-    "description": "One B3 reference curve on one session (B3 reference rates, TaxaSwap.txt, b3_reference_rate, from 2008-01-02), shortest vertex first, every vertex as published: calendar_days, business_days, rate, and whether the vertex is FIXED (vertex_type F, its nominal tenor in vertex_code) or MOVING (M, a contract maturity). PRE is DI x pré (% a.a., compounded on 252 business days; its moving vertices include every DI1 maturity at that contract's settlement rate); DOC is the clean onshore dollar coupon (% a.a., LINEAR on 360 calendar days); DPL is the clean IPCA coupon, a real rate (% a.a., 252 business days), and B3's implied inflation is (1 + PRE) / (1 + DPL) − 1 at the same tenor. rate_basis rides on every row. PAST THE LAST MATURITY OF THE CONTRACT THAT ANCHORS A CURVE (DI1 for PRE, DDI for DOC, DAP for DPL) B3 EXTRAPOLATES the last forward rate, so the long vertices are not prices (B3 Manual de Curvas v21). DPL's shortest vertices lean on the current month's IPCA projection. p_curve is PRE, DOC or DPL and anything else raises 22023 listing them; p_trade_date NULL = the newest session held, and a date with no session returns no rows. Nothing is interpolated. More than 1000 rows RAISES 22023; a session holds about 300 vertices per curve.",
+    "description": "One B3 reference curve on one session (B3 reference rates, TaxaSwap.txt, b3_reference_rate, from 2008-01-02), shortest vertex first, every vertex as published: calendar_days, business_days, rate, and whether the vertex is FIXED (vertex_type F, its nominal tenor in vertex_code) or MOVING (M, a contract maturity). PRE is DI x pré (% a.a., compounded on 252 business days; its moving vertices include every DI1 maturity at that contract's settlement rate); DOC is the clean onshore dollar coupon (% a.a., LINEAR on 360 calendar days); DPL is the clean IPCA coupon, a real rate (% a.a., 252 business days), and B3's implied inflation is (1 + PRE) / (1 + DPL) − 1 at the same tenor. rate_basis rides on every row. PAST THE LAST MATURITY OF THE CONTRACT THAT ANCHORS A CURVE (DI1 for PRE, DDI for DOC, DAP for DPL) B3 EXTRAPOLATES the last forward rate, so the long vertices are not prices (B3 Manual de Curvas v21). DPL's shortest vertices lean on the current month's IPCA projection. DOC'S SHORTEST VERTICES ARE NOT A RATE LEVEL: on its linear 360-day basis a coupon over d days is multiplied by 360/d, so a small move over 1 to 3 days reads as hundreds of percent (the 1-day vertex ranged from -994% to +766% in the 12 months to 2026-10-30, and vertices under about 21 calendar days stayed far from the rest of the curve); they are served as B3 publishes them, so read DOC from about 30 calendar days out for a level. p_curve is PRE, DOC or DPL and anything else raises 22023 listing them; p_trade_date NULL = the newest session held, and a date with no session returns no rows. Nothing is interpolated. More than 1000 rows RAISES 22023; a session holds about 300 vertices per curve.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2940,7 +2954,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "fund_holdings": {
     "kind": "rpc",
     "path": "/rpc/fund_holdings",
-    "description": "Fund holdings from CDA blocks 4 (equities, by B3 ticker) and 2 (held funds, by CNPJ). Give exactly one of p_cnpj (what this fund holds) or p_ticker (which funds hold this ticker). Rows are as filed; nothing is summed across application types.",
+    "description": "Fund holdings from CDA blocks 4 (equities, by B3 ticker) and 2 (held funds, by CNPJ). Give exactly one of p_cnpj (what this fund holds) or p_ticker (which funds hold this ticker). Rows are as filed; nothing is summed across application types. fund_name is the holding fund's name. position_kind reads tp_aplic: owned, lent (cedidos em empréstimo), borrowed (the obligation for shares received on loan, usually sold short), derivative (options, futures, forwards), or NULL for a label outside the known list. Do not sum borrowed or derivative rows with owned rows.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3464,7 +3478,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "lookup": {
     "kind": "rpc",
     "path": "/rpc/lookup",
-    "description": "Resolve ticker / ISIN / CNPJ / company name. Company rows carry their B3 tickers from CVM's published FCA valores-mobiliários map (vw_company_ticker) — never a name match, never inferred. Does not resolve option/termo codnegs (no names to resolve — use option_chain, which needs a 3-character prefix).",
+    "description": "Resolve ticker / ISIN / CNPJ / CVM code / company or fund name; at most 20 rows. A name matches when every word of the query is in it, in any order, accents and case ignored. Order: exact id matches first, then companies (one with an active B3 listing first), then funds, each by match rank (name prefix before word match). A ticker that CVM's FCA map publishes for a company also returns the company row with its CNPJ. Company rows carry their B3 tickers from that map (vw_company_ticker) — never a name match, never inferred. truncated is TRUE on every row when more than 20 entries matched: add words to narrow. Does not resolve option/termo codnegs (no names to resolve — use option_chain, which needs a 3-character prefix).",
     "inputSchema": {
       "type": "object",
       "properties": {
