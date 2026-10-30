@@ -535,7 +535,10 @@ Following specific owner approvals, migration 74 and captures for 06/10 and
 zero drops; the five-session capture contains 59,670 facts and 1,181 DEB codes.
 COTAHIST 06/10 was recovered once: 17,453 rows, including 1,533 cash rows.
 Do not repeat that recovery or run an annual backfill. Permanent credit capture
-remains off under the approved rollout scope.
+was off under the approved rollout scope until the owner set `B3_CREDIT_ENABLED=1` on
+2026-10-29 (daily run from 2026-10-30). The ANBIMA rate capture (#1006, #1014)
+and the calculated implied rate (#1007, `api.credit_implied_rate`, catalog v79)
+build on it and are tracked in the changelog, not here.
 
 The [executable audit and experiment gates](../reference/research/debenture-equity-experiment.md)
 now reproduce existing-data coverage and name candidates, including commercial
