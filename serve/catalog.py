@@ -620,7 +620,13 @@ __all__ = [
 # api.company_financials gains p_period_kind and a trailing period_kind
 # (quarter, ytd, annual). api.curve's comment warns that DOC's shortest
 # vertices are not a rate level. No new function: count unchanged.
-CATALOG_VERSION = 80
+# v81: owner decision 2026-10-30, one row-limit rule (the 22023 refusal).
+# api.search_funds no longer clamps p_limit to the tier ceiling: p_limit NULL
+# (the new default, was 50) returns every match and refuses above 25 anonymous
+# or 200 signed in (api.assert_tier_cap); 1..ceiling is an explicit head.
+# option_chain and option_exercises still clamp (their default is a timeout
+# budget, measured); the GET views keep PostgREST's Content-Range signal.
+CATALOG_VERSION = 81
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -1178,7 +1184,7 @@ CONSTRAINTS = [
     "Option chains require a codneg prefix of at least 3 characters "
     "(api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel "
-    "accepts at most 3 ids per call, search_funds returns at most 25 rows, "
+    "accepts at most 3 ids per call, search_funds refuses (22023) when more than 25 funds match, "
     "and option_chain pages at most 200. Signing in (GitHub) raises "
     "those to 50 ids, 200 rows and 2000 respectively, and the query timeout "
     "from 3s to 8s, and unlocks panel universe mode (p_ids empty + "

@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "80";
+export const CONTRACT_VERSION = "81";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -4850,7 +4850,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "search_funds": {
     "kind": "rpc",
     "path": "/rpc/search_funds",
-    "description": "**Tier ceiling.** Rows are CLAMPED, silently, to 25 for anonymous callers and 200 for signed-in ones; a `p_limit` above the ceiling is lowered to it rather than refused. This is the opposite of the `22023` row cap the paging functions raise — here nothing tells you the result was cut, so treat a result of exactly 25 (or 200) rows as probably truncated.",
+    "description": "Fund name or CNPJ search, largest latest NAV first. p_limit NULL (the default) returns every match and REFUSES (22023) when more match than the tier ceiling, 25 anonymous or 200 signed in: nothing is cut silently (until v80 the ceiling lowered p_limit without a word). p_limit 1..ceiling is an explicit head, the largest N funds by latest NAV. p_entity_type (fi, fidc, fii, fip, fiagro) narrows to one family.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4876,8 +4876,8 @@ export const CONTRACT: Record<string, ContractEntry> = {
             "null"
           ],
           "format": "int32",
-          "description": "Defaults to `50`.",
-          "default": 50
+          "description": "Defaults to `NULL::integer`.",
+          "default": null
         }
       },
       "additionalProperties": false

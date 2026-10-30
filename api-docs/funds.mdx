@@ -81,13 +81,13 @@ Substring search over the registry, ordered by `latest_aum` descending, nulls la
 ```sql
 api.search_funds(p_query       TEXT DEFAULT '',
                  p_entity_type TEXT DEFAULT NULL,
-                 p_limit       INT  DEFAULT 50)
+                 p_limit       INT  DEFAULT NULL)
 ```
 
 | Field | What to know |
 | --- | --- |
 | `p_query` | Case-insensitive substring, matched against **either the CNPJ or the fund name**. The default `''` matches everything. A fund whose `fund_name` is null can only be found by CNPJ. |
-| `p_limit` | Clamped by tier: **25** anonymous, 200 signed in. A null is treated as 50; a larger value is silently reduced, not refused. |
+| `p_limit` | NULL (the default) returns every match, and **refuses** (`22023`) when more match than the tier ceiling: **25** anonymous, 200 signed in. Narrow `p_query` or pass `p_entity_type`. 1..ceiling asks for the largest N funds by latest NAV. Until catalog v81 the ceiling lowered `p_limit` silently. |
 | `latest_aum` | Most recent non-null net assets for that `(cnpj, entity_type)`. Nullable — a fund with no reported NAV sorts last rather than being dropped or zero-filled. |
 
 ```bash

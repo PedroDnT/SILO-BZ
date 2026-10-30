@@ -68,6 +68,7 @@ _API_RELATION = re.compile(r"\bapi\.(?P<name>[a-z_][a-z0-9_]*)\b", re.IGNORECASE
 _API_FUNCTION = re.compile(r"\bapi\.(?P<name>[a-z_][a-z0-9_]*)\s*\(", re.IGNORECASE)
 _ASSERT_ROW_CAP = re.compile(r"\bapi\.assert_row_cap\s*\(", re.IGNORECASE)
 _CALLER_TIER = re.compile(r"\bapi\.caller_tier\s*\(\s*\)", re.IGNORECASE)
+_ASSERT_TIER_CAP = re.compile(r"\bapi\.assert_tier_cap\s*\(", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ class Endpoint:
     granted: bool = False  # EXECUTE / SELECT granted to anon or authenticated
     refuses: bool = False  # calls api.assert_row_cap: 22023 above one page
     calls_caller_tier: bool = False  # branches on api.caller_tier()
+    tier_refuses: bool = False  # calls api.assert_tier_cap: 22023 above the tier ceiling (v81)
 
     @property
     def pages(self) -> bool:
@@ -95,7 +97,7 @@ class Endpoint:
     @property
     def tier_clamps(self) -> bool:
         """Branches on the caller's tier without refusing: a silent ceiling."""
-        return self.calls_caller_tier and not self.refuses
+        return self.calls_caller_tier and not self.refuses and not self.tier_refuses
 
 
 def _is_public(grantees: str) -> bool:
@@ -162,6 +164,7 @@ def manifest() -> Dict[str, Endpoint]:
                 "params": tuple(p.lower() for p in _PARAM.findall(m.group("args"))),
                 "refuses": bool(_ASSERT_ROW_CAP.search(body)),
                 "calls_caller_tier": bool(_CALLER_TIER.search(body)),
+                "tier_refuses": bool(_ASSERT_TIER_CAP.search(body)),
             }
         for m in _VIEW.finditer(sql):
             found[m.group("name").lower()] = {"kind": "view", "file": path.name}

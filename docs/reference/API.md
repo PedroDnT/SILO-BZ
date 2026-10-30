@@ -919,6 +919,21 @@ as `DETAIL` and `HINT`, which PostgREST returns as `details` / `hint`; the SDK's
 `SiloOverCap.server_hint` carries the latter. "more than 1000 rows" is
 load-bearing: `SiloOverCap` matches on it.
 
+### search_funds refuses above its tier ceiling (catalog v81)
+
+Owner decision 2026-10-30: one row-limit rule, the `22023` refusal, wherever
+SQL can enforce it. `search_funds` used to lower `p_limit` to 25 (anonymous)
+or 200 (signed in) without a word. Now `p_limit` NULL, the new default (it was
+50), returns every match and refuses when more match than the ceiling;
+`p_limit` 1..ceiling is an explicit head, the largest N funds by latest NAV.
+The refusal is `api.assert_tier_cap`, which names the ceiling and the fix.
+
+Two surfaces keep their old signal. `option_chain` and `option_exercises`
+still clamp, because their default page is a timeout budget measured on the
+busiest chains. The GET views are cut by PostgREST's `db-max-rows`, which SQL
+cannot refuse; `Content-Range` stays the signal, and the SDK and the MCP
+already report a cut page.
+
 ### Lookup, holdings and periods say what they hold (catalog v80)
 
 Four fixes from the 2026-10-29 assessment, all additive: new columns are
