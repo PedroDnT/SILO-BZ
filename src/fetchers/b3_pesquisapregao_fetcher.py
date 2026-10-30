@@ -58,6 +58,11 @@ class B3FileFetchError(RuntimeError):
     """Download failed after retries, or the archive is not the documented shape."""
 
 
+class B3FileDownloadError(B3FileFetchError):
+    """The HTTP request itself failed (status, transport, empty body) after retries,
+    as opposed to a file that arrived but is not the documented shape."""
+
+
 def price_report_name(session: date) -> str:
     return f"PR{session:%y%m%d}.zip"
 
@@ -164,11 +169,11 @@ class B3PesquisaPregaoFetcher:
                     raise Retry(exc) from exc
                 if resp.status_code in _RETRY_STATUSES:
                     logger.warning("B3 %s HTTP %s attempt=%d/%d", name, resp.status_code, n, attempts)
-                    raise Retry(B3FileFetchError(f"{name}: HTTP {resp.status_code}"))
+                    raise Retry(B3FileDownloadError(f"{name}: HTTP {resp.status_code}"))
                 if resp.status_code != 200:
-                    raise B3FileFetchError(f"{name}: HTTP {resp.status_code}")
+                    raise B3FileDownloadError(f"{name}: HTTP {resp.status_code}")
                 if not resp.content:
-                    raise B3FileFetchError(f"{name}: empty body")
+                    raise B3FileDownloadError(f"{name}: empty body")
                 logger.info("B3 fetched %s (%d bytes)", name, len(resp.content))
                 return resp.content
 
@@ -176,5 +181,5 @@ class B3PesquisaPregaoFetcher:
                 attempt,
                 attempts=attempts,
                 backoff=linear(self.retry_delay),
-                exhausted=lambda last, n: B3FileFetchError(f"{name}: failed after {n} attempts: {last}"),
+                exhausted=lambda last, n: B3FileDownloadError(f"{name}: failed after {n} attempts: {last}"),
             )

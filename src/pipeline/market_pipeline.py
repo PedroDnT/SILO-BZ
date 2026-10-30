@@ -49,7 +49,10 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Seq
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.fetchers.b3_pesquisapregao_fetcher import B3FileNotPublished, B3PesquisaPregaoFetcher
+from src.fetchers.b3_fetcher import B3CotahistFetcher, B3CotahistNotFound
+from src.fetchers.b3_pesquisapregao_fetcher import (
+    B3FileDownloadError, B3FileNotPublished, B3PesquisaPregaoFetcher,
+)
 from src.fetchers.global_market_fetcher import GlobalMarketFetcher
 from src.parsers import b3_price_report as pr
 from src.parsers import b3_taxa_swap as ts
@@ -106,8 +109,10 @@ class MarketIngestor:
         b3_fetcher: Optional[B3PesquisaPregaoFetcher] = None,
         market_fetcher: Optional[GlobalMarketFetcher] = None,
         client: Any = None,
+        cotahist_fetcher: Optional[B3CotahistFetcher] = None,
     ) -> None:
         self._b3 = b3_fetcher or B3PesquisaPregaoFetcher()
+        self._cotahist = cotahist_fetcher or B3CotahistFetcher()
         self._mkt = market_fetcher or GlobalMarketFetcher()
         self._supabase = client if client is not None else get_pg_client()
         self.futures_roots = _env_list("B3_FUTURES_ROOTS", pr.DEFAULT_ROOTS)
@@ -154,9 +159,41 @@ class MarketIngestor:
         # BaseException (cancellation, a job timeout) is recorded by audited() and propagates.
 
     # ── B3 files ─────────────────────────────────────────────────────────
+    async def _no_session(self, session: date) -> bool:
+        """True only when COTAHIST (404) and the reference rates (empty archive)
+        both say B3 published nothing for ``session``. Any other answer, or any
+        failure of either probe, is False: a real session must never be skipped."""
+        try:
+            await self._b3.fetch_taxa_swap(session)
+            return False
+        except B3FileNotPublished:
+            pass
+        except Exception as exc:  # noqa: BLE001 — probe only; the caller re-raises the original failure
+            logger.warning("no-session probe (rates %s) inconclusive: %s", session, exc)
+            return False
+        try:
+            await self._cotahist.fetch_daily(session)
+            return False
+        except B3CotahistNotFound:
+            return True
+        except Exception as exc:  # noqa: BLE001 — probe only; the caller re-raises the original failure
+            logger.warning("no-session probe (COTAHIST %s) inconclusive: %s", session, exc)
+            return False
+
     async def ingest_price_report(self, session: date) -> int:
         async def work():
-            name, xml = await self._b3.fetch_price_report(session)
+            try:
+                name, xml = await self._b3.fetch_price_report(session)
+            except B3FileDownloadError as exc:
+                # B3 answers a day without a session with HTTP errors on PR files
+                # (#996). Skip only when COTAHIST and the rates agree there was none;
+                # a real session that fails still raises.
+                if await self._no_session(session):
+                    raise B3FileNotPublished(
+                        f"{session}: price report download failed ({exc}), but COTAHIST and "
+                        "the reference rates both report no session"
+                    ) from exc
+                raise
             rows, counts = pr.parse_price_report(xml, session=session, roots=self.futures_roots, origin=name)
             missing = tuple(root for root in self.futures_roots
                             if not any(r["ticker"].startswith(root) for r in rows))

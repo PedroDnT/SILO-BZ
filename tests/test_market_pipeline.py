@@ -27,8 +27,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.fetchers.b3_fetcher import B3CotahistNotFound
 from src.fetchers.b3_pesquisapregao_fetcher import (
-    B3FileFetchError, B3FileNotPublished, price_report_name, taxa_swap_name,
+    B3FileDownloadError, B3FileFetchError, B3FileNotPublished, price_report_name, taxa_swap_name,
     unwrap_price_report, unwrap_taxa_swap,
 )
 from src.parsers import b3_price_report as pr
@@ -482,6 +483,63 @@ def test_a_session_that_is_not_published_is_skipped_and_audited():
     assert finish["status"] == "skipped" and finish["entity"] == "market"
     assert finish["doc_type"] == "b3_reference_rate"
     assert ing.failures == [] and ing.skips
+
+
+def _failing_report(b3):
+    async def boom(session):
+        raise B3FileDownloadError("PR261012.zip: failed after 3 attempts: HTTP 500")
+    b3.fetch_price_report.side_effect = boom
+
+
+def test_price_report_failure_on_a_day_without_a_session_is_skipped():
+    ing, b3, _ = _ingestor()
+    _failing_report(b3)
+
+    async def none(session):
+        raise B3FileNotPublished("TS261012.ex_: B3 returned an empty archive")
+    b3.fetch_taxa_swap.side_effect = none
+    ing._cotahist = MagicMock()
+
+    async def nf(session):
+        raise B3CotahistNotFound("404")
+    ing._cotahist.fetch_daily.side_effect = nf
+    with patch.object(mp, "upsert_rows") as up:
+        assert _run(ing.ingest_price_report(date(2026, 10, 12))) == 0
+    finish = _audit(up)[-1]
+    assert finish["status"] == "skipped" and "no session" in finish["error_msg"]
+    assert ing.failures == [] and ing.skips
+
+
+def test_price_report_500_on_a_real_session_still_raises():
+    ing, b3, _ = _ingestor()
+    _failing_report(b3)
+
+    async def rates(session):
+        return TS_2026                                  # the session has rates
+    b3.fetch_taxa_swap.side_effect = rates
+    ing._cotahist = MagicMock()
+    with patch.object(mp, "upsert_rows") as up:
+        _run(ing.ingest_price_report(date(2026, 10, 13)))
+    assert _audit(up)[-1]["status"] == "error"
+    assert len(ing.failures) == 1 and "HTTP 500" in ing.failures[0]
+    ing._cotahist.fetch_daily.assert_not_called()
+
+
+def test_price_report_500_raises_when_only_the_rates_say_no_session():
+    ing, b3, _ = _ingestor()
+    _failing_report(b3)
+
+    async def none(session):
+        raise B3FileNotPublished("empty")
+    b3.fetch_taxa_swap.side_effect = none
+    ing._cotahist = MagicMock()
+
+    async def up_(session):
+        return b"zip"                                   # COTAHIST exists: a session
+    ing._cotahist.fetch_daily.side_effect = up_
+    with patch.object(mp, "upsert_rows") as up:
+        _run(ing.ingest_price_report(date(2026, 10, 13)))
+    assert _audit(up)[-1]["status"] == "error" and len(ing.failures) == 1
 
 
 def test_a_republished_earlier_file_is_skipped_and_stores_nothing():
