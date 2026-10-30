@@ -186,6 +186,10 @@ curl -s -X POST "$SILO_URL/rpc/fund_nav" \
 
 A `fidc` row: `nav` and `delinquency` are the two columns that family files, the other six are null by construction, and `period` is the month's last day.
 
+### `POST /rpc/fii_property_history`
+
+`fii_property_history(p_cnpj, p_from, p_to)` returns the CVM property-register rows of one FII, by exact CNPJ and reference-date window. CVM gives no stable property id, so `row_hash` identifies a source row, not a durable property. Missing measures stay NULL, and percentages keep the meaning they were filed with. It refuses above 1,000 rows (`22023`).
+
 ### Notes
 
 - **Nulls here are real.** A column is null because the family does not file that field, or because the filing left it blank — never because a value was dropped or replaced. Nothing is forward-filled, and a month with no filing is an **absent row**, not a repeated one. Check `period` continuity before differencing.

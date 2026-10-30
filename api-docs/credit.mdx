@@ -1,0 +1,43 @@
+---
+title: "Debenture market observations and implied rate"
+description: "B3's traded debenture prices as held in the warehouse (credit_market_history), and the yield calculated from each average PU (credit_implied_rate). Observations and a calculation, never a quote."
+icon: "file-invoice-dollar"
+---
+
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints** in the sidebar. This page carries what a schema cannot:
+  what a row means and how far to trust it. Check the live
+  [`catalog()`](/api-docs/conventions) before using either function: a merge alone
+  does not apply analytical SQL.
+</Note>
+
+### Overview
+
+- **`credit_market_history(p_code, p_from, p_to, p_as_of)`** — the market observations B3 published for one debenture code, as the warehouse held them at `p_as_of` (default: now).
+- **`credit_implied_rate(p_code, p_from, p_to)`** — the yield **calculated** from each traded average PU of one code. It is not an observation: `is_calculated` is always true.
+
+```python
+silo.rpc("credit_market_history", p_code="TEST01", p_from="2026-10-02", p_to="2026-10-08")
+silo.rpc("credit_implied_rate", p_code="TEST01", p_from="2026-10-02", p_to="2026-10-08")
+```
+
+`TEST01` is an illustrative code, not a claim of stored observations.
+
+### `credit_market_history`
+
+One row per `(instrument_code, trade_date, settlement_date, trade_classification)`, with the nine stored metrics side by side: `quantity`, `min_price`, `avg_price`, `max_price`, `last_price`, `reference_price`, `trade_count`, `volume_brl` and `oscillation_pct`. `units` gives the unit of each. NULL means unpublished.
+
+- **Knowledge time.** The function picks the latest complete, successfully reconciled capture per trade date, before it filters the code. A newer complete capture that drops a code makes the code absent. This is what the warehouse knew at `p_as_of`, not proof of what was public at the time.
+- **No mixing.** Prices and economic groups are never combined. `last_price` and `reference_price` repeat instrument-wide values: do not sum them or weight them by volume. A reference price can be modeled, and never replaces a traded price. Volume is not outstanding principal.
+- **Provenance** on every row: ISIN, issuer name as reported, source identifier, capture ID, raw payload hash, row hash, `observed_at` and `available_at`.
+- **Errors.** An unknown code at the cutoff raises `22023` (HTTP 404). A known code with an empty window returns zero rows. More than 1,000 groups raises `22023` (HTTP 400); narrow the window. There is no cursor, because several groups can share a date.
+
+### `credit_implied_rate`
+
+One row per `(trade_date, settlement_date, trade_classification, method_version)`, oldest first. `implied_rate_pct` and `rate_basis` give the yield: `pre_aa`, `ipca_real_aa` and `di_spread_aa` are percent a year, `pct_di` is percent of DI. The row also carries the contracted `contract_rate_pct`, the PU, quantity, volume and trade count it used, `flows_used`, `b3_capture_id` and `computed_at`.
+
+- **What it is.** The yield of an average PU, read as a dirty price. It is not a traded or contracted rate. A trade group the method cannot price has no row. `method_version` says how: v1 uses 252 business days, the ANBIMA holiday table and a flat-forward pre curve from B3 TaxaSwap.
+- **How far to trust a row.** Three tags: `confidence` (`checked`, `divergent` or `unchecked`), `outlier` and `thin_trade`. `checked` means within 1 pp of ANBIMA's indicative rate for the same code and day, `divergent` means beyond that. `unchecked` means no comparable rate existed, so no check was possible; it does not mean the row is good. `outlier` means divergent by more than 5 pp. `thin_trade` means volume under BRL 20 thousand.
+- **ANBIMA's own rate and the gap to it are not served.**
+- **Errors.** An unknown code raises `22023`. More than 1,000 rows raises `22023`; narrow the window.

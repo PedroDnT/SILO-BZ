@@ -60,6 +60,15 @@ before 2015, or a filing you know exists and cannot find, is that limit — not 
 quiet company. [`coverage()`](/api-docs/coverage) carries the same note on its
 `company_events` row.
 
+### Recuperação judicial documents
+
+`rj_listed_documents(p_id, p_from, p_to, p_doc_type)` returns the recuperação judicial and extrajudicial documents that listed companies filed with CVM IPE. It reads the same filings as `company_events`, with one row per `protocolo` at its newest `versao`.
+
+- `signal` says why a row is here. `categoria` is CVM's own category for companies in recuperação judicial or extrajudicial. `fato_relevante` is a Fato Relevante whose subject names such a recovery. The category alone missed 49 such Fatos Relevantes in 2026.
+- `cadastro_status` and `cadastro_status_since` are the company register's status as filed. The register lags the filings, so it is a second signal only.
+- `p_id` NULL means every company; otherwise it is resolved by identifier, never by name. The window is the delivery date. An unknown `p_doc_type` raises `22023` and lists the types held.
+- It refuses above one 1,000-row page (`22023`).
+
 ### Limits
 
 Raise-only above one 1,000-row page (`22023`, [Row caps](/api-docs/conventions#row-caps)):
