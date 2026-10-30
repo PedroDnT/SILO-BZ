@@ -27,7 +27,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - Daily windows heal late publication: CVM 4 months (gap-aware), the four CDA
   blocks every month through M+5 (about 90 days late), last
   year's FII files in January-March, COTAHIST and B3's consolidated trade file
-  (in `run_b3_events`) 7 days, BACEN 30 days, fiscal SGS 150 (held research SGS fetched last: its failure ends the row `error`, served series land). Current-year ITR/DFP: full on
+  (in `run_b3_events`) 7 days, BACEN 30 days, fiscal SGS 150 (a failed held research SGS series ends the row `error`). Current-year ITR/DFP: full on
   Monday (CVM regenerates them Sunday), new documents and lineless headers
   otherwise. Deep history: `backfill.yml`, `market_backfill.yml`,
   `daily_ingest` modes `b3-backfill`, `b3-trade-consolidated` (kept from
@@ -45,8 +45,8 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - Views change as rows land.
 - Matviews (`dim_fund`, `fact_fund_monthly`, `mv_period_completeness`, …) change
   only when `scripts/apply_analytical.sh` recreates them.
-- `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`,
-  because a view depends on the first. The same apply refreshes them
+- `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are in `schema.sql`
+  (a view depends on the first). The same apply refreshes them
   (`22_b3_tape_matviews.sql`) and `mv_b3_cash_event` (migration 56; it reads
   `cia_ticker`): the cash events behind `close_total_return`, resolved once
   (the ISIN join is slow).
