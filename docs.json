@@ -63,6 +63,8 @@
           "api-docs/screens",
           "api-docs/filing-screens",
           "api-docs/anbima",
+          "api-docs/credit",
+          "api-docs/portfolio",
           "api-docs/inflation",
           "api-docs/macro",
           "api-docs/rates",

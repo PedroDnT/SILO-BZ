@@ -87,6 +87,19 @@ observation of any of the nine — their cadences differ, so read a monthly
 series' own last row before calling it late) and a `ptax` row. Each `landed_at`
 is its own ingest: an SGS run never reports as PTAX freshness, or the reverse.
 
+### Focus expectations
+
+`focus_expectations(p_endpoint, p_horizon, p_indicator, p_from, p_to)` returns BCB's Focus survey path for one exact endpoint and horizon: `ExpectativasMercadoAnuais`, `ExpectativaMercadoMensais`, `ExpectativasMercadoSelic` or `ExpectativasMercadoInflacao12Meses`. Each `survey_date` is one published observation, so successive dates form the weekly revision path.
+
+```python
+silo.rpc("focus_expectations", p_endpoint="ExpectativasMercadoAnuais", p_horizon="2027")
+```
+
+- It gives median, mean and standard deviation for `baseCalculo=0`, the trailing 30-day respondent sample. The 12-month inflation endpoint is unsmoothed.
+- `p_horizon` keeps BACEN's `DataReferencia` exactly: a year (`2027`) or a month (`09/2026`).
+- The default window is five years. More than 1,000 rows raises `22023`; narrow the window.
+- It is not an archive of later corrections to an old survey date. Horizons collapsed before migration 16 are not recovered until they are fetched again.
+
 ### Limits
 
 Both refuse above one 1,000-row page (`22023`); narrow `p_from` / `p_to`. A daily
