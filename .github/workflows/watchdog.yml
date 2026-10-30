@@ -1,7 +1,7 @@
 name: Ingest Watchdog
 
 # Self-healing safety net for the daily ingest. Runs when "Daily CVM Ingest"
-# completes, whatever its conclusion (#870), so it never reads a run mid-way;
+# completes, whatever its conclusion but cancelled (#870, #1032), so it never reads a run mid-way;
 # if the daily FI slice (or the monthly
 # ANBIMA/ETF slice) is stale in cvm_ingest_log, OR if unhealed ingest errors
 # remain in the 26h health-gate daily window, it re-runs the daily ingest.
@@ -52,6 +52,12 @@ concurrency:
 jobs:
   watchdog:
     name: Check staleness and self-heal
+    # A cancelled Daily run (a dispatch or pending run replaced it) is not a
+    # stale-data signal; its watchdog would only queue a ~1 h recovery that
+    # replaces an operator's pending dispatch in the group (#1032). Failed and
+    # timed-out runs still count. Schedule and dispatch events have no
+    # workflow_run, so they always pass.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled' }}
     runs-on: ubuntu-latest
     # Same cap as the daily job: recovery can now run run_daily, market data,
     # B3 events and FNET back to back (#870), and a job killed mid-step leaves

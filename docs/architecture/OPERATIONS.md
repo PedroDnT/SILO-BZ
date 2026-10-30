@@ -1,6 +1,6 @@
 # Operations
 
-Times in UTC-3, with UTC in parentheses.
+Times UTC-3; UTC in ( ).
 
 ```
 03:00 (06:00)  daily_ingest ─┬─ probe CVM             unreachable → skip CVM, run red
@@ -39,7 +39,7 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 ## Changes
 
 - PR → `test.yml` (pytest, SQL compile) → auto-merge.
-  Hook/PR CI share a dotenv/DB-password guard; CI checks PR additions.
+  Hook and PR CI share a DB-password guard.
   A PR touching `src/portfolio/` or `deploy/cloudflare/engine/` also runs
   `engine_image.yml` (build and smoke, no publish).
 - A merge deploys nothing to the database. Migrations apply on the next
@@ -50,10 +50,10 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 - Dashboard merges do not publish (`vercel.json` disables production Git
   deploys); the deploy hook does, after a weekday scheduled apply or
   `rebuild_dashboard=true`.
-- Writers share the `supabase-ingest` group; read-only health and
-  publish_check may overlap.
+- Writers share the `supabase-ingest` group, one pending run: dispatch one at
+  a time, a waiting one is replaced. Watchdog skips a cancelled daily.
 - Trace keys are pending. Background storage validates artifacts, writes the
-  trace last, logs fixed codes and keeps reports on failure.
+  trace last, logs fixed codes, keeps reports on failure.
 - Schema replay skips matching indexes, absent constraints.
 - DEB: daily/watchdog pass `vars.B3_CREDIT_ENABLED`; only `1` enables
   7-day refresh with smaller-slice recovery. `mode=b3-credit` loads
@@ -70,5 +70,5 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 - Sentinel runs daily since 2026-10-06; Scout and Builder are paused
   (`.claude/agents/`, item 13).
 
-Deeper: [database maintenance](../reference/DATABASE_MAINTENANCE.md),
+See [database maintenance](../reference/DATABASE_MAINTENANCE.md),
 [Supabase operations](../reference/supabase_operations.md).
