@@ -116,6 +116,7 @@ ALLOWED_JOB_KEY_DIFFS = {
     "timeout-minutes": "may differ; both are 180 since recovery also runs FNET (#870).",
     "outputs": "the watchdog hands heal_fnet_diff to its fnet-diff job.",
     "steps": "compared step by step below.",
+    "if": "the watchdog skips a cancelled daily run (#1032); pinned in the trigger test.",
 }
 
 
@@ -282,8 +283,12 @@ def test_watchdog_runs_when_the_daily_run_completes_with_a_fallback_cron():
     on = _on("watchdog.yml")
     assert on["workflow_run"]["workflows"] == [_load("daily_ingest.yml")["name"]]
     assert on["workflow_run"]["types"] == ["completed"]
-    # No conclusion filter: a failed daily run is when the watchdog matters most.
-    assert "if" not in _job("watchdog.yml", WATCHDOG_JOB)
+    # Only a cancelled daily run is skipped (#1032); a failed one is when the
+    # watchdog matters most, and schedule/dispatch have no workflow_run.
+    cond = _job("watchdog.yml", WATCHDOG_JOB)["if"]
+    assert "workflow_run.conclusion != 'cancelled'" in cond
+    assert "github.event_name != 'workflow_run'" in cond
+    assert "failure" not in cond and "success" not in cond
     crons = [c["cron"] for c in on["schedule"]]
     assert len(crons) == 1, "keep exactly one fallback cron"
     minute, hour = (int(x) for x in crons[0].split()[:2])
