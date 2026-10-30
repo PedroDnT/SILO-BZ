@@ -86,11 +86,10 @@ The authoritative list is `catalog().limits.page.functions.raise_only`. Narrow `
 
 ### 4. The silent one — tier ceilings
 
-Three functions **clamp**: a `p_limit` above the ceiling is quietly lowered to it. No error, no header, no signal.
+Two functions **clamp**: a `p_limit` above the ceiling is quietly lowered to it. No error, no header, no signal. `search_funds` did too until catalog v81; it now **refuses** (`22023`) when more than 25 (anonymous) or 200 (signed in) funds match, so narrow the query or pass `p_limit` for the largest N.
 
 | Function | Anonymous | Signed in |
 | --- | --- | --- |
-| `search_funds` | 25 | 200 |
 | `option_chain` | 200 | 2 000 |
 | `option_exercises` | 500 | 5 000 |
 

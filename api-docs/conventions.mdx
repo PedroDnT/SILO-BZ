@@ -129,8 +129,8 @@ The refusal says **why and how**: `<function>: refused, this request would retur
 
 | Endpoint | Rows |
 | --- | --- |
-| [`search_funds`](/api-docs/funds) | **25** anonymous, 200 signed in (`p_limit` clamped, not refused) |
-| [`lookup`](/api-docs/lookup) | 20 |
+| [`search_funds`](/api-docs/funds) | **25** anonymous, 200 signed in; more matches **refuse** (`22023`), or ask for the largest N with `p_limit` |
+| [`lookup`](/api-docs/lookup) | 20, ranked; `truncated` is TRUE when more matched |
 | [`quote_latest`](/api-docs/quotes) | 1 |
 | [`coverage`](/api-docs/coverage) | one per dataset, plus one `funds_<family>` row per family (~9) |
 | [`metric_coverage`](/api-docs/coverage) | one per filed `(family, metric)` pair |

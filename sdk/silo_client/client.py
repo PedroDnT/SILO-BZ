@@ -40,7 +40,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 80  # v80: lookup.truncated, fund_holdings fund_name/position_kind, company_financials period_kind; history in serve.catalog.py.
+KNOWN_CATALOG_VERSION = 81  # v81: search_funds refuses above its tier ceiling instead of clamping; history in serve.catalog.py.
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -918,9 +918,12 @@ class SiloClient:
         the SDK was to over-fetch and filter client-side, against a row cap
         that made "no results" and "results past the cap" look identical.
 
-        The server clamps `limit` by tier — 25 anonymous, 200 signed in — so a
-        larger value is silently reduced rather than refused. Check `.tier` if
-        you need to know which ceiling you are under.
+        With `limit=None` (the default) every match comes back, and the server
+        refuses (22023, raised as SiloError) when more match than the tier
+        ceiling, 25 anonymous or 200 signed in: narrow `query` or pass
+        `entity_type`. A `limit` of 1..ceiling asks for the largest N funds by
+        latest NAV. Until catalog v81 the ceiling cut `limit` silently. Check
+        `.tier` to know which ceiling you are under.
         """
         return self.rpc(
             "search_funds", p_query=query, p_entity_type=entity_type, p_limit=limit,

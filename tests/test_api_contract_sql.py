@@ -113,6 +113,8 @@ INTERNAL_FUNCTIONS = {
     "api.cda_position_kind",
     # company_financials' p_period_kind refusal (v80).
     "api.assert_period_kind",
+    # search_funds' tier ceiling refusal (v81).
+    "api.assert_tier_cap",
 }
 
 
@@ -967,6 +969,20 @@ def test_company_financials_labels_and_filters_the_period_span():
     assert body.count("WHEN 3 THEN 'quarter' WHEN 6 THEN 'ytd' WHEN 9 THEN 'ytd'") == 2
     assert "api.assert_period_kind(p_period_kind)" in body
     assert "ERRCODE = '22023'" in FUNCS["api.assert_period_kind"]
+
+
+def test_search_funds_refuses_above_its_tier_ceiling_instead_of_clamping():
+    # Owner decision 2026-10-30: one row-limit rule, the 22023 refusal. Until
+    # v80 search_funds lowered p_limit to the tier ceiling without a word.
+    body = _strip_comments(FUNCS["api.search_funds"])
+    assert "LEAST(" not in body, "search_funds must not clamp p_limit any more"
+    assert "api.assert_tier_cap((SELECT count(*) FROM r), v_cap, 'search_funds')" in body
+    assert "v_cap + 1" in body
+    assert re.search(r"p_limit\s+INT\s+DEFAULT NULL", FUNCS["api.search_funds"])
+    cap = _strip_comments(FUNCS["api.assert_tier_cap"])
+    assert "ERRCODE = '22023'" in cap
+    # the SDK reads "more than 1000 rows" as the page cap, so this must not say it
+    assert "more than 1000 rows" not in FUNCS["api.assert_tier_cap"]
 
 
 def test_panel_cap_applies_after_deterministic_order():

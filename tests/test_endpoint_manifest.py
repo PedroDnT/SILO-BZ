@@ -87,8 +87,10 @@ def test_declared_cursors_are_exactly_the_ones_the_sql_takes():
 
 def test_tier_ceilings_are_exactly_the_functions_that_clamp_by_tier():
     """A function that branches on api.caller_tier() without refusing lowers
-    p_limit silently; LIMITS.tiers must publish its ceiling for both tiers."""
-    clamping = {n for n, e in PUBLIC.items() if e.tier_clamps}
+    p_limit silently; LIMITS.tiers must publish its ceiling for both tiers.
+    Since v81 a tier ceiling that refuses (api.assert_tier_cap) is published
+    there too: the number is the same, only the behaviour above it differs."""
+    clamping = {n for n, e in PUBLIC.items() if e.tier_clamps or e.tier_refuses}
     for tier in ("anon", "authenticated"):
         published = {
             key[: -len("_rows")] for key in LIMITS["tiers"][tier] if key.endswith("_rows")

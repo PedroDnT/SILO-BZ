@@ -406,7 +406,15 @@ def describe_function(fn: dict[str, Any]) -> str:
             note += " This function does not page — narrow the window instead."
         parts.append(note)
 
-    if fn["tier_rows"]:
+    if fn["tier_rows"] and fn["tier_refuses"]:
+        anon, auth = fn["tier_rows"]
+        parts.append(
+            f"**Tier ceiling.** At most {anon} rows for anonymous callers and "
+            f"{auth} for signed-in ones. When more match, the call REFUSES with "
+            f"SQLSTATE `22023`, never a silently cut result: narrow the query, "
+            f"or ask for the first N with `p_limit` (1..ceiling)."
+        )
+    elif fn["tier_rows"]:
         anon, auth = fn["tier_rows"]
         parts.append(
             f"**Tier ceiling.** Rows are CLAMPED, silently, to {anon} for anonymous "
@@ -723,6 +731,9 @@ def build_spec(conn) -> dict[str, Any]:
                 "enums": argument_enums(src + "\n" + helper_blob, parse_arguments(args or "")),
                 "paged": any(a["name"] == "p_after" for a in parse_arguments(args or "")),
                 "tier_rows": tier_ceilings(src),
+                # v81: a tier ceiling that refuses (api.assert_tier_cap)
+                # instead of clamping p_limit.
+                "tier_refuses": "assert_tier_cap" in src,
                 "id_cap": id_cap,
                 "auth_granted": auth_granted,
                 "tag": tag_for(name),
@@ -864,10 +875,11 @@ Reading one for the other is the most expensive mistake on this API.
   additionally REQUIRES `p_entity_type` — its cursor is a bare period, which
   is unique only within one family, and CNPJs that file under both `fi` and
   `fidc` in the same month would otherwise be ambiguous.
-* **The tier ceiling clamps.** Three other functions (`search_funds`,
-  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the
-  only way to know the result was cut is to know the ceiling. Signing in
-  raises it.
+* **The tier ceiling.** `search_funds` refuses (`22023`) when more rows
+  match than its per-tier maximum (since v81). Two other functions
+  (`option_chain`, `option_exercises`) still silently lower `p_limit` to a
+  per-tier maximum. No error is raised there, so the only way to know the
+  result was cut is to know the ceiling. Signing in raises it.
 
 Separately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every
 response, on every endpoint, for every tier. On the GET views `Content-Range`

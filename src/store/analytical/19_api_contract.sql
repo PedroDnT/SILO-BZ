@@ -2487,10 +2487,44 @@ COMMENT ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT, TEXT) IS
 REVOKE ALL ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
 
+-- Internal: the tier row ceiling REFUSES instead of trimming (v81, owner
+-- decision 2026-10-30: one row-limit rule, the 22023 refusal, everywhere it
+-- can be enforced in SQL). Until v80 api.search_funds lowered p_limit to 25
+-- (anonymous) or 200 (signed in) silently, so "25 rows" and "25 of 300" looked
+-- the same. The message carries the why and the how, like api.assert_row_cap;
+-- it does not say "more than 1000 rows", which the SDK reads as the page cap.
+CREATE OR REPLACE FUNCTION api.assert_tier_cap(p_n BIGINT, p_cap INT, p_fn TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    IF p_n > p_cap THEN
+        RAISE EXCEPTION
+            '%: more than % rows match, above the % tier ceiling of %. SILO never returns a silently cut result, so it refuses. Narrow the query or pass p_entity_type, sign in for a ceiling of 200, or ask for the largest N funds by latest NAV with p_limit (1..%).',
+            p_fn, p_cap, api.caller_tier(), p_cap, p_cap
+            USING ERRCODE = '22023',
+                  DETAIL = format('More than %s rows match; the %s ceiling is %s.', p_cap, api.caller_tier(), p_cap),
+                  HINT = format('Narrow p_query or pass p_entity_type, sign in, or pass p_limit between 1 and %s.', p_cap);
+    END IF;
+    RETURN TRUE;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION api.assert_tier_cap(BIGINT, INT, TEXT) FROM PUBLIC;
+
+-- v81: p_limit defaults to NULL (the whole match) instead of 50, and the tier
+-- ceiling refuses instead of clamping. The default changes, so drop first.
+DROP FUNCTION IF EXISTS api.search_funds(TEXT, TEXT, INT);
 CREATE OR REPLACE FUNCTION api.search_funds(
     p_query       TEXT DEFAULT '',
     p_entity_type TEXT DEFAULT NULL,
-    p_limit       INT  DEFAULT 50
+    -- NULL = every match, refused (22023) above the tier ceiling. 1..ceiling =
+    -- an explicit head: the largest N funds by latest NAV, as asked. Above the
+    -- ceiling = the whole match, refused when it does not fit. Below 1 = 22023.
+    p_limit       INT  DEFAULT NULL
 )
 RETURNS TABLE (
     cnpj         TEXT,
@@ -2500,7 +2534,7 @@ RETURNS TABLE (
     last_period  DATE,
     latest_aum   NUMERIC
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 -- search_path is pinned to public (not '') ON PURPOSE: this wrapper
@@ -2510,17 +2544,37 @@ SECURITY DEFINER
 -- A per-function pinned GUC still closes the DEFINER hole — the attack is
 -- a caller-controlled search_path, and this one is immutable per call.
 SET search_path = public, pg_temp
-AS $$
-    SELECT *
-    FROM public.search_funds(
-        p_query,
-        p_entity_type,
-        LEAST(
-            GREATEST(COALESCE(p_limit, 50), 1),
-            CASE api.caller_tier() WHEN 'authenticated' THEN 200 ELSE 25 END
-        )
-    );
-$$;
+AS $fn$
+DECLARE
+    v_cap  INT := CASE api.caller_tier() WHEN 'authenticated' THEN 200 ELSE 25 END;
+    v_head INT;
+BEGIN
+    IF p_limit IS NOT NULL AND p_limit < 1 THEN
+        RAISE EXCEPTION
+            'search_funds: p_limit must be 1..% (the largest N funds by latest NAV) or NULL for every match; got %',
+            v_cap, p_limit
+            USING ERRCODE = '22023';
+    END IF;
+    v_head := CASE WHEN p_limit <= v_cap THEN p_limit END;
+
+    IF v_head IS NOT NULL THEN
+        RETURN QUERY
+        SELECT r.* FROM public.search_funds(p_query, p_entity_type, v_head) r;
+        RETURN;
+    END IF;
+
+    -- One over the ceiling, then refuse rather than trim.
+    RETURN QUERY
+    WITH r AS MATERIALIZED (
+        SELECT * FROM public.search_funds(p_query, p_entity_type, v_cap + 1)
+    )
+    SELECT r.* FROM r
+    WHERE api.assert_tier_cap((SELECT count(*) FROM r), v_cap, 'search_funds');
+END;
+$fn$;
+
+COMMENT ON FUNCTION api.search_funds(TEXT, TEXT, INT) IS
+    'Fund name or CNPJ search, largest latest NAV first. p_limit NULL (the default) returns every match and REFUSES (22023) when more match than the tier ceiling, 25 anonymous or 200 signed in: nothing is cut silently (until v80 the ceiling lowered p_limit without a word). p_limit 1..ceiling is an explicit head, the largest N funds by latest NAV. p_entity_type (fi, fidc, fii, fip, fiagro) narrows to one family.';
 
 REVOKE ALL ON FUNCTION api.fund_profile(TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION api.search_funds(TEXT, TEXT, INT) FROM PUBLIC;
@@ -6407,7 +6461,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 80,
+  "version": 81,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 and dollar futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close_adj` (split-, grouping- and bonus-adjusted) for share and unit tickers, `close` for other tickers and `nav` for CNPJs, and quote_history with no p_fields returns ticker, trade_date and close_adj; that is the call to make unless you actually need another measure — name metrics or fields explicitly only when you will use them (p_fields=['close'] for the raw close). A close_adj window SILO cannot adjust is refused with the cause, never served raw. The wide endpoints are the exception and behave the other way round: quote_latest and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -7388,7 +7442,7 @@ SELECT $json${
     "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all sixty — panel, quote_history, fund_nav, option_history, termo_history, financials, financial_statement_history, company_financials, income_statements, balance_sheets, cash_flow_statements, anbima_classes, inflation, inflation_items, fii_property_history, focus_expectations, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, fund_restatements, fund_restatement_diff, company_events, macro_series, ptax, future_curve, future_series, curve, curve_history, research_universe, index_history, trade_consolidated_history, portfolio_resolve, portfolio_fees, portfolio_lookthrough, portfolio_movement, portfolio_instruments, portfolio_fund_terms, portfolio_fee_peers, class_return_distribution, portfolio_equivalents, portfolio_credit_returns, portfolio_debenture_returns, credit_market_history, credit_implied_rate, rj_listed_documents and the ten screen_* functions (`limits.page.all`). FIVE OF THEM PAGE with p_after: panel, quote_history, fund_nav, index_history and trade_consolidated_history. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history, fund_nav, index_history and trade_consolidated_history just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), for fund_holdings / fund_debentures narrow the months (a p_ticker or p_issuer lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 the FIDC three, and until v41 fund_holdings and fund_debentures, trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
-    "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
+    "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds refuses (22023) when more than 25 funds match, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
     "Signing in does NOT raise rows-per-response: the 1000-row cap is a server-wide PostgREST setting applied identically to every caller. Page views, and narrow the window on functions, whatever tier you are.",
     "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN mapping (an option row's ISIN is its underlying's ISIN), never from the codneg root; it is null when the underlying had no cash print that session. Termo rows still carry no underlying column.",
     "tpmerc 012/013 are option exercise EVENTS served by option_exercises, and 017 auction prints by auctions — neither is a quote series; do not compute returns over them.",
