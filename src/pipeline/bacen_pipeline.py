@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.fetchers.bacen_fetcher import BacenClient, BacenHostUnresolved
+from src.fetchers.bacen_fetcher import BacenClient, BacenFetchError, BacenHostUnresolved
 from src.pipeline.ingest_log import Outcome, PartialIngestError, audited, describe
 from src.store.pg_client import get_pg_client, upsert_rows
 
@@ -263,7 +263,9 @@ class BacenIngestor:
         Returns:
             Total rows upserted across all series, or an ``Outcome`` ending the
             audit row ``skipped`` when the SGS host does not exist in DNS and the
-            last successful load is within ``BACEN_SGS_TOLERATE_DAYS``.
+            last successful load is within ``BACEN_SGS_TOLERATE_DAYS``, or
+            ``error`` (rows landed, failure named in ``error_msg``) when only the
+            held ``RESEARCH_SGS_SERIES`` call failed (#1031).
 
         The window starts at the last successful load when that is older than
         ``start`` (``sgs_catchup_start``), so the days missed during an outage
@@ -275,8 +277,10 @@ class BacenIngestor:
         last_ok = self._last_sgs_landing()
         start = sgs_catchup_start(start, last_ok, today)
 
-        series = {**SGS_SERIES, **RESEARCH_SGS_SERIES}
-        logger.info("SGS: start=%s end=%s series=%d", start, end, len(series))
+        logger.info(
+            "SGS: start=%s end=%s series=%d",
+            start, end, len(SGS_SERIES) + len(RESEARCH_SGS_SERIES),
+        )
         total = 0
 
         # Two calls: the lagged fiscal set needs a window that reaches back past
@@ -284,7 +288,7 @@ class BacenIngestor:
         lagged_start = min(
             start, (today - timedelta(days=SGS_LAGGED_LOOKBACK_DAYS)).isoformat()
         )
-        prompt = {k: v for k, v in series.items() if k not in FISCAL_SERIES}
+        prompt = {k: v for k, v in SGS_SERIES.items() if k not in FISCAL_SERIES}
         fetched: List[tuple] = []
         try:
             for codes, since in ((prompt, start), (FISCAL_SERIES, lagged_start)):
@@ -314,11 +318,28 @@ class BacenIngestor:
             # exception; anything that reaches here is a broken fetch.
             raise RuntimeError(f"SGS fetch failed: {exc}") from exc
 
+        # The held research series go last, in a call of their own (#1031): a
+        # failure there must not stop the served groups above from landing, but
+        # it is never silent: the audit row ends `error` with the failure named.
+        research_error: Optional[str] = None
+        try:
+            fetched.append((RESEARCH_SGS_SERIES, await self._client.get_sgs_series(
+                codes=RESEARCH_SGS_SERIES,
+                start=start,
+                end=end,
+            ) or []))
+        except BacenFetchError as exc:
+            research_error = (
+                f"research SGS series {', '.join(RESEARCH_SGS_SERIES)} not fetched; "
+                f"served series landed: {describe(exc)}"
+            )
+            logger.error("SGS: %s", research_error)
+
         if not any(records for _, records in fetched):
             # Every series empty for the window is possible only for a window
             # with no business day; visible, not silent.
             logger.warning("SGS: no data returned for %s–%s", start, end)
-            return 0
+            return Outcome(0, "error", research_error) if research_error else 0
 
         # Flatten: one row per (series_name, date), each call's own labels
         rows: List[Dict[str, Any]] = []
@@ -343,6 +364,8 @@ class BacenIngestor:
             conflict_columns="series_code,reference_date"
         )
         logger.info("SGS done: rows=%d", total)
+        if research_error:
+            return Outcome(total, "error", research_error)
         return total
 
     # ------------------------------------------------------------------

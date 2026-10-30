@@ -253,6 +253,7 @@ async def test_once_the_host_answers_the_days_missed_are_fetched_and_stored(monk
         BacenHostUnresolved("SGS SELIC_META (432): failed after 4 attempts: Name or service not known"),
         records,
         [],  # the lagged fiscal set, fetched in its own call
+        [],  # the held research set, fetched last in its own call
     ])
     ing = _ingestor(last_ok=last_ok, fetch=fetch)
     stored: List[Dict[str, Any]] = []
@@ -270,7 +271,7 @@ async def test_once_the_host_answers_the_days_missed_are_fetched_and_stored(monk
     assert second == 5 and len(stored) == 5
     assert {r["reference_date"] for r in stored} == {r["date"] for r in records}
     starts = [call.kwargs["start"] for call in fetch.await_args_list
-              if call.kwargs["codes"] is not FISCAL_SERIES]
+              if call.kwargs["codes"] is not FISCAL_SERIES and "ICBR" not in call.kwargs["codes"]]
     assert starts == [(last_ok - timedelta(days=1)).isoformat()] * 2, (
         "both loads start at the last good one, not at the 30-day window"
     )
@@ -299,7 +300,7 @@ async def test_the_fiscal_set_is_fetched_from_past_its_publication_delay(monkeyp
 
     calls = {id(c.kwargs["codes"]): c.kwargs["start"] for c in ing._client.get_sgs_series.await_args_list}
     assert calls[id(FISCAL_SERIES)] == _ago(SGS_LAGGED_LOOKBACK_DAYS).isoformat()
-    assert len(calls) == 2 and _ago(30).isoformat() in calls.values()
+    assert len(calls) == 3 and _ago(30).isoformat() in calls.values()
     assert n == 3
     assert {(r["series_code"], r["reference_date"]) for r in stored} == {
         (12, _ago(1).isoformat()), (13762, month), (5793, month),
@@ -312,3 +313,51 @@ def test_the_fiscal_set_is_served_and_the_lookback_outlasts_the_delay():
     assert FISCAL_SERIES == {"DBGG_PIB": 13762, "NFSP_PRIMARIO_12M": 5793, "NFSP_NOMINAL_12M": 5727}
     assert all(SGS_SERIES[k] == v and k not in INFLATION_SERIES for k, v in FISCAL_SERIES.items())
     assert SGS_LAGGED_LOOKBACK_DAYS >= 120
+
+
+@pytest.mark.asyncio
+async def test_a_failed_research_series_does_not_stop_the_served_ones(monkeypatch):
+    """#1031: BCB answered ICBR_ENERGIA (27577) with its HTML page and the whole
+    SGS source raised before the fiscal group ran. A failure in the held
+    research group lands every served row and ends the audit row `error`
+    with the failure named; a served-group failure still raises."""
+    from src.pipeline.bacen_pipeline import RESEARCH_SGS_SERIES
+
+    monkeypatch.delenv("BACEN_SGS_CATCHUP_MAX_DAYS", raising=False)
+    month = _ago(70).replace(day=1).isoformat()
+
+    async def fetch(codes, start, end):
+        if codes is RESEARCH_SGS_SERIES:
+            raise BacenFetchError("SGS ICBR_ENERGIA (27577): response is not JSON: <html>")
+        if codes is FISCAL_SERIES:
+            return [{"date": month, "DBGG_PIB": 82.87}]
+        return [{"date": _ago(1).isoformat(), "CDI": 0.055}]
+
+    ing = _ingestor(last_ok=_ago(1), fetch=AsyncMock(side_effect=fetch))
+    stored: List[Dict[str, Any]] = []
+    with patch("src.pipeline.bacen_pipeline.upsert_rows",
+               side_effect=lambda c, t, rows, **kw: stored.extend(rows) or len(rows)):
+        out = await ing.ingest_sgs(_ago(30).isoformat())
+
+    assert {(r["series_code"], r["reference_date"]) for r in stored} == {
+        (12, _ago(1).isoformat()), (13762, month),
+    }
+    assert isinstance(out, Outcome)
+    assert (out.rows, out.status) == (2, "error")
+    assert "ICBR_ENERGIA" in out.error and "BacenFetchError" in out.error
+
+
+@pytest.mark.asyncio
+async def test_a_failed_served_group_still_raises_and_skips_research(monkeypatch):
+    from src.pipeline.bacen_pipeline import RESEARCH_SGS_SERIES
+
+    async def fetch(codes, start, end):
+        if codes is RESEARCH_SGS_SERIES:
+            raise AssertionError("research must not be fetched after a served failure")
+        raise BacenFetchError("SGS CDI (12): HTTP 500")
+
+    ing = _ingestor(last_ok=_ago(1), fetch=AsyncMock(side_effect=fetch))
+    with patch("src.pipeline.bacen_pipeline.upsert_rows") as up:
+        with pytest.raises(RuntimeError, match="SGS fetch failed"):
+            await ing.ingest_sgs(_ago(30).isoformat())
+    up.assert_not_called()

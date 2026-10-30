@@ -27,7 +27,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - Daily windows heal late publication: CVM 4 months (gap-aware), the four CDA
   blocks every month through M+5 (about 90 days late), last
   year's FII files in January-March, COTAHIST and B3's consolidated trade file
-  (in `run_b3_events`) 7 days, BACEN 30 days, fiscal SGS 150. Current-year ITR/DFP: full on
+  (in `run_b3_events`) 7 days, BACEN 30 days, fiscal SGS 150 (held research SGS fetched last: its failure ends the row `error`, served series land). Current-year ITR/DFP: full on
   Monday (CVM regenerates them Sunday), new documents and lineless headers
   otherwise. Deep history: `backfill.yml`, `market_backfill.yml`,
   `daily_ingest` modes `b3-backfill`, `b3-trade-consolidated` (kept from
@@ -52,8 +52,8 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   (the ISIN join is slow).
 - `mv_fund_holdings_monthly` (`30_fund_holdings.sql`) is the one daily pass over
   the CDA holdings tables (no period index); `/holdings` reads it.
-- `mv_fund_name_history` (`31_api_portfolio.sql`) holds every name a fund ever
-  filed (CDA, registry) behind a trigram index for `api.portfolio_resolve`. `portfolio_lookthrough` reads the CDA tables
+- `mv_fund_name_history` (`31_api_portfolio.sql`): every filed name, trigram-indexed
+  for `api.portfolio_resolve`. `portfolio_lookthrough` reads the CDA tables
   only by CNPJ and one month; `portfolio_instruments` filters `cd_ativo` by
   month; debenture returns use exact tickers and median PU from 3+ funds.
 - `api.portfolio_fee_peers` (`31_api_portfolio.sql`) groups the latest FI Extrato
