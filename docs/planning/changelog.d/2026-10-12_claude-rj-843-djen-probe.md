@@ -1,1 +1,0 @@
-| 2026-10-12 | claude/rj-843-djen-probe | **DJEN probe (#843, epic #841):** `scripts/probe_djen.py` and the dispatch-only `probe_djen.yml` test whether a GitHub runner reaches CNJ's DJEN API and count RJ editais per tribunal (counts and field names only, never party data). A cloud session got HTTP 403 on 2026-10-12. |
