@@ -1665,6 +1665,7 @@ class SiloClient:
         "cash_securities", "auctions", "funds",
         "short_interest", "short_interest_by_sector", "lending_trades",
         "lending_participants", "investor_flow",
+        "di_settlement", "reference_rate", "ptax_daily",
     )
 
     def view(self, name: str, **filters: Any) -> List[Dict[str, Any]]:

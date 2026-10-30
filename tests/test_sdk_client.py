@@ -484,7 +484,7 @@ def test_an_older_server_catalog_warns_too():
 
 def test_every_published_view_is_reachable():
     c = make_client(catalog_then(lambda r: httpx.Response(200, json=[])))
-    assert len(SiloClient.VIEWS) == 13
+    assert len(SiloClient.VIEWS) == 16
     with pytest.raises(ValueError, match="unknown view"):
         c.view("not_a_view")
 
