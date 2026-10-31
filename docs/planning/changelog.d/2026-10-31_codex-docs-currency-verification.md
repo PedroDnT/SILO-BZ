@@ -1,0 +1,1 @@
+| 2026-10-31 | codex/docs-currency-verification | **Verify the docs currency follow-up (#1039–#1041).** Correct `api-docs/portfolio.mdx`: the fee peer minimum is 30 usable fund fees before ETFs join the statistics; `sem_pl` retains ETF identity rows. Link the SQL implementation and state the pending debenture decline threshold. No API contract changed. |
