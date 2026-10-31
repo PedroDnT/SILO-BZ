@@ -23,7 +23,7 @@ icon: "scale-balanced"
 
 ### `portfolio_fee_peers`
 
-Compares the fee with the active FI funds of the same ANBIMA class, `FUNDO_COTAS` flag and document scope. Active ETFs join a class only when their `underlying_index` is mapped to it in an owner-reviewed list. An ETF's fee comes from a third-party site (etfsbrasil), never from CVM, and `etf_peer_fee_source` says so. Fewer than 30 usable fees gives no statistic, and the function does not widen the group.
+Compares the fee with the active FI funds of the same ANBIMA class, `FUNDO_COTAS` flag and document scope. Active ETFs join a class only when their `underlying_index` is mapped to it in an owner-reviewed list. An ETF's fee comes from a third-party site (etfsbrasil), never from CVM, and `etf_peer_fee_source` says so. At least 30 usable fund fees are required (including the target when eligible); ETF fees do not count toward that minimum. Once the fund group qualifies, statistics use the combined fund and ETF fees. The function does not widen the group.
 
 ### `class_return_distribution`
 
@@ -31,7 +31,7 @@ Two rows, with `window_months` 12 and 6, ending at the close of `p_month` (NULL 
 
 ### `portfolio_equivalents`
 
-Takes 1 to 50 classes as filed. `is_equivalent` marks the ETF with the largest PL (`pl_rank` 1) across the class's indices. A class with no approved index pair (`sem_par`), no active ETF (`sem_etf`) or no PL (`sem_pl`) returns NULL ETF columns. PL and fee are third-party values with their dates. It names an ETF with the same objective, not a recommendation.
+Takes 1 to 50 classes as filed. `is_equivalent` marks the ETF with the largest PL (`pl_rank` 1) across the class's indices. A class with no approved index pair (`sem_par`) or no active ETF (`sem_etf`) returns one row with NULL ETF columns. If active ETFs exist but none has PL, each ETF keeps its identity columns with status `sem_pl`, NULL `pl_rank` and `is_equivalent = false`. PL and fee are third-party values with their dates. It names an ETF with the same objective, not a recommendation.
 
 ### `portfolio_credit_returns`
 
@@ -40,3 +40,7 @@ Takes 1 to 70 CETIP codes (a leading `CRA-` or `CRI-` is stripped) and returns u
 ### `portfolio_debenture_returns`
 
 Takes up to 70 debenture tickers and returns 13 month-ends from CVM CDA block 4. For each month it takes the median PU across funds (at least 3 funds), and `factor` is that median over the previous month's. A fall beyond `p_max_monthly_drop_pct` is flagged `queda_pu_possivel_evento`; with a NULL threshold every fall is flagged `limite_pendente`. It is the funds' marks, not a trade price, and it invents no coupon or amortization.
+
+### Implementation source
+
+The five functions are implemented in [`31_api_portfolio.sql`](https://github.com/PedroDnT/SILO-BZ/blob/b1c26551/src/store/analytical/31_api_portfolio.sql#L2437). The fee minimum is checked against `n_fund`; the `portfolio_equivalents` query retains ETF rows when `n_pl = 0`. The monthly debenture decline threshold remains an owner decision pending in the implementation: NULL flags every decline as `limite_pendente`.
