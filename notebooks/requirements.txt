@@ -5,9 +5,9 @@
 #     pip install -e sdk/
 
 jupyter>=1.0
-nbconvert>=7.17.1
+nbconvert>=7.17.2
 ipykernel>=6.0
-nbconvert>=7.0
+nbconvert>=7.17.2
 ipykernel>=7.4.0
 pandas>=3.0.6
 matplotlib>=3.11.2
