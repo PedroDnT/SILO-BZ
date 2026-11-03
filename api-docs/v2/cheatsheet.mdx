@@ -1,0 +1,58 @@
+---
+title: "v2 cheatsheet"
+description: "Preview, not deployed. The five shared parameters, the 14 resources, their main parameters and defaults."
+icon: "table"
+---
+
+<Warning>
+  **Preview, not deployed.** The v2 gateway is built but not deployed yet. This page describes it as built.
+</Warning>
+
+Base URL: `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2`. Every parameter has a default. A name a resource does not take is refused as `unknown_parameter`, never ignored.
+
+### Shared parameters
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `id` | The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. | none: the resource lists the ids it holds |
+| `from` | First date of the window, `YYYY-MM-DD`. | the resource's default window, counted back from `to` |
+| `to` | Last date of the window, `YYYY-MM-DD`. | the latest complete period, from `coverage` |
+| `limit` | The page size. A larger value is coerced to the tier's maximum. | the tier's page maximum |
+| `cursor` | The opaque cursor from `next_page_url`. Send it alone. | none: the first page |
+
+Each resource takes the shared parameters it can use (the last column below). `cursor` works on every resource.
+
+### Resources
+
+At most 3 main parameters per resource, `kind` included. The default is first.
+
+| Resource | Main parameters (default) | Shared | Default window |
+| --- | --- | --- | --- |
+| `search` | `q` (none), `kind` (`any`; `company`, `fund`, `universe`), `family` (`all`; `fi`, `fidc`, `fii`, `fip`, `fiagro`) | `limit` | none |
+| `prices` | `kind` (`history`; `latest`, `session`, `index`, `forward`), `freq` (`day`; `month`), `adjust` (`split`; `none`) | `id`, `from`, `to`, `limit` | 12 months |
+| `statements` | `kind` (`all`; `income`, `balance`, `cashflow`, `headline`, `versions`), `period` (`both`; `quarterly`, `annual`), `scope` (`consolidated`; `individual`) | `id`, `from`, `to`, `limit` | 60 months |
+| `funds` | `kind` (`profile`; `nav`, `holdings`, `debentures`, `properties`), `family` (`all`; `fi`, `fidc`, `fii`, `fip`, `fiagro`) | `id`, `from`, `to`, `limit` | 36 months |
+| `fidc` | `kind` (`portfolio`; `tranches`, `aging`, `cedentes`, `sacados`) | `id`, `from`, `to`, `limit` | 24 months |
+| `derivatives` | `kind` (`chain`; `history`, `exercises`, `termo`, `futures`, `futures_curve`, `di_settlement`), `date` (none) | `id`, `from`, `to`, `limit` | 12 months |
+| `curves` | `kind` (`snapshot`; `history`, `vertices`), `curve` (`PRE`; `DOC`, `DPL`), `tenor` (`360`) | `from`, `to`, `limit` | 12 months |
+| `macro` | `kind` (`series`; `inflation`, `inflation_items`, `fx`, `expectations`) | `id`, `from`, `to`, `limit` | 12 months |
+| `positioning` | `kind` (`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`) | `id`, `from`, `to`, `limit` | 3 months |
+| `events` | `kind` (`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`), `category` (`all`) | `id`, `from`, `to`, `limit` | 12 months |
+| `screens` | `kind` (`list`; `captive_vehicles`, `delinquency_drivers`, `dormant_funds`, `dormant_trend`, `evergreen_aging`, `late_filers`, `overdue_securit`, `restatements`, `silent_filers`, `zombie_growth`) | `limit` | none |
+| `panel` | `metric` (`auto`), `freq` (`month`; `day`), `family` (`auto`; `fi`, `fidc`, `fii`, `fip`, `fiagro`) | `id`, `from`, `to`, `limit` | 36 months |
+| `portfolio` (POST) | `kind` (`resolve`; `fees`, `fee_peers`, `lookthrough`, `movement`, `instruments`, `fund_terms`, `equivalents`, `debenture_returns`), `month` (none) | `limit` | none |
+| `coverage` | `kind` (`freshness`; `metrics`, `catalog`), `dataset` (`all`) | `limit` | none |
+
+`portfolio` is the one POST: its lists (`id`, `names`, `quotas`, `quota_dates`) go in a JSON body. `screens` and `portfolio` are served to signed-in callers only.
+
+### Hidden parameters
+
+Every other parameter is hidden. It works, and `GET /v2/<resource>?help=all` lists it with its default. Examples: `prices` takes `fields` (`core` by default, `all` for every column), `statements` and `search` take `as_of`.
+
+### MCP v2
+
+MCP v2 (`silo-mcp-v2`, preview, not deployed) has one tool per resource, named `silo_<resource>`: `silo_search`, `silo_prices`, and so on. A tool's top-level arguments are its main parameters and the shared ones, with the same enums and defaults as this table. Hidden parameters go in one optional `options` object. The result is the same envelope, and errors come back word for word.
+
+### Errors
+
+One object: `{ "error": { "code", "message", "target", "innererror" } }`. The ten codes are `bad_request`, `unknown_parameter`, `unknown_id`, `unauthorized`, `forbidden_for_tier`, `over_limit`, `rate_limited`, `timeout`, `unavailable` and `internal`.

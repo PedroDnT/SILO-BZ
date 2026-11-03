@@ -71,9 +71,18 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 - [catalog()](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/catalog): `POST` with `{}` and an `apikey` header. The contract as JSON — `limits`, `metrics`, `applicability`, `regime_breaks`, `constraints`, and a `version` saying what the server is actually serving.
 - [Data API](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/): The live base URL. Views are `GET /<view>`; functions are `POST /rpc/<function>`.
 
+## v2 (preview, not deployed)
+
+The v2 gateway (`silo-api`, 14 resources) and MCP v2 (`silo-mcp-v2`, 14 tools named `silo_<resource>`) are built but not deployed. Use the pages above until the owner deploys them.
+
+- [v2 quickstart](https://octo-98895abd.mintlify.site/api-docs/v2/quickstart.md): Preview, not deployed. Five calls to the v2 gateway, none needing more than id and kind.
+- [v2 cheatsheet](https://octo-98895abd.mintlify.site/api-docs/v2/cheatsheet.md): Preview, not deployed. The five shared parameters, the 14 resources, their main parameters and defaults, and the MCP v2 tools.
+- [v2 for researchers](https://octo-98895abd.mintlify.site/api-docs/v2/researchers.md): Preview, not deployed. Point in time (as_of), survivorship (search kind=universe), adjustment (adjust=split, no dividends), reproducibility (meta.request) and a citation line.
+
 ## OpenAPI Spec
 
 - [openapi.json](https://octo-98895abd.mintlify.site/openapi.json): OpenAPI 3.1 covering every granted view and function, generated from the live Postgres catalog by `scripts/gen_openapi.py` and guarded against drift in both directions by `tests/test_openapi_spec.py`. Nothing in it is hand-maintained.
+- [v2 openapi.json](https://octo-98895abd.mintlify.site/api-docs/v2/openapi.json): Preview, not deployed. OpenAPI 3.1 for the 14 v2 resources, generated from `supabase/functions/silo-api/registry.ts` by `scripts/gen_openapi_v2.py` and checked by `tests/test_openapi_v2.py`. It feeds the v2 "try it" playground.
 
 ## Optional
 

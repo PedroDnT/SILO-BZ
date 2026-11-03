@@ -12,7 +12,15 @@ and so are `prices` and `statements` (#1055), `screens`, `panel` and
 `positioning` (#1057). All 14 resources are built. Every list kind pages with
 one opaque cursor, and the tier page sizes and caps apply (#1059, section 5
 "Paging, as built" and section 6). The requests-per-minute limit and the pro
-tier come with #1064.
+tier come with #1064. MCP v2 is built too (#1060):
+`supabase/functions/silo-mcp-v2/`, 14 tools `silo_<resource>` whose schemas
+come from the registry and whose calls run the gateway in process; `silo-mcp`
+(v1) stays beside it. The v2 docs are written, marked preview: the quickstart,
+the cheatsheet and the researchers page under `api-docs/v2/`, and a "try it"
+playground from `api-docs/v2/openapi.json`, generated from the registry by
+`scripts/gen_openapi_v2.py`. `meta.data_version` (section 2) is not built yet;
+the researchers page says to read `landed_at` and `landed_git_sha` from
+`coverage` until it is.
 Nothing is deployed: a merge deploys no Edge Function, and every deploy needs
 the owner's approval.
 
