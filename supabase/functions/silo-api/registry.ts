@@ -78,6 +78,11 @@ export interface Plan {
   // -- screens (#1058) --
   /** The SQL function's own default for a v2 parameter left null: sent, so meta.request echoes it (pinned to the SQL by a test). */
   sql_defaults?: Record<string, number>;
+  // -- derivatives, curves, macro, positioning (#1057) --
+  /** view only: from and to select this date column (gte, lte) instead of an eq. filter; args map both to it. */
+  range?: string;
+  /** This kind's default window, where it differs from the resource's window_months. */
+  window_months?: number;
 }
 
 /** portfolio (#1058): one field of a POST body, always a JSON list. Its entries may be null. */
@@ -92,7 +97,7 @@ export interface BodySpec {
 export interface KindSpec extends Plan {
   doc: string;
   /** When `parameter` is empty, this plan runs instead (with no id, list what is held). */
-  when_empty?: { parameter: string; plan: Plan };
+  when_empty?: { parameter: string; plan: Plan; /** This value selects the fallback too (#1057: currency=all). */ value?: string };
 }
 
 export interface ResourceSpec {
@@ -730,27 +735,326 @@ export const REGISTRY: Registry = {
     },
     {
       "name": "derivatives",
-      "status": "planned",
+      "status": "built",
       "summary": "Options, termo and futures: chains, histories, exercises, the DI1 settlement.",
-      "example": "/v2/derivatives?id=PETR&kind=chain"
+      "example": "/v2/derivatives?id=PETR&kind=chain",
+      "shared": ["id", "from", "to", "limit"],
+      "window_months": 12,
+      "notes": [
+        "id per kind: chain and exercises take an option prefix (at least 3 characters, e.g. PETR); history and termo one B3 code (codneg); futures one outright contract (DI1F27, DOLF27); futures_curve a root (DI1, DOL or WDO; none: DI1); di_settlement one DI1 contract (none: every contract).",
+        "chain and exercises are cut by the SQL at a tier ceiling without saying so, so the gateway asks for one row more than it serves: more rows than limit (chain default 100, exercises 1000) is refused (over_limit) unless limit was sent, and then the first N are served with meta.truncated true. A count equal to a tier ceiling (chain 200 or 2000, exercises 500 or 5000, or PostgREST's 1000) cannot be told from a cut and is refused.",
+        "Exercises are exercise events, not quotes. DI1 rates are % a.a. on 252 business days, as B3 settles them; nothing is derived."
+      ],
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["chain", "history", "exercises", "termo", "futures", "futures_curve", "di_settlement"],
+          "default": "chain",
+          "doc": "chain: one session's option chain for a prefix. history: one option's daily quotes. exercises: option exercise events for a prefix. termo: one forward (termo) code's quotes. futures: one futures contract's daily settlement. futures_curve: every contract of a root on one session. di_settlement: DI1 settlement rates per session and contract."
+        },
+        {
+          "name": "date",
+          "visibility": "main",
+          "type": "date",
+          "default": null,
+          "default_doc": "the latest session held (chain: the newest option session; futures_curve: the root's newest session)",
+          "doc": "kind chain and futures_curve: the B3 session, YYYY-MM-DD. A date with no session returns no rows."
+        },
+        {
+          "name": "expiry_from",
+          "visibility": "hidden",
+          "type": "date",
+          "default": null,
+          "default_doc": "today (the SQL's CURRENT_DATE): expired series are left out",
+          "doc": "kind chain: only series expiring on or after this date."
+        }
+      ],
+      "kinds": {
+        "chain": {
+          "doc": "api.option_chain: calls and puts of one prefix on one session, by expiry, strike, side. Refused above 100 series unless limit asks for the first N (the anonymous tier serves at most 199).",
+          "endpoint": "option_chain",
+          "args": { "id": "p_prefix", "date": "p_trade_date", "expiry_from": "p_expiry_from", "limit": "p_limit" },
+          "require_one_of": ["id"]
+        },
+        "history": {
+          "doc": "api.option_history: one option code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.",
+          "endpoint": "option_history",
+          "args": { "id": "p_codneg", "from": "p_from", "to": "p_to" },
+          "require_one_of": ["id"]
+        },
+        "exercises": {
+          "doc": "api.option_exercises: exercise prints for a prefix, oldest first. Refused when more than limit (default 1000) match; the anonymous tier serves at most 499.",
+          "endpoint": "option_exercises",
+          "args": { "id": "p_prefix", "from": "p_from", "to": "p_to", "limit": "p_limit" },
+          "require_one_of": ["id"]
+        },
+        "termo": {
+          "doc": "api.termo_history: one termo code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.",
+          "endpoint": "termo_history",
+          "args": { "id": "p_codneg", "from": "p_from", "to": "p_to" },
+          "require_one_of": ["id"]
+        },
+        "futures": {
+          "doc": "api.future_series: one DI1, DOL or WDO contract through time, oldest first. Refuses above 1000 rows.",
+          "endpoint": "future_series",
+          "args": { "id": "p_ticker", "from": "p_from", "to": "p_to" },
+          "require_one_of": ["id"]
+        },
+        "futures_curve": {
+          "doc": "api.future_curve: every contract of a root (id, default DI1) on one session, nearest first.",
+          "endpoint": "future_curve",
+          "args": { "id": "p_root", "date": "p_trade_date" }
+        },
+        "di_settlement": {
+          "doc": "api.di_settlement (a GET view): DI1 settlement rate, previous rate, open interest per session and contract, newest first. With no id, every contract: a selection over one page is refused (over_limit) unless limit asks for the newest N.",
+          "endpoint": "di_settlement",
+          "view": true,
+          "order": "trade_date.desc,ticker.asc",
+          "range": "trade_date",
+          "args": { "id": "ticker", "from": "trade_date", "to": "trade_date", "limit": "limit" }
+        }
+      }
     },
     {
       "name": "curves",
-      "status": "planned",
+      "status": "built",
       "summary": "What does the rate curve look like? B3 reference curves, their history and vertices.",
-      "example": "/v2/curves?curve=PRE"
+      "example": "/v2/curves?curve=PRE",
+      "shared": ["from", "to"],
+      "window_months": 12,
+      "notes": [
+        "PRE and DPL are % a.a. on 252 business days; DOC is % a.a. linear on 360 calendar days, so its vertices under about 30 calendar days are not a rate level. rate_basis rides on every snapshot and history row.",
+        "Past the last maturity of the anchoring contract (DI1, DDI, DAP) B3 extrapolates: the long vertices are not prices. Nothing is interpolated: a tenor that is not one of B3's fixed vertices is refused with the list."
+      ],
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["snapshot", "history", "vertices"],
+          "default": "snapshot",
+          "doc": "snapshot: one curve on one session, every vertex, with its rate basis. history: one fixed vertex through time. vertices: the raw reference-rate rows (api.reference_rate) of one curve on one session."
+        },
+        {
+          "name": "curve",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["PRE", "DOC", "DPL"],
+          "default": "PRE",
+          "doc": "PRE: DI x pre. DOC: the clean onshore dollar coupon. DPL: the clean IPCA coupon (a real rate)."
+        },
+        {
+          "name": "tenor",
+          "visibility": "main",
+          "type": "integer",
+          "default": 360,
+          "doc": "kind history: the nominal tenor of one of B3's fixed vertices, in CALENDAR days (B3's vertex_code: 1, 30, 60, 90, ... 360, 720, ... 10800). 360 is the one-year vertex. Any other tenor is refused with the list, never interpolated."
+        },
+        {
+          "name": "date",
+          "visibility": "hidden",
+          "type": "date",
+          "default": null,
+          "default_doc": "the newest session held for the curve (vertices: the newest in the 14 days to today)",
+          "doc": "kind snapshot and vertices: the B3 session, YYYY-MM-DD."
+        }
+      ],
+      "kinds": {
+        "snapshot": {
+          "doc": "api.curve: one curve on one session, shortest vertex first, fixed and moving vertices with rate_basis.",
+          "endpoint": "curve",
+          "args": { "curve": "p_curve", "date": "p_trade_date" }
+        },
+        "history": {
+          "doc": "api.curve_history: one fixed vertex through time, oldest first. Refuses above 1000 rows: narrow from/to.",
+          "endpoint": "curve_history",
+          "args": { "curve": "p_curve", "tenor": "p_tenor_days", "from": "p_from", "to": "p_to" }
+        },
+        "vertices": {
+          "doc": "api.reference_rate (a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published). A session over one page is refused (over_limit), never served cut.",
+          "endpoint": "reference_rate",
+          "view": true,
+          "order": "trade_date.desc,calendar_days.asc",
+          "args": { "curve": "curve", "date": "trade_date" }
+        }
+      }
     },
     {
       "name": "macro",
-      "status": "planned",
+      "status": "built",
       "summary": "Macro series, inflation and its item tree, PTAX, Focus expectations.",
-      "example": "/v2/macro?kind=inflation"
+      "example": "/v2/macro?kind=inflation",
+      "shared": ["id", "from", "to", "limit"],
+      "window_months": 12,
+      "notes": [
+        "id per kind: series takes a label or SGS code (SELIC_META, CDI, IGPM, 432); inflation one series label (IPCA, IPCA_CORE_EX0, ...; none: every series); inflation_items an IBGE structure number or SIDRA item code (none: the groups); expectations a Focus indicator (IPCA, Selic, ...; none: every indicator).",
+        "BACEN's IPCA group codes 1640-1643 are Comunicação, Saúde, Despesas pessoais, Educação, as measured against SIDRA. Focus rows are baseCalculo=0 (the trailing 30-day sample); the 12-month inflation survey is unsmoothed. Nothing is filled."
+      ],
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["series", "inflation", "inflation_items", "fx", "expectations"],
+          "default": "series",
+          "doc": "series: one BACEN SGS series. inflation: the IPCA set (headline, cores, groups, diffusion) with 12-month accumulation. inflation_items: IBGE's IPCA item tree with weights. fx: BACEN PTAX buy and sell rates. expectations: the BCB Focus survey path."
+        },
+        {
+          "name": "family",
+          "visibility": "hidden",
+          "type": "enum",
+          "values": ["all", "headline", "core", "classification", "diffusion", "group", "annual", "monthly", "selic", "inflation_12m"],
+          "default": "all",
+          "null_value": "all",
+          "sql_values": {
+            "annual": "ExpectativasMercadoAnuais",
+            "monthly": "ExpectativaMercadoMensais",
+            "selic": "ExpectativasMercadoSelic",
+            "inflation_12m": "ExpectativasMercadoInflacao12Meses"
+          },
+          "doc": "kind inflation: headline, core, classification, diffusion or group (all: every family). kind expectations: the Focus survey, annual (the default), monthly, selic (COPOM meetings) or inflation_12m."
+        },
+        {
+          "name": "currency",
+          "visibility": "hidden",
+          "type": "string",
+          "default": "USD",
+          "doc": "kind fx: an ISO code held (USD, EUR, GBP, JPY, ARS). all: every currency, from the api.ptax_daily view (a selection over one page is refused unless limit asks for the newest N)."
+        },
+        {
+          "name": "horizon",
+          "visibility": "hidden",
+          "type": "string",
+          "default": null,
+          "default_doc": "family annual: the current year (UTC-3); every other survey needs one",
+          "doc": "kind expectations: the target horizon exactly as BACEN publishes it: a year (2027) for annual, MM/YYYY for monthly, a COPOM meeting (R6/2028) for selic."
+        }
+      ],
+      "kinds": {
+        "series": {
+          "doc": "api.macro_series: one SGS series by label or code, oldest first. Refuses above 1000 rows: narrow from/to.",
+          "endpoint": "macro_series",
+          "args": { "id": "p_series", "from": "p_from", "to": "p_to" },
+          "require_one_of": ["id"]
+        },
+        "inflation": {
+          "doc": "api.inflation: the IPCA set by month with acc_12m, 3 years by default. Refuses above 1000 rows: pin id or family, or narrow from.",
+          "endpoint": "inflation",
+          "args": { "id": "p_series", "family": "p_family", "from": "p_from", "to": "p_to" },
+          "window_months": 36
+        },
+        "inflation_items": {
+          "doc": "api.inflation_items: IBGE's IPCA tree (weight, monthly change, contribution, year-to-date and 12-month change), 3 years by default. With no id, the groups (level 1); with an id, that item at its own level.",
+          "endpoint": "inflation_items",
+          "args": { "id": "p_item", "from": "p_from", "to": "p_to" },
+          "window_months": 36
+        },
+        "fx": {
+          "doc": "api.ptax: one currency's PTAX, BRL per one unit, as published. currency=all reads the api.ptax_daily view, every currency at once.",
+          "endpoint": "ptax",
+          "args": { "currency": "p_currency", "from": "p_from", "to": "p_to" },
+          "when_empty": {
+            "parameter": "currency",
+            "value": "all",
+            "plan": {
+              "endpoint": "ptax_daily",
+              "view": true,
+              "order": "date.desc,currency.asc",
+              "range": "date",
+              "args": { "from": "date", "to": "date", "limit": "limit" }
+            }
+          }
+        },
+        "expectations": {
+          "doc": "api.focus_expectations: one survey and horizon across survey dates (the weekly revision path), median, mean and standard deviation. Refuses above 1000 rows.",
+          "endpoint": "focus_expectations",
+          "args": { "id": "p_indicator", "family": "p_endpoint", "horizon": "p_horizon", "from": "p_from", "to": "p_to" }
+        }
+      }
     },
     {
       "name": "positioning",
-      "status": "planned",
+      "status": "built",
       "summary": "Who is short, lending or flowing in? Short interest, lending trades and brokers, investor flow.",
-      "example": "/v2/positioning?id=PETR4"
+      "example": "/v2/positioning?id=PETR4",
+      "shared": ["id", "from", "to", "limit"],
+      "window_months": 3,
+      "notes": [
+        "B3 keeps about 21 business days of the lending book and publishes no archive: history starts when SILO began capturing, and a missed session is lost, not late.",
+        "Short interest reads only B3's own Total rows of the open-position book (is_total), never the per-market rows added up. Read pct_float with float_basis: index_free_float and shares_outstanding are different denominators.",
+        "lending_brokers: the broker is the B3 participant on the leg (doador / tomador), not the beneficial owner; about 75% of trades carry the same broker on both legs. Never read a large borrow as the broker being short.",
+        "investor_flow is in R$ thousands, differenced from B3's month-to-date snapshots; a row with flow_basis unknown_opening_snapshot carries null flows on purpose."
+      ],
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["short_interest", "short_by_sector", "lending", "lending_brokers", "investor_flow"],
+          "default": "short_interest",
+          "doc": "short_interest: the short balance per ticker and session, with % of float and days to cover. short_by_sector: the short balance by B3 sector. lending: daily lending trades per ticker. lending_brokers: per ticker, session and broker, quantity lent and borrowed. investor_flow: daily net flow by investor type."
+        },
+        {
+          "name": "sector",
+          "visibility": "hidden",
+          "type": "string",
+          "default": "all",
+          "null_value": "all",
+          "doc": "kind short_interest and short_by_sector: one B3 sector, exactly as B3 publishes it (Não classificado holds the tickers with none)."
+        },
+        {
+          "name": "investor_type",
+          "visibility": "hidden",
+          "type": "string",
+          "default": "all",
+          "null_value": "all",
+          "doc": "kind investor_flow: one investor type, exactly as B3 publishes it."
+        }
+      ],
+      "kinds": {
+        "short_interest": {
+          "doc": "api.short_interest (a GET view), newest first. With no id, every ticker: a selection over one page is refused (over_limit) unless limit asks for the newest N.",
+          "endpoint": "short_interest",
+          "view": true,
+          "order": "trade_date.desc,ticker.asc",
+          "range": "trade_date",
+          "args": { "id": "ticker", "sector": "sector", "from": "trade_date", "to": "trade_date", "limit": "limit" }
+        },
+        "short_by_sector": {
+          "doc": "api.short_interest_by_sector (a GET view), newest first.",
+          "endpoint": "short_interest_by_sector",
+          "view": true,
+          "order": "trade_date.desc,sector.asc",
+          "range": "trade_date",
+          "args": { "sector": "sector", "from": "trade_date", "to": "trade_date", "limit": "limit" }
+        },
+        "lending": {
+          "doc": "api.lending_trades (a GET view): count, quantity, rates and how many brokers stood on each leg, newest first.",
+          "endpoint": "lending_trades",
+          "view": true,
+          "order": "trade_date.desc,ticker.asc",
+          "range": "trade_date",
+          "args": { "id": "ticker", "from": "trade_date", "to": "trade_date", "limit": "limit" }
+        },
+        "lending_brokers": {
+          "doc": "api.lending_participants (a GET view): per broker, quantity lent, borrowed and net, and how much it crossed its own clients, newest first.",
+          "endpoint": "lending_participants",
+          "view": true,
+          "order": "trade_date.desc,ticker.asc,broker_code.asc",
+          "range": "trade_date",
+          "args": { "id": "ticker", "from": "trade_date", "to": "trade_date", "limit": "limit" }
+        },
+        "investor_flow": {
+          "doc": "api.investor_flow (a GET view): buy, sell and net by investor type, newest first.",
+          "endpoint": "investor_flow",
+          "view": true,
+          "order": "reference_date.desc,investor_type.asc",
+          "range": "reference_date",
+          "args": { "investor_type": "investor_type", "from": "reference_date", "to": "reference_date", "limit": "limit" }
+        }
+      }
     },
     {
       "name": "events",

@@ -28,6 +28,11 @@ import { statements } from "./resources/statements.ts";
 import { panel } from "./resources/panel.ts"; // #1058
 import { portfolio } from "./resources/portfolio.ts"; // #1058
 import { screens } from "./resources/screens.ts"; // #1058
+// -- #1057 --
+import { curves } from "./resources/curves.ts";
+import { derivatives } from "./resources/derivatives.ts";
+import { macro } from "./resources/macro.ts";
+import { positioning } from "./resources/positioning.ts";
 
 export interface ServerDeps {
   fetchImpl?: FetchLike;
@@ -39,6 +44,7 @@ type Handler = (req: ParsedRequest, ctx: CallContext) => Promise<Envelope>;
 /** The built resources. A registry entry with status built and no handler fails at load. */
 export const HANDLERS: Record<string, Handler> = { search, coverage, funds, fidc, events, prices, statements };
 Object.assign(HANDLERS, { screens, panel, portfolio }); // #1058
+Object.assign(HANDLERS, { derivatives, curves, macro, positioning }); // #1057
 
 for (const r of REGISTRY.resources) {
   if ((r.status === "built") !== (r.name in HANDLERS)) {

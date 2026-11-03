@@ -119,7 +119,8 @@ function isEmpty(v: Value): boolean {
 
 /** The kind's plan, or its when_empty plan when the named parameter is empty. */
 export function selectPlan(kind: KindSpec, values: Record<string, Value>): Plan {
-  if (kind.when_empty && isEmpty(values[kind.when_empty.parameter] ?? null)) return kind.when_empty.plan;
+  const w = kind.when_empty;
+  if (w && (isEmpty(values[w.parameter] ?? null) || (w.value !== undefined && values[w.parameter] === w.value))) return w.plan;
   return kind;
 }
 
@@ -271,16 +272,17 @@ export function todayUtcMinus3(now: Date = new Date()): string {
 /**
  * The values with the default window applied: when the plan takes `from`
  * and none was sent, from = (to, or today in UTC-3) minus the resource's
- * window_months. `to` is left as sent; with none, the endpoint's own default
+ * window_months (or the kind's own). `to` is left as sent; with none, the endpoint's own default
  * applies (fund_nav, for one, ends at the family's latest complete period).
  * A from after to is refused.
  */
 export function applyWindow(resource: ResourceSpec, plan: Plan, values: Record<string, Value>, now?: Date): Record<string, Value> {
   const out = { ...values };
   if (!("from" in plan.args)) return out;
-  if (out.from === null && resource.window_months) {
+  const months = plan.window_months ?? resource.window_months; // a kind's own window (#1057)
+  if (out.from === null && months) {
     const end = typeof out.to === "string" ? out.to : todayUtcMinus3(now);
-    out.from = minusMonths(end, resource.window_months);
+    out.from = minusMonths(end, months);
   }
   if (typeof out.from === "string" && typeof out.to === "string" && out.from > out.to) {
     throw new ApiError(400, "bad_request", `from (${out.from}) is after to (${out.to}).`, "from");

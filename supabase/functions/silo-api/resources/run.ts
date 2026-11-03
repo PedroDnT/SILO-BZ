@@ -100,12 +100,13 @@ export const VIEW_PAGE = 1000;
  */
 async function runView(resource: ResourceSpec, plan: Plan, values: Record<string, Value>, ctx: CallContext, meta: Meta): Promise<Envelope> {
   const args = buildArgs(resource, plan, values);
+  const range = rangeFilters(plan, values, args);
   const limitKey = Object.entries(plan.args).find(([v2]) => v2 === "limit")?.[1];
   const asked = limitKey !== undefined && typeof args[limitKey] === "number" ? (args[limitKey] as number) : null;
   if (limitKey !== undefined) delete args[limitKey];
   const eq = { ...(plan.where ?? {}), ...args };
 
-  const page = await callView(ctx, plan.endpoint, eq, plan.order, asked ?? VIEW_PAGE);
+  const page = await callView(ctx, plan.endpoint, eq, plan.order, asked ?? VIEW_PAGE, range);
   const n = page.rows.length;
   const total = page.total;
   const want = asked === null ? total : total === null ? null : Math.min(asked, total);
@@ -126,4 +127,23 @@ async function runView(resource: ResourceSpec, plan: Plan, values: Record<string
   meta.rows_total = total;
   meta.truncated = total !== null && n < total;
   return envelope(applySelections(plan, values, page.rows), meta);
+}
+
+// -- a date range on a view (derivatives, curves, macro, positioning: #1057) --
+
+/**
+ * A view plan's `range`: from and to select that date column with gte and lte
+ * (PostgREST `and=(...)` when both are given), never an eq. filter. buildArgs
+ * mapped both to the one column, so it is taken out of the eq. arguments.
+ */
+export function rangeFilters(plan: Plan, values: Values, args: Record<string, unknown>): Record<string, string> {
+  const col = plan.range;
+  if (!col) return {};
+  delete args[col];
+  const lo = typeof values.from === "string" ? values.from : null;
+  const hi = typeof values.to === "string" ? values.to : null;
+  if (lo && hi) return { and: `(${col}.gte.${lo},${col}.lte.${hi})` };
+  if (lo) return { [col]: `gte.${lo}` };
+  if (hi) return { [col]: `lte.${hi}` };
+  return {};
 }
