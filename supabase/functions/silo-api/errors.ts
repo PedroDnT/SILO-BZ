@@ -45,6 +45,9 @@ export class ApiError extends Error {
    */
   rowCap = false;
 
+  /** Response headers this error adds, e.g. Retry-After on rate_limited (#1064). */
+  headers: Record<string, string> = {};
+
   constructor(
     public status: number,
     public code: ErrorCode,

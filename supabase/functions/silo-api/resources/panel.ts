@@ -6,7 +6,7 @@
 // signed in, #1059) is refused above it (forbidden_for_tier), before the
 // SQL's own (3 anonymous, 50 signed in, refused verbatim as over_limit);
 // never trimmed. Universe mode (no id) is the pro tier's (config.ts
-// panel_universe), which no caller reaches until #1064. metric -> p_metrics (auto:
+// panel_universe; pro is api.my_tier(), #1064). metric -> p_metrics (auto:
 // each family's default, p_metrics not sent), freq -> p_freq, family ->
 // p_entity_type. Default window: 3 years back from `to` (or today, UTC-3).
 //

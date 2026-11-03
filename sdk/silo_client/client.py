@@ -40,7 +40,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 81  # v81: search_funds refuses above its tier ceiling instead of clamping; history in serve.catalog.py.
+KNOWN_CATALOG_VERSION = 82  # v82: api.my_tier and api.rate_hit, the API v2 gateway's tier and rate count; history in serve.catalog.py.
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.

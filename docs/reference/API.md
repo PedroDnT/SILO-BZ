@@ -1204,16 +1204,37 @@ served.** Unknown codes raise `22023`; more than 1,000 rows raises `22023`
 without trimming: narrow the window. Executed check:
 `tests/sql/credit_implied_rate_behaviour.sql` in CI's `sql-compile` job.
 
+## API v2 tier and rate count (gateway plumbing)
+
+`api.my_tier()` and `api.rate_hit(p_bucket)` (`39_api_tiers.sql`, catalog v82,
+#1064) are what the API v2 gateway (`supabase/functions/silo-api`) calls on
+every data request, with the caller's own token. They are not data and not MCP
+tools (`GATEWAY_ONLY` in `serve/endpoint_manifest.py`); they are listed because
+anything granted to `anon` is reachable on PostgREST.
+
+- `my_tier()` returns `pro` when the signed-in user has a row in the private
+  `public.api_user_tier`, `signed_in` for any other signed-in user, and
+  `anonymous` otherwise (no token, or a Supabase anonymous sign-in).
+- `rate_hit(p_bucket)` adds one hit to this minute's bucket and returns the
+  count. A signed-in caller's bucket is `u:<user id>` and `p_bucket` is
+  ignored; an anonymous caller's is `p_bucket`, which must be `ip:<address>`
+  (`22023` otherwise). Each call deletes at most 100 rows older than one hour.
+
+The limits (10, 30 and 300 requests a minute) live in the gateway's
+`config.ts`, not in SQL. The v1 paths below do not pass through the gateway, so
+they are not counted (`docs/planning/API_V2.md`, section on tiers).
+
 ## Endpoint index
 
 Every route in the `postgrest` section of `api.catalog()` (`serve/catalog.py`),
 the same set as the MCP's `ENDPOINT_NAMES` less `catalog` itself, which is
-`POST /rest/v1/rpc/catalog` and returns this map. `tests/test_api_md_index.py`
+`POST /rest/v1/rpc/catalog` and returns this map, and less the two gateway
+functions `my_tier` and `rate_hit`, which are not MCP tools. `tests/test_api_md_index.py`
 fails while a route in that section is missing here, so a new endpoint ships
 with its line. The prose above covers a subset in depth; the catalog's own
 entry is the description of record.
 
-Functions (67), called with `POST`:
+Functions (69), called with `POST`:
 
 ```
 POST /rest/v1/rpc/anbima_classes
@@ -1252,6 +1273,7 @@ POST /rest/v1/rpc/inflation_items
 POST /rest/v1/rpc/lookup
 POST /rest/v1/rpc/macro_series
 POST /rest/v1/rpc/metric_coverage
+POST /rest/v1/rpc/my_tier
 POST /rest/v1/rpc/option_chain
 POST /rest/v1/rpc/option_exercises
 POST /rest/v1/rpc/option_history
@@ -1269,6 +1291,7 @@ POST /rest/v1/rpc/portfolio_resolve
 POST /rest/v1/rpc/ptax
 POST /rest/v1/rpc/quote_history
 POST /rest/v1/rpc/quote_latest
+POST /rest/v1/rpc/rate_hit
 POST /rest/v1/rpc/research_universe
 POST /rest/v1/rpc/rj_listed_documents
 POST /rest/v1/rpc/screen_captive_vehicles

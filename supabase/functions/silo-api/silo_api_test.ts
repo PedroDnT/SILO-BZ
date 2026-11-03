@@ -15,6 +15,7 @@ import { decodeCursor, encodeCursor } from "./paging.ts";
 import { callerBearer, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY } from "./registry.ts";
 import { makeHandler, routeOf } from "./server.ts";
+import { clientIp, type Gate, retryAfter, TIER_CACHE_MS } from "./tier.ts";
 
 const ENV: Record<string, string> = {
   SUPABASE_URL: "https://example-ref.supabase.co/",
@@ -25,6 +26,14 @@ const BASE = "https://example-ref.supabase.co/functions/v1/silo-api";
 // A user JWT: the signed-in tier (#1059). PostgREST verifies it; the stub does not.
 const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCJ9.sig";
 const SIGNED = { Authorization: `Bearer ${JWT}` };
+// The resource tests below are about resources, so their gate is #1059's
+// rule with no counting: a Bearer is signed_in, every request is the first
+// this minute. The Postgres gate (api.my_tier, api.rate_hit) has its own
+// tests at the end of the file (#1064).
+const OPEN: Gate = {
+  tier: (ctx) => Promise.resolve(ctx.bearer ? "signed_in" : "anonymous"),
+  hit: () => Promise.resolve(1),
+};
 /** A next_page_url as a path for get(). */
 const pathOf = (url: string) => url.slice(BASE.length);
 
@@ -44,7 +53,7 @@ function stubFetch(status: number, body: string) {
 
 async function get(path: string, status = 200, body = "[]", headers: Record<string, string> = {}) {
   const stub = stubFetch(status, body);
-  const handler = makeHandler({ fetchImpl: stub.impl, env });
+  const handler = makeHandler({ fetchImpl: stub.impl, env, gate: OPEN });
   const res = await handler(new Request(`${BASE}${path}`, { headers }));
   return { res, json: await res.json(), calls: stub.calls };
 }
@@ -200,7 +209,7 @@ Deno.test("PostgREST errors map to the ten codes", () => {
 });
 
 Deno.test("a network failure is unavailable, never an empty answer", async () => {
-  const handler = makeHandler({ fetchImpl: () => Promise.reject(new Error("dns")), env });
+  const handler = makeHandler({ fetchImpl: () => Promise.reject(new Error("dns")), env, gate: OPEN });
   const res = await handler(new Request(`${BASE}/v2/coverage`));
   const body = await res.json();
   assertEquals(res.status, 503);
@@ -293,7 +302,7 @@ function stubView(rows: unknown[], contentRange: string | null) {
 
 async function getView(path: string, rows: unknown[], contentRange: string | null, headers: Record<string, string> = {}) {
   const stub = stubView(rows, contentRange);
-  const res = await makeHandler({ fetchImpl: stub.impl, env })(new Request(`${BASE}${path}`, { headers }));
+  const res = await makeHandler({ fetchImpl: stub.impl, env, gate: OPEN })(new Request(`${BASE}${path}`, { headers }));
   return { res, json: await res.json(), calls: stub.calls };
 }
 
@@ -979,7 +988,7 @@ const Y3 = minusMonths(todayUtcMinus3(), 36);
 // portfolio is served to signed-in callers (#1059), so post() signs in unless told not to.
 async function post(path: string, payload: unknown, status = 200, rows = "[]", headers: Record<string, string> = SIGNED) {
   const stub = stubFetch(status, rows);
-  const handler = makeHandler({ fetchImpl: stub.impl, env });
+  const handler = makeHandler({ fetchImpl: stub.impl, env, gate: OPEN });
   const init: RequestInit = { method: "POST", body: typeof payload === "string" ? payload : JSON.stringify(payload), headers };
   const res = await handler(new Request(`${BASE}${path}`, init));
   return { res, json: await res.json(), calls: stub.calls };
@@ -1116,7 +1125,7 @@ type Row = Record<string, unknown>;
 
 /** Follow next_page_url from `first` to the end; every page must be a 200. */
 async function walk(first: string, impl: FetchLike, headers: Record<string, string> = {}) {
-  const handler = makeHandler({ fetchImpl: impl, env });
+  const handler = makeHandler({ fetchImpl: impl, env, gate: OPEN });
   const rows: Row[] = [];
   const pages: { data: Row[]; meta: Record<string, unknown>; next_page_url?: string }[] = [];
   let path: string | null = first;
@@ -1336,4 +1345,187 @@ Deno.test("the tier numbers live in one block in config.ts", () => {
   assertEquals(TIERS.signed_in.page_max, 100);
   assertEquals(TIERS.signed_in.rows_per_call, 1000);
   assertEquals(TIERS.pro.rows_per_call, null);
+});
+
+// ------------------------------------- tier and rate in Postgres (#1064) --
+
+interface GateCall {
+  fn: string;
+  body: unknown;
+  auth: string | null;
+}
+
+/**
+ * A PostgREST stub that answers api.my_tier with `tier`, api.rate_hit with
+ * the next number of `hits` (or `rateStatus` when set), and every data call
+ * with []. It records which function was called, with what and by whom.
+ */
+function gateStub(opts: { tier?: unknown; tierStatus?: number; hits?: number[]; rateStatus?: number; rateThrows?: boolean }) {
+  const calls: GateCall[] = [];
+  let n = 0;
+  const impl: FetchLike = (input, init) => {
+    const url = String(input);
+    const fn = url.includes("/rpc/") ? url.slice(url.indexOf("/rpc/") + 5) : url.slice(url.lastIndexOf("/") + 1);
+    const headers = (init.headers ?? {}) as Record<string, string>;
+    calls.push({ fn, body: init.body ? JSON.parse(String(init.body)) : null, auth: headers["Authorization"] ?? null });
+    const reply = (status: number, body: unknown) =>
+      Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
+    if (fn === "my_tier") {
+      if (opts.tierStatus) return reply(opts.tierStatus, { code: "PGRST301", message: "JWT expired" });
+      return reply(200, opts.tier ?? "signed_in");
+    }
+    if (fn === "rate_hit") {
+      if (opts.rateThrows) return Promise.reject(new Error("connection reset"));
+      if (opts.rateStatus) return reply(opts.rateStatus, { code: "PGRST202", message: "Could not find the function api.rate_hit" });
+      const hits = opts.hits ?? [1];
+      return reply(200, hits[Math.min(n++, hits.length - 1)]);
+    }
+    return reply(200, []);
+  };
+  return { calls, impl };
+}
+
+/** 2026-11-03 21:30:15 UTC-3 (00:30:15 UTC): 45 s left in the minute. */
+const NOW = Date.UTC(2026, 10, 4, 0, 30, 15);
+
+function gated(stub: { impl: FetchLike }, clock: { t: number } = { t: NOW }) {
+  return makeHandler({ fetchImpl: stub.impl, env, now: () => clock.t });
+}
+
+const fns = (calls: GateCall[]) => calls.map((c) => c.fn);
+
+Deno.test("tier: no Bearer is anonymous with no my_tier call; the bucket is ip:<cf-connecting-ip>", async () => {
+  const stub = gateStub({ hits: [1] });
+  const res = await gated(stub)(new Request(`${BASE}/v2/coverage`, { headers: { "cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "6.6.6.6, 203.0.113.7" } }));
+  assertEquals(res.status, 200);
+  assertEquals(fns(stub.calls), ["rate_hit", "coverage"]);
+  assertEquals(stub.calls[0].body, { p_bucket: "ip:203.0.113.7" });
+  assertEquals(stub.calls[0].auth, null);
+  assertEquals(res.headers.get("RateLimit-Limit"), String(TIERS.anonymous.requests_per_minute));
+  assertEquals(res.headers.get("RateLimit-Remaining"), String(TIERS.anonymous.requests_per_minute - 1));
+});
+
+Deno.test("tier: the publishable key sent as a Bearer is anonymous, never a my_tier call", async () => {
+  const stub = gateStub({});
+  const res = await gated(stub)(new Request(`${BASE}/v2/coverage`, { headers: { Authorization: "Bearer sb_publishable_abc" } }));
+  assertEquals(res.status, 200);
+  assertEquals(fns(stub.calls), ["rate_hit", "coverage"]);
+});
+
+Deno.test("tier: a Bearer asks api.my_tier with that token; rate_hit sends no bucket (SQL uses auth.uid())", async () => {
+  const stub = gateStub({ tier: "signed_in" });
+  const res = await gated(stub)(new Request(`${BASE}/v2/coverage`, { headers: SIGNED }));
+  assertEquals(res.status, 200);
+  assertEquals(fns(stub.calls), ["my_tier", "rate_hit", "coverage"]);
+  assertEquals(stub.calls[0].auth, `Bearer ${JWT}`);
+  assertEquals(stub.calls[1].body, {});
+  assertEquals(stub.calls[1].auth, `Bearer ${JWT}`);
+  assertEquals(res.headers.get("RateLimit-Limit"), String(TIERS.signed_in.requests_per_minute));
+});
+
+Deno.test("tier: my_tier is cached per token for 60 s, then asked again", async () => {
+  const stub = gateStub({ tier: "signed_in" });
+  const clock = { t: NOW };
+  const handler = gated(stub, clock);
+  const once = () => handler(new Request(`${BASE}/v2/coverage`, { headers: SIGNED }));
+  await once();
+  clock.t += TIER_CACHE_MS - 1;
+  await once();
+  assertEquals(fns(stub.calls).filter((f) => f === "my_tier").length, 1);
+  clock.t += 2;
+  await once();
+  assertEquals(fns(stub.calls).filter((f) => f === "my_tier").length, 2);
+  // Another token is its own entry.
+  await handler(new Request(`${BASE}/v2/coverage`, { headers: { Authorization: "Bearer other.user.jwt" } }));
+  assertEquals(fns(stub.calls).filter((f) => f === "my_tier").length, 3);
+});
+
+Deno.test("tier: pro is what my_tier says, and replaces 'any Bearer is signed_in'", async () => {
+  // Request 31 this minute: over signed_in's 30, within pro's 300.
+  const pro = gateStub({ tier: "pro", hits: [TIERS.signed_in.requests_per_minute + 1] });
+  const ok = await gated(pro)(new Request(`${BASE}/v2/coverage`, { headers: SIGNED }));
+  assertEquals(ok.status, 200);
+  assertEquals(ok.headers.get("RateLimit-Limit"), String(TIERS.pro.requests_per_minute));
+  const signed = gateStub({ tier: "signed_in", hits: [TIERS.signed_in.requests_per_minute + 1] });
+  const refused = await gated(signed)(new Request(`${BASE}/v2/coverage`, { headers: SIGNED }));
+  assertEquals(refused.status, 429);
+  // A token my_tier calls anonymous (an anonymous sign-in) gets anonymous limits: screens are refused.
+  const anon = gateStub({ tier: "anonymous" });
+  const screens = await gated(anon)(new Request(`${BASE}/v2/screens`, { headers: SIGNED }));
+  assertEquals(screens.status, 403);
+  assertEquals((await screens.json()).error.code, "forbidden_for_tier");
+  assertEquals(fns(anon.calls), ["my_tier"]);
+});
+
+Deno.test("rate: above the tier's requests per minute is 429 rate_limited with Retry-After, and no data is read", async () => {
+  const limit = TIERS.anonymous.requests_per_minute;
+  const stub = gateStub({ hits: [limit, limit + 1] });
+  const handler = gated(stub);
+  const at = await handler(new Request(`${BASE}/v2/coverage`, { headers: { "cf-connecting-ip": "198.51.100.2" } }));
+  assertEquals(at.status, 200);
+  assertEquals(at.headers.get("RateLimit-Remaining"), "0");
+  const over = await handler(new Request(`${BASE}/v2/coverage`, { headers: { "cf-connecting-ip": "198.51.100.2" } }));
+  const body = await over.json();
+  assertEquals(over.status, 429);
+  assertEquals(body.error.code, "rate_limited");
+  assertEquals(over.headers.get("Retry-After"), "45");
+  assertEquals(over.headers.get("RateLimit-Limit"), String(limit));
+  assertEquals(over.headers.get("RateLimit-Remaining"), "0");
+  assertStringIncludes(body.error.message, `${limit} requests a minute`);
+  assertStringIncludes(body.error.message, "Sign in");
+  assert(!("data" in body));
+  assertEquals(fns(stub.calls), ["rate_hit", "coverage", "rate_hit"]);
+});
+
+Deno.test("rate: index and ?help read no data and are not counted", async () => {
+  const stub = gateStub({});
+  const handler = gated(stub);
+  assertEquals((await handler(new Request(`${BASE}/v2/`))).status, 200);
+  assertEquals((await handler(new Request(`${BASE}/v2/coverage?help`, { headers: SIGNED }))).status, 200);
+  assertEquals(stub.calls.length, 0);
+});
+
+Deno.test("rate: a request the parameters refuse is not counted", async () => {
+  const stub = gateStub({});
+  const res = await gated(stub)(new Request(`${BASE}/v2/search?q=petr&qq=1`));
+  assertEquals(res.status, 400);
+  assertEquals(stub.calls.length, 0);
+});
+
+Deno.test("fail closed: rate_hit unreachable or missing is unavailable, and no data is read", async () => {
+  for (const opts of [{ rateThrows: true }, { rateStatus: 404 }]) {
+    const stub = gateStub(opts);
+    const res = await gated(stub)(new Request(`${BASE}/v2/coverage`));
+    const body = await res.json();
+    assertEquals(res.status, 503, JSON.stringify(opts));
+    assertEquals(body.error.code, "unavailable");
+    assertStringIncludes(body.error.message, "fails closed");
+    assertEquals(fns(stub.calls), ["rate_hit"]);
+  }
+});
+
+Deno.test("fail closed: an invalid token is unauthorized (passed on); a bad my_tier answer is internal", async () => {
+  const expired = gateStub({ tierStatus: 401 });
+  const res = await gated(expired)(new Request(`${BASE}/v2/coverage`, { headers: SIGNED }));
+  assertEquals(res.status, 401);
+  assertEquals((await res.json()).error.code, "unauthorized");
+  assertEquals(fns(expired.calls), ["my_tier"]);
+  const odd = gateStub({ tier: "gold" });
+  const bad = await gated(odd)(new Request(`${BASE}/v2/coverage`, { headers: SIGNED }));
+  assertEquals(bad.status, 500);
+  assertEquals((await bad.json()).error.code, "internal");
+});
+
+Deno.test("clientIp: cf-connecting-ip, else x-forwarded-for's first hop, else one shared bucket", () => {
+  assertEquals(clientIp(new Headers({ "cf-connecting-ip": "2001:db8::1", "x-forwarded-for": "1.1.1.1" })), "2001:db8::1");
+  assertEquals(clientIp(new Headers({ "x-forwarded-for": " 192.0.2.4 , 10.0.0.1" })), "192.0.2.4");
+  assertEquals(clientIp(new Headers({ "x-forwarded-for": "not-an-ip" })), "0.0.0.0");
+  assertEquals(clientIp(new Headers({ "cf-connecting-ip": "evil'; drop" })), "0.0.0.0");
+  assertEquals(clientIp(new Headers()), "0.0.0.0");
+});
+
+Deno.test("retryAfter: seconds to the next minute, 1..60", () => {
+  assertEquals(retryAfter(Date.UTC(2026, 10, 4, 0, 30, 0)), 60);
+  assertEquals(retryAfter(Date.UTC(2026, 10, 4, 0, 30, 59, 900)), 1);
+  assertEquals(retryAfter(NOW), 45);
 });

@@ -38,15 +38,17 @@ export const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS", // POST: portfolio only (#1058)
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, accept",
+  // #1064: a browser caller may read the rate limit and when to retry.
+  "Access-Control-Expose-Headers": "Retry-After, RateLimit-Limit, RateLimit-Remaining",
 };
 
-export function json(status: number, body: unknown): Response {
+export function json(status: number, body: unknown, extra: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json; charset=utf-8" },
+    headers: { ...CORS, "Content-Type": "application/json; charset=utf-8", ...extra },
   });
 }
 
 export function errorResponse(e: ApiError): Response {
-  return json(e.status, e.body());
+  return json(e.status, e.body(), e.headers);
 }

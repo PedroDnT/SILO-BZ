@@ -25,7 +25,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   (`cvm_source_validator`, 7 days) for CDA, FII, FIP, SECURIT, CIA IPE/FCA; a
   304 is `skipped`, `unchanged:`, fresh to `check_staleness.py`.
 - Daily windows heal late publication: CVM 4 months (gap-aware), the four CDA
-  blocks every month through M+5 (about 90 days late), last
+  blocks every month through M+5 (~90 days late), last
   year's FII files in January-March, COTAHIST and B3's consolidated trade file
   (in `run_b3_events`) 7 days, BACEN 30 days, fiscal SGS 150 (a failed held research SGS series ends the row `error`). Current-year ITR/DFP: full on
   Monday (CVM regenerates them Sunday), new documents and lineless headers
@@ -42,14 +42,13 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 
 ## Analytical
 
-- Views change as rows land.
+- Views change as rows land; no pg_cron.
 - Matviews (`dim_fund`, `fact_fund_monthly`, `mv_period_completeness`, …) change
   only when `scripts/apply_analytical.sh` recreates them.
 - `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are in `schema.sql`
   (a view depends on the first). The same apply refreshes them
   (`22_b3_tape_matviews.sql`) and `mv_b3_cash_event` (migration 56; it reads
-  `cia_ticker`): the cash events behind `close_total_return`, resolved once
-  (the ISIN join is slow).
+  `cia_ticker`): the cash events behind `close_total_return`, resolved once.
 - `mv_fund_holdings_monthly` (`30_fund_holdings.sql`) is the one daily pass over
   the CDA holdings tables (no period index); `/holdings` reads it.
 - `mv_fund_name_history` (`31_api_portfolio.sql`): every filed name, trigram-indexed
@@ -61,7 +60,6 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   ETFs via `portfolio_class_index` (reviewed YAML) and `etf_market_snapshot`. `class_return_distribution` reads `fact_fund_monthly`;
   `portfolio_equivalents` reads the same view (approved pairs), `cvm_etf_registry`
   and `etf_market_snapshot`.
-- pg_cron is absent.
 
 ## Serving
 
@@ -70,7 +68,7 @@ per settlement/classification.
 
 | Path | Reads | Fresh as of |
 | --- | --- | --- |
-| PostgREST, SDK, `silo-mcp` | `api.*` | live database |
+| PostgREST, SDK, `silo-mcp`, `silo-api` (counts calls, 84) | `api.*` | live database |
 | `serve/` (local only) | `api.*` | live database |
 | dashboard | `public`, at build | last successful build |
 | research job | landing tables | when dispatched |

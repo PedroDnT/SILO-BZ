@@ -34,6 +34,13 @@ SQL_GLOB = "[0-9][0-9]_*.sql"
 # `service_role` bypasses the boundary; a grant to those alone publishes nothing.
 PUBLIC_ROLES = ("anon", "authenticated")
 
+# Granted, published in openapi.json, but plumbing for the API v2 gateway and
+# not data (#1064, 39_api_tiers.sql): the caller's tier and the per-minute
+# counter. They are not MCP tools. silo-mcp calls anonymously, so my_tier would
+# always answer `anonymous`, and rate_hit writes a counter row: a tool that
+# charges a rate bucket is not a read.
+GATEWAY_ONLY = frozenset({"my_tier", "rate_hit"})
+
 
 def sql_files() -> List[Path]:
     return sorted(ANALYTICAL.glob(SQL_GLOB))
@@ -191,3 +198,8 @@ def function_chunks(path: Path) -> Dict[str, str]:
         end = starts[i + 1][0] if i + 1 < len(starts) else len(sql)
         out[name] = sql[pos:end]
     return out
+
+
+def mcp_tool_names() -> List[str]:
+    """The granted endpoints the MCP serves as tools: all but GATEWAY_ONLY, sorted."""
+    return sorted(n for n, e in manifest().items() if e.granted and n not in GATEWAY_ONLY)

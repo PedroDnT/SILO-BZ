@@ -31,6 +31,10 @@ hand-declared `postgrest` map is pinned to the same set by
 title and optional lead, in `tools.ts` (`TOOL_TITLES`), which fails to load,
 and `tests/test_mcp_contract.py` fails, when an endpoint has no title or a
 title names no endpoint.
+
+One exception: `GATEWAY_ONLY` (`api.my_tier`, `api.rate_hit`, #1064) is
+granted and published but is the v2 gateway's plumbing, not data, so it is
+left out of both `CONTRACT` and `ENDPOINT_NAMES`.
 """
 
 from __future__ import annotations
@@ -46,7 +50,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:  # run as a script: make `serve` importable
     sys.path.insert(0, str(ROOT))
 
-from serve.endpoint_manifest import manifest  # noqa: E402
+from serve.endpoint_manifest import GATEWAY_ONLY, manifest  # noqa: E402
 OPENAPI = ROOT / "openapi.json"
 OUT = ROOT / "supabase" / "functions" / "silo-mcp" / "contract.generated.ts"
 
@@ -159,13 +163,13 @@ def build(openapi: Dict[str, Any]) -> Dict[str, Any]:
                 "columns": columns,
                 "inputSchema": _view_schema(columns),
             }
-    return entries
+    return {name: e for name, e in entries.items() if name not in GATEWAY_ONLY}
 
 
 def endpoint_names(entries: Dict[str, Any]) -> List[str]:
     """The granted `api.*` endpoints from the SQL, sorted; raises when
     openapi.json does not publish exactly that set (or of the same kind)."""
-    granted = {name: e for name, e in manifest().items() if e.granted}
+    granted = {name: e for name, e in manifest().items() if e.granted and name not in GATEWAY_ONLY}
     missing = sorted(set(granted) - set(entries))
     extra = sorted(set(entries) - set(granted))
     wrong_kind = sorted(n for n in set(granted) & set(entries) if granted[n].kind != entries[n]["kind"])

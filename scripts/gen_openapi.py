@@ -690,6 +690,8 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^panel$"), "Panel"),
     (re.compile(r"^(lookup)$"), "Lookup"),
     (re.compile(r"^(coverage|metric_coverage|catalog)$"), "Coverage & catalog"),
+    # API v2 gateway plumbing (#1064): the caller's tier and the per-minute counter.
+    (re.compile(r"^(my_tier|rate_hit)$"), "Gateway"),
 ]
 
 

@@ -376,6 +376,10 @@
    "params": [],
    "required": []
   },
+  "my_tier": {
+   "params": [],
+   "required": []
+  },
   "option_chain": {
    "params": [
     "p_expiry_from",
@@ -551,6 +555,12 @@
    "required": [
     "p_ticker"
    ]
+  },
+  "rate_hit": {
+   "params": [
+    "p_bucket"
+   ],
+   "required": []
   },
   "research_universe": {
    "params": [],
