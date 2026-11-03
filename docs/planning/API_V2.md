@@ -7,9 +7,9 @@ v0.2 of 2026-11-01.
 **Status.** The skeleton is built (#1053): the Edge Function
 `supabase/functions/silo-api/`, its resource registry, and the resources
 `search` and `coverage`. `funds`, `fidc` and `events` are built too (#1056),
-and so are `prices` and `statements` (#1055), and `screens`, `panel` and
-`portfolio` (#1058).
-The rest are listed by `GET /v2/` as `planned`.
+and so are `prices` and `statements` (#1055), `screens`, `panel` and
+`portfolio` (#1058), and `derivatives`, `curves`, `macro` and
+`positioning` (#1057). All 14 resources are built.
 Nothing is deployed: a merge deploys no Edge Function, and every deploy needs
 the owner's approval.
 
@@ -117,10 +117,10 @@ Main parameters, defaults in brackets.
 | `statements` | `kind` [`all`; `income`, `balance`, `cashflow`, `headline`, `versions`], `period` [`both`; `quarterly`, `annual`], `scope` [`consolidated`; `individual`] | 5 years | `as_of` [none], `statement` [`DRE`] | built |
 | `funds` | `kind` [`profile`; `nav`, `holdings`, `debentures`, `properties`], `family` [all; `fi`, `fidc`, `fii`, `fip`, ...] | 3 years | `holding` [none: reverse lookup by ticker or issuer], `status` [all] | built |
 | `fidc` | `kind` [`portfolio`; `tranches`, `aging`, `cedentes`, `sacados`] | 2 years | `series`, `cedente`, `item` [all] | built |
-| `derivatives` | `kind` [`chain`; `history`, `exercises`, `termo`, `futures`, `futures_curve`, `di_settlement`], `date` [latest session] | 1 year | `expiry_from` [today] | planned |
-| `curves` | `kind` [`snapshot`; `history`, `vertices`], `curve` [`PRE`; `DOC`, ...], `tenor` [252 business days, for history] | 1 year | `date` [latest session] | planned |
-| `macro` | `kind` [`series`; `inflation`, `inflation_items`, `fx`, `expectations`] | 1 year; 3 years for inflation | `family`, `currency` [`USD`], `horizon` | planned |
-| `positioning` | `kind` [`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`] | 3 months | `sector`, `investor_type` [all] | planned |
+| `derivatives` | `kind` [`chain`; `history`, `exercises`, `termo`, `futures`, `futures_curve`, `di_settlement`], `date` [latest session] | 1 year | `expiry_from` [today] | built |
+| `curves` | `kind` [`snapshot`; `history`, `vertices`], `curve` [`PRE`; `DOC`, `DPL`], `tenor` [360 calendar days, the one-year fixed vertex, for history] | 1 year | `date` [latest session] | built |
+| `macro` | `kind` [`series`; `inflation`, `inflation_items`, `fx`, `expectations`] | 1 year; 3 years for inflation | `family`, `currency` [`USD`], `horizon` | built |
+| `positioning` | `kind` [`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`] | 3 months | `sector`, `investor_type` [all] | built |
 | `events` | `kind` [`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`], `category` [all] | 12 months | `family` [all] | built |
 | `screens` | `kind` [`list`: the screens with one-line descriptions; one kind per `screen_*` function] | per screen | each screen's thresholds, with today's SQL defaults | built |
 | `panel` | `metric` [`auto`: each family's default metric, as today], `freq` [`month`; `day` for quotes only], `family` [`auto`] | 3 years | `min_nav`, `min_months` [none] | built |
@@ -220,6 +220,47 @@ Notes:
   `equivalents` read the ANBIMA class label as filed in the CVM Extrato
   (`cvm_fi_extrato.classe_anbima`); none reads an `anbima_*` table, so all
   four are built.
+- A view read with a window, as built (#1057): a registry `range` names the
+  view's date column, and `from`/`to` become `gte`/`lte` on it (PostgREST
+  `and=(...)`), through the one `callView`. A kind can carry its own
+  `window_months`, and a `when_empty` can name a value (`currency=all`) that
+  selects its fallback.
+- `derivatives`, as built (#1057): `chain` calls `option_chain` (`id` is the
+  option prefix), `history` `option_history`, `exercises` `option_exercises`,
+  `termo` `termo_history`, `futures` `future_series`, `futures_curve`
+  `future_curve` (`id` is the root; none sends the SQL default `DI1`), and
+  `di_settlement` reads the `di_settlement` view, newest first. `date` applies
+  to `chain` and `futures_curve`; `expiry_from` to `chain`. Ids are sent upper
+  case. `option_chain` and `option_exercises` cut at a tier ceiling without
+  refusing, so the gateway asks for one row more than it serves: more rows
+  than wanted is `over_limit` unless `limit` was sent (then the first N, with
+  `meta.truncated`), and a count equal to a known ceiling is refused, because
+  it cannot be told from a cut.
+- `curves`, as built (#1057): `snapshot` calls `curve`, `history` calls
+  `curve_history`, `vertices` reads the `reference_rate` view for one curve on
+  one session (the newest in the 14 days to today unless `date` is given).
+  `tenor` is B3's nominal tenor in calendar days (`p_tenor_days`, default 360,
+  the one-year fixed vertex), not 252 business days: the SQL takes only a fixed
+  vertex and refuses any other tenor with the list, and the gateway never
+  interpolates.
+- `macro`, as built (#1057): `series` calls `macro_series` (`id` required),
+  `inflation` calls `inflation` (`family` -> `p_family`), `inflation_items`
+  calls `inflation_items` (with an `id`, `p_level` is NULL so the item is
+  found at its own level; with none, the SQL's level 1, the groups), `fx`
+  calls `ptax` (`currency` -> `p_currency`; `currency=all` reads the
+  `ptax_daily` view), `expectations` calls `focus_expectations`. There the
+  hidden `family` is the Focus survey (`annual` by default, `monthly`,
+  `selic`, `inflation_12m` -> `p_endpoint`), and `horizon` defaults to the
+  current year (UTC-3) for `annual` and is required for the others. A family
+  of the other kind is `bad_request`.
+- `positioning`, as built (#1057): one GET per kind on `short_interest`,
+  `short_interest_by_sector`, `lending_trades`, `lending_participants` or
+  `investor_flow`, newest first, `from`/`to` as a range, `sector` and
+  `investor_type` as eq. filters. A selection over one page is refused unless
+  `limit` asks for the newest N. `?help` carries the BDI notes: short interest
+  reads only B3's `Total` rows (`is_total`), `pct_float` goes with
+  `float_basis`, a lending broker (`doador` / `tomador`) is not the beneficial
+  owner, and a missed session is lost.
 
 ### The first five minutes
 

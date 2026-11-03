@@ -50,6 +50,7 @@ BUILT |= {"prices", "statements"}  # #1055
 BUILT |= {"screens", "panel", "portfolio"}  # #1058
 # A resource with a single kind takes no kind parameter (#1058).
 ONE_KIND = {"panel"}
+BUILT |= {"derivatives", "curves", "macro", "positioning"}  # #1057
 NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -484,3 +485,103 @@ def test_only_portfolio_is_post_and_its_body_fields_are_lists():
         assert ("body" in r) == (r["name"] == "portfolio"), r["name"]
     for b in _resource("portfolio")["body"]:
         assert b["items"] in ("string", "number", "date") and b["default"] is None and b["default_doc"].strip(), b
+# ------------------------------- derivatives, curves, macro, positioning (#1057) --
+
+ISSUE_1057 = {
+    "derivatives": {
+        "chain": "option_chain", "history": "option_history", "exercises": "option_exercises",
+        "termo": "termo_history", "futures": "future_series", "futures_curve": "future_curve",
+        "di_settlement": "di_settlement",
+    },
+    "curves": {"snapshot": "curve", "history": "curve_history", "vertices": "reference_rate"},
+    "macro": {
+        "series": "macro_series", "inflation": "inflation", "inflation_items": "inflation_items",
+        "fx": "ptax", "expectations": "focus_expectations",
+    },
+    "positioning": {
+        "short_interest": "short_interest", "short_by_sector": "short_interest_by_sector",
+        "lending": "lending_trades", "lending_brokers": "lending_participants", "investor_flow": "investor_flow",
+    },
+}
+WINDOWS_1057 = {"derivatives": 12, "curves": 12, "macro": 12, "positioning": 3}
+MAIN_1057 = {"derivatives": ["kind", "date"], "curves": ["kind", "curve", "tenor"], "macro": ["kind"], "positioning": ["kind"]}
+HIDDEN_1057 = {
+    "derivatives": {"expiry_from"}, "curves": {"date"},
+    "macro": {"family", "currency", "horizon"}, "positioning": {"sector", "investor_type"},
+}
+
+
+@pytest.mark.parametrize("name", sorted(ISSUE_1057))
+def test_1057_kinds_map_to_the_issue_endpoints(name):
+    r = _resource(name)
+    assert {k: v["endpoint"] for k, v in r["kinds"].items()} == ISSUE_1057[name]
+    kind = next(p for p in r["parameters"] if p["name"] == "kind")
+    assert kind["default"] == next(iter(ISSUE_1057[name])), "the first kind is the default"
+    assert r["window_months"] == WINDOWS_1057[name]
+    assert [p["name"] for p in r["parameters"] if p["visibility"] == "main"] == MAIN_1057[name]
+    assert {p["name"] for p in r["parameters"] if p["visibility"] == "hidden"} == HIDDEN_1057[name]
+
+
+def test_a_view_range_is_a_date_column_the_view_publishes_and_from_to_map_to_it():
+    for r in _built():
+        for kind, plan in _plans(r):
+            if "range" not in plan:
+                continue
+            assert plan.get("view"), f"{r['name']} kind {kind}: range is for a view read"
+            assert plan["range"] in _view_columns(plan["endpoint"]), (r["name"], kind)
+            assert plan["args"].get("from") == plan["range"] == plan["args"].get("to"), (r["name"], kind)
+
+
+def test_every_view_read_that_takes_a_window_has_a_range():
+    """A view kind that maps from must select a range, never an eq. on one date."""
+    for r in _built():
+        for kind, plan in _plans(r):
+            if plan.get("view") and "from" in plan["args"]:
+                assert plan.get("range"), f"{r['name']} kind {kind}: from on a view needs range"
+
+
+def test_macro_inflation_kinds_have_the_three_year_window():
+    kinds = _resource("macro")["kinds"]
+    for k in ("inflation", "inflation_items"):
+        assert kinds[k]["window_months"] == 36, k
+    assert all("window_months" not in kinds[k] for k in ("series", "fx", "expectations"))
+
+
+def test_macro_family_maps_the_focus_surveys_to_the_sql_endpoints():
+    fam = next(p for p in _resource("macro")["parameters"] if p["name"] == "family")
+    body = re.search(r"FUNCTION api\.focus_expectations\(.*?NOT IN \((.*?)\)", _sql(), re.S)
+    assert body, "api.focus_expectations endpoint list not found"
+    assert sorted(fam["sql_values"].values()) == sorted(re.findall(r"'([A-Za-z0-9]+)'", body.group(1)))
+
+
+def test_macro_fx_all_reads_the_ptax_daily_view():
+    fx = _resource("macro")["kinds"]["fx"]
+    assert fx["when_empty"]["parameter"] == "currency" and fx["when_empty"]["value"] == "all"
+    assert fx["when_empty"]["plan"]["endpoint"] == "ptax_daily" and fx["when_empty"]["plan"]["view"] is True
+
+
+def test_curves_tenor_default_is_a_fixed_vertex_in_calendar_days():
+    """curve_history takes B3's nominal tenor in CALENDAR days; 360 is the one-year vertex."""
+    tenor = next(p for p in _resource("curves")["parameters"] if p["name"] == "tenor")
+    assert tenor["default"] == 360 and tenor["type"] == "integer"
+    assert _resource("curves")["kinds"]["history"]["args"]["tenor"] == "p_tenor_days"
+    curve = next(p for p in _resource("curves")["parameters"] if p["name"] == "curve")
+    assert curve["default"] == "PRE" and set(curve["values"]) == {"PRE", "DOC", "DPL"}
+
+
+def test_positioning_help_carries_the_bdi_ratchet_notes():
+    notes = " ".join(_resource("positioning")["notes"])
+    for must in ("is_total", "doador", "tomador", "beneficial owner", "float_basis", "21 business days"):
+        assert must in notes, must
+
+
+def test_derivatives_clamped_functions_take_limit_and_cut_silently():
+    """option_chain and option_exercises cut at a tier ceiling (LIMIT LEAST), so derivatives.ts probes N+1."""
+    sql = _sql()
+    for fn in ("option_chain", "option_exercises"):
+        body = re.search(rf"FUNCTION api\.{fn}\(.*?\$\$;", sql, re.S)
+        assert body and "LIMIT LEAST(" in body.group(0), fn
+    ts = (FN_DIR / "resources" / "derivatives.ts").read_text(encoding="utf-8")
+    assert "option_chain:" in ts and "option_exercises:" in ts
+    kinds = _resource("derivatives")["kinds"]
+    assert kinds["chain"]["args"]["limit"] == "p_limit" and kinds["exercises"]["args"]["limit"] == "p_limit"

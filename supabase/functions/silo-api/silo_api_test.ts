@@ -53,28 +53,23 @@ Deno.test("routes strip the function prefix and accept a trailing slash", () => 
   assertEquals(routeOf("/silo-api/v2/search/extra"), null);
 });
 
-Deno.test("GET /v2/ lists the 14 resources, unbuilt ones as planned, with no upstream call", async () => {
+Deno.test("GET /v2/ lists the 14 resources, every one built (#1057 built the last), with no upstream call", async () => {
   const { res, json, calls } = await get("/v2/");
   assertEquals(res.status, 200);
   assertEquals(calls.length, 0);
   assertEquals(json.data.length, 14);
-  const byName = Object.fromEntries(json.data.map((r: { name: string; status: string }) => [r.name, r.status]));
-  assertEquals(byName.search, "built");
-  assertEquals(byName.coverage, "built");
-  for (const n of ["funds", "fidc", "events", "prices", "statements"]) assertEquals(byName[n], "built", n);
-  assertEquals(byName.curves, "planned");
+  for (const r of json.data as { name: string; status: string }[]) assertEquals(r.status, "built", r.name);
   assertEquals(json.meta.resource, "index");
 });
 
-Deno.test("an unknown resource and a planned one are refused with v2 error bodies", async () => {
+// No resource is planned any more, so the 501 path for a planned one has no
+// registry entry to reach it; the unknown-resource refusal is what remains.
+Deno.test("an unknown resource is refused with a v2 error body and no upstream call", async () => {
   const unknown = await get("/v2/quotes");
   assertEquals(unknown.res.status, 404);
   assertEquals(unknown.json.error.code, "bad_request");
   assertEquals(unknown.json.error.target, "resource");
-  const planned = await get("/v2/curves?curve=PRE");
-  assertEquals(planned.res.status, 501);
-  assertEquals(planned.json.error.code, "unavailable");
-  assertEquals(planned.calls.length, 0);
+  assertEquals(unknown.calls.length, 0);
 });
 
 Deno.test("?help lists main parameters with defaults; ?help=all adds the hidden ones", async () => {
@@ -712,6 +707,227 @@ Deno.test("statements with no id lists the research universe", async () => {
   assertEquals(json.data.length, 1);
   const bad = await get("/v2/statements?period=annual");
   assertEquals(bad.json.error.target, "period");
+});
+
+// ------------------------- derivatives, curves, macro, positioning (#1057) --
+
+const M3 = minusMonths(todayUtcMinus3(), 3);
+// Y3 (36 months back) is declared with the #1058 tests below; a const is hoisted for use at test run time.
+const rowsOf = (n: number, f: (i: number) => Record<string, unknown> = (i) => ({ codneg: `PETRK${i}` })) =>
+  JSON.stringify(Array.from({ length: n }, (_, i) => f(i)));
+
+Deno.test("derivatives chain: option_chain with the prefix upper case, one row more than it serves", async () => {
+  const { res, json, calls } = await get("/v2/derivatives?id=petr", 200, rowsOf(40));
+  assertEquals(res.status, 200);
+  assert(calls[0].url.endsWith("/rpc/option_chain"));
+  assertEquals(body(calls[0]), { p_prefix: "PETR", p_limit: 101 }, "no date: the SQL's latest session; expiry_from: today");
+  assertEquals(json.data.length, 40);
+  assertEquals(json.meta.truncated, false);
+  assertEquals(json.meta.request, { kind: "chain", date: null, expiry_from: null, id: "PETR", from: null, to: null, limit: null });
+
+  const dated = await get("/v2/derivatives?id=PETR&date=2026-10-30&expiry_from=2026-11-01&limit=50", 200, rowsOf(10));
+  assertEquals(body(dated.calls[0]), { p_prefix: "PETR", p_trade_date: "2026-10-30", p_expiry_from: "2026-11-01", p_limit: 51 });
+});
+
+Deno.test("derivatives chain refuses a cut chain; limit serves the first N and says so", async () => {
+  const over = await get("/v2/derivatives?id=PETR", 200, rowsOf(101));
+  assertEquals(over.res.status, 400);
+  assertEquals(over.json.error.code, "over_limit");
+  assertEquals(over.json.error.target, "limit");
+  assert(!("data" in over.json));
+  const head = await get("/v2/derivatives?id=PETR&limit=20", 200, rowsOf(21));
+  assertEquals(head.json.data.length, 20);
+  assertEquals(head.json.meta.truncated, true);
+  // The anonymous ceiling (200) answered a request for 300: it cannot be told from a cut.
+  const ceiling = await get("/v2/derivatives?id=PETR&limit=300", 200, rowsOf(200));
+  assertEquals(ceiling.json.error.code, "over_limit");
+  // Exactly the N asked, at a ceiling: served, and whether more exist is unknown.
+  const exact = await get("/v2/derivatives?id=PETR&limit=200", 200, rowsOf(200));
+  assertEquals(exact.json.data.length, 200);
+  assertEquals(exact.json.meta.truncated, null);
+});
+
+Deno.test("derivatives exercises: no limit asks 1001, and a 500-row (anonymous ceiling) answer is refused", async () => {
+  const ok = await get("/v2/derivatives?kind=exercises&id=VALE&from=2026-01-01", 200, rowsOf(3));
+  assert(ok.calls[0].url.endsWith("/rpc/option_exercises"));
+  assertEquals(body(ok.calls[0]), { p_prefix: "VALE", p_from: "2026-01-01", p_limit: 1001 });
+  assertEquals(ok.json.meta.truncated, false);
+  const cut = await get("/v2/derivatives?kind=exercises&id=VALE", 200, rowsOf(500));
+  assertEquals(cut.json.error.code, "over_limit");
+});
+
+Deno.test("derivatives history, termo, futures need an id and take the 1-year window", async () => {
+  for (const [kind, fn, arg] of [["history", "option_history", "p_codneg"], ["termo", "termo_history", "p_codneg"], ["futures", "future_series", "p_ticker"]]) {
+    const r = await get(`/v2/derivatives?kind=${kind}&id=x1`);
+    assert(r.calls[0].url.endsWith(`/rpc/${fn}`), kind);
+    assertEquals(body(r.calls[0]), { [arg]: "X1", p_from: Y1 }, kind);
+    assertEquals(r.json.meta.truncated, undefined, "only the cutting functions carry truncated");
+    const none = await get(`/v2/derivatives?kind=${kind}`);
+    assertEquals(none.json.error.target, "id");
+    assertEquals(none.calls.length, 0);
+  }
+});
+
+Deno.test("derivatives futures_curve: root default DI1 (not sent), date; di_settlement is a ranged GET", async () => {
+  const curve = await get("/v2/derivatives?kind=futures_curve&date=2026-10-30");
+  assert(curve.calls[0].url.endsWith("/rpc/future_curve"));
+  assertEquals(body(curve.calls[0]), { p_trade_date: "2026-10-30" });
+  const misplaced = await get("/v2/derivatives?kind=futures_curve&from=2026-01-01");
+  assertEquals(misplaced.json.error.target, "from");
+
+  const di = await getView("/v2/derivatives?kind=di_settlement&id=di1f27&from=2026-01-01&to=2026-06-30", [{ trade_date: "2026-06-30" }], "0-0/1");
+  assertEquals(di.calls[0].init.method, "GET");
+  const u = new URL(di.calls[0].url);
+  assertEquals(u.pathname, "/rest/v1/di_settlement");
+  assertEquals(u.searchParams.get("ticker"), "eq.DI1F27");
+  assertEquals(u.searchParams.get("and"), "(trade_date.gte.2026-01-01,trade_date.lte.2026-06-30)");
+  assertEquals(u.searchParams.get("trade_date"), null, "the range is not an eq. filter");
+  assertEquals(u.searchParams.get("order"), "trade_date.desc,ticker.asc");
+  assertEquals(di.json.meta.endpoint, "api.di_settlement");
+  const date = await get("/v2/derivatives?kind=di_settlement&date=2026-10-30");
+  assertEquals(date.json.error.target, "date");
+  assertEquals(date.calls.length, 0);
+  const over = await getView("/v2/derivatives?kind=di_settlement", Array.from({ length: 1000 }, () => ({})), "0-999/9000");
+  assertEquals(over.json.error.code, "over_limit");
+});
+
+Deno.test("curves snapshot and history map curve, date and tenor; tenor is used by history only", async () => {
+  const snap = await get("/v2/curves");
+  assert(snap.calls[0].url.endsWith("/rpc/curve"));
+  assertEquals(body(snap.calls[0]), { p_curve: "PRE" });
+  assertEquals(snap.json.meta.request, { kind: "snapshot", curve: "PRE", tenor: 360, date: null, from: null, to: null });
+  const hist = await get("/v2/curves?kind=history&curve=DPL&tenor=720&to=2026-06-30");
+  assert(hist.calls[0].url.endsWith("/rpc/curve_history"));
+  assertEquals(body(hist.calls[0]), { p_curve: "DPL", p_tenor_days: 720, p_from: "2025-06-30", p_to: "2026-06-30" });
+  const tenor = await get("/v2/curves?tenor=90");
+  assertEquals(tenor.json.error.target, "tenor");
+  const curve = await get("/v2/curves?curve=DIC");
+  assertEquals(curve.json.error.target, "curve");
+  for (const r of [tenor, curve]) assertEquals(r.calls.length, 0);
+});
+
+Deno.test("curves vertices: one GET on reference_rate, the newest session only, or the date asked", async () => {
+  const rows = [
+    { trade_date: "2026-10-30", curve: "PRE", calendar_days: 1, rate_pct: 14.9 },
+    { trade_date: "2026-10-30", curve: "PRE", calendar_days: 30, rate_pct: 14.8 },
+    { trade_date: "2026-10-29", curve: "PRE", calendar_days: 1, rate_pct: 14.9 },
+  ];
+  const { json, calls } = await get("/v2/curves?kind=vertices&curve=DOC", 200, JSON.stringify(rows));
+  const u = new URL(calls[0].url);
+  assertEquals(u.pathname, "/rest/v1/reference_rate");
+  assertEquals(u.searchParams.get("curve"), "eq.DOC");
+  assert(u.searchParams.get("trade_date")!.startsWith("gte."));
+  assertEquals(u.searchParams.get("order"), "trade_date.desc,calendar_days.asc");
+  assertEquals(json.data.length, 2);
+  assertEquals(json.meta.endpoint, "api.reference_rate");
+  const dated = await get("/v2/curves?kind=vertices&date=2026-10-29", 200, "[]");
+  assertEquals(new URL(dated.calls[0].url).searchParams.get("trade_date"), "eq.2026-10-29");
+  assertEquals(dated.json.data, []);
+  const none = await get("/v2/curves?kind=vertices", 200, "[]");
+  assertEquals(none.json.error.target, "date");
+  const window = await get("/v2/curves?kind=vertices&from=2026-01-01");
+  assertEquals(window.json.error.target, "from");
+});
+
+Deno.test("macro series needs an id; inflation takes the 3-year window and family", async () => {
+  const s = await get("/v2/macro?id=SELIC_META");
+  assert(s.calls[0].url.endsWith("/rpc/macro_series"));
+  assertEquals(body(s.calls[0]), { p_series: "SELIC_META", p_from: Y1 });
+  const none = await get("/v2/macro");
+  assertEquals(none.json.error.target, "id");
+  assertEquals(none.calls.length, 0);
+
+  const inf = await get("/v2/macro?kind=inflation&family=core");
+  assert(inf.calls[0].url.endsWith("/rpc/inflation"));
+  assertEquals(body(inf.calls[0]), { p_family: "core", p_from: Y3 });
+  const focusFamily = await get("/v2/macro?kind=inflation&family=selic");
+  assertEquals(focusFamily.json.error.target, "family");
+  assertEquals(focusFamily.calls.length, 0);
+  const misplaced = await get("/v2/macro?id=CDI&family=core");
+  assertEquals(misplaced.json.error.target, "family");
+});
+
+Deno.test("macro inflation_items: no id reads the groups (SQL default), an id reads every level", async () => {
+  const groups = await get("/v2/macro?kind=inflation_items");
+  assert(groups.calls[0].url.endsWith("/rpc/inflation_items"));
+  assertEquals(body(groups.calls[0]), { p_from: Y3 });
+  const item = await get("/v2/macro?kind=inflation_items&id=1101002&from=2025-01-01");
+  assertEquals(body(item.calls[0]), { p_item: "1101002", p_from: "2025-01-01", p_level: null });
+});
+
+Deno.test("macro fx: ptax for one currency; currency=all reads the ptax_daily view with a range", async () => {
+  const usd = await get("/v2/macro?kind=fx");
+  assert(usd.calls[0].url.endsWith("/rpc/ptax"));
+  assertEquals(body(usd.calls[0]), { p_currency: "USD", p_from: Y1 });
+  const all = await getView("/v2/macro?kind=fx&currency=all&from=2026-10-01&limit=10", [{ date: "2026-10-30", currency: "EUR" }], "0-0/1");
+  const u = new URL(all.calls[0].url);
+  assertEquals(u.pathname, "/rest/v1/ptax_daily");
+  assertEquals(u.searchParams.get("date"), "gte.2026-10-01");
+  assertEquals(u.searchParams.get("limit"), "10");
+  assertEquals(u.searchParams.get("currency"), null);
+  assertEquals(all.json.meta.endpoint, "api.ptax_daily");
+  const limit = await get("/v2/macro?kind=fx&limit=10");
+  assertEquals(limit.json.error.target, "limit", "limit applies to currency=all only");
+});
+
+Deno.test("macro expectations: family is the Focus survey (annual by default) and horizon defaults to this year", async () => {
+  const year = todayUtcMinus3().slice(0, 4);
+  const a = await get("/v2/macro?kind=expectations&id=IPCA");
+  assert(a.calls[0].url.endsWith("/rpc/focus_expectations"));
+  assertEquals(body(a.calls[0]), { p_indicator: "IPCA", p_endpoint: "ExpectativasMercadoAnuais", p_horizon: year, p_from: Y1 });
+  assertEquals(a.json.meta.request.family, "annual");
+  assertEquals(a.json.meta.request.horizon, year);
+  const m = await get("/v2/macro?kind=expectations&family=selic&horizon=R6/2028");
+  assertEquals(body(m.calls[0]).p_endpoint, "ExpectativasMercadoSelic");
+  assertEquals(body(m.calls[0]).p_horizon, "R6/2028");
+  const noHorizon = await get("/v2/macro?kind=expectations&family=monthly");
+  assertEquals(noHorizon.json.error.target, "horizon");
+  const wrong = await get("/v2/macro?kind=expectations&family=core");
+  assertEquals(wrong.json.error.target, "family");
+  for (const r of [noHorizon, wrong]) assertEquals(r.calls.length, 0);
+});
+
+Deno.test("positioning: each kind GETs its view newest first, with a 3-month range and eq filters", async () => {
+  const si = await getView("/v2/positioning?id=petr4", [{ trade_date: "2026-10-30", ticker: "PETR4" }], "0-0/1");
+  let u = new URL(si.calls[0].url);
+  assertEquals(u.pathname, "/rest/v1/short_interest");
+  assertEquals(u.searchParams.get("ticker"), "eq.PETR4");
+  assertEquals(u.searchParams.get("trade_date"), `gte.${M3}`);
+  assertEquals(u.searchParams.get("order"), "trade_date.desc,ticker.asc");
+  assertEquals(si.json.meta.request.from, M3);
+
+  const sector = await getView("/v2/positioning?kind=short_by_sector&sector=Petr%C3%B3leo&to=2026-10-30", [], "*/0");
+  u = new URL(sector.calls[0].url);
+  assertEquals(u.pathname, "/rest/v1/short_interest_by_sector");
+  assertEquals(u.searchParams.get("sector"), "eq.Petróleo");
+  assertEquals(u.searchParams.get("and"), "(trade_date.gte.2026-07-30,trade_date.lte.2026-10-30)");
+
+  for (const [kind, view] of [["lending", "lending_trades"], ["lending_brokers", "lending_participants"]]) {
+    const r = await getView(`/v2/positioning?kind=${kind}&id=VALE3`, [], "*/0");
+    assertEquals(new URL(r.calls[0].url).pathname, `/rest/v1/${view}`, kind);
+  }
+  const flow = await getView("/v2/positioning?kind=investor_flow&investor_type=Estrangeiro", [], "*/0");
+  u = new URL(flow.calls[0].url);
+  assertEquals(u.pathname, "/rest/v1/investor_flow");
+  assertEquals(u.searchParams.get("investor_type"), "eq.Estrangeiro");
+  assertEquals(u.searchParams.get("reference_date"), `gte.${M3}`);
+  assertEquals(u.searchParams.get("order"), "reference_date.desc,investor_type.asc");
+});
+
+Deno.test("positioning refuses a cut page and a parameter its kind cannot use", async () => {
+  const page = Array.from({ length: 1000 }, (_, i) => ({ ticker: `T${i}` }));
+  const over = await getView("/v2/positioning", page, "0-999/4200");
+  assertEquals(over.json.error.code, "over_limit");
+  const head = await getView("/v2/positioning?limit=5", page.slice(0, 5), "0-4/4200");
+  assertEquals(head.json.meta.truncated, true);
+  const id = await get("/v2/positioning?kind=investor_flow&id=PETR4");
+  assertEquals(id.json.error.target, "id");
+  const sector = await get("/v2/positioning?kind=lending&sector=Financeiro");
+  assertEquals(sector.json.error.target, "sector");
+  for (const r of [id, sector]) assertEquals(r.calls.length, 0);
+  const help = await get("/v2/positioning?help");
+  assert(help.json.data[0].notes.some((n: string) => n.includes("is_total")));
+  assert(!help.json.data[0].parameters.some((p: { name: string }) => p.name === "sector"), "sector is hidden");
 });
 
 Deno.test("every built resource keeps at most 3 main parameters, kind included", () => {
