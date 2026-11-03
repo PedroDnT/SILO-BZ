@@ -8,7 +8,7 @@
 //     silently ignored (a typo or a misplaced filter must not look like an answer).
 
 import { ApiError } from "./errors.ts";
-import type { FilterSpec, KindSpec, ParamSpec, Plan, ResourceSpec } from "./registry.ts";
+import type { BodySpec, FilterSpec, KindSpec, ParamSpec, Plan, ResourceSpec } from "./registry.ts";
 import { REGISTRY, SHARED_NAMES } from "./registry.ts";
 
 export type Value = string | number | string[] | null;
@@ -19,6 +19,8 @@ export interface ParsedRequest {
   kind: string | null;
   /** Every parameter the resource takes, with the value applied. */
   values: Record<string, Value>;
+  /** portfolio (#1058): the POST body's lists, by field name (parseBody). */
+  body?: Record<string, unknown[]>;
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -59,6 +61,9 @@ function coerce(spec: ParamSpec, raw: string): Value {
       }
       return n;
     }
+    case "number": // #1058: a screen threshold or a BRL floor, never negative.
+      if (!/^\d+(\.\d+)?$/.test(raw)) throw new ApiError(400, "bad_request", `${spec.name} must be a number >= 0; got \`${raw}\`.`, spec.name);
+      return Number(raw);
     case "list": {
       const items = raw.split(",").map((s) => s.trim()).filter((s) => s !== "");
       if (items.length === 0) throw new ApiError(400, "bad_request", `${spec.name} is empty; leave it out for the default.`, spec.name);
@@ -89,6 +94,8 @@ export function parseQuery(resource: ResourceSpec, query: URLSearchParams): Pars
     const taken = specs.map((p) => p.name).join(", ");
     const why = SHARED_NAMES.includes(key)
       ? `${key} is a shared parameter, but ${resource.name} does not take it.`
+      : resource.body?.some((b) => b.name === key)
+      ? `${key} is a list: send it in the JSON body, not the query string.`
       : `${resource.name} has no parameter \`${key}\`.`;
     throw new ApiError(400, "unknown_parameter", `${why} It takes: ${taken}. See /v2/${resource.name}?help=all.`, key);
   }
@@ -320,4 +327,53 @@ export function lastPerMonth(rows: Row[], col: string): Row[] {
     const d = r[col];
     return typeof d === "string" && last.get(d.slice(0, 7)) === d;
   });
+}
+
+// ---------------------------------------------------------------------------
+// portfolio: the POST body (#1058).
+// ---------------------------------------------------------------------------
+
+/** The most a body may hold; each function caps its lists far below this. */
+export const BODY_MAX_BYTES = 1_000_000;
+
+function bodyItemOk(spec: BodySpec, x: unknown): boolean {
+  if (x === null) return true;
+  if (spec.items === "number") return typeof x === "number" && Number.isFinite(x);
+  if (spec.items === "date") return typeof x === "string" && isRealDate(x);
+  return typeof x === "string";
+}
+
+/**
+ * A JSON object whose every key is a body field the resource declares and
+ * whose every value is a list of that field's items (null entries allowed).
+ * An unknown key is unknown_parameter; anything else wrong is bad_request.
+ */
+export function parseBody(resource: ResourceSpec, text: string): Record<string, unknown[]> {
+  const fields = new Map((resource.body ?? []).map((b) => [b.name, b]));
+  const names = [...fields.keys()].join(", ");
+  if (text.length > BODY_MAX_BYTES) throw new ApiError(400, "bad_request", `The body is over ${BODY_MAX_BYTES} bytes.`, "body");
+  let parsed: unknown;
+  try {
+    parsed = text.trim() === "" ? {} : JSON.parse(text);
+  } catch {
+    throw new ApiError(400, "bad_request", `The body is not JSON. Send an object of lists: ${names}.`, "body");
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new ApiError(400, "bad_request", `The body must be a JSON object of lists: ${names}.`, "body");
+  }
+  const out: Record<string, unknown[]> = {};
+  for (const [key, v] of Object.entries(parsed as Record<string, unknown>)) {
+    const spec = fields.get(key);
+    if (!spec) {
+      throw new ApiError(400, "unknown_parameter", `${resource.name} has no body field \`${key}\`. It takes: ${names}. See /v2/${resource.name}?help.`, key);
+    }
+    if (!Array.isArray(v)) throw new ApiError(400, "bad_request", `${key} must be a JSON list.`, key);
+    const bad = v.findIndex((x) => !bodyItemOk(spec, x));
+    if (bad >= 0) {
+      const what = spec.items === "date" ? "a date, YYYY-MM-DD" : `a ${spec.items}`;
+      throw new ApiError(400, "bad_request", `${key}[${bad}] must be ${what} or null; got ${JSON.stringify(v[bad])}.`, key);
+    }
+    out[key] = v;
+  }
+  return out;
 }

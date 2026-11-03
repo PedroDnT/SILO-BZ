@@ -36,7 +36,7 @@ export function envelope(data: unknown[], meta: Meta, nextPageUrl?: string): Env
 
 export const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS", // POST: portfolio only (#1058)
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, accept",
 };
 

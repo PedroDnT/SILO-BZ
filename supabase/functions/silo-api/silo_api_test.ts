@@ -718,6 +718,125 @@ Deno.test("every built resource keeps at most 3 main parameters, kind included",
   for (const r of REGISTRY.resources.filter((x) => x.status === "built")) {
     const main = (r.parameters ?? []).filter((p) => p.visibility === "main");
     assert(main.length <= 3, r.name);
-    assert(main.some((p) => p.name === "kind"), r.name);
+    // panel has one kind, so it takes no kind parameter (#1058).
+    if (r.name === "panel") assert(!(r.parameters ?? []).some((p) => p.name === "kind"));
+    else assert(main.some((p) => p.name === "kind"), r.name);
   }
+});
+
+// ------------------------------------------ panel, screens, portfolio (#1058) --
+
+const Y3 = minusMonths(todayUtcMinus3(), 36);
+
+async function post(path: string, payload: unknown, status = 200, rows = "[]") {
+  const stub = stubFetch(status, rows);
+  const handler = makeHandler({ fetchImpl: stub.impl, env });
+  const init: RequestInit = { method: "POST", body: typeof payload === "string" ? payload : JSON.stringify(payload) };
+  const res = await handler(new Request(`${BASE}${path}`, init));
+  return { res, json: await res.json(), calls: stub.calls };
+}
+
+Deno.test("panel: id is a list, 3 years by default, metric auto sends no p_metrics", async () => {
+  const { res, json, calls } = await get("/v2/panel?id=PETR4,%2033000167000101");
+  assertEquals(res.status, 200);
+  assert(calls[0].url.endsWith("/rpc/panel"));
+  assertEquals(body(calls[0]), { p_ids: ["PETR4", "33000167000101"], p_from: Y3, p_freq: "month" });
+  assertEquals(json.meta.kind, "panel");
+  assertEquals(json.meta.request.id, ["PETR4", "33000167000101"]);
+  const named = await get("/v2/panel?id=PETR4&metric=close,volume&freq=day&family=fi&from=2026-01-02");
+  assertEquals(body(named.calls[0]), { p_ids: ["PETR4"], p_metrics: ["close", "volume"], p_from: "2026-01-02", p_freq: "day", p_entity_type: "fi" });
+});
+
+Deno.test("panel: an unknown metric is unknown_parameter with the name in target, before any call", async () => {
+  const { res, json, calls } = await get("/v2/panel?id=PETR4&metric=close,clsoe");
+  assertEquals(res.status, 400);
+  assertEquals(json.error.code, "unknown_parameter");
+  assertEquals(json.error.target, "clsoe");
+  assertEquals(calls.length, 0);
+  const kind = await get("/v2/panel?id=PETR4&kind=panel");
+  assertEquals(kind.json.error.code, "unknown_parameter");
+});
+
+Deno.test("panel: the tier ceiling is the SQL's refusal, verbatim; no id needs a family; universe filters need no id", async () => {
+  const pg = { code: "22023", message: "panel accepts at most 3 ids per call for anonymous callers; 4 were given.", hint: null, details: null };
+  const over = await get("/v2/panel?id=A,B,C,D", 400, JSON.stringify(pg));
+  assertEquals(over.json.error.code, "over_limit");
+  assertEquals(over.json.error.message, pg.message);
+  assertEquals(body(over.calls[0]).p_ids, ["A", "B", "C", "D"], "never trimmed");
+  const none = await get("/v2/panel");
+  assertEquals(none.json.error.target, "id");
+  assertEquals(none.calls.length, 0);
+  const uni = await get("/v2/panel?family=fidc&min_nav=1000000&metric=delinquency");
+  assertEquals(body(uni.calls[0]), { p_metrics: ["delinquency"], p_from: Y3, p_freq: "month", p_entity_type: "fidc", p_min_nav: 1000000 });
+  const misplaced = await get("/v2/panel?id=PETR4&min_months=12");
+  assertEquals(misplaced.json.error.target, "min_months");
+  const daily = await get("/v2/panel?family=fi&freq=day");
+  assertEquals(daily.json.error.target, "freq");
+});
+
+Deno.test("screens with no kind lists the screens from the catalog, one row each, and says signal, not a verdict", async () => {
+  const catalog = { screens: { zombie_growth: { function: "screen_zombie_growth", family: "fidc", params: { p_period: null, p_min_delinq_pct: 5, p_min_aum: 1000000 } } } };
+  const { json, calls } = await get("/v2/screens", 200, JSON.stringify(catalog));
+  assert(calls[0].url.endsWith("/rpc/catalog"));
+  assertEquals(json.data.length, 1);
+  assertEquals(json.data[0].kind, "zombie_growth");
+  assertEquals(json.data[0].defaults, { date: null, min_delinq_pct: 5, min_aum: 1000000 });
+  assertStringIncludes(json.meta.signal, "Signal, not a verdict");
+});
+
+Deno.test("screens kinds send the SQL defaults (echoed) and refuse a threshold the screen does not take", async () => {
+  const { json, calls } = await get("/v2/screens?kind=captive_vehicles&max_investors=5");
+  assert(calls[0].url.endsWith("/rpc/screen_captive_vehicles"));
+  assertEquals(body(calls[0]), { p_lookback_months: 3, p_max_investors: 5, p_min_aum: 50000000 });
+  assertEquals(json.meta.request.lookback_months, 3);
+  assertStringIncludes(json.meta.signal, "not a verdict");
+  const dd = await get("/v2/screens?kind=delinquency_drivers&min_delta_pp=0.5&driver=stable");
+  assertEquals(body(dd.calls[0]), { p_months: 12, p_min_months: 6, p_min_delta_brl: 1000000, p_min_delta_pp: 0.5, p_driver: "stable" });
+  const bad = await get("/v2/screens?kind=overdue_securit&min_aum=1");
+  assertEquals(bad.json.error.code, "bad_request");
+  assertEquals(bad.json.error.target, "min_aum");
+  assertEquals(bad.calls.length, 0);
+  const neg = await get("/v2/screens?kind=overdue_securit&min_volume=-1");
+  assertEquals(neg.json.error.target, "min_volume");
+});
+
+Deno.test("portfolio is POST: kind in the query, lists in the body, one rpc call", async () => {
+  const cnpjs = ["33000167000101"];
+  const { res, json, calls } = await post("/v2/portfolio?kind=lookthrough&month=2026-08-31", { id: cnpjs });
+  assertEquals(res.status, 200);
+  assert(calls[0].url.endsWith("/rpc/portfolio_lookthrough"));
+  assertEquals(calls[0].init.method, "POST");
+  assertEquals(body(calls[0]), { p_cnpjs: cnpjs, p_month: "2026-08-31", p_max_depth: 4 });
+  assertEquals(json.meta.body, { id: cnpjs });
+  const resolve = await post("/v2/portfolio", { names: ["ITAU RF", null], quotas: [1.5, null] });
+  assertEquals(body(resolve.calls[0]), { p_names: ["ITAU RF", null], p_quotas: [1.5, null] });
+  const instr = await post("/v2/portfolio?kind=instruments", { id: ["CRA0260025T"] });
+  assertEquals(body(instr.calls[0]), { p_codes: ["CRA0260025T"] });
+});
+
+Deno.test("portfolio refuses GET, a missing list, a misplaced list, a bad body and a list in the query", async () => {
+  const getData = await get("/v2/portfolio?kind=fees");
+  assertEquals(getData.res.status, 405);
+  const help = await get("/v2/portfolio?help");
+  assertEquals(help.res.status, 200);
+  assertEquals(help.json.data[0].method, "POST");
+  const missing = await post("/v2/portfolio?kind=fees", {});
+  assertEquals(missing.json.error.target, "id");
+  const misplaced = await post("/v2/portfolio?kind=fees", { id: ["1"], quotas: [1] });
+  assertEquals(misplaced.json.error.target, "quotas");
+  const unknown = await post("/v2/portfolio?kind=fees", { cnpjs: ["1"] });
+  assertEquals(unknown.json.error.code, "unknown_parameter");
+  const notJson = await post("/v2/portfolio?kind=fees", "{");
+  assertEquals(notJson.json.error.target, "body");
+  const badItem = await post("/v2/portfolio", { names: ["X"], quota_dates: ["2026-02-30"] });
+  assertEquals(badItem.json.error.target, "quota_dates");
+  const inQuery = await post("/v2/portfolio?kind=fees&id=1", { id: ["1"] });
+  assertEquals(inQuery.json.error.code, "unknown_parameter");
+  const noMonth = await post("/v2/portfolio?kind=debenture_returns", { id: ["VALE18"] });
+  assertEquals(noMonth.json.error.target, "month");
+  const depth = await post("/v2/portfolio?kind=fees&max_depth=2", { id: ["1"] });
+  assertEquals(depth.json.error.target, "max_depth");
+  for (const r of [getData, missing, misplaced, unknown, notJson, badItem, inQuery, noMonth, depth]) assertEquals(r.calls.length, 0);
+  const other = await post("/v2/search?q=x", {});
+  assertEquals(other.res.status, 405);
 });
