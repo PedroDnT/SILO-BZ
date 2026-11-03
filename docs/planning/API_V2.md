@@ -11,8 +11,9 @@ and so are `prices` and `statements` (#1055), `screens`, `panel` and
 `portfolio` (#1058), and `derivatives`, `curves`, `macro` and
 `positioning` (#1057). All 14 resources are built. Every list kind pages with
 one opaque cursor, and the tier page sizes and caps apply (#1059, section 5
-"Paging, as built" and section 6). The requests-per-minute limit and the pro
-tier come with #1064.
+"Paging, as built" and section 6). The pro tier and the requests-per-minute
+limit are built too, counted in Postgres (#1064, section 6); the limit covers
+the v2 paths only while v1 stays public.
 Nothing is deployed: a merge deploys no Edge Function, and every deploy needs
 the owner's approval.
 
@@ -213,8 +214,8 @@ Notes:
   to the SQL catalog by a test, so no catalog call is made per request. With no
   `id`, a `family` walks it (universe mode, monthly); `min_nav` and
   `min_months` apply only there, and are `bad_request` with an `id`. The
-  gateway serves universe mode to the pro tier only (#1059), which no caller
-  reaches until #1064.
+  gateway serves universe mode to the pro tier only (#1059); a user reaches
+  pro through a row in `public.api_user_tier` (#1064).
 - `portfolio`, as built (#1058): the one POST route. `kind`, `month` and the
   hidden parameters go in the query string; the lists go in a JSON body: `id`
   (CNPJs, instrument codes, filed class labels or debenture tickers, by kind)
@@ -391,11 +392,39 @@ pins them:
 
 As built (#1059):
 
-- **The tier.** No `Authorization: Bearer` (or the publishable key sent as
-  one) is anonymous; any other Bearer is signed in, and PostgREST verifies it
-  on the call (an invalid token is `unauthorized` there). The gateway does not
-  decode the JWT. Pro and the requests-per-minute limit come with #1064; until
-  then every signed-in caller is signed in, and no caller reaches pro.
+- **The tier** (#1064, `tier.ts`). No `Authorization: Bearer` (or the
+  publishable key sent as one) is anonymous, with no call. Any other token
+  asks `api.my_tier()` (`39_api_tiers.sql`) with that token, and the answer is
+  cached per token for 60 s in the isolate's memory: `pro` for a user with a
+  row in the private `public.api_user_tier`, `signed_in` for any other user,
+  `anonymous` for a Supabase anonymous sign-in. PostgREST verifies the token
+  (an invalid one is `unauthorized`). The gateway does not decode the JWT.
+  Rows in `api_user_tier` are inserted by the owner by hand; no API writes
+  there.
+- **Requests per minute** (#1064). Every data request, after its parameters
+  parse and before any data call, runs `api.rate_hit()`, which adds one hit to
+  this minute's bucket in `public.api_rate_counter` and returns the count.
+  Above the tier's number the answer is `rate_limited`, HTTP 429, with
+  `Retry-After` (seconds to the next minute) and no data read. A refused
+  request is counted too. Every 200 carries `RateLimit-Limit` and
+  `RateLimit-Remaining`. The index and `?help` read no data and are not
+  counted. A signed-in caller's bucket is `u:<user id>`, chosen by SQL from
+  `auth.uid()`. An anonymous caller's bucket is `ip:<address>`: the gateway
+  trusts `cf-connecting-ip`, which Cloudflare overwrites in front of hosted
+  Supabase. `x-forwarded-for` is appended to, so its first hop is the
+  caller's own word; it is used only when `cf-connecting-ip` is missing (a
+  local `supabase functions serve`), where every header is spoofable. With
+  no usable address, callers share the bucket `ip:0.0.0.0`.
+- **Fail closed.** When `my_tier` or `rate_hit` cannot be read (network,
+  timeout, a function not yet applied), the request is `unavailable` and no
+  data is read. So the analytical apply must precede the next deploy of
+  `silo-api`.
+- **Honest limit.** The limit protects the v2 surface only. While the v1
+  PostgREST paths stay public (`/rest/v1/rpc/*` with the publishable key), a
+  caller can skip the gateway and its limit entirely; retiring v1 is the
+  owner's call (#1061, #1065). And anyone holding the publishable key can call
+  `api.rate_hit` directly with any `ip:` bucket, so another address's count
+  can be inflated. The limit stops ordinary overuse, not an attacker.
 - **Rows per call.** When a walk reaches the cap, the response has no
   `next_page_url`, and `meta.tier_cap_reached` is `true` with
   `meta.tier_cap_message`, which says how to get a higher tier. Never a silent

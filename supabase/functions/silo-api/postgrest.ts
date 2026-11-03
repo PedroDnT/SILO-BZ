@@ -74,9 +74,9 @@ export interface CallContext {
   fetchImpl: FetchLike;
   bearer: string | null;
   /**
-   * #1059: anonymous with no bearer, signed_in with one. PostgREST verifies
-   * the token on the call (an invalid one is refused as unauthorized); the
-   * gateway does not decode it. pro arrives with #1064.
+   * The caller's tier: api.my_tier() for a bearer, anonymous without one
+   * (#1064, tier.ts). PostgREST verifies the token on every call (an invalid
+   * one is refused as unauthorized); the gateway does not decode it.
    */
   tier?: Tier;
 }

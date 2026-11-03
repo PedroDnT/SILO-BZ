@@ -1368,7 +1368,7 @@ export const REGISTRY: Registry = {
       "notes": [
         "panel has one kind, so it takes no kind parameter. id is a comma-separated list of tickers, fund CNPJs, option or termo tickers and futures codes. The gateway's tier ceiling (config.ts: 1 id anonymous, 3 signed in) is refused above it (forbidden_for_tier), and the SQL's own (3 anonymous, 50 signed in) is refused verbatim (over_limit); never trimmed.",
         "Missing months stay absent: no fill, no return across a gap. Metric names are catalog().metrics (coverage?kind=catalog); an unknown name is unknown_parameter.",
-        "With no id and a family, panel walks the family (universe mode, monthly); min_nav and min_months narrow it. The gateway serves universe mode to the pro tier only (config.ts), which no caller reaches until #1064."
+        "With no id and a family, panel walks the family (universe mode, monthly); min_nav and min_months narrow it. The gateway serves universe mode to the pro tier only (config.ts): a user the owner lists in api_user_tier (#1064)."
       ],
       "parameters": [
         {

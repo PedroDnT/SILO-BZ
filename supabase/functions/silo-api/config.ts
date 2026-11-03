@@ -4,12 +4,12 @@
 // the gateway holds a tier number: params.ts, paging.ts, run.ts and the
 // resource modules read TIERS.
 //
-// Tier detection, until #1064: no Bearer token (or the publishable key sent
-// as one) is "anonymous"; any other Bearer is "signed_in", and PostgREST
-// verifies it on the call (an invalid token is refused there as
-// unauthorized). The gateway does not decode the JWT. "pro" is declared so
-// its numbers live here, but no caller reaches it yet (#1064 adds it and the
-// requests-per-minute limit, which nothing enforces today).
+// Tier detection (#1064, tier.ts): no Bearer token (or the publishable key
+// sent as one) is "anonymous"; any other token asks api.my_tier(), which says
+// "pro" for a user in public.api_user_tier and "signed_in" for any other
+// user. PostgREST verifies the token (an invalid one is refused as
+// unauthorized); the gateway does not decode the JWT. requests_per_minute is
+// enforced by api.rate_hit(), counted in Postgres per minute.
 
 export type Tier = "anonymous" | "signed_in" | "pro";
 
@@ -27,7 +27,7 @@ export interface TierLimits {
   portfolio: boolean;
   /** panel with no id (a whole family). */
   panel_universe: boolean;
-  /** Not enforced yet: #1064. */
+  /** v2 data requests a minute per bucket (u:<user> or ip:<address>); above it, rate_limited (#1064). */
   requests_per_minute: number;
 }
 

@@ -626,7 +626,11 @@ __all__ = [
 # or 200 signed in (api.assert_tier_cap); 1..ceiling is an explicit head.
 # option_chain and option_exercises still clamp (their default is a timeout
 # budget, measured); the GET views keep PostgREST's Content-Range signal.
-CATALOG_VERSION = 81
+# v82: #1064. Two gateway functions for API v2 (39_api_tiers.sql):
+# api.my_tier() (anonymous, signed_in or pro, from the private api_user_tier)
+# and api.rate_hit(p_bucket) (one hit in the caller's per-minute bucket). Not
+# data and not MCP tools (endpoint_manifest.GATEWAY_ONLY); no cap, no cursor.
+CATALOG_VERSION = 82
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -2180,6 +2184,10 @@ def catalog_payload() -> Dict[str, Any]:
             "di_settlement": "GET /rest/v1/di_settlement",
             "reference_rate": "GET /rest/v1/reference_rate",
             "ptax_daily": "GET /rest/v1/ptax_daily",
+            # API v2 gateway plumbing (v82, #1064): the caller's tier and the
+            # per-minute counter. Not data; the gateway calls them.
+            "my_tier": "POST /rest/v1/rpc/my_tier",
+            "rate_hit": "POST /rest/v1/rpc/rate_hit",
         },
     }
 

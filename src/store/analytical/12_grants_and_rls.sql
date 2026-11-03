@@ -143,6 +143,9 @@ BEGIN
                 NOT c.relrowsecurity
                 OR c.relname ~ '^(cvm_|bacen_|ibge_|fnet_|b3_|mkt_|anbima_|cia_|etf_|dim_|fact_|mv_|vw_|rj_)'
                 OR c.relname = 'instrument_activity'
+                -- API v2 tiers (migration 84, #1064): no client grant, ever.
+                OR c.relname = 'api_user_tier'
+                OR c.relname = 'api_rate_counter'
               )
     LOOP
         EXECUTE format('REVOKE ALL ON %s FROM anon, authenticated', t.obj);

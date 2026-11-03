@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 from scripts import gen_mcp_contract
-from serve.endpoint_manifest import manifest
+from serve.endpoint_manifest import GATEWAY_ONLY, manifest, mcp_tool_names
 
 ROOT = Path(__file__).resolve().parents[1]
 FN_DIR = ROOT / "supabase" / "functions" / "silo-mcp"
@@ -55,8 +55,9 @@ def _titled() -> list[str]:
 
 
 def _granted() -> dict:
-    """name -> Endpoint for every api.* object granted to anon/authenticated."""
-    return {name: e for name, e in manifest().items() if e.granted}
+    """name -> Endpoint for every api.* object granted to anon/authenticated
+    that the MCP serves: all of them but the v2 gateway's GATEWAY_ONLY."""
+    return {name: e for name, e in manifest().items() if e.granted and name not in GATEWAY_ONLY}
 
 
 def _generated_names() -> list[str]:
@@ -81,6 +82,21 @@ def test_tool_names_are_the_granted_surface():
     assert _generated_names() == sorted(_granted())
     missing = MINIMUM - set(_generated_names())
     assert not missing, f"minimum MCP tools missing: {sorted(missing)}"
+
+
+def test_gateway_plumbing_is_granted_and_published_but_no_tool():
+    """api.my_tier and api.rate_hit (#1064) are reachable on PostgREST, so
+    openapi.json documents them; silo-mcp calls anonymously and never writes,
+    so they are not tools and carry no title."""
+    m = manifest()
+    paths = _openapi()["paths"]
+    for name in GATEWAY_ONLY:
+        assert m[name].kind == "rpc" and m[name].granted, name
+        assert f"/rpc/{name}" in paths, name
+        assert name not in _generated_names(), name
+        assert name not in _titled(), name
+        assert name not in gen_mcp_contract.build(_openapi()), name
+    assert _generated_names() == mcp_tool_names()
 
 
 def test_every_endpoint_has_exactly_one_title():

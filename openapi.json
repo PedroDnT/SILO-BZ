@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "81",
+    "version": "82",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
     "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Sixty set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other fifty-five ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling.** `search_funds` refuses (`22023`) when more rows\n  match than its per-tier maximum (since v81). Two other functions\n  (`option_chain`, `option_exercises`) still silently lower `p_limit` to a\n  per-tier maximum. No error is raised there, so the only way to know the\n  result was cut is to know the ceiling. Signing in raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
@@ -45,6 +45,9 @@
     },
     {
       "name": "Funds"
+    },
+    {
+      "name": "Gateway"
     },
     {
       "name": "Holdings"
@@ -12138,6 +12141,73 @@
         }
       }
     },
+    "/rpc/my_tier": {
+      "post": {
+        "operationId": "rpc_my_tier",
+        "summary": "my_tier",
+        "description": "The caller's API v2 tier: pro when the signed-in user has a row in the private api_user_tier table, signed_in for any other signed-in user, anonymous otherwise (no token, the publishable key, or a Supabase anonymous sign-in). The v2 gateway calls it once per token and applies that tier's limits (supabase/functions/silo-api/config.ts). Gateway plumbing: not an MCP tool. Returns one value, never a row set.",
+        "tags": [
+          "Gateway"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "description": "This function takes no arguments; send `{}`."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/rpc/option_chain": {
       "post": {
         "operationId": "rpc_option_chain",
@@ -16424,6 +16494,82 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/rate_hit": {
+      "post": {
+        "operationId": "rpc_rate_hit",
+        "summary": "rate_hit",
+        "description": "Counts one API v2 request in the current minute and returns the bucket's hits so far this minute. A signed-in caller's bucket is u:<user id> and p_bucket is ignored, so no user can charge another's; an anonymous caller's bucket is p_bucket, which must be ip:<address> (22023 otherwise). Deletes at most 100 rows older than one hour on each call. The v2 gateway compares the count with the tier's requests per minute and answers 429 above it. Gateway plumbing: not an MCP tool. It writes a counter row and nothing else.",
+        "tags": [
+          "Gateway"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_bucket": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int32"
                 }
               }
             }

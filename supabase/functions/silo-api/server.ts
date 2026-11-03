@@ -15,8 +15,13 @@
 //
 // Paging (#1059): a request with `cursor` is the cursor's own walk. Its
 // parameters are parsed again like a fresh request; another parameter with a
-// different value is bad_request (paging.ts). The tier is the caller's now:
-// anonymous with no Bearer, signed_in with one (config.ts).
+// different value is bad_request (paging.ts).
+//
+// Tier and rate (#1064, tier.ts): the tier is api.my_tier() for a Bearer
+// token (cached 60 s per token), anonymous without one; then api.rate_hit()
+// counts the request and a count above the tier's requests per minute is
+// rate_limited (429, Retry-After). Index and ?help read no data and are not
+// counted. Both calls fail closed (unavailable).
 
 import { ApiError } from "./errors.ts";
 import { HIGHER_TIER, type Tier, TIERS } from "./config.ts";
@@ -25,6 +30,7 @@ import { acceptedParams, parseBody, type ParsedRequest, parseQuery } from "./par
 import { bodyDigest, cursorQuery, decodeCursor } from "./paging.ts";
 import { type BridgeConfig, callerBearer, type CallContext, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY, RESOURCES_BY_NAME, type ResourceSpec } from "./registry.ts";
+import { enforceRate, type Gate, postgresGate } from "./tier.ts";
 import { coverage } from "./resources/coverage.ts";
 import { events } from "./resources/events.ts";
 import { fidc } from "./resources/fidc.ts";
@@ -44,6 +50,10 @@ import { positioning } from "./resources/positioning.ts";
 export interface ServerDeps {
   fetchImpl?: FetchLike;
   env?: (name: string) => string | undefined;
+  /** Tier and rate counting (#1064); defaults to Postgres through PostgREST. */
+  gate?: Gate;
+  /** Epoch milliseconds, for Retry-After. */
+  now?: () => number;
 }
 
 type Handler = (req: ParsedRequest, ctx: CallContext) => Promise<Envelope>;
@@ -104,7 +114,13 @@ export function helpBody(resource: ResourceSpec, level: "main" | "all"): Envelop
   return envelope([help], { resource: resource.name, kind: "help", request: { help: level }, id_known: null });
 }
 
-async function handle(req: Request, cfg: BridgeConfig | { error: string }, fetchImpl: FetchLike): Promise<Response> {
+async function handle(
+  req: Request,
+  cfg: BridgeConfig | { error: string },
+  fetchImpl: FetchLike,
+  gate: Gate,
+  now: () => number,
+): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (req.method !== "GET" && req.method !== "POST") throw new ApiError(405, "bad_request", `${req.method} is not served; v2 is GET, and POST for portfolio.`);
 
@@ -156,10 +172,12 @@ async function handle(req: Request, cfg: BridgeConfig | { error: string }, fetch
   parsed.paging = { cursor, q: Object.fromEntries(query.entries()), base: `${url.origin}${url.pathname}`, body: digest };
   if ("error" in cfg) throw new ApiError(503, "unavailable", `silo-api is misconfigured: ${cfg.error}`);
   const bearer = callerBearer(req.headers.get("authorization"), cfg);
-  const tier: Tier = bearer ? "signed_in" : "anonymous";
+  const tier: Tier = await gate.tier({ cfg, fetchImpl, bearer });
   gateTier(resource, tier);
   const ctx: CallContext = { cfg, fetchImpl, bearer, tier };
-  return json(200, await HANDLERS[resource.name](parsed, ctx));
+  const rate = await enforceRate(gate, ctx, tier, req.headers, now);
+  const body = await HANDLERS[resource.name](parsed, ctx);
+  return json(200, body, { "RateLimit-Limit": String(rate.limit), "RateLimit-Remaining": String(rate.remaining) });
 }
 
 /** screens and portfolio by tier (config.ts). ?help stays open to every tier. */
@@ -178,9 +196,11 @@ function gateTier(resource: ResourceSpec, tier: Tier): void {
 export function makeHandler(deps: ServerDeps = {}): (req: Request) => Promise<Response> {
   const fetchImpl: FetchLike = deps.fetchImpl ?? ((input, init) => fetch(input, init));
   const cfg = configFromEnv(deps.env ?? ((name) => Deno.env.get(name)));
+  const now = deps.now ?? (() => Date.now());
+  const gate = deps.gate ?? postgresGate(now);
   return async (req: Request) => {
     try {
-      return await handle(req, cfg, fetchImpl);
+      return await handle(req, cfg, fetchImpl, gate, now);
     } catch (e) {
       if (e instanceof ApiError) return errorResponse(e);
       return errorResponse(new ApiError(500, "internal", `Unexpected gateway error: ${e instanceof Error ? e.message : String(e)}`));
