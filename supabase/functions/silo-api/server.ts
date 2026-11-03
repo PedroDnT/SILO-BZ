@@ -6,6 +6,8 @@
 //   GET /v2/<resource>           data, in the one envelope (envelope.ts)
 //   GET /v2/<resource>?help      kinds, main parameters, defaults, endpoints
 //   GET /v2/<resource>?help=all  the same, with the hidden parameters
+//   POST /v2/portfolio           the one POST (#1058): query parameters plus a
+//                                JSON body of lists; still read-only rpc calls
 //
 // Public: verify_jwt = false (supabase/config.toml, or --no-verify-jwt on
 // deploy). Every call is one PostgREST request with the publishable key; a
@@ -13,7 +15,7 @@
 
 import { ApiError } from "./errors.ts";
 import { CORS, type Envelope, envelope, errorResponse, json } from "./envelope.ts";
-import { acceptedParams, type ParsedRequest, parseQuery } from "./params.ts";
+import { acceptedParams, parseBody, type ParsedRequest, parseQuery } from "./params.ts";
 import { type BridgeConfig, callerBearer, type CallContext, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY, RESOURCES_BY_NAME, type ResourceSpec } from "./registry.ts";
 import { coverage } from "./resources/coverage.ts";
@@ -23,6 +25,9 @@ import { funds } from "./resources/funds.ts";
 import { search } from "./resources/search.ts";
 import { prices } from "./resources/prices.ts";
 import { statements } from "./resources/statements.ts";
+import { panel } from "./resources/panel.ts"; // #1058
+import { portfolio } from "./resources/portfolio.ts"; // #1058
+import { screens } from "./resources/screens.ts"; // #1058
 
 export interface ServerDeps {
   fetchImpl?: FetchLike;
@@ -33,6 +38,7 @@ type Handler = (req: ParsedRequest, ctx: CallContext) => Promise<Envelope>;
 
 /** The built resources. A registry entry with status built and no handler fails at load. */
 export const HANDLERS: Record<string, Handler> = { search, coverage, funds, fidc, events, prices, statements };
+Object.assign(HANDLERS, { screens, panel, portfolio }); // #1058
 
 for (const r of REGISTRY.resources) {
   if ((r.status === "built") !== (r.name in HANDLERS)) {
@@ -78,6 +84,8 @@ export function helpBody(resource: ResourceSpec, level: "main" | "all"): Envelop
     kinds: Object.fromEntries(Object.entries(resource.kinds ?? {}).map(([n, k]) => [n, k.doc])),
     parameters: params,
     hidden_parameters: level === "all" ? undefined : "see ?help=all",
+    method: resource.method ?? "GET", // #1058: portfolio is POST, with a JSON body of lists
+    body: resource.body,
     endpoints: [...endpoints],
   };
   return envelope([help], { resource: resource.name, kind: "help", request: { help: level }, id_known: null });
@@ -85,12 +93,13 @@ export function helpBody(resource: ResourceSpec, level: "main" | "all"): Envelop
 
 async function handle(req: Request, cfg: BridgeConfig | { error: string }, fetchImpl: FetchLike): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-  if (req.method !== "GET") throw new ApiError(405, "bad_request", `${req.method} is not served; every v2 resource built so far is GET.`);
+  if (req.method !== "GET" && req.method !== "POST") throw new ApiError(405, "bad_request", `${req.method} is not served; v2 is GET, and POST for portfolio.`);
 
   const url = new URL(req.url);
   const route = routeOf(url.pathname);
   if (route === null) throw new ApiError(404, "bad_request", `No such path ${url.pathname}. Start at /v2/.`, "path");
   if (route === "") {
+    if (req.method !== "GET") throw new ApiError(405, "bad_request", `${req.method} /v2/ is not served; use GET.`, "method");
     if ([...url.searchParams.keys()].length) {
       const key = [...url.searchParams.keys()][0];
       throw new ApiError(400, "unknown_parameter", `The index takes no parameters; got \`${key}\`.`, key);
@@ -102,7 +111,14 @@ async function handle(req: Request, cfg: BridgeConfig | { error: string }, fetch
   if (!resource) {
     throw new ApiError(404, "bad_request", `No resource \`${route}\`. Resources: ${REGISTRY.resources.map((r) => r.name).join(", ")}.`, "resource");
   }
-  if (url.searchParams.has("help")) {
+  // #1058: one method per resource for data. ?help is always a GET.
+  const method = resource.method ?? "GET";
+  const help = url.searchParams.has("help");
+  if (req.method !== (help ? "GET" : method)) {
+    const want = help ? "GET" : method;
+    throw new ApiError(405, "bad_request", `${req.method} /v2/${resource.name}${help ? "?help" : ""} is not served; use ${want}.`, "method");
+  }
+  if (help) {
     const parsed = parseQuery(resource, url.searchParams);
     return json(200, helpBody(resource, parsed.help ?? "main"));
   }
@@ -111,6 +127,7 @@ async function handle(req: Request, cfg: BridgeConfig | { error: string }, fetch
   }
 
   const parsed = parseQuery(resource, url.searchParams);
+  if (method === "POST") parsed.body = parseBody(resource, await req.text());
   if ("error" in cfg) throw new ApiError(503, "unavailable", `silo-api is misconfigured: ${cfg.error}`);
   const ctx: CallContext = { cfg, fetchImpl, bearer: callerBearer(req.headers.get("authorization"), cfg) };
   return json(200, await HANDLERS[resource.name](parsed, ctx));

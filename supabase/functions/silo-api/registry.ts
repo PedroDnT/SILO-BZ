@@ -13,7 +13,7 @@
 // every `p_` argument one the SQL declares. Edit the JSON, keep it JSON.
 
 export type Visibility = "main" | "hidden";
-export type ParamType = "string" | "enum" | "date" | "list" | "integer";
+export type ParamType = "string" | "enum" | "date" | "list" | "integer" | "number";
 
 export interface ParamSpec {
   name: string;
@@ -75,6 +75,18 @@ export interface Plan {
   view_by?: { parameter: string; views: Record<string, string> };
   /** Parameters the resource module reads itself (e.g. prices' adjust and fields). */
   uses?: string[];
+  // -- screens (#1058) --
+  /** The SQL function's own default for a v2 parameter left null: sent, so meta.request echoes it (pinned to the SQL by a test). */
+  sql_defaults?: Record<string, number>;
+}
+
+/** portfolio (#1058): one field of a POST body, always a JSON list. Its entries may be null. */
+export interface BodySpec {
+  name: string;
+  items: "string" | "number" | "date";
+  default: null;
+  default_doc: string;
+  doc: string;
 }
 
 export interface KindSpec extends Plan {
@@ -96,6 +108,10 @@ export interface ResourceSpec {
   window_months?: number;
   /** Shown in ?help: what a reader must know before using the rows (regime breaks). */
   notes?: string[];
+  // -- portfolio (#1058) --
+  /** POST: a data call is a POST with a JSON body of lists (`body`); ?help stays a GET. Default GET. */
+  method?: "GET" | "POST";
+  body?: BodySpec[];
 }
 
 export interface SharedSpec {
@@ -853,21 +869,253 @@ export const REGISTRY: Registry = {
     },
     {
       "name": "screens",
-      "status": "planned",
+      "status": "built",
       "summary": "Which funds look odd? Forensic screens: signals, not verdicts.",
-      "example": "/v2/screens"
+      "example": "/v2/screens",
+      "shared": [],
+      "notes": [
+        "Signal, not a verdict: a screen lists a pattern worth a look. Legal funds match every screen (exclusive vehicles, wind-downs, distressed mandates, routine corrections). Every response repeats this in meta.signal.",
+        "Each threshold is hidden and defaults to the SQL function's own default; meta.request echoes the value applied. A threshold the chosen screen does not take is bad_request."
+      ],
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["list", "captive_vehicles", "delinquency_drivers", "dormant_funds", "dormant_trend", "evergreen_aging", "late_filers", "overdue_securit", "restatements", "silent_filers", "zombie_growth"],
+          "default": "list",
+          "doc": "list (the default, no kind given): the screens, one line each, with their defaults. Any other value runs that screen (api.screen_<kind>)."
+        },
+        { "name": "date", "visibility": "hidden", "type": "date", "default": null, "default_doc": "the screen's own: zombie_growth the latest aging month; delinquency_drivers the latest complete FIDC month; restatements today; late_filers the newest month whose deadline has passed", "doc": "zombie_growth: the aging month-end (p_period). delinquency_drivers, restatements, late_filers: the window end (p_end)." },
+        { "name": "months", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "the screen's SQL default (12)", "doc": "delinquency_drivers (2..24), restatements, late_filers (1..36): the window length in months." },
+        { "name": "lookback_months", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "the screen's SQL default: captive_vehicles 3, evergreen_aging 12, dormant_funds 3, dormant_trend 3", "doc": "captive_vehicles, evergreen_aging, dormant_funds, dormant_trend: the trailing window in months." },
+        { "name": "history_months", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "the SQL default (36)", "doc": "dormant_trend: month-ends emitted, 1..60." },
+        { "name": "min_months", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "the SQL default (6)", "doc": "delinquency_drivers: observations a fund needs, 2..months." },
+        { "name": "min_aum", "visibility": "hidden", "type": "number", "default": null, "default_doc": "the screen's SQL default: zombie_growth 1000000, captive_vehicles 50000000 (BRL)", "doc": "zombie_growth, captive_vehicles: the NAV floor, BRL." },
+        { "name": "min_nav", "visibility": "hidden", "type": "number", "default": null, "default_doc": "none: no floor", "doc": "dormant_funds: keep rows whose last NAV is at least this, BRL (an output filter)." },
+        { "name": "min_delinq_pct", "visibility": "hidden", "type": "number", "default": null, "default_doc": "the SQL default (5)", "doc": "zombie_growth: delinquency floor, percent of NAV, 0..100." },
+        { "name": "max_investors", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "the SQL default (10)", "doc": "captive_vehicles: flagged when the window minimum quotaholder count is below this, 1..1000." },
+        { "name": "min_longtail_pct", "visibility": "hidden", "type": "number", "default": null, "default_doc": "the SQL default (70)", "doc": "evergreen_aging: share of delinquency overdue more than 1080 days, 0..100." },
+        { "name": "max_variation_pp", "visibility": "hidden", "type": "number", "default": null, "default_doc": "the SQL default (10)", "doc": "evergreen_aging: largest move of that share across the window, percentage points." },
+        { "name": "min_volume", "visibility": "hidden", "type": "number", "default": null, "default_doc": "the SQL default (100000)", "doc": "overdue_securit: paid-in volume floor, BRL." },
+        { "name": "min_delta_brl", "visibility": "hidden", "type": "number", "default": null, "default_doc": "the SQL default (1000000)", "doc": "delinquency_drivers: the up/down threshold on delinquency, BRL." },
+        { "name": "min_delta_pp", "visibility": "hidden", "type": "number", "default": null, "default_doc": "the SQL default (1.0)", "doc": "delinquency_drivers: the up/down threshold on the rate, percentage points." },
+        { "name": "min_restatements", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "the SQL default (3)", "doc": "restatements: re-filings (versao > 1) in the window, 1..1000." },
+        { "name": "min_rate_pct", "visibility": "hidden", "type": "number", "default": null, "default_doc": "the SQL default (20)", "doc": "restatements: re-filings as percent of the fund's documents in the window, 0..100." },
+        { "name": "min_days_late", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "the SQL default (5)", "doc": "late_filers: days past the cited deadline that count as late, 1..90." },
+        { "name": "min_late", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "the SQL default (2)", "doc": "late_filers: late months a fund needs in the window." },
+        { "name": "min_silent_months", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "the SQL default (3)", "doc": "silent_filers: complete months with no filing, 1..120." },
+        { "name": "max_silent_months", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "the SQL default (24)", "doc": "silent_filers: and at most this many, up to 240." },
+        { "name": "dormancy", "visibility": "hidden", "type": "enum", "values": ["all", "empty_shell", "parked_capital"], "default": "all", "null_value": "all", "doc": "dormant_funds: keep one dormancy (an output filter). empty_shell: no quotaholder. parked_capital: quotaholders, no flow." },
+        { "name": "driver", "visibility": "hidden", "type": "enum", "values": ["all", "consistent_worsening", "value_up_rate_masked", "denominator_only", "improvement", "stable"], "default": "all", "null_value": "all", "doc": "delinquency_drivers: keep one class of move (an output filter)." },
+        { "name": "modality", "visibility": "hidden", "type": "enum", "values": ["all", "RE", "RC"], "default": "all", "null_value": "all", "doc": "restatements: count only one FNET modalidade. RE: voluntary. RC: required by CVM." },
+        { "name": "family", "visibility": "hidden", "type": "enum", "values": ["all", "fi", "fidc", "fii", "fiagro"], "default": "all", "null_value": "all", "doc": "late_filers (fii, fidc) and silent_filers (fi, fidc, fii, fiagro): keep one family (an output filter)." }
+      ],
+      "kinds": {
+        "list": {
+          "doc": "The screens, one line each, with the family each reads and its SQL defaults (from api.catalog().screens).",
+          "endpoint": "catalog",
+          "args": {},
+          "single": true
+        },
+        "captive_vehicles": {
+          "doc": "FIIs whose NAV peaked above min_aum while the quotaholder count never reached max_investors.",
+          "endpoint": "screen_captive_vehicles",
+          "args": { "lookback_months": "p_lookback_months", "max_investors": "p_max_investors", "min_aum": "p_min_aum" },
+          "sql_defaults": { "lookback_months": 3, "max_investors": 10, "min_aum": 50000000 }
+        },
+        "delinquency_drivers": {
+          "doc": "FIDC delinquency, first vs last observation in BRL and in points of NAV, the move classified (driver). No window before 2025-01.",
+          "endpoint": "screen_delinquency_drivers",
+          "args": { "date": "p_end", "months": "p_months", "min_months": "p_min_months", "min_delta_brl": "p_min_delta_brl", "min_delta_pp": "p_min_delta_pp", "driver": "p_driver" },
+          "sql_defaults": { "months": 12, "min_months": 6, "min_delta_brl": 1000000, "min_delta_pp": 1.0 }
+        },
+        "dormant_funds": {
+          "doc": "FI classes that filed every month of the window with zero subscriptions and zero redemptions (empty_shell, parked_capital).",
+          "endpoint": "screen_dormant_funds",
+          "args": { "lookback_months": "p_lookback_months", "dormancy": "p_dormancy", "min_nav": "p_min_nav" },
+          "sql_defaults": { "lookback_months": 3 }
+        },
+        "dormant_trend": {
+          "doc": "dormant_funds counted at every month-end: funds filing, empty shells, parked capital and its NAV.",
+          "endpoint": "screen_dormant_trend",
+          "args": { "lookback_months": "p_lookback_months", "history_months": "p_history_months" },
+          "sql_defaults": { "lookback_months": 3, "history_months": 36 }
+        },
+        "evergreen_aging": {
+          "doc": "FIDCs whose receivables overdue more than 1080 days stay a large, nearly constant share of delinquency.",
+          "endpoint": "screen_evergreen_aging",
+          "args": { "lookback_months": "p_lookback_months", "min_longtail_pct": "p_min_longtail_pct", "max_variation_pp": "p_max_variation_pp" },
+          "sql_defaults": { "lookback_months": 12, "min_longtail_pct": 70, "max_variation_pp": 10 }
+        },
+        "late_filers": {
+          "doc": "FIIs and FIDCs whose monthly informe reached FNET at least min_days_late days after the cited deadline, in at least min_late months.",
+          "endpoint": "screen_late_filers",
+          "args": { "months": "p_months", "date": "p_end", "min_days_late": "p_min_days_late", "min_late": "p_min_late", "family": "p_family" },
+          "sql_defaults": { "months": 12, "min_days_late": 5, "min_late": 2 }
+        },
+        "overdue_securit": {
+          "doc": "CRI, CRA and other series past their filed maturity whose newest filing still reports a non-terminal status.",
+          "endpoint": "screen_overdue_securit",
+          "args": { "min_volume": "p_min_volume" },
+          "sql_defaults": { "min_volume": 100000 }
+        },
+        "restatements": {
+          "doc": "Funds whose FNET re-filings (versao > 1) in the window reach min_restatements and min_rate_pct of their documents.",
+          "endpoint": "screen_restatements",
+          "args": { "months": "p_months", "date": "p_end", "min_restatements": "p_min_restatements", "min_rate_pct": "p_min_rate_pct", "modality": "p_modalidade" },
+          "sql_defaults": { "months": 12, "min_restatements": 3, "min_rate_pct": 20 }
+        },
+        "silent_filers": {
+          "doc": "Funds CVM still lists as active whose last periodic informe is min_silent_months to max_silent_months behind their family.",
+          "endpoint": "screen_silent_filers",
+          "args": { "min_silent_months": "p_min_silent_months", "max_silent_months": "p_max_silent_months", "family": "p_family" },
+          "sql_defaults": { "min_silent_months": 3, "max_silent_months": 24 }
+        },
+        "zombie_growth": {
+          "doc": "FIDCs with delinquency above min_delinq_pct of NAV while NAV stays above min_aum, in one aging month.",
+          "endpoint": "screen_zombie_growth",
+          "args": { "date": "p_period", "min_delinq_pct": "p_min_delinq_pct", "min_aum": "p_min_aum" },
+          "sql_defaults": { "min_delinq_pct": 5, "min_aum": 1000000 }
+        }
+      }
     },
     {
       "name": "panel",
-      "status": "planned",
+      "status": "built",
       "summary": "A clean (id, date, metric, value) table across families.",
-      "example": "/v2/panel?id=PETR4&metric=close"
+      "example": "/v2/panel?id=PETR4,VALE3&metric=close_return",
+      "shared": ["id", "from", "to"],
+      "window_months": 36,
+      "notes": [
+        "panel has one kind, so it takes no kind parameter. id is a comma-separated list of tickers, fund CNPJs, option or termo tickers and futures codes. The tier ceiling applies (3 ids anonymous, 50 signed in) and is refused above it (over_limit), never trimmed.",
+        "Missing months stay absent: no fill, no return across a gap. Metric names are catalog().metrics (coverage?kind=catalog); an unknown name is unknown_parameter.",
+        "With no id and a family, panel walks the family (universe mode, monthly, signed-in callers only); min_nav and min_months narrow it."
+      ],
+      "parameters": [
+        {
+          "name": "metric",
+          "visibility": "main",
+          "type": "list",
+          "default": "auto",
+          "null_value": "auto",
+          "doc": "Comma-separated catalog metric names (close, close_adj, close_return, volume, nav, delinquency, ...). auto: each id's family default, as api.panel with no p_metrics (close_adj for shares and units, close for other tickers, settlement_rate for futures, nav for funds)."
+        },
+        {
+          "name": "freq",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["month", "day"],
+          "default": "month",
+          "doc": "month: the last session of each month for tickers, the filed month for funds. day: tickers and futures only (funds file monthly)."
+        },
+        {
+          "name": "family",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["auto", "fi", "fidc", "fii", "fip", "fiagro"],
+          "default": "auto",
+          "null_value": "auto",
+          "doc": "auto: every family a CNPJ files under (a CNPJ filing as fi and fidc yields one row per family). One family narrows the fund rows to it; with no id it walks that family (universe mode)."
+        },
+        { "name": "min_nav", "visibility": "hidden", "type": "number", "default": null, "default_doc": "none: no floor", "doc": "Universe mode only: keep funds whose latest NAV in the window is at least this, BRL." },
+        { "name": "min_months", "visibility": "hidden", "type": "integer", "default": null, "default_doc": "none: no floor", "doc": "Universe mode only: keep funds with at least this many observations of the first metric." }
+      ],
+      "kinds": {
+        "panel": {
+          "doc": "api.panel: long rows (id, id_type, asset_class, date, metric, value, source), 3 years back from to by default. Refuses above 1,000 rows (over_limit): narrow from/to, ids or metrics.",
+          "endpoint": "panel",
+          "args": { "id": "p_ids", "metric": "p_metrics", "from": "p_from", "to": "p_to", "freq": "p_freq", "family": "p_entity_type", "min_nav": "p_min_nav", "min_months": "p_min_months" }
+        }
+      }
     },
     {
       "name": "portfolio",
-      "status": "planned",
+      "status": "built",
       "summary": "Diagnose a portfolio: resolve statement lines, fees, look-through, movement (POST).",
-      "example": "POST /v2/portfolio?kind=resolve"
+      "example": "POST /v2/portfolio?kind=resolve {\"names\": [\"ITAU RF DI\"]}",
+      "method": "POST",
+      "shared": [],
+      "notes": [
+        "A data call is a POST: kind, month and the hidden parameters go in the query string, the lists go in a JSON body (see body). ?help stays a GET. Read-only: every kind is one api.portfolio_* function.",
+        "Each list is capped by its function (200 entries, 70 for debenture_returns, 50 classes for equivalents) and refused above it, never trimmed.",
+        "Not served: portfolio_credit_returns (held back with the ANBIMA-linked endpoints). The class in fees, fee_peers, movement and equivalents is the ANBIMA class label as filed in the CVM Extrato; no ANBIMA table is read."
+      ],
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["resolve", "fees", "fee_peers", "lookthrough", "movement", "instruments", "fund_terms", "equivalents", "debenture_returns"],
+          "default": "resolve",
+          "doc": "resolve: statement lines to candidate funds. fees: estimated and disclosed fees. fee_peers: the admin fee against its filed class. lookthrough: holdings through fund quotas. movement: the month's quota return against its class. instruments: CRA, CRI and debenture codes. fund_terms: manager, administrator, redemption terms. equivalents: the ETFs that track a class's index. debenture_returns: 13 month-ends of debenture marks."
+        },
+        {
+          "name": "month",
+          "visibility": "main",
+          "type": "date",
+          "default": null,
+          "default_doc": "the latest complete month, as each function defines it (fees: each fund's newest balancete; lookthrough: the last complete CDA month; movement: the last complete FI month). debenture_returns has no default month and needs one.",
+          "doc": "Any day of the month. fees, lookthrough, movement: the month read. debenture_returns: the window's last month."
+        },
+        { "name": "max_depth", "visibility": "hidden", "type": "integer", "default": 4, "doc": "lookthrough: fund-quota levels looked through, 1..6 (the SQL default is 4)." },
+        { "name": "as_of", "visibility": "hidden", "type": "date", "default": null, "default_doc": "today (the SQL default)", "doc": "fee_peers: dates the comparison and excludes later documents; it reads the latest Extrato, so it is not a historical backtest. equivalents: snapshots dated after it are not read." },
+        { "name": "max_monthly_drop_pct", "visibility": "hidden", "type": "number", "default": null, "default_doc": "none: every decrease is flagged limite_pendente (the threshold is the owner's to set)", "doc": "debenture_returns: a monthly PU drop beyond this is flagged queda_pu_possivel_evento." }
+      ],
+      "body": [
+        { "name": "id", "items": "string", "default": null, "default_doc": "none: required by every kind except resolve", "doc": "The list: fund CNPJs (fees, fee_peers, lookthrough, movement, fund_terms; resolve: the CNPJ each line prints, parallel to names), instrument codes (instruments), filed ANBIMA class labels (equivalents) or debenture tickers (debenture_returns). Null entries are allowed where the function takes them." },
+        { "name": "names", "items": "string", "default": null, "default_doc": "none: required by resolve", "doc": "resolve: one statement line each, the fund name as printed." },
+        { "name": "quotas", "items": "number", "default": null, "default_doc": "none", "doc": "resolve: the quota value each line prints, parallel to names, for the tie-break." },
+        { "name": "quota_dates", "items": "date", "default": null, "default_doc": "none", "doc": "resolve: the date each quota refers to, parallel to names." }
+      ],
+      "kinds": {
+        "resolve": {
+          "doc": "api.portfolio_resolve: up to 5 ranked candidate funds per statement line (a printed CNPJ wins, then an ETF ticker, an exact name, a trigram match).",
+          "endpoint": "portfolio_resolve",
+          "args": { "names": "p_names", "id": "p_cnpjs", "quotas": "p_quotas", "quota_dates": "p_quota_dates" }
+        },
+        "fees": {
+          "doc": "api.portfolio_fees: the disclosed fee and the fee estimated from the balancete, never mixed.",
+          "endpoint": "portfolio_fees",
+          "args": { "id": "p_cnpjs", "month": "p_month" }
+        },
+        "fee_peers": {
+          "doc": "api.portfolio_fee_peers: the admin fee against funds and ETFs of the same filed class, one row per CNPJ.",
+          "endpoint": "portfolio_fee_peers",
+          "args": { "id": "p_cnpjs", "as_of": "p_as_of" }
+        },
+        "lookthrough": {
+          "doc": "api.portfolio_lookthrough: one CDA month, holdings followed through fund quotas up to max_depth levels.",
+          "endpoint": "portfolio_lookthrough",
+          "args": { "id": "p_cnpjs", "month": "p_month", "max_depth": "p_max_depth" }
+        },
+        "movement": {
+          "doc": "api.portfolio_movement: the fund's monthly quota return against its filed class (movimento incomum).",
+          "endpoint": "portfolio_movement",
+          "args": { "id": "p_cnpjs", "month": "p_month" }
+        },
+        "instruments": {
+          "doc": "api.portfolio_instruments: CRA, CRI and debenture codes matched to their series, one line per code.",
+          "endpoint": "portfolio_instruments",
+          "args": { "id": "p_codes" }
+        },
+        "fund_terms": {
+          "doc": "api.portfolio_fund_terms: manager, administrator and redemption terms as filed, one line per CNPJ.",
+          "endpoint": "portfolio_fund_terms",
+          "args": { "id": "p_cnpjs" }
+        },
+        "equivalents": {
+          "doc": "api.portfolio_equivalents: the active ETFs tracking an index the owner-reviewed list maps to each filed class.",
+          "endpoint": "portfolio_equivalents",
+          "args": { "id": "p_classes", "as_of": "p_as_of" }
+        },
+        "debenture_returns": {
+          "doc": "api.portfolio_debenture_returns: 13 month-ends of median fund marks (CDA block 4) per debenture ticker; marks, not trades. Needs month.",
+          "endpoint": "portfolio_debenture_returns",
+          "args": { "id": "p_tickers", "month": "p_end_month", "max_monthly_drop_pct": "p_max_monthly_drop_pct" },
+          "require_one_of": ["month"]
+        }
+      }
     },
     {
       "name": "coverage",

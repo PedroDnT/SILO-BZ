@@ -7,7 +7,8 @@ v0.2 of 2026-11-01.
 **Status.** The skeleton is built (#1053): the Edge Function
 `supabase/functions/silo-api/`, its resource registry, and the resources
 `search` and `coverage`. `funds`, `fidc` and `events` are built too (#1056),
-and so are `prices` and `statements` (#1055).
+and so are `prices` and `statements` (#1055), and `screens`, `panel` and
+`portfolio` (#1058).
 The rest are listed by `GET /v2/` as `planned`.
 Nothing is deployed: a merge deploys no Edge Function, and every deploy needs
 the owner's approval.
@@ -121,9 +122,9 @@ Main parameters, defaults in brackets.
 | `macro` | `kind` [`series`; `inflation`, `inflation_items`, `fx`, `expectations`] | 1 year; 3 years for inflation | `family`, `currency` [`USD`], `horizon` | planned |
 | `positioning` | `kind` [`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`] | 3 months | `sector`, `investor_type` [all] | planned |
 | `events` | `kind` [`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`], `category` [all] | 12 months | `family` [all] | built |
-| `screens` | `kind` [none: list the screens with one-line descriptions] | per screen | each screen's thresholds, with today's SQL defaults | planned |
-| `panel` | `metric` [each family's default metric, as today], `freq` [`month`; `day` for quotes only], `family` [auto] | 3 years | `min_nav`, `min_months` [none] | planned |
-| `portfolio` (POST) | `kind` [`resolve`; `fees`, `fee_peers`, `lookthrough`, `movement`, `instruments`, `fund_terms`, `equivalents`, `debenture_returns`], `month` [latest complete] | n/a | `max_depth` [3] | planned |
+| `screens` | `kind` [`list`: the screens with one-line descriptions; one kind per `screen_*` function] | per screen | each screen's thresholds, with today's SQL defaults | built |
+| `panel` | `metric` [`auto`: each family's default metric, as today], `freq` [`month`; `day` for quotes only], `family` [`auto`] | 3 years | `min_nav`, `min_months` [none] | built |
+| `portfolio` (POST) | `kind` [`resolve`; `fees`, `fee_peers`, `lookthrough`, `movement`, `instruments`, `fund_terms`, `equivalents`, `debenture_returns`], `month` [latest complete] | n/a | `max_depth` [4], `as_of` [today], `max_monthly_drop_pct` [none] | built |
 | `coverage` | `kind` [`freshness`; `metrics`, `catalog`], `dataset` [all] | n/a | none | built |
 
 Notes:
@@ -192,6 +193,33 @@ Notes:
   `doc_type`. `versions` needs one statement, so it takes a hidden `statement`
   (default `DRE`) and no `as_of`. With no `id`, every kind lists the research
   universe, whose `cnpj` links a ticker to its filer.
+- `screens`, as built (#1058): with no `kind` (`list`) it reads `catalog()`
+  and returns one row per screen: its kind, one line, the family it reads and
+  its SQL defaults under v2 names. Any other kind calls `screen_<kind>`. Every
+  threshold is hidden (`?help=all`); one left out is sent as the SQL
+  function's own default, so `meta.request` echoes it (a test pins each to the
+  SQL). `p_period` and `p_end` are `date`, `p_modalidade` is `modality` (`RE`,
+  `RC`), `p_family` is `family`. Every response carries `meta.signal`:
+  "Signal, not a verdict".
+- `panel`, as built (#1058): one kind, so no `kind` parameter. `id` is a
+  comma-separated list sent as `p_ids`; the tier ceiling (3 anonymous, 50
+  signed in) is the SQL's refusal (`over_limit`), never a trim. `metric=auto`
+  sends no `p_metrics`. A metric name outside `catalog().metrics` is
+  `unknown_parameter` with the name in `target`; the gateway's list is pinned
+  to the SQL catalog by a test, so no catalog call is made per request. With no
+  `id`, a `family` walks it (universe mode, monthly, signed in); `min_nav` and
+  `min_months` apply only there, and are `bad_request` with an `id`.
+- `portfolio`, as built (#1058): the one POST route. `kind`, `month` and the
+  hidden parameters go in the query string; the lists go in a JSON body: `id`
+  (CNPJs, instrument codes, filed class labels or debenture tickers, by kind)
+  and, for `resolve`, `names`, `quotas`, `quota_dates`. Each kind is one
+  read-only `portfolio_*` rpc. A list the kind cannot use, an unknown body
+  field or a list in the query string is refused. `debenture_returns` has no
+  SQL default month, so it needs `month`. `portfolio_credit_returns` is not
+  served (held back, section 8). `fees`, `fee_peers`, `movement` and
+  `equivalents` read the ANBIMA class label as filed in the CVM Extrato
+  (`cvm_fi_extrato.classe_anbima`); none reads an `anbima_*` table, so all
+  four are built.
 
 ### The first five minutes
 
@@ -208,7 +236,8 @@ No call above needs a parameter beyond `id` and `kind`.
 ## 5. Paths, response, paging, errors
 
 Paths: `GET /v2/` (the index), `GET /v2/<resource>`, `GET /v2/<resource>?help`
-(`?help=all` adds the hidden parameters). The gateway calls PostgREST with the
+(`?help=all` adds the hidden parameters), and `POST /v2/portfolio` with a
+JSON body of lists (#1058). The gateway calls PostgREST with the
 publishable key and schema `api`, exactly as `silo-mcp` does, and forwards a
 caller's `Authorization: Bearer` JWT so the signed-in tier applies. It never
 uses a secret key.
@@ -304,9 +333,9 @@ The children of #1052 are the authoritative order.
 The held-back group waits until the ANBIMA drop (owner, 2026-10-31) settles.
 `credit_market_history` and `portfolio_credit_returns` are not clearly ANBIMA;
 their sources were not verified. `portfolio_equivalents`, `portfolio_fees`,
-`portfolio_fee_peers` and `portfolio_movement` mention an ANBIMA class in their
-text: check whether that is a label or a real dependency before building
-`portfolio`.
+`portfolio_fee_peers` and `portfolio_movement` mention an ANBIMA class: checked
+for #1058, it is the class label as filed in the CVM Extrato, and none of them
+reads an `anbima_*` table (a test pins this), so `portfolio` serves them.
 
 ### Parameters that disappear
 

@@ -47,6 +47,9 @@ ERROR_CODES = [
 BUILT = {"search", "coverage"}
 BUILT |= {"funds", "fidc", "events"}  # #1056
 BUILT |= {"prices", "statements"}  # #1055
+BUILT |= {"screens", "panel", "portfolio"}  # #1058
+# A resource with a single kind takes no kind parameter (#1058).
+ONE_KIND = {"panel"}
 NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -79,6 +82,8 @@ def _accepted(resource: dict) -> dict:
     out = {p["name"]: p for p in resource.get("parameters", [])}
     for name in resource.get("shared", []):
         out[name] = {"name": name, "visibility": "main", **shared[name]}
+    for b in resource.get("body", []):  # #1058: portfolio's POST body lists
+        out[b["name"]] = {"visibility": "body", **b}
     return out
 
 
@@ -107,7 +112,10 @@ def test_shared_parameters_are_the_five_and_each_has_a_default():
 def test_at_most_three_main_parameters_kind_included():
     for r in _built():
         main = [p["name"] for p in r["parameters"] if p["visibility"] == "main"]
-        assert "kind" in main, f"{r['name']}: kind is a main parameter"
+        if r["name"] in ONE_KIND:
+            assert len(r["kinds"]) == 1 and "kind" not in {p["name"] for p in r["parameters"]}, r["name"]
+        else:
+            assert "kind" in main, f"{r['name']}: kind is a main parameter"
         assert len(main) <= 3, f"{r['name']} has {len(main)} main parameters {main}; the cap is 3, kind included"
         for p in r["parameters"]:
             assert p["visibility"] in ("main", "hidden"), (r["name"], p["name"])
@@ -142,6 +150,8 @@ def test_parameter_names_are_plain_words_and_never_shadow_a_shared_one():
 
 def test_kind_values_are_the_declared_kinds():
     for r in _built():
+        if r["name"] in ONE_KIND:
+            continue
         kind = next(p for p in r["parameters"] if p["name"] == "kind")
         assert kind["type"] == "enum"
         assert kind["values"] == list(r["kinds"]), r["name"]
@@ -374,3 +384,103 @@ def test_statements_period_and_scope_map_to_the_sql_codes():
     kinds = _resource("statements")["kinds"]
     assert "as_of" not in kinds["versions"]["args"], "financial_statement_history has no p_as_of"
     assert kinds["versions"]["args"]["statement"] == "p_statement"
+
+
+# ------------------------------------------- screens, panel, portfolio (#1058) --
+
+PANEL_TS = FN_DIR / "resources" / "panel.ts"
+
+
+def _catalog() -> dict:
+    """api.catalog() is a constant JSON literal in the SQL; parse it offline."""
+    src = (ANALYTICAL / "19_api_contract.sql").read_text(encoding="utf-8")
+    body = src[src.index("CREATE OR REPLACE FUNCTION api.catalog()"):]
+    m = re.search(r"SELECT \$json\$(.*?)\$json\$", body, re.S)
+    assert m, "api.catalog()'s JSON literal not found"
+    return json.loads(m.group(1))
+
+
+def _sql_signature(fn: str) -> dict:
+    """p_name -> its DEFAULT text (None when it has none), from CREATE FUNCTION api.<fn>(...)."""
+    m = re.search(rf"CREATE OR REPLACE FUNCTION api\.{fn}\((.*?)\)\s*\n\s*RETURNS", _sql(), re.S)
+    assert m, fn
+    out = {}
+    for line in m.group(1).splitlines():
+        line = line.split("--", 1)[0].strip().rstrip(",")
+        a = re.match(r"(p_\w+)\s+[A-Z\[\]]+(?:\s+DEFAULT\s+(.+))?$", line)
+        if a:
+            out[a.group(1)] = a.group(2).strip() if a.group(2) else None
+    return out
+
+
+def test_panel_metrics_are_the_catalog_metrics():
+    """The gateway refuses a metric name api.panel would ignore; its list must be catalog().metrics."""
+    ts = re.search(r"export const PANEL_METRICS: string\[\] = \[(.*?)\];", PANEL_TS.read_text(encoding="utf-8"), re.S)
+    assert ts, "PANEL_METRICS not found in panel.ts"
+    assert re.findall(r'"([a-z0-9_]+)"', ts.group(1)) == list(_catalog()["metrics"])
+
+
+def test_panel_has_one_kind_a_list_id_and_the_issue_parameters():
+    p = _resource("panel")
+    assert list(p["kinds"]) == ["panel"] and p["kinds"]["panel"]["endpoint"] == "panel"
+    main = [x["name"] for x in p["parameters"] if x["visibility"] == "main"]
+    hidden = [x["name"] for x in p["parameters"] if x["visibility"] == "hidden"]
+    assert main == ["metric", "freq", "family"] and hidden == ["min_nav", "min_months"]
+    assert p["window_months"] == 36 and p["kinds"]["panel"]["args"]["id"] == "p_ids"
+    fam = next(x for x in p["parameters"] if x["name"] == "family")
+    assert fam["values"][1:] == ["fi", "fidc", "fii", "fip", "fiagro"], "assert_panel_universe's families"
+
+
+def test_screens_are_one_kind_per_screen_function_and_the_catalog_screens():
+    s = _resource("screens")
+    kinds = {k: v["endpoint"] for k, v in s["kinds"].items() if k != "list"}
+    assert kinds == {k: f"screen_{k}" for k in kinds}
+    assert set(kinds) == set(_catalog()["screens"]), "catalog().screens lists the same screens"
+    assert {n for n in manifest() if n.startswith("screen_")} == set(kinds.values())
+    assert s["kinds"]["list"]["endpoint"] == "catalog"
+    assert [p["name"] for p in s["parameters"] if p["visibility"] == "main"] == ["kind"]
+    assert any("signal, not a verdict" in n.lower() for n in s["notes"])
+
+
+def test_screens_sql_defaults_are_the_sql_function_defaults():
+    """A threshold left null is sent as the kind's sql_defaults; each must be the SQL's own default."""
+    for kind, plan in _resource("screens")["kinds"].items():
+        if kind == "list":
+            continue
+        sig = _sql_signature(plan["endpoint"])
+        assert set(plan["args"].values()) == set(sig), f"screens {kind}: every p_ argument is mapped"
+        for v2, p_name in plan["args"].items():
+            default = sig[p_name]
+            if v2 in plan.get("sql_defaults", {}):
+                assert default is not None and float(default) == float(plan["sql_defaults"][v2]), (kind, v2, default)
+            else:
+                assert default == "NULL", f"screens {kind}: {p_name} defaults to {default}; add it to sql_defaults"
+
+
+def test_portfolio_maps_one_kind_per_function_without_credit_returns():
+    pf = _resource("portfolio")
+    funcs = {n for n in manifest() if n.startswith("portfolio_")}
+    kinds = {k: v["endpoint"] for k, v in pf["kinds"].items()}
+    assert kinds == {k: f"portfolio_{k}" for k in kinds}
+    assert set(kinds.values()) == funcs - {"portfolio_credit_returns"}, "credit_returns is held back (ANBIMA)"
+    assert next(iter(kinds)) == "resolve"
+    assert [p["name"] for p in pf["parameters"] if p["visibility"] == "main"] == ["kind", "month"]
+    depth = next(p for p in pf["parameters"] if p["name"] == "max_depth")
+    assert _sql_signature("portfolio_lookthrough")["p_max_depth"] == str(depth["default"])
+    for kind, plan in pf["kinds"].items():
+        required = {p for p, d in _sql_signature(plan["endpoint"]).items() if d is None}
+        assert required <= set(plan["args"].values()), f"portfolio {kind}: the SQL requires {required}"
+
+
+def test_portfolio_kinds_read_no_anbima_table():
+    """ANBIMA data is leaving SILO: a portfolio kind may carry the filed ANBIMA class label, never read an anbima_* table."""
+    sql = (ANALYTICAL / "31_api_portfolio.sql").read_text(encoding="utf-8")
+    assert not re.search(r"(?:FROM|JOIN)\s+(?:public\.)?anbima_", sql, re.I)
+
+
+def test_only_portfolio_is_post_and_its_body_fields_are_lists():
+    for r in _built():
+        assert r.get("method", "GET") == ("POST" if r["name"] == "portfolio" else "GET"), r["name"]
+        assert ("body" in r) == (r["name"] == "portfolio"), r["name"]
+    for b in _resource("portfolio")["body"]:
+        assert b["items"] in ("string", "number", "date") and b["default"] is None and b["default_doc"].strip(), b
