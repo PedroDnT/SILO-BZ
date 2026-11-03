@@ -848,6 +848,38 @@ jobs:
           echo "checked ${#files[@]} sources, ${#failed[@]} failed"
           [ ${#failed[@]} -eq 0 ]
 
+  # The Edge Functions' own offline Deno tests (#1054). Before this job no
+  # workflow ran supabase/functions/silo-mcp/silo_mcp_test.ts. Every function
+  # directory holding a *_test.ts is tested from inside it, so its deno.json
+  # import map applies. The tests stub fetch and pass env in, so no secret is
+  # needed; --allow-env covers the npm MCP SDK reading process.env.
+  deno:
+    name: deno test (Edge Functions)
+    if: github.event_name != 'workflow_dispatch' || !inputs.sql_compile_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+      - name: Run deno test in every function with tests
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ran=0
+          for dir in supabase/functions/*/; do
+            tests=("$dir"*_test.ts)
+            [ ${#tests[@]} -eq 0 ] && continue
+            echo "::group::deno test $dir"
+            (cd "$dir" && deno test --allow-env)
+            echo "::endgroup::"
+            ran=$((ran + 1))
+          done
+          echo "tested $ran function directories"
+          [ "$ran" -gt 0 ]
+
   api-smoke:
     name: api.* smoke (read-only)
     if: github.event_name == 'workflow_dispatch' && inputs.run_api_smoke
