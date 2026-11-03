@@ -1,7 +1,8 @@
 // silo-api: the bridge to PostgREST on schema `api`. One request per call.
 //
 // The same rules as silo-mcp (supabase/functions/silo-mcp/tools.ts):
-//   * read-only: POST /rpc/<fn> on schema `api`, nothing else;
+//   * read-only: POST /rpc/<fn> on schema `api`, or GET /<view> on schema
+//     `api` for a registry plan marked view (callView), nothing else;
 //   * one v2 call = exactly one PostgREST request, never retried;
 //   * the only key is the public anon / publishable key, never a secret one;
 //   * an error comes back verbatim (errors.ts maps it to a v2 code).
@@ -100,4 +101,60 @@ export async function callRpc(ctx: CallContext, endpoint: string, args: Record<s
   } catch {
     throw new ApiError(500, "internal", `api.${endpoint} answered HTTP ${res.status} with a body that is not JSON.`);
   }
+}
+
+// -- GET on a view (funds and fidc with no id: #1056) -----------------------
+
+export interface ViewPage {
+  rows: Record<string, unknown>[];
+  /** Every row the selection holds, from Content-Range (Prefer: count=exact); null if not sent. */
+  total: number | null;
+}
+
+/**
+ * GET /<view> on schema api: eq. filters, an order and a page size, with
+ * `Prefer: count=exact` so a cut page is visible. PostgREST cuts a view at
+ * db-max-rows and cannot refuse; the caller of this function decides what a
+ * cut means (run.ts refuses it unless the caller asked for the first N).
+ */
+export async function callView(
+  ctx: CallContext,
+  view: string,
+  eq: Record<string, unknown>,
+  order: string | undefined,
+  limit: number,
+): Promise<ViewPage> {
+  const qs = new URLSearchParams({ select: "*" });
+  for (const [col, v] of Object.entries(eq)) qs.set(col, `eq.${String(v)}`);
+  if (order) qs.set("order", order);
+  qs.set("limit", String(limit));
+  const headers: Record<string, string> = {
+    apikey: ctx.cfg.anonKey,
+    Accept: "application/json",
+    "Accept-Profile": "api",
+    Prefer: "count=exact",
+  };
+  if (ctx.bearer) headers["Authorization"] = `Bearer ${ctx.bearer}`;
+
+  let res: Response;
+  try {
+    res = await ctx.fetchImpl(`${ctx.cfg.restUrl}/${view}?${qs.toString()}`, { method: "GET", headers });
+  } catch (e) {
+    throw new ApiError(
+      503,
+      "unavailable",
+      `Network error reading api.${view}: ${e instanceof Error ? e.message : String(e)}. No data was returned.`,
+    );
+  }
+  const text = await res.text();
+  if (!res.ok) throw fromPostgrest(res.status, text, `api.${view}`);
+  let rows: unknown;
+  try {
+    rows = text === "" ? [] : JSON.parse(text);
+  } catch {
+    throw new ApiError(500, "internal", `api.${view} answered HTTP ${res.status} with a body that is not JSON.`);
+  }
+  if (!Array.isArray(rows)) throw new ApiError(500, "internal", `api.${view} did not answer with rows.`);
+  const m = /\/(\d+)\s*$/.exec(res.headers.get("content-range") ?? "");
+  return { rows: rows as Record<string, unknown>[], total: m ? Number(m[1]) : null };
 }

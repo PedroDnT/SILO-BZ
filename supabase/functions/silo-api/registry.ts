@@ -55,6 +55,17 @@ export interface Plan {
   rename?: Record<string, string>;
   /** The endpoint returns one JSON value (not rows); data is [value]. */
   single?: boolean;
+  // -- funds, fidc, events (#1056) --
+  /**
+   * The endpoint is a GET view, not a function. args then map a v2 parameter
+   * to a view column (an eq. filter applied by PostgREST, before its row cap),
+   * `limit` maps to the page size, and `where` is sent as eq. filters too.
+   */
+  view?: boolean;
+  /** view only: the PostgREST order, so a page is a defined sequence. */
+  order?: string;
+  /** Exactly one of these parameters must be given (one name = it is required). */
+  require_one_of?: string[];
 }
 
 export interface KindSpec extends Plan {
@@ -72,6 +83,10 @@ export interface ResourceSpec {
   shared?: string[];
   parameters?: ParamSpec[];
   kinds?: Record<string, KindSpec>;
+  /** Default window: with no `from`, a kind that takes one gets `to` (or today, UTC-3) minus this. */
+  window_months?: number;
+  /** Shown in ?help: what a reader must know before using the rows (regime breaks). */
+  notes?: string[];
 }
 
 export interface SharedSpec {
@@ -213,15 +228,291 @@ export const REGISTRY: Registry = {
     },
     {
       "name": "funds",
-      "status": "planned",
+      "status": "built",
       "summary": "What is this fund and how is it doing? Profile, NAV, holdings, debentures, FII properties.",
-      "example": "/v2/funds?id=33000167000101&kind=nav"
+      "example": "/v2/funds?id=33000167000101&kind=nav",
+      "shared": [
+        "id",
+        "from",
+        "to",
+        "limit"
+      ],
+      "window_months": 36,
+      "notes": [
+        "id is a fund CNPJ: 14 digits, punctuation allowed. Find one with /v2/search?kind=fund&q=<name>.",
+        "kind=nav columns are per family: a null outside the family's list is not applicable, not missing (coverage?kind=catalog, applicability).",
+        "FIDC delinquency (api.fund_nav, panel) starts 2013-01 and is on every row only from 2020-11 (regime break; coverage?kind=catalog lists it under regime_breaks). Through 2020-10-31 a fund with no tab VI row that month is null, not zero and not clean books; from 2020-11-30 it is filed on every row (a fund with none files 0). Never read a pre-2020-11 null as zero or fill it, and never compare a count of reporting funds across 2020-10 -> 2020-11."
+      ],
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": [
+            "profile",
+            "nav",
+            "holdings",
+            "debentures",
+            "properties"
+          ],
+          "default": "profile",
+          "doc": "profile: one fund's registry row and AUM (with no id: the fund registry). nav: the monthly NAV and flows series. holdings: the listed equities it holds (CDA). debentures: the debentures it holds. properties: an FII's real estate."
+        },
+        {
+          "name": "family",
+          "visibility": "main",
+          "type": "enum",
+          "values": [
+            "all",
+            "fi",
+            "fidc",
+            "fii",
+            "fip",
+            "fiagro"
+          ],
+          "default": "all",
+          "null_value": "all",
+          "doc": "One fund family. kind=nav: the series filed under that family (one CNPJ can file under two). With no id: the registry rows of that family."
+        },
+        {
+          "name": "holding",
+          "visibility": "hidden",
+          "type": "string",
+          "default": null,
+          "default_doc": "none: what the fund in id holds",
+          "doc": "Reverse lookup, instead of id. kind=holdings: the funds that hold this ticker. kind=debentures: the funds that hold this issuer's debentures (ticker, CVM code or CNPJ)."
+        },
+        {
+          "name": "status",
+          "visibility": "hidden",
+          "type": "string",
+          "default": "all",
+          "null_value": "all",
+          "doc": "With no id: only registry rows whose status is this, exactly as CVM publishes it (e.g. EM FUNCIONAMENTO NORMAL)."
+        }
+      ],
+      "kinds": {
+        "profile": {
+          "doc": "api.fund_profile: one row per family the CNPJ files under. With no id: the api.funds registry view, ordered by cnpj, refused (over_limit) when the selection holds more than one page unless limit asks for the first N.",
+          "endpoint": "fund_profile",
+          "args": {
+            "id": "p_cnpj"
+          },
+          "when_empty": {
+            "parameter": "id",
+            "plan": {
+              "endpoint": "funds",
+              "view": true,
+              "order": "cnpj.asc,entity_type.asc",
+              "args": {
+                "family": "entity_type",
+                "status": "status",
+                "limit": "limit"
+              }
+            }
+          }
+        },
+        "nav": {
+          "doc": "api.fund_nav: monthly NAV, quota, quotaholders and flows, oldest first. With no to, the series ends at the family's latest complete period. Refuses above 1000 rows: narrow from, or pin family.",
+          "endpoint": "fund_nav",
+          "args": {
+            "id": "p_cnpj",
+            "from": "p_from",
+            "to": "p_to",
+            "family": "p_entity_type"
+          },
+          "require_one_of": [
+            "id"
+          ]
+        },
+        "holdings": {
+          "doc": "api.fund_holdings: the listed equities a fund holds (CDA), or with holding the funds that hold a ticker. limit asks for the newest N rows.",
+          "endpoint": "fund_holdings",
+          "args": {
+            "id": "p_cnpj",
+            "holding": "p_ticker",
+            "from": "p_from",
+            "to": "p_to",
+            "limit": "p_limit"
+          },
+          "require_one_of": [
+            "id",
+            "holding"
+          ]
+        },
+        "debentures": {
+          "doc": "api.fund_debentures: the debentures a fund holds, or with holding the funds that hold an issuer's paper. limit asks for the newest N rows.",
+          "endpoint": "fund_debentures",
+          "args": {
+            "id": "p_cnpj",
+            "holding": "p_issuer",
+            "from": "p_from",
+            "to": "p_to",
+            "limit": "p_limit"
+          },
+          "require_one_of": [
+            "id",
+            "holding"
+          ]
+        },
+        "properties": {
+          "doc": "api.fii_property_history: an FII's properties, every filed version, newest first.",
+          "endpoint": "fii_property_history",
+          "args": {
+            "id": "p_cnpj",
+            "from": "p_from",
+            "to": "p_to"
+          },
+          "require_one_of": [
+            "id"
+          ]
+        }
+      }
     },
     {
       "name": "fidc",
-      "status": "planned",
+      "status": "built",
       "summary": "What is inside this FIDC? Portfolio, tranches, aging, cedentes, sacados.",
-      "example": "/v2/fidc?id=<cnpj>&kind=tranches"
+      "example": "/v2/fidc?id=<cnpj>&kind=tranches",
+      "shared": [
+        "id",
+        "from",
+        "to",
+        "limit"
+      ],
+      "window_months": 24,
+      "notes": [
+        "id is a FIDC CNPJ: 14 digits, punctuation allowed. With no id, kind=portfolio lists the FIDC registry (api.funds, entity_type fidc).",
+        "FIDC delinquency (api.fund_nav, panel) starts 2013-01 and is on every row only from 2020-11 (regime break; coverage?kind=catalog lists it under regime_breaks). Through 2020-10-31 a fund with no tab VI row that month is null, not zero and not clean books; from 2020-11-30 it is filed on every row (a fund with none files 0). Never read a pre-2020-11 null as zero or fill it, and never compare a count of reporting funds across 2020-10 -> 2020-11.",
+        "Tab X (the SCR grade ladders of kind=portfolio) is filed from 2023-10: earlier months have no scr rows, not zero-graded ones. Values are as filed."
+      ],
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": [
+            "portfolio",
+            "tranches",
+            "aging",
+            "cedentes",
+            "sacados"
+          ],
+          "default": "portfolio",
+          "doc": "portfolio: the receivables book, long (tab II sectors, tab X SCR ladders, tax debt). tranches: each senior and subordinated series. aging: the to-maturity and overdue ladders. cedentes: the originators it buys from. sacados: its largest debtors, as anonymized ranks."
+        },
+        {
+          "name": "series",
+          "visibility": "hidden",
+          "type": "string",
+          "default": "all",
+          "null_value": "all",
+          "doc": "kind=tranches: one TAB_X_CLASSE_SERIE, matched exactly as filed."
+        },
+        {
+          "name": "cedente",
+          "visibility": "hidden",
+          "type": "string",
+          "default": "all",
+          "null_value": "all",
+          "doc": "kind=cedentes, instead of id: the funds that buy from this originator (CPF or CNPJ, or a listed ticker or CVM code)."
+        },
+        {
+          "name": "item",
+          "visibility": "hidden",
+          "type": "enum",
+          "values": [
+            "all",
+            "sector",
+            "scr_debtor",
+            "scr_operation",
+            "tax_debt"
+          ],
+          "default": "all",
+          "null_value": "all",
+          "doc": "kind=portfolio: one part of the book, matched against the row's kind column: sector (tab II), scr_debtor or scr_operation (tab X ladders), tax_debt."
+        }
+      ],
+      "kinds": {
+        "portfolio": {
+          "doc": "api.fidc_portfolio, newest first. Refuses above 1000 rows: narrow from, pin item, or ask for the newest N with limit. With no id: the FIDC registry, ordered by cnpj.",
+          "endpoint": "fidc_portfolio",
+          "args": {
+            "id": "p_cnpj",
+            "item": "p_kind",
+            "from": "p_from",
+            "to": "p_to",
+            "limit": "p_limit"
+          },
+          "when_empty": {
+            "parameter": "id",
+            "plan": {
+              "endpoint": "funds",
+              "view": true,
+              "order": "cnpj.asc",
+              "where": {
+                "entity_type": "fidc"
+              },
+              "args": {
+                "limit": "limit"
+              }
+            }
+          }
+        },
+        "tranches": {
+          "doc": "api.fidc_tranches: per series, quota value, quotaholders and returns. Refuses above 1000 rows (no cursor): narrow from.",
+          "endpoint": "fidc_tranches",
+          "args": {
+            "id": "p_cnpj",
+            "from": "p_from",
+            "to": "p_to",
+            "series": "p_series"
+          },
+          "require_one_of": [
+            "id"
+          ]
+        },
+        "aging": {
+          "doc": "api.fidc_aging: the to_maturity, overdue and overdue_total ladders. Refuses above 1000 rows (no cursor): narrow from.",
+          "endpoint": "fidc_aging",
+          "args": {
+            "id": "p_cnpj",
+            "from": "p_from",
+            "to": "p_to"
+          },
+          "require_one_of": [
+            "id"
+          ]
+        },
+        "cedentes": {
+          "doc": "api.fidc_cedentes: the originators a fund buys from, or with cedente the funds that buy from one. limit asks for the newest N rows.",
+          "endpoint": "fidc_cedentes",
+          "args": {
+            "id": "p_cnpj",
+            "cedente": "p_cedente",
+            "from": "p_from",
+            "to": "p_to",
+            "limit": "p_limit"
+          },
+          "require_one_of": [
+            "id",
+            "cedente"
+          ]
+        },
+        "sacados": {
+          "doc": "api.fidc_sacados: the largest debtors, as anonymized ranks (there is no debtor-side lookup). limit asks for the newest N rows.",
+          "endpoint": "fidc_sacados",
+          "args": {
+            "id": "p_cnpj",
+            "from": "p_from",
+            "to": "p_to",
+            "limit": "p_limit"
+          },
+          "require_one_of": [
+            "id"
+          ]
+        }
+      }
     },
     {
       "name": "derivatives",
@@ -249,9 +540,118 @@ export const REGISTRY: Registry = {
     },
     {
       "name": "events",
-      "status": "planned",
+      "status": "built",
       "summary": "What was filed or restated? Company IPE filings, fund documents, restatements, judicial recovery.",
-      "example": "/v2/events?id=PETR4"
+      "example": "/v2/events?id=PETR4",
+      "shared": [
+        "id",
+        "from",
+        "to"
+      ],
+      "window_months": 12,
+      "notes": [
+        "id is a ticker, 14-digit CNPJ or CVM code for kind company and judicial_recovery, and a fund CNPJ for kind fund, restatements and restatement_diff.",
+        "Dates are delivery days. With no to, company and judicial_recovery end today and the fund kinds have no upper bound."
+      ],
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": [
+            "company",
+            "fund",
+            "restatements",
+            "restatement_diff",
+            "judicial_recovery"
+          ],
+          "default": "company",
+          "doc": "company: a listed company's IPE filings (fatos relevantes, comunicados, ...). fund: a fund's FNET documents. restatements: FNET documents re-filed as a new version (with no id: every fund's). restatement_diff: field by field, what changed in a fund's restated documents. judicial_recovery: listed companies' judicial recovery filings (with no id: every company's)."
+        },
+        {
+          "name": "category",
+          "visibility": "main",
+          "type": "string",
+          "default": "all",
+          "null_value": "all",
+          "doc": "One label, matched exactly as the source labels it. kind=company: the IPE categoria (e.g. Fato Relevante). kind=fund and restatement_diff: the FNET tipo_documento. kind=judicial_recovery: the CVM Tipo (accented as published)."
+        },
+        {
+          "name": "family",
+          "visibility": "hidden",
+          "type": "enum",
+          "values": [
+            "all",
+            "fii",
+            "fidc",
+            "etf"
+          ],
+          "default": "all",
+          "null_value": "all",
+          "doc": "kind=restatements: the FNET fund type link (FII, FIDC or ETF). all includes documents not linked to a fund type yet."
+        }
+      ],
+      "kinds": {
+        "company": {
+          "doc": "api.company_events: IPE filings, newest first. Refuses above 1000 rows (no cursor): narrow from or pin category.",
+          "endpoint": "company_events",
+          "args": {
+            "id": "p_id",
+            "from": "p_from",
+            "to": "p_to",
+            "category": "p_category"
+          },
+          "require_one_of": [
+            "id"
+          ]
+        },
+        "fund": {
+          "doc": "api.fund_documents: FNET documents, newest first, each version its own fnet_id. Refuses above 1000 rows: narrow from or pin category.",
+          "endpoint": "fund_documents",
+          "args": {
+            "id": "p_cnpj",
+            "from": "p_from",
+            "to": "p_to",
+            "category": "p_tipo"
+          },
+          "require_one_of": [
+            "id"
+          ]
+        },
+        "restatements": {
+          "doc": "api.fund_restatements: one row per document with versao > 1, with the version it most plausibly replaced and whether SILO diffed the pair.",
+          "endpoint": "fund_restatements",
+          "args": {
+            "id": "p_cnpj",
+            "from": "p_from",
+            "to": "p_to",
+            "family": "p_tipo_fundo"
+          }
+        },
+        "restatement_diff": {
+          "doc": "api.fund_restatement_diff: one row per field that changed between a restated document and its predecessor (the FIDC informe mensal for now).",
+          "endpoint": "fund_restatement_diff",
+          "args": {
+            "id": "p_cnpj",
+            "from": "p_from",
+            "to": "p_to",
+            "category": "p_tipo"
+          },
+          "require_one_of": [
+            "id"
+          ]
+        },
+        "judicial_recovery": {
+          "doc": "api.rj_listed_documents: judicial recovery (recuperacao judicial) filings of listed companies, newest first.",
+          "endpoint": "rj_listed_documents",
+          "args": {
+            "id": "p_id",
+            "from": "p_from",
+            "to": "p_to",
+            "category": "p_doc_type"
+          }
+        }
+      }
     },
     {
       "name": "screens",

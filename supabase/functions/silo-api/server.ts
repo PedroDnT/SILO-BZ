@@ -17,6 +17,9 @@ import { acceptedParams, type ParsedRequest, parseQuery } from "./params.ts";
 import { type BridgeConfig, callerBearer, type CallContext, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY, RESOURCES_BY_NAME, type ResourceSpec } from "./registry.ts";
 import { coverage } from "./resources/coverage.ts";
+import { events } from "./resources/events.ts";
+import { fidc } from "./resources/fidc.ts";
+import { funds } from "./resources/funds.ts";
 import { search } from "./resources/search.ts";
 
 export interface ServerDeps {
@@ -27,7 +30,7 @@ export interface ServerDeps {
 type Handler = (req: ParsedRequest, ctx: CallContext) => Promise<Envelope>;
 
 /** The built resources. A registry entry with status built and no handler fails at load. */
-export const HANDLERS: Record<string, Handler> = { search, coverage };
+export const HANDLERS: Record<string, Handler> = { search, coverage, funds, fidc, events };
 
 for (const r of REGISTRY.resources) {
   if ((r.status === "built") !== (r.name in HANDLERS)) {
@@ -67,6 +70,8 @@ export function helpBody(resource: ResourceSpec, level: "main" | "all"): Envelop
     status: resource.status,
     summary: resource.summary,
     example: resource.example,
+    notes: resource.notes,
+    default_window_months: resource.window_months,
     kinds: Object.fromEntries(Object.entries(resource.kinds ?? {}).map(([n, k]) => [n, k.doc])),
     parameters: params,
     hidden_parameters: level === "all" ? undefined : "see ?help=all",

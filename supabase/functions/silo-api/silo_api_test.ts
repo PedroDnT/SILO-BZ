@@ -9,6 +9,7 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 
 import { ERROR_CODES, fromPostgrest } from "./errors.ts";
+import { minusMonths, todayUtcMinus3 } from "./params.ts";
 import { callerBearer, configFromEnv } from "./postgrest.ts";
 import { REGISTRY } from "./registry.ts";
 import { makeHandler, routeOf } from "./server.ts";
@@ -60,6 +61,7 @@ Deno.test("GET /v2/ lists the 14 resources, unbuilt ones as planned, with no ups
   const byName = Object.fromEntries(json.data.map((r: { name: string; status: string }) => [r.name, r.status]));
   assertEquals(byName.search, "built");
   assertEquals(byName.coverage, "built");
+  for (const n of ["funds", "fidc", "events"]) assertEquals(byName[n], "built", n);
   assertEquals(byName.prices, "planned");
   assertEquals(json.meta.resource, "index");
 });
@@ -267,6 +269,249 @@ Deno.test("a caller's JWT is forwarded; a publishable key is not; a secret key i
 Deno.test("config refuses a secret key", () => {
   const secret = configFromEnv((n) => ({ SUPABASE_URL: "https://x", SUPABASE_ANON_KEY: "sb_secret_zzz" } as Record<string, string>)[n]);
   assert("error" in secret);
+});
+
+// ------------------------------------------ funds, fidc, events (#1056) --
+
+const CNPJ = "33000167000101";
+const body = (c: Captured) => JSON.parse(String(c.init.body));
+
+function stubView(rows: unknown[], contentRange: string | null) {
+  const calls: Captured[] = [];
+  const impl = (input: string, init: RequestInit): Promise<Response> => {
+    calls.push({ url: String(input), init });
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (contentRange !== null) headers["content-range"] = contentRange;
+    return Promise.resolve(new Response(JSON.stringify(rows), { status: 200, headers }));
+  };
+  return { calls, impl };
+}
+
+async function getView(path: string, rows: unknown[], contentRange: string | null) {
+  const stub = stubView(rows, contentRange);
+  const res = await makeHandler({ fetchImpl: stub.impl, env })(new Request(`${BASE}${path}`));
+  return { res, json: await res.json(), calls: stub.calls };
+}
+
+Deno.test("windows: minusMonths clamps the day, and today is counted in UTC-3", () => {
+  assertEquals(minusMonths("2026-10-31", 36), "2023-10-31");
+  assertEquals(minusMonths("2024-02-29", 12), "2023-02-28");
+  assertEquals(minusMonths("2026-03-31", 1), "2026-02-28");
+  assertEquals(minusMonths("2026-01-15", 24), "2024-01-15");
+  assertEquals(todayUtcMinus3(new Date("2026-11-04T02:00:00Z")), "2026-11-03");
+  assertEquals(todayUtcMinus3(new Date("2026-11-04T03:00:00Z")), "2026-11-04");
+});
+
+Deno.test("funds kind=nav: id, the 3-year window back from to, family -> p_entity_type", async () => {
+  const { res, json, calls } = await get(`/v2/funds?id=33.000.167/0001-01&kind=nav&to=2026-09-30&family=fi`);
+  assertEquals(res.status, 200);
+  assertEquals(calls.length, 1);
+  assert(calls[0].url.endsWith("/rpc/fund_nav"));
+  assertEquals(body(calls[0]), { p_cnpj: CNPJ, p_from: "2023-09-30", p_to: "2026-09-30", p_entity_type: "fi" });
+  assertEquals(json.meta.request, { kind: "nav", family: "fi", holding: null, status: "all", id: CNPJ, from: "2023-09-30", to: "2026-09-30", limit: null });
+  assertEquals(json.meta.endpoint, "api.fund_nav");
+});
+
+Deno.test("funds kind=nav with no to sends no p_to (the endpoint's latest complete period) and from counted from today", async () => {
+  const { calls, json } = await get(`/v2/funds?id=${CNPJ}&kind=nav`);
+  const sent = body(calls[0]);
+  assertEquals(sent.p_to, undefined);
+  assertEquals(sent.p_entity_type, undefined, "family=all is not sent");
+  assertEquals(sent.p_from, minusMonths(todayUtcMinus3(), 36));
+  assertEquals(json.meta.request.from, sent.p_from, "meta.request echoes the window applied");
+});
+
+Deno.test("funds kind=profile with an id calls fund_profile and takes no window", async () => {
+  const rows = [{ cnpj: CNPJ, entity_type: "fi", fund_name: "X", status: null, latest_aum: null }];
+  const { json, calls } = await get(`/v2/funds?id=${CNPJ}`, 200, JSON.stringify(rows));
+  assert(calls[0].url.endsWith("/rpc/fund_profile"));
+  assertEquals(body(calls[0]), { p_cnpj: CNPJ });
+  assertEquals(json.data, rows, "null stays null");
+  assertEquals(json.meta.request.from, null);
+  const misplaced = await get(`/v2/funds?id=${CNPJ}&from=2024-01-01`);
+  assertEquals(misplaced.json.error.code, "bad_request");
+  assertEquals(misplaced.json.error.target, "from");
+  assertEquals(misplaced.calls.length, 0);
+});
+
+Deno.test("funds with no id GETs the funds view: eq filters, an order, Prefer count=exact", async () => {
+  const rows = [{ cnpj: "00000000000191", entity_type: "fidc", fund_name: "A" }];
+  const { res, json, calls } = await getView("/v2/funds?family=fidc&status=EM%20FUNCIONAMENTO%20NORMAL", rows, "0-0/1");
+  assertEquals(res.status, 200);
+  assertEquals(calls.length, 1);
+  assertEquals(calls[0].init.method, "GET");
+  const u = new URL(calls[0].url);
+  assertEquals(u.pathname, "/rest/v1/funds");
+  assertEquals(u.searchParams.get("entity_type"), "eq.fidc");
+  assertEquals(u.searchParams.get("status"), "eq.EM FUNCIONAMENTO NORMAL");
+  assertEquals(u.searchParams.get("order"), "cnpj.asc,entity_type.asc");
+  assertEquals(u.searchParams.get("limit"), "1000");
+  const h = calls[0].init.headers as Record<string, string>;
+  assertEquals(h["Accept-Profile"], "api");
+  assertEquals(h["Prefer"], "count=exact");
+  assertEquals(json.data, rows);
+  assertEquals(json.meta.endpoint, "api.funds");
+  assertEquals(json.meta.rows_total, 1);
+  assertEquals(json.meta.truncated, false);
+});
+
+Deno.test("funds with no id refuses a cut page rather than trim; limit asks for the first N, and says so", async () => {
+  const page = Array.from({ length: 1000 }, (_, i) => ({ cnpj: String(i).padStart(14, "0") }));
+  const over = await getView("/v2/funds", page, "0-999/84211");
+  assertEquals(over.res.status, 400);
+  assertEquals(over.json.error.code, "over_limit");
+  assertEquals(over.json.error.target, "limit");
+  assertStringIncludes(over.json.error.message, "84211");
+  assertStringIncludes(over.json.error.message, "family or status");
+  assert(!("data" in over.json));
+
+  const noCount = await getView("/v2/funds", page, null);
+  assertEquals(noCount.json.error.code, "over_limit", "no count and a full page is ambiguous: refused");
+
+  const head = await getView("/v2/funds?limit=2", page.slice(0, 2), "0-1/84211");
+  assertEquals(head.res.status, 200);
+  assertEquals(new URL(head.calls[0].url).searchParams.get("limit"), "2");
+  assertEquals(head.json.data.length, 2);
+  assertEquals(head.json.meta.rows_total, 84211);
+  assertEquals(head.json.meta.truncated, true);
+
+  const shortPage = await getView("/v2/funds?limit=500", page.slice(0, 100), "0-99/84211");
+  assertEquals(shortPage.json.error.code, "over_limit", "a server cut below the asked N is refused too");
+});
+
+Deno.test("funds holdings and debentures: exactly one of id and holding", async () => {
+  const fwd = await get(`/v2/funds?id=${CNPJ}&kind=holdings&from=2025-01-01&to=2025-12-31&limit=50`);
+  assert(fwd.calls[0].url.endsWith("/rpc/fund_holdings"));
+  assertEquals(body(fwd.calls[0]), { p_cnpj: CNPJ, p_from: "2025-01-01", p_to: "2025-12-31", p_limit: 50 });
+
+  const rev = await get("/v2/funds?kind=holdings&holding=PETR4&from=2025-01-01");
+  assertEquals(body(rev.calls[0]), { p_ticker: "PETR4", p_from: "2025-01-01" });
+  const deb = await get("/v2/funds?kind=debentures&holding=PETR&from=2025-01-01");
+  assert(deb.calls[0].url.endsWith("/rpc/fund_debentures"));
+  assertEquals(body(deb.calls[0]), { p_issuer: "PETR", p_from: "2025-01-01" });
+
+  const both = await get(`/v2/funds?id=${CNPJ}&kind=holdings&holding=PETR4`);
+  assertEquals(both.json.error.code, "bad_request");
+  assertEquals(both.json.error.target, "holding");
+  assertEquals(both.calls.length, 0);
+  const none = await get("/v2/funds?kind=holdings");
+  assertEquals(none.json.error.code, "bad_request");
+  assertEquals(none.json.error.target, "id");
+  assertEquals(none.calls.length, 0);
+});
+
+Deno.test("funds refuses a missing id, a non-CNPJ id and a misplaced hidden parameter before any call", async () => {
+  const nav = await get("/v2/funds?kind=nav");
+  assertEquals(nav.json.error.target, "id");
+  assertStringIncludes(nav.json.error.message, "needs id");
+  const ticker = await get("/v2/funds?id=PETR4&kind=nav");
+  assertEquals(ticker.json.error.code, "bad_request");
+  assertEquals(ticker.json.error.target, "id");
+  assertStringIncludes(ticker.json.error.message, "CNPJ");
+  const holding = await get(`/v2/funds?id=${CNPJ}&kind=nav&holding=PETR4`);
+  assertEquals(holding.json.error.target, "holding");
+  const status = await get(`/v2/funds?id=${CNPJ}&status=CANCELADA`);
+  assertEquals(status.json.error.target, "status");
+  const family = await get(`/v2/funds?id=${CNPJ}&kind=properties&family=fii`);
+  assertEquals(family.json.error.target, "family");
+  const window = await get(`/v2/funds?id=${CNPJ}&kind=nav&from=2026-01-01&to=2025-01-01`);
+  assertEquals(window.json.error.target, "from");
+  for (const r of [nav, ticker, holding, status, family, window]) assertEquals(r.calls.length, 0);
+
+  const props = await get(`/v2/funds?id=${CNPJ}&kind=properties&from=2020-01-01`);
+  assert(props.calls[0].url.endsWith("/rpc/fii_property_history"));
+  assertEquals(body(props.calls[0]), { p_cnpj: CNPJ, p_from: "2020-01-01" });
+});
+
+Deno.test("fidc maps one kind per fidc_* function with a 2-year window, and hidden params to their p_ args", async () => {
+  const cases: [string, string, Record<string, unknown>][] = [
+    [`kind=portfolio&item=sector&limit=10`, "fidc_portfolio", { p_cnpj: CNPJ, p_kind: "sector", p_from: "2024-09-30", p_to: "2026-09-30", p_limit: 10 }],
+    [`kind=tranches&series=SENIOR%201`, "fidc_tranches", { p_cnpj: CNPJ, p_from: "2024-09-30", p_to: "2026-09-30", p_series: "SENIOR 1" }],
+    [`kind=aging`, "fidc_aging", { p_cnpj: CNPJ, p_from: "2024-09-30", p_to: "2026-09-30" }],
+    [`kind=cedentes`, "fidc_cedentes", { p_cnpj: CNPJ, p_from: "2024-09-30", p_to: "2026-09-30" }],
+    [`kind=sacados`, "fidc_sacados", { p_cnpj: CNPJ, p_from: "2024-09-30", p_to: "2026-09-30" }],
+  ];
+  for (const [qs, fn, args] of cases) {
+    const { calls, json } = await get(`/v2/fidc?id=${CNPJ}&to=2026-09-30&${qs}`);
+    assertEquals(calls.length, 1, qs);
+    assert(calls[0].url.endsWith(`/rpc/${fn}`), qs);
+    assertEquals(body(calls[0]), args, qs);
+    assertEquals(json.meta.endpoint, `api.${fn}`);
+  }
+  const portfolioDefault = await get(`/v2/fidc?id=${CNPJ}&to=2026-09-30`);
+  assertEquals(body(portfolioDefault.calls[0]), { p_cnpj: CNPJ, p_from: "2024-09-30", p_to: "2026-09-30" }, "item=all is not sent");
+
+  const rev = await get("/v2/fidc?kind=cedentes&cedente=12345678000199&from=2025-01-01");
+  assertEquals(body(rev.calls[0]), { p_cedente: "12345678000199", p_from: "2025-01-01" });
+  const series = await get(`/v2/fidc?id=${CNPJ}&kind=aging&series=SENIOR`);
+  assertEquals(series.json.error.target, "series");
+  assertEquals(series.calls.length, 0);
+  const noId = await get("/v2/fidc?kind=tranches");
+  assertEquals(noId.json.error.target, "id");
+  assertEquals(noId.calls.length, 0);
+  const item = await get(`/v2/fidc?id=${CNPJ}&item=loans`);
+  assertEquals(item.json.error.target, "item");
+});
+
+Deno.test("fidc with no id lists the FIDC registry from the funds view", async () => {
+  const { json, calls } = await getView("/v2/fidc?limit=5", Array(5).fill({ cnpj: CNPJ, entity_type: "fidc" }), "0-4/4120");
+  const u = new URL(calls[0].url);
+  assertEquals(u.pathname, "/rest/v1/funds");
+  assertEquals(u.searchParams.get("entity_type"), "eq.fidc");
+  assertEquals(u.searchParams.get("limit"), "5");
+  assertEquals(json.meta.truncated, true);
+  const item = await get("/v2/fidc?item=sector");
+  assertEquals(item.json.error.target, "item", "item needs an id: it applies to the portfolio function only");
+});
+
+Deno.test("fidc ?help carries the 2020-11 delinquency regime break and the hidden params only at help=all", async () => {
+  const main = await get("/v2/fidc?help");
+  const help = main.json.data[0];
+  assert(help.notes.some((n: string) => n.includes("2020-11")), "regime break note");
+  assertEquals(help.default_window_months, 24);
+  assertEquals(help.parameters.map((p: { name: string }) => p.name), ["kind", "id", "from", "to", "limit"]);
+  const all = await get("/v2/fidc?help=all");
+  const names = all.json.data[0].parameters.map((p: { name: string }) => p.name);
+  for (const n of ["series", "cedente", "item"]) assert(names.includes(n), n);
+  const funds = await get("/v2/funds?help");
+  assert(funds.json.data[0].endpoints.includes("api.funds"));
+});
+
+Deno.test("events maps each kind, with a 12-month window and category to the source label", async () => {
+  const cases: [string, string, Record<string, unknown>][] = [
+    [`id=PETR4&category=Fato%20Relevante`, "company_events", { p_id: "PETR4", p_from: "2025-09-30", p_to: "2026-09-30", p_category: "Fato Relevante" }],
+    [`id=${CNPJ}&kind=fund&category=Informe%20Mensal`, "fund_documents", { p_cnpj: CNPJ, p_from: "2025-09-30", p_to: "2026-09-30", p_tipo: "Informe Mensal" }],
+    [`kind=restatements&family=fidc`, "fund_restatements", { p_from: "2025-09-30", p_to: "2026-09-30", p_tipo_fundo: "fidc" }],
+    [`id=${CNPJ}&kind=restatement_diff`, "fund_restatement_diff", { p_cnpj: CNPJ, p_from: "2025-09-30", p_to: "2026-09-30" }],
+    [`kind=judicial_recovery`, "rj_listed_documents", { p_from: "2025-09-30", p_to: "2026-09-30" }],
+  ];
+  for (const [qs, fn, args] of cases) {
+    const { calls } = await get(`/v2/events?to=2026-09-30&${qs}`);
+    assertEquals(calls.length, 1, qs);
+    assert(calls[0].url.endsWith(`/rpc/${fn}`), qs);
+    assertEquals(body(calls[0]), args, qs);
+  }
+});
+
+Deno.test("events refuses what a kind cannot use, and a fund kind takes a CNPJ", async () => {
+  const company = await get("/v2/events");
+  assertEquals(company.json.error.target, "id");
+  const cat = await get("/v2/events?kind=restatements&category=Informe%20Mensal");
+  assertEquals(cat.json.error.code, "bad_request");
+  assertEquals(cat.json.error.target, "category");
+  const fam = await get("/v2/events?id=PETR4&family=fii");
+  assertEquals(fam.json.error.target, "family");
+  const ticker = await get("/v2/events?id=PETR4&kind=fund");
+  assertEquals(ticker.json.error.target, "id");
+  for (const r of [company, cat, fam, ticker]) assertEquals(r.calls.length, 0);
+});
+
+Deno.test("a SQL refusal on a new resource still comes back verbatim as over_limit", async () => {
+  const pg = { code: "22023", message: "fidc_portfolio: 1001 rows, above one page", hint: "pin p_kind", details: null };
+  const { res, json } = await get(`/v2/fidc?id=${CNPJ}`, 400, JSON.stringify(pg));
+  assertEquals(res.status, 400);
+  assertEquals(json.error.code, "over_limit");
+  assertEquals(json.error.message, pg.message);
 });
 
 Deno.test("every built resource keeps at most 3 main parameters, kind included", () => {
