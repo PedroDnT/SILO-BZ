@@ -15,7 +15,9 @@
 //   * an error is the gateway's error object, verbatim (isError);
 //   * the only key the gateway sends PostgREST is the public one. A caller's
 //     own `Authorization: Bearer <user JWT>` is passed to the gateway, which
-//     forwards it so the signed-in tier applies (silo-api/postgrest.ts).
+//     forwards it so the signed-in tier applies (silo-api/postgrest.ts). The
+//     client IP headers are copied too, so an anonymous caller is counted in
+//     its own rate bucket, not in one shared by every MCP caller (tier.ts).
 //
 // Spec: docs/planning/API_V2.md (#1052, #1060).
 
@@ -23,6 +25,7 @@ import { ApiError } from "../silo-api/errors.ts";
 import { acceptedParams } from "../silo-api/params.ts";
 import { type BodySpec, type ParamSpec, REGISTRY, type ResourceSpec, SHARED_NAMES } from "../silo-api/registry.ts";
 import { makeHandler as makeGateway } from "../silo-api/server.ts";
+import { CLIENT_IP_HEADERS, type Gate } from "../silo-api/tier.ts";
 import { idDoc } from "./id_docs.ts";
 
 export const TOOL_PREFIX = "silo_";
@@ -268,11 +271,33 @@ function errorResult(text: string, provenance: string): ToolResult {
   return { content: [{ type: "text", text }, { type: "text", text: provenance }], isError: true };
 }
 
+/** The silo-api gateway: one Request in, one Response out (silo-api/server.ts makeHandler). */
+export type Gateway = (req: Request) => Promise<Response>;
+
 export interface CallDeps {
   env: EnvGetter;
   fetchImpl: FetchLike;
-  /** The MCP request's Authorization header, passed to the gateway as is. */
-  authorization?: string | null;
+  /**
+   * The gateway to call. server.ts builds ONE per MCP handler (index.ts
+   * builds the handler once at module level), so the gateway's 60 s tier
+   * cache outlives a call. Left out, a gateway is built for this call.
+   */
+  gateway?: Gateway;
+  /** Only when gateway is left out: the gateway's Postgres gate (tests inject one). */
+  gate?: Gate;
+  /**
+   * The inbound MCP request's headers. Authorization and the client IP
+   * headers the gateway's rate limit reads (CLIENT_IP_HEADERS) are copied to
+   * the gateway request; nothing else is.
+   */
+  headers?: Headers | null;
+}
+
+/** Copied from the MCP request to the gateway request: the token, and the caller's address. */
+export const FORWARDED_HEADERS: readonly string[] = ["authorization", ...CLIENT_IP_HEADERS];
+
+export function makeGatewayFor(deps: Pick<CallDeps, "env" | "fetchImpl" | "gate">): Gateway {
+  return makeGateway({ env: deps.env, fetchImpl: deps.fetchImpl, gate: deps.gate });
 }
 
 /** The gateway's base URL for a request: <SUPABASE_URL>/functions/v1/silo-api. */
@@ -297,8 +322,11 @@ export async function callTool(name: string, rawArgs: unknown, deps: CallDeps): 
   }
   const headers: Record<string, string> = { accept: "application/json" };
   if (plan.body !== undefined) headers["content-type"] = "application/json";
-  if (deps.authorization) headers.authorization = deps.authorization;
-  const gateway = makeGateway({ env: deps.env, fetchImpl: deps.fetchImpl });
+  for (const h of FORWARDED_HEADERS) {
+    const v = deps.headers?.get(h);
+    if (v) headers[h] = v;
+  }
+  const gateway = deps.gateway ?? makeGatewayFor(deps);
   const req = new Request(`${gatewayBase(deps.env)}${plan.path}`, { method: plan.method, headers, body: plan.body });
   const res = await gateway(req);
   const text = await res.text();

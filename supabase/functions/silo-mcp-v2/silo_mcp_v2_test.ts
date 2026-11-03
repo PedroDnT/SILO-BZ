@@ -29,14 +29,33 @@ interface Captured {
   init: RequestInit;
 }
 
+/**
+ * A stub PostgREST. The gateway's own gate RPCs (api.my_tier, api.rate_hit;
+ * silo-api/tier.ts) are answered here and recorded in gateCalls: a bearer is
+ * signed_in, and every hit is the first of the minute. Every other request
+ * gets `body` and is recorded in calls.
+ */
 function stubFetch(status: number, body: string) {
   const calls: Captured[] = [];
+  const gateCalls: Captured[] = [];
   const impl = (input: string, init: RequestInit): Promise<Response> => {
-    calls.push({ url: String(input), init });
-    return Promise.resolve(new Response(body, { status, headers: { "content-type": "application/json" } }));
+    const url = String(input);
+    const json = (b: string, s = 200) => Promise.resolve(new Response(b, { status: s, headers: { "content-type": "application/json" } }));
+    if (url.endsWith("/rpc/my_tier")) {
+      gateCalls.push({ url, init });
+      return json('"signed_in"');
+    }
+    if (url.endsWith("/rpc/rate_hit")) {
+      gateCalls.push({ url, init });
+      return json("1");
+    }
+    calls.push({ url, init });
+    return json(body, status);
   };
-  return { calls, impl };
+  return { calls, gateCalls, impl };
 }
+
+const bearer = (token: string) => new Headers({ authorization: `Bearer ${token}` });
 
 const sent = (c: Captured) => JSON.parse(String(c.init.body));
 
@@ -167,7 +186,7 @@ Deno.test("portfolio: body lists in the JSON body; a caller's Bearer gives the s
   const anon = await callTool("silo_portfolio", args, { env, fetchImpl: stub.impl });
   assertEquals(JSON.parse(anon.content[0].text).error.code, "forbidden_for_tier", "portfolio is signed-in only");
   assertEquals(stub.calls.length, 0);
-  const signed = await callTool("silo_portfolio", args, { env, fetchImpl: stub.impl, authorization: `Bearer ${JWT}` });
+  const signed = await callTool("silo_portfolio", args, { env, fetchImpl: stub.impl, headers: bearer(JWT) });
   assert(!signed.isError, signed.content[0].text);
   assertEquals(stub.calls.length, 1);
   assert(stub.calls[0].url.endsWith("/rpc/portfolio_lookthrough"));
@@ -244,6 +263,34 @@ Deno.test("MCP: tools/call returns the envelope; an error is isError; the Bearer
   await rpc(handler, "tools/call", { name: "silo_screens", arguments: {} }, { authorization: `Bearer ${JWT}` });
   assert(stub.calls.length > n, "signed in: screens is served, so the gateway called PostgREST");
   assertEquals((stub.calls[stub.calls.length - 1].init.headers as Record<string, string>)["Authorization"], `Bearer ${JWT}`);
+});
+
+Deno.test("the caller's IP headers reach the gateway's rate bucket; nothing else is forwarded", async () => {
+  const stub = stubFetch(200, "[]");
+  const headers = new Headers({ "cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.9", cookie: "s=1", apikey: "theirs" });
+  const res = await callTool("silo_coverage", {}, { env, fetchImpl: stub.impl, headers });
+  assert(!res.isError, res.content[0].text);
+  const hit = stub.gateCalls.find((c) => c.url.endsWith("/rpc/rate_hit"))!;
+  assertEquals(sent(hit), { p_bucket: "ip:203.0.113.7" }, "counted by the caller's address, not one shared MCP bucket");
+  const viaXff = stubFetch(200, "[]");
+  await callTool("silo_coverage", {}, { env, fetchImpl: viaXff.impl, headers: new Headers({ "x-forwarded-for": "198.51.100.9, 10.0.0.1" }) });
+  assertEquals(sent(viaXff.gateCalls.find((c) => c.url.endsWith("/rpc/rate_hit"))!), { p_bucket: "ip:198.51.100.9" });
+  const sentHeaders = stub.calls[0].init.headers as Record<string, string>;
+  assertEquals(sentHeaders["apikey"], "test-anon-key", "the caller's apikey is never forwarded");
+  assert(!Object.keys(sentHeaders).some((k) => k.toLowerCase() === "cookie"));
+});
+
+Deno.test("MCP: one gateway per handler, so the tier cache spans calls; the IP header reaches it", async () => {
+  const stub = stubFetch(200, "[]");
+  const handler = makeHandler({ env, fetchImpl: stub.impl });
+  for (let i = 0; i < 3; i++) {
+    const out = await rpc(handler, "tools/call", { name: "silo_coverage", arguments: {} }, { authorization: `Bearer ${JWT}` });
+    assert(!out.result.isError, JSON.stringify(out));
+  }
+  assertEquals(stub.gateCalls.filter((c) => c.url.endsWith("/rpc/my_tier")).length, 1, "api.my_tier once for three calls: the 60 s cache works");
+  assertEquals(stub.gateCalls.filter((c) => c.url.endsWith("/rpc/rate_hit")).length, 3, "every call is still counted");
+  await rpc(handler, "tools/call", { name: "silo_coverage", arguments: {} }, { "cf-connecting-ip": "203.0.113.8" });
+  assertEquals(sent(stub.gateCalls[stub.gateCalls.length - 1]), { p_bucket: "ip:203.0.113.8" });
 });
 
 Deno.test("MCP: CORS preflight is answered", async () => {
