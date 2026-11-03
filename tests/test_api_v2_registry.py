@@ -209,7 +209,7 @@ def test_every_argument_maps_a_declared_parameter_to_a_declared_p_argument():
 def test_every_accepted_parameter_is_used_by_some_kind():
     """A parameter no kind reads would be accepted and silently ignored."""
     for r in _built():
-        used = {"kind"}
+        used = {"kind", "limit"}  # limit is the page size of every kind (#1059)
         for _, plan in _plans(r):
             used |= set(plan["args"]) | {f["parameter"] for f in plan.get("filters", [])} | set(plan.get("uses", []))
             if "view_by" in plan:
@@ -302,7 +302,7 @@ def test_with_no_id_funds_and_fidc_list_the_funds_view():
         plan = first["when_empty"]["plan"]
         assert plan["endpoint"] == "funds" and plan["view"] is True
         assert plan.get("where", {}) == where
-        assert plan["args"].get("limit") == "limit"
+        assert plan["paging"]["method"] == "view_offset" and "limit" not in plan["args"]
 
 
 def test_fidc_help_keeps_the_2020_11_delinquency_regime_break():
@@ -583,5 +583,136 @@ def test_derivatives_clamped_functions_take_limit_and_cut_silently():
         assert body and "LIMIT LEAST(" in body.group(0), fn
     ts = (FN_DIR / "resources" / "derivatives.ts").read_text(encoding="utf-8")
     assert "option_chain:" in ts and "option_exercises:" in ts
-    kinds = _resource("derivatives")["kinds"]
-    assert kinds["chain"]["args"]["limit"] == "p_limit" and kinds["exercises"]["args"]["limit"] == "p_limit"
+    # #1059: limit is the page size, so the gateway itself asks for one SQL page and one row more.
+    assert "export const ASK = 1001;" in ts and "p_limit: ASK" in ts
+    for fn in ("option_chain", "option_exercises"):
+        assert "p_limit" in manifest()[fn].params, fn
+
+
+# ------------------------------------------------- cursors and tiers (#1059) --
+
+CONFIG_TS = FN_DIR / "config.ts"
+METHODS = {"p_after", "date_window", "view_offset", "single_page"}
+P_AFTER_FUNCTIONS = {"panel", "quote_history", "fund_nav", "index_history", "trade_consolidated_history"}
+
+
+def test_every_plan_declares_how_it_pages():
+    """Every list kind pages one of four ways; single_page says why it cannot page upstream."""
+    m = manifest()
+    for r in _built():
+        for kind, plan in _plans(r):
+            where = f"{r['name']} kind {kind}"
+            paging = plan.get("paging")
+            assert paging, f"{where}: no paging method"
+            method = paging["method"]
+            assert method in METHODS, (where, method)
+            assert "limit" not in plan["args"], f"{where}: limit is the page size, never sent to the SQL"
+            if method == "p_after":
+                assert plan["endpoint"] in P_AFTER_FUNCTIONS, where
+                assert "p_after" in m[plan["endpoint"]].params, f"{where}: api.{plan['endpoint']} has no p_after"
+                assert paging["key"], where
+                if "requires" in paging:
+                    assert paging["requires"] in _accepted(r) and paging["otherwise"] == "date_window", where
+            if method == "date_window" or paging.get("otherwise") == "date_window":
+                assert "from" in plan["args"] and "to" in plan["args"], f"{where}: a date-window walk needs from and to"
+                assert paging.get("order") in ("asc", "desc"), where
+            if method == "view_offset":
+                assert plan.get("view") and plan.get("order"), f"{where}: view paging needs a view and an order"
+            if method == "single_page":
+                assert paging.get("reason", "").strip(), f"{where}: single_page must say why"
+            if plan.get("view"):
+                assert method == "view_offset", f"{where}: a view pages with order + limit + offset"
+
+
+def test_every_function_with_a_p_after_cursor_pages_with_it():
+    used = {plan["endpoint"] for r in _built() for _, plan in _plans(r) if plan["paging"]["method"] == "p_after"}
+    with_cursor = {n for n, e in manifest().items() if "p_after" in e.params}
+    assert with_cursor >= P_AFTER_FUNCTIONS
+    assert used == P_AFTER_FUNCTIONS, used
+
+
+def test_p_after_keys_are_the_sql_cursor_keys():
+    """panel's cursor is date|id|metric|asset_class; the date-cursor functions page on their own date column."""
+    keys = {plan["endpoint"]: plan["paging"]["key"] for r in _built() for _, plan in _plans(r) if plan["paging"]["method"] == "p_after"}
+    assert keys["panel"] == ["date", "id", "metric", "asset_class"]
+    assert keys["fund_nav"] == ["period"]
+    for fn in ("quote_history", "index_history", "trade_consolidated_history"):
+        assert keys[fn] == ["trade_date"], fn
+    assert "date|id|metric|asset_class" in _sql()
+
+
+def _final_order_by(fn: str) -> str:
+    """The last ORDER BY (not a window's) of the newest CREATE OR REPLACE FUNCTION api.<fn>."""
+    sql = _sql()
+    starts = [mm.start() for mm in re.finditer(rf"CREATE OR REPLACE FUNCTION api\.{fn}\(", sql)]
+    assert starts, fn
+    body = sql[starts[-1]:]
+    nxt = re.search(r"CREATE OR REPLACE FUNCTION api\.", body[10:])
+    body = body[: nxt.start() + 10] if nxt else body
+    orders = [o for o in re.findall(r"ORDER BY ([^\n]*)", body) if "OVER" not in o]
+    assert orders, fn
+    return orders[-1]
+
+
+def test_date_window_order_is_the_sql_order():
+    """A walk goes in the function's own date order, so pages stay in order across windows."""
+    for r in _built():
+        for kind, plan in _plans(r):
+            paging = plan["paging"]
+            if "date_window" not in (paging["method"], paging.get("otherwise")):
+                continue
+            last = _final_order_by(plan["endpoint"])
+            depth, first = 0, ""
+            for ch in last:  # the first key, up to a comma outside parentheses
+                if ch == "," and depth == 0:
+                    break
+                depth += (ch == "(") - (ch == ")")
+                first += ch
+            want = "desc" if "DESC" in first else "asc"
+            assert paging["order"] == want, (r["name"], kind, plan["endpoint"], last)
+
+
+def test_every_resource_takes_limit_the_page_size():
+    for r in _built():
+        assert "limit" in r.get("shared", []), r["name"]
+
+
+def test_daily_flags_are_well_formed():
+    for r in _built():
+        for kind, plan in _plans(r):
+            d = plan.get("daily")
+            if d is None:
+                continue
+            assert "from" in plan["args"], (r["name"], kind)
+            assert d is True or (set(d) == {"parameter", "value"} and d["parameter"] in _accepted(r)), (r["name"], kind)
+
+
+def _tiers() -> dict:
+    src = CONFIG_TS.read_text(encoding="utf-8")
+    block = re.search(r"// BEGIN TIERS\n(.*?)// END TIERS", src, re.S)
+    assert block, "the TIERS block (between BEGIN and END markers) was not found in config.ts"
+    out: dict = {}
+    for tier, body in re.findall(r"^  (\w+): \{\n(.*?)^  \},", block.group(1), re.S | re.M):
+        out[tier] = {k: json.loads(v) for k, v in re.findall(r"^    (\w+): ([^,\n]+),", body, re.M)}
+    return out
+
+
+def test_tier_numbers_are_the_owner_decision_in_one_block():
+    """#1059 / #1061 (owner, 2026-11-03): the numbers live once, in config.ts."""
+    t = _tiers()
+    assert t["anonymous"] == {
+        "page_max": 10, "rows_per_call": 50, "daily_window_months": 3, "panel_ids": 1,
+        "screens": False, "portfolio": False, "panel_universe": False, "requests_per_minute": 10,
+    }
+    assert t["signed_in"] == {
+        "page_max": 100, "rows_per_call": 1000, "daily_window_months": 24, "panel_ids": 3,
+        "screens": True, "portfolio": True, "panel_universe": False, "requests_per_minute": 30,
+    }
+    assert t["pro"] == {
+        "page_max": 1000, "rows_per_call": None, "daily_window_months": None, "panel_ids": 50,
+        "screens": True, "portfolio": True, "panel_universe": True, "requests_per_minute": 300,
+    }
+    others = "\n".join(
+        p.read_text(encoding="utf-8") for p in FN_DIR.rglob("*.ts") if p.name != "config.ts" and not p.name.endswith("_test.ts")
+    )
+    assert "rows_per_call:" not in others and "page_max:" not in others, "tier numbers belong in config.ts only"

@@ -10,7 +10,8 @@
 // parses it offline and checks the rules of docs/planning/API_V2.md against
 // it: at most 3 main parameters per resource with `kind` counted, a default on
 // every parameter, every endpoint present and granted in serve/endpoint_manifest.py,
-// every `p_` argument one the SQL declares. Edit the JSON, keep it JSON.
+// every `p_` argument one the SQL declares, and every plan's paging method
+// (#1059). Edit the JSON, keep it JSON.
 
 export type Visibility = "main" | "hidden";
 export type ParamType = "string" | "enum" | "date" | "list" | "integer" | "number";
@@ -63,7 +64,7 @@ export interface Plan {
   /**
    * The endpoint is a GET view, not a function. args then map a v2 parameter
    * to a view column (an eq. filter applied by PostgREST, before its row cap),
-   * `limit` maps to the page size, and `where` is sent as eq. filters too.
+   * and `where` is sent as eq. filters too. The page is order + limit + offset.
    */
   view?: boolean;
   /** view only: the PostgREST order, so a page is a defined sequence. */
@@ -83,6 +84,35 @@ export interface Plan {
   range?: string;
   /** This kind's default window, where it differs from the resource's window_months. */
   window_months?: number;
+  // -- cursors and tiers (#1059) --
+  /** How the gateway pages this plan. Every plan has one (a pytest checks it). */
+  paging: PagingSpec;
+  /** Daily data: from..to is capped by the tier's daily_window_months; an object = only when parameter has value. */
+  daily?: boolean | { parameter: string; value: string };
+}
+
+/**
+ * How a plan pages (#1059). `limit` is the page size on every one; the cursor
+ * in next_page_url carries the position.
+ *   p_after      the function's own cursor: the key of the last row served.
+ *   date_window  from..to split into windows that fit one call; a window the
+ *                SQL refuses (row cap) is halved; a position inside a window
+ *                is an offset into its rows.
+ *   view_offset  a GET view, order + limit + offset, with an exact count.
+ *   single_page  one call holds the whole answer (or refuses); pages are
+ *                slices of it. `reason` says why it cannot page upstream.
+ */
+export interface PagingSpec {
+  method: "p_after" | "date_window" | "view_offset" | "single_page";
+  /** p_after: the row columns whose values, joined by |, are the function's p_after key. */
+  key?: string[];
+  /** p_after: the function pages only when this parameter is given (fund_nav: family); otherwise `otherwise`. */
+  requires?: string;
+  otherwise?: "date_window";
+  /** date_window: the function's row order by date. Windows are walked in the same direction. */
+  order?: "asc" | "desc";
+  /** single_page: why the kind cannot page upstream. */
+  reason?: string;
 }
 
 /** portfolio (#1058): one field of a POST body, always a JSON list. Its entries may be null. */
@@ -152,13 +182,13 @@ export const REGISTRY: Registry = {
     },
     "limit": {
       "default": null,
-      "default_doc": "none: the endpoint's own ceiling applies, and the endpoint refuses above it rather than trim (page size and cursors arrive in #1052 child 6/8)",
-      "doc": "Rows wanted. Passed through to the endpoint where it takes one."
+      "default_doc": "the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it",
+      "doc": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached."
     },
     "cursor": {
       "default": null,
       "default_doc": "none: the first page",
-      "doc": "The opaque cursor from a previous next_page_url. No resource takes one yet."
+      "doc": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request)."
     }
   },
   "resources": [
@@ -207,11 +237,13 @@ export const REGISTRY: Registry = {
         "any": {
           "doc": "Resolve a name or id across companies, funds and tickers.",
           "endpoint": "lookup",
+          "paging": { "method": "single_page", "reason": "api.lookup has no cursor or window and returns at most 20 rows" },
           "args": { "q": "p_query" },
           "when_empty": {
             "parameter": "q",
             "plan": {
               "endpoint": "research_universe",
+              "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" },
               "args": {},
               "filters": [{ "parameter": "as_of", "op": "between", "low": "first_observed", "high": "last_observed" }]
             }
@@ -220,25 +252,29 @@ export const REGISTRY: Registry = {
         "company": {
           "doc": "The company rows (id_type cd_cvm) of the lookup answer; truncated still says when more than 20 entries matched.",
           "endpoint": "lookup",
+          "paging": { "method": "single_page", "reason": "api.lookup has no cursor or window and returns at most 20 rows" },
           "args": { "q": "p_query" },
           "where": { "id_type": "cd_cvm" },
           "when_empty": {
             "parameter": "q",
             "plan": {
               "endpoint": "research_universe",
+              "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" },
               "args": {},
               "filters": [{ "parameter": "as_of", "op": "between", "low": "first_observed", "high": "last_observed" }]
             }
           }
         },
         "fund": {
-          "doc": "Fund name or CNPJ search, largest latest NAV first. Refuses (over_limit) when more match than the tier ceiling: narrow q, or ask for the first N with limit.",
+          "doc": "Fund name or CNPJ search, largest latest NAV first. Refuses (over_limit) when more match than the SQL's tier ceiling: narrow q.",
           "endpoint": "search_funds",
-          "args": { "q": "p_query", "family": "p_entity_type", "limit": "p_limit" }
+          "paging": { "method": "single_page", "reason": "api.search_funds has no cursor or window; the whole match is one call, refused above its tier ceiling" },
+          "args": { "q": "p_query", "family": "p_entity_type" }
         },
         "universe": {
           "doc": "The research universe: one row per ticker+ISIN pair of listed shares and units.",
           "endpoint": "research_universe",
+          "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" },
           "args": {},
           "filters": [{ "parameter": "as_of", "op": "between", "low": "first_observed", "high": "last_observed" }]
         }
@@ -249,7 +285,7 @@ export const REGISTRY: Registry = {
       "status": "built",
       "summary": "What did it trade at? Daily history (split-adjusted by default), latest quote, sessions, indices, B3 FORWARD prints.",
       "example": "/v2/prices?id=PETR4",
-      "shared": ["id", "from", "to"],
+      "shared": ["id", "from", "to", "limit"],
       "window_months": 12,
       "parameters": [
         {
@@ -266,7 +302,7 @@ export const REGISTRY: Registry = {
           "type": "enum",
           "values": ["day", "month"],
           "default": "day",
-          "doc": "kind history, index, forward. month: the last session of each month, selected from the daily rows (no interpolation; a month with no session has no row). The daily rows still count toward the 1,000-row cap."
+          "doc": "kind history, index, forward. month: the last session of each month, selected from the daily rows (no interpolation; a month with no session has no row)."
         },
         {
           "name": "adjust",
@@ -311,23 +347,26 @@ export const REGISTRY: Registry = {
       ],
       "kinds": {
         "history": {
-          "doc": "api.quote_history: one ticker, oldest first, 1 year to the latest session by default. Refuses (over_limit) above 1,000 daily rows: narrow from/to. With no id: the research universe (the tickers held).",
+          "doc": "api.quote_history: one ticker, oldest first, 1 year to the latest session by default, paged with the function's p_after cursor. With no id: the research universe (the tickers held).",
           "endpoint": "quote_history",
+          "paging": { "method": "p_after", "key": ["trade_date"] }, "daily": true,
           "args": { "id": "p_ticker", "from": "p_from", "to": "p_to", "board": "p_board" },
           "filters": [{ "parameter": "freq", "op": "month_last", "column": "trade_date", "all": "day" }],
           "uses": ["adjust", "fields"],
-          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
         },
         "latest": {
           "doc": "api.quote_latest: the ticker's newest session (raw, adjusted false). With no id: the research universe.",
           "endpoint": "quote_latest",
+          "paging": { "method": "single_page", "reason": "api.quote_latest returns one ticker's newest session" },
           "args": { "id": "p_ticker", "board": "p_board" },
           "uses": ["fields"],
-          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
         },
         "session": {
-          "doc": "One session's quotes from one price view (raw, adjusted false). A view answer is cut at 1,000 rows, so 1,000 rows or more is refused (over_limit): narrow with asset_class, board or id.",
+          "doc": "One session's quotes from one price view (raw, adjusted false). Paged with order + limit + offset; the default session is pinned in the cursor.",
           "endpoint": "quotes",
+          "paging": { "method": "view_offset" },
           "view": true,
           "order": "trade_date.desc,ticker.asc",
           "view_by": {
@@ -340,6 +379,7 @@ export const REGISTRY: Registry = {
         "index": {
           "doc": "api.index_history: one B3 index code (IBOV, IFIX, ...), levels as published (total-return indices, not adjusted). With no id the SQL refusal names the codes held.",
           "endpoint": "index_history",
+          "paging": { "method": "p_after", "key": ["trade_date"] }, "daily": true,
           "args": { "id": "p_index", "from": "p_from", "to": "p_to" },
           "filters": [{ "parameter": "freq", "op": "month_last", "column": "trade_date", "all": "day" }],
           "uses": ["fields"]
@@ -347,6 +387,7 @@ export const REGISTRY: Registry = {
         "forward": {
           "doc": "api.trade_consolidated_history: one FORWARD-segment ticker; last_price is the close, ref_price is never a trade.",
           "endpoint": "trade_consolidated_history",
+          "paging": { "method": "p_after", "key": ["trade_date"] }, "daily": true,
           "args": { "id": "p_ticker", "from": "p_from", "to": "p_to" },
           "filters": [{ "parameter": "freq", "op": "month_last", "column": "trade_date", "all": "day" }],
           "uses": ["fields"]
@@ -358,7 +399,7 @@ export const REGISTRY: Registry = {
       "status": "built",
       "summary": "What did the company file? Income, balance sheet, cash flow, headline figures and every stored version.",
       "example": "/v2/statements?id=PETR4&kind=income",
-      "shared": ["id", "from", "to"],
+      "shared": ["id", "from", "to", "limit"],
       "window_months": 60,
       "parameters": [
         {
@@ -407,41 +448,47 @@ export const REGISTRY: Registry = {
       ],
       "kinds": {
         "all": {
-          "doc": "api.financials: every line, one row per account, latest stored version. Refuses above 1,000 rows (over_limit): narrow from/to or period. With no id (every kind): the research universe, whose cnpj links a ticker to its filer.",
+          "doc": "api.financials: every line, one row per account, latest stored version. Paged by date windows. With no id (every kind): the research universe, whose cnpj links a ticker to its filer.",
           "endpoint": "financials",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": { "id": "p_id", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope", "as_of": "p_as_of" },
-          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
         },
         "income": {
           "doc": "api.income_statements: one row per filed period, with period_months.",
           "endpoint": "income_statements",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": { "id": "p_id", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope", "as_of": "p_as_of" },
-          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
         },
         "balance": {
           "doc": "api.balance_sheets: one row per filed date. A balance sheet is a point in time, so the source has no period_months.",
           "endpoint": "balance_sheets",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": { "id": "p_id", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope", "as_of": "p_as_of" },
-          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
         },
         "cashflow": {
           "doc": "api.cash_flow_statements: one row per filed period, with period_months.",
           "endpoint": "cash_flow_statements",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": { "id": "p_id", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope", "as_of": "p_as_of" },
-          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
         },
         "headline": {
           "doc": "api.company_financials: headline figures per filed period. The function takes no p_doc_type, so period is a selection on the rows' doc_type.",
           "endpoint": "company_financials",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": { "id": "p_id", "from": "p_from", "to": "p_to", "scope": "p_scope", "as_of": "p_as_of" },
           "filters": [{ "parameter": "period", "op": "in", "column": "doc_type", "all": "both", "map": { "quarterly": "itr", "annual": "dfp" } }],
-          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
         },
         "versions": {
           "doc": "api.financial_statement_history: every stored version of one statement (hidden statement, default DRE), with filing metadata. No as_of: it already shows every version.",
           "endpoint": "financial_statement_history",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": { "id": "p_id", "statement": "p_statement", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope" },
-          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
         }
       }
     },
@@ -450,12 +497,7 @@ export const REGISTRY: Registry = {
       "status": "built",
       "summary": "What is this fund and how is it doing? Profile, NAV, holdings, debentures, FII properties.",
       "example": "/v2/funds?id=33000167000101&kind=nav",
-      "shared": [
-        "id",
-        "from",
-        "to",
-        "limit"
-      ],
+      "shared": ["id", "from", "to", "limit"],
       "window_months": 36,
       "notes": [
         "id is a fund CNPJ: 14 digits, punctuation allowed. Find one with /v2/search?kind=fund&q=<name>.",
@@ -512,8 +554,9 @@ export const REGISTRY: Registry = {
       ],
       "kinds": {
         "profile": {
-          "doc": "api.fund_profile: one row per family the CNPJ files under. With no id: the api.funds registry view, ordered by cnpj, refused (over_limit) when the selection holds more than one page unless limit asks for the first N.",
+          "doc": "api.fund_profile: one row per family the CNPJ files under. With no id: the api.funds registry view, ordered by cnpj, paged with order + limit + offset.",
           "endpoint": "fund_profile",
+          "paging": { "method": "single_page", "reason": "api.fund_profile describes one fund" },
           "args": {
             "id": "p_cnpj"
           },
@@ -521,12 +564,12 @@ export const REGISTRY: Registry = {
             "parameter": "id",
             "plan": {
               "endpoint": "funds",
+              "paging": { "method": "view_offset" },
               "view": true,
               "order": "cnpj.asc,entity_type.asc",
               "args": {
                 "family": "entity_type",
-                "status": "status",
-                "limit": "limit"
+                "status": "status"
               }
             }
           }
@@ -534,6 +577,7 @@ export const REGISTRY: Registry = {
         "nav": {
           "doc": "api.fund_nav: monthly NAV, quota, quotaholders and flows, oldest first. With no to, the series ends at the family's latest complete period. Refuses above 1000 rows: narrow from, or pin family.",
           "endpoint": "fund_nav",
+          "paging": { "method": "p_after", "key": ["period"], "requires": "family", "otherwise": "date_window", "order": "asc" },
           "args": {
             "id": "p_cnpj",
             "from": "p_from",
@@ -545,14 +589,14 @@ export const REGISTRY: Registry = {
           ]
         },
         "holdings": {
-          "doc": "api.fund_holdings: the listed equities a fund holds (CDA), or with holding the funds that hold a ticker. limit asks for the newest N rows.",
+          "doc": "api.fund_holdings: the listed equities a fund holds (CDA), or with holding the funds that hold a ticker. Paged by date windows.",
           "endpoint": "fund_holdings",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_cnpj",
             "holding": "p_ticker",
             "from": "p_from",
-            "to": "p_to",
-            "limit": "p_limit"
+            "to": "p_to"
           },
           "require_one_of": [
             "id",
@@ -560,14 +604,14 @@ export const REGISTRY: Registry = {
           ]
         },
         "debentures": {
-          "doc": "api.fund_debentures: the debentures a fund holds, or with holding the funds that hold an issuer's paper. limit asks for the newest N rows.",
+          "doc": "api.fund_debentures: the debentures a fund holds, or with holding the funds that hold an issuer's paper. Paged by date windows.",
           "endpoint": "fund_debentures",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_cnpj",
             "holding": "p_issuer",
             "from": "p_from",
-            "to": "p_to",
-            "limit": "p_limit"
+            "to": "p_to"
           },
           "require_one_of": [
             "id",
@@ -577,6 +621,7 @@ export const REGISTRY: Registry = {
         "properties": {
           "doc": "api.fii_property_history: an FII's properties, every filed version, newest first.",
           "endpoint": "fii_property_history",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_cnpj",
             "from": "p_from",
@@ -593,12 +638,7 @@ export const REGISTRY: Registry = {
       "status": "built",
       "summary": "What is inside this FIDC? Portfolio, tranches, aging, cedentes, sacados.",
       "example": "/v2/fidc?id=<cnpj>&kind=tranches",
-      "shared": [
-        "id",
-        "from",
-        "to",
-        "limit"
-      ],
+      "shared": ["id", "from", "to", "limit"],
       "window_months": 24,
       "notes": [
         "id is a FIDC CNPJ: 14 digits, punctuation allowed. With no id, kind=portfolio lists the FIDC registry (api.funds, entity_type fidc).",
@@ -654,33 +694,33 @@ export const REGISTRY: Registry = {
       ],
       "kinds": {
         "portfolio": {
-          "doc": "api.fidc_portfolio, newest first. Refuses above 1000 rows: narrow from, pin item, or ask for the newest N with limit. With no id: the FIDC registry, ordered by cnpj.",
+          "doc": "api.fidc_portfolio, newest first. Paged by date windows. With no id: the FIDC registry, ordered by cnpj.",
           "endpoint": "fidc_portfolio",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_cnpj",
             "item": "p_kind",
             "from": "p_from",
-            "to": "p_to",
-            "limit": "p_limit"
+            "to": "p_to"
           },
           "when_empty": {
             "parameter": "id",
             "plan": {
               "endpoint": "funds",
+              "paging": { "method": "view_offset" },
               "view": true,
               "order": "cnpj.asc",
               "where": {
                 "entity_type": "fidc"
               },
-              "args": {
-                "limit": "limit"
-              }
+              "args": {}
             }
           }
         },
         "tranches": {
-          "doc": "api.fidc_tranches: per series, quota value, quotaholders and returns. Refuses above 1000 rows (no cursor): narrow from.",
+          "doc": "api.fidc_tranches: per series, quota value, quotaholders and returns. Paged by date windows.",
           "endpoint": "fidc_tranches",
+          "paging": { "method": "date_window", "order": "asc" },
           "args": {
             "id": "p_cnpj",
             "from": "p_from",
@@ -692,8 +732,9 @@ export const REGISTRY: Registry = {
           ]
         },
         "aging": {
-          "doc": "api.fidc_aging: the to_maturity, overdue and overdue_total ladders. Refuses above 1000 rows (no cursor): narrow from.",
+          "doc": "api.fidc_aging: the to_maturity, overdue and overdue_total ladders. Paged by date windows.",
           "endpoint": "fidc_aging",
+          "paging": { "method": "date_window", "order": "asc" },
           "args": {
             "id": "p_cnpj",
             "from": "p_from",
@@ -704,14 +745,14 @@ export const REGISTRY: Registry = {
           ]
         },
         "cedentes": {
-          "doc": "api.fidc_cedentes: the originators a fund buys from, or with cedente the funds that buy from one. limit asks for the newest N rows.",
+          "doc": "api.fidc_cedentes: the originators a fund buys from, or with cedente the funds that buy from one. Paged by date windows.",
           "endpoint": "fidc_cedentes",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_cnpj",
             "cedente": "p_cedente",
             "from": "p_from",
-            "to": "p_to",
-            "limit": "p_limit"
+            "to": "p_to"
           },
           "require_one_of": [
             "id",
@@ -719,13 +760,13 @@ export const REGISTRY: Registry = {
           ]
         },
         "sacados": {
-          "doc": "api.fidc_sacados: the largest debtors, as anonymized ranks (there is no debtor-side lookup). limit asks for the newest N rows.",
+          "doc": "api.fidc_sacados: the largest debtors, as anonymized ranks (there is no debtor-side lookup). Paged by date windows.",
           "endpoint": "fidc_sacados",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_cnpj",
             "from": "p_from",
-            "to": "p_to",
-            "limit": "p_limit"
+            "to": "p_to"
           },
           "require_one_of": [
             "id"
@@ -742,7 +783,7 @@ export const REGISTRY: Registry = {
       "window_months": 12,
       "notes": [
         "id per kind: chain and exercises take an option prefix (at least 3 characters, e.g. PETR); history and termo one B3 code (codneg); futures one outright contract (DI1F27, DOLF27); futures_curve a root (DI1, DOL or WDO; none: DI1); di_settlement one DI1 contract (none: every contract).",
-        "chain and exercises are cut by the SQL at a tier ceiling without saying so, so the gateway asks for one row more than it serves: more rows than limit (chain default 100, exercises 1000) is refused (over_limit) unless limit was sent, and then the first N are served with meta.truncated true. A count equal to a tier ceiling (chain 200 or 2000, exercises 500 or 5000, or PostgREST's 1000) cannot be told from a cut and is refused.",
+        "chain and exercises are cut by the SQL at a tier ceiling without saying so, so the gateway asks for 1,001 rows: a count equal to a tier ceiling (chain 200 or 2000, exercises 500 or 5000, or PostgREST's 1000) or above 1,000 cannot be told from a cut. chain refuses it (over_limit); exercises halves its date window and tries again, and refuses only a single day that is still cut.",
         "Exercises are exercise events, not quotes. DI1 rates are % a.a. on 252 business days, as B3 settles them; nothing is derived."
       ],
       "parameters": [
@@ -773,47 +814,54 @@ export const REGISTRY: Registry = {
       ],
       "kinds": {
         "chain": {
-          "doc": "api.option_chain: calls and puts of one prefix on one session, by expiry, strike, side. Refused above 100 series unless limit asks for the first N (the anonymous tier serves at most 199).",
+          "doc": "api.option_chain: calls and puts of one prefix on one session, by expiry, strike, side. One call holds the chain, served in pages; a chain the SQL may have cut (199 anonymous, 1,000 rows) is refused.",
           "endpoint": "option_chain",
-          "args": { "id": "p_prefix", "date": "p_trade_date", "expiry_from": "p_expiry_from", "limit": "p_limit" },
+          "paging": { "method": "single_page", "reason": "api.option_chain is one session's chain, with no cursor or window; a chain it cuts is refused" },
+          "args": { "id": "p_prefix", "date": "p_trade_date", "expiry_from": "p_expiry_from" },
           "require_one_of": ["id"]
         },
         "history": {
           "doc": "api.option_history: one option code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.",
           "endpoint": "option_history",
+          "paging": { "method": "date_window", "order": "asc" }, "daily": true,
           "args": { "id": "p_codneg", "from": "p_from", "to": "p_to" },
           "require_one_of": ["id"]
         },
         "exercises": {
-          "doc": "api.option_exercises: exercise prints for a prefix, oldest first. Refused when more than limit (default 1000) match; the anonymous tier serves at most 499.",
+          "doc": "api.option_exercises: exercise prints for a prefix, oldest first. Paged by date windows; a window the SQL may have cut is halved.",
           "endpoint": "option_exercises",
-          "args": { "id": "p_prefix", "from": "p_from", "to": "p_to", "limit": "p_limit" },
+          "paging": { "method": "date_window", "order": "asc" }, "daily": true,
+          "args": { "id": "p_prefix", "from": "p_from", "to": "p_to" },
           "require_one_of": ["id"]
         },
         "termo": {
           "doc": "api.termo_history: one termo code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.",
           "endpoint": "termo_history",
+          "paging": { "method": "date_window", "order": "asc" }, "daily": true,
           "args": { "id": "p_codneg", "from": "p_from", "to": "p_to" },
           "require_one_of": ["id"]
         },
         "futures": {
           "doc": "api.future_series: one DI1, DOL or WDO contract through time, oldest first. Refuses above 1000 rows.",
           "endpoint": "future_series",
+          "paging": { "method": "date_window", "order": "asc" }, "daily": true,
           "args": { "id": "p_ticker", "from": "p_from", "to": "p_to" },
           "require_one_of": ["id"]
         },
         "futures_curve": {
           "doc": "api.future_curve: every contract of a root (id, default DI1) on one session, nearest first.",
           "endpoint": "future_curve",
+          "paging": { "method": "single_page", "reason": "api.future_curve is one root's curve on one session" },
           "args": { "id": "p_root", "date": "p_trade_date" }
         },
         "di_settlement": {
-          "doc": "api.di_settlement (a GET view): DI1 settlement rate, previous rate, open interest per session and contract, newest first. With no id, every contract: a selection over one page is refused (over_limit) unless limit asks for the newest N.",
+          "doc": "api.di_settlement (a GET view): DI1 settlement rate, previous rate, open interest per session and contract, newest first. With no id, every contract, paged with order + limit + offset.",
           "endpoint": "di_settlement",
+          "paging": { "method": "view_offset" }, "daily": true,
           "view": true,
           "order": "trade_date.desc,ticker.asc",
           "range": "trade_date",
-          "args": { "id": "ticker", "from": "trade_date", "to": "trade_date", "limit": "limit" }
+          "args": { "id": "ticker", "from": "trade_date", "to": "trade_date" }
         }
       }
     },
@@ -822,7 +870,7 @@ export const REGISTRY: Registry = {
       "status": "built",
       "summary": "What does the rate curve look like? B3 reference curves, their history and vertices.",
       "example": "/v2/curves?curve=PRE",
-      "shared": ["from", "to"],
+      "shared": ["from", "to", "limit"],
       "window_months": 12,
       "notes": [
         "PRE and DPL are % a.a. on 252 business days; DOC is % a.a. linear on 360 calendar days, so its vertices under about 30 calendar days are not a rate level. rate_basis rides on every snapshot and history row.",
@@ -865,16 +913,19 @@ export const REGISTRY: Registry = {
         "snapshot": {
           "doc": "api.curve: one curve on one session, shortest vertex first, fixed and moving vertices with rate_basis.",
           "endpoint": "curve",
+          "paging": { "method": "single_page", "reason": "api.curve is one curve on one session" },
           "args": { "curve": "p_curve", "date": "p_trade_date" }
         },
         "history": {
           "doc": "api.curve_history: one fixed vertex through time, oldest first. Refuses above 1000 rows: narrow from/to.",
           "endpoint": "curve_history",
+          "paging": { "method": "date_window", "order": "asc" }, "daily": true,
           "args": { "curve": "p_curve", "tenor": "p_tenor_days", "from": "p_from", "to": "p_to" }
         },
         "vertices": {
-          "doc": "api.reference_rate (a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published). A session over one page is refused (over_limit), never served cut.",
+          "doc": "api.reference_rate (a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published). Paged with order + limit + offset; the default session is pinned in the cursor.",
           "endpoint": "reference_rate",
+          "paging": { "method": "view_offset" },
           "view": true,
           "order": "trade_date.desc,calendar_days.asc",
           "args": { "curve": "curve", "date": "trade_date" }
@@ -921,7 +972,7 @@ export const REGISTRY: Registry = {
           "visibility": "hidden",
           "type": "string",
           "default": "USD",
-          "doc": "kind fx: an ISO code held (USD, EUR, GBP, JPY, ARS). all: every currency, from the api.ptax_daily view (a selection over one page is refused unless limit asks for the newest N)."
+          "doc": "kind fx: an ISO code held (USD, EUR, GBP, JPY, ARS). all: every currency, from the api.ptax_daily view (paged with order + limit + offset)."
         },
         {
           "name": "horizon",
@@ -936,40 +987,46 @@ export const REGISTRY: Registry = {
         "series": {
           "doc": "api.macro_series: one SGS series by label or code, oldest first. Refuses above 1000 rows: narrow from/to.",
           "endpoint": "macro_series",
+          "paging": { "method": "date_window", "order": "asc" },
           "args": { "id": "p_series", "from": "p_from", "to": "p_to" },
           "require_one_of": ["id"]
         },
         "inflation": {
           "doc": "api.inflation: the IPCA set by month with acc_12m, 3 years by default. Refuses above 1000 rows: pin id or family, or narrow from.",
           "endpoint": "inflation",
+          "paging": { "method": "date_window", "order": "asc" },
           "args": { "id": "p_series", "family": "p_family", "from": "p_from", "to": "p_to" },
           "window_months": 36
         },
         "inflation_items": {
           "doc": "api.inflation_items: IBGE's IPCA tree (weight, monthly change, contribution, year-to-date and 12-month change), 3 years by default. With no id, the groups (level 1); with an id, that item at its own level.",
           "endpoint": "inflation_items",
+          "paging": { "method": "date_window", "order": "asc" },
           "args": { "id": "p_item", "from": "p_from", "to": "p_to" },
           "window_months": 36
         },
         "fx": {
           "doc": "api.ptax: one currency's PTAX, BRL per one unit, as published. currency=all reads the api.ptax_daily view, every currency at once.",
           "endpoint": "ptax",
+          "paging": { "method": "date_window", "order": "asc" }, "daily": true,
           "args": { "currency": "p_currency", "from": "p_from", "to": "p_to" },
           "when_empty": {
             "parameter": "currency",
             "value": "all",
             "plan": {
               "endpoint": "ptax_daily",
+              "paging": { "method": "view_offset" }, "daily": true,
               "view": true,
               "order": "date.desc,currency.asc",
               "range": "date",
-              "args": { "from": "date", "to": "date", "limit": "limit" }
+              "args": { "from": "date", "to": "date" }
             }
           }
         },
         "expectations": {
           "doc": "api.focus_expectations: one survey and horizon across survey dates (the weekly revision path), median, mean and standard deviation. Refuses above 1000 rows.",
           "endpoint": "focus_expectations",
+          "paging": { "method": "date_window", "order": "asc" },
           "args": { "id": "p_indicator", "family": "p_endpoint", "horizon": "p_horizon", "from": "p_from", "to": "p_to" }
         }
       }
@@ -1015,44 +1072,49 @@ export const REGISTRY: Registry = {
       ],
       "kinds": {
         "short_interest": {
-          "doc": "api.short_interest (a GET view), newest first. With no id, every ticker: a selection over one page is refused (over_limit) unless limit asks for the newest N.",
+          "doc": "api.short_interest (a GET view), newest first. With no id, every ticker, paged with order + limit + offset.",
           "endpoint": "short_interest",
+          "paging": { "method": "view_offset" }, "daily": true,
           "view": true,
           "order": "trade_date.desc,ticker.asc",
           "range": "trade_date",
-          "args": { "id": "ticker", "sector": "sector", "from": "trade_date", "to": "trade_date", "limit": "limit" }
+          "args": { "id": "ticker", "sector": "sector", "from": "trade_date", "to": "trade_date" }
         },
         "short_by_sector": {
           "doc": "api.short_interest_by_sector (a GET view), newest first.",
           "endpoint": "short_interest_by_sector",
+          "paging": { "method": "view_offset" }, "daily": true,
           "view": true,
           "order": "trade_date.desc,sector.asc",
           "range": "trade_date",
-          "args": { "sector": "sector", "from": "trade_date", "to": "trade_date", "limit": "limit" }
+          "args": { "sector": "sector", "from": "trade_date", "to": "trade_date" }
         },
         "lending": {
           "doc": "api.lending_trades (a GET view): count, quantity, rates and how many brokers stood on each leg, newest first.",
           "endpoint": "lending_trades",
+          "paging": { "method": "view_offset" }, "daily": true,
           "view": true,
           "order": "trade_date.desc,ticker.asc",
           "range": "trade_date",
-          "args": { "id": "ticker", "from": "trade_date", "to": "trade_date", "limit": "limit" }
+          "args": { "id": "ticker", "from": "trade_date", "to": "trade_date" }
         },
         "lending_brokers": {
           "doc": "api.lending_participants (a GET view): per broker, quantity lent, borrowed and net, and how much it crossed its own clients, newest first.",
           "endpoint": "lending_participants",
+          "paging": { "method": "view_offset" }, "daily": true,
           "view": true,
           "order": "trade_date.desc,ticker.asc,broker_code.asc",
           "range": "trade_date",
-          "args": { "id": "ticker", "from": "trade_date", "to": "trade_date", "limit": "limit" }
+          "args": { "id": "ticker", "from": "trade_date", "to": "trade_date" }
         },
         "investor_flow": {
           "doc": "api.investor_flow (a GET view): buy, sell and net by investor type, newest first.",
           "endpoint": "investor_flow",
+          "paging": { "method": "view_offset" }, "daily": true,
           "view": true,
           "order": "reference_date.desc,investor_type.asc",
           "range": "reference_date",
-          "args": { "investor_type": "investor_type", "from": "reference_date", "to": "reference_date", "limit": "limit" }
+          "args": { "investor_type": "investor_type", "from": "reference_date", "to": "reference_date" }
         }
       }
     },
@@ -1061,11 +1123,7 @@ export const REGISTRY: Registry = {
       "status": "built",
       "summary": "What was filed or restated? Company IPE filings, fund documents, restatements, judicial recovery.",
       "example": "/v2/events?id=PETR4",
-      "shared": [
-        "id",
-        "from",
-        "to"
-      ],
+      "shared": ["id", "from", "to", "limit"],
       "window_months": 12,
       "notes": [
         "id is a ticker, 14-digit CNPJ or CVM code for kind company and judicial_recovery, and a fund CNPJ for kind fund, restatements and restatement_diff.",
@@ -1111,8 +1169,9 @@ export const REGISTRY: Registry = {
       ],
       "kinds": {
         "company": {
-          "doc": "api.company_events: IPE filings, newest first. Refuses above 1000 rows (no cursor): narrow from or pin category.",
+          "doc": "api.company_events: IPE filings, newest first. Paged by date windows.",
           "endpoint": "company_events",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_id",
             "from": "p_from",
@@ -1126,6 +1185,7 @@ export const REGISTRY: Registry = {
         "fund": {
           "doc": "api.fund_documents: FNET documents, newest first, each version its own fnet_id. Refuses above 1000 rows: narrow from or pin category.",
           "endpoint": "fund_documents",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_cnpj",
             "from": "p_from",
@@ -1139,6 +1199,7 @@ export const REGISTRY: Registry = {
         "restatements": {
           "doc": "api.fund_restatements: one row per document with versao > 1, with the version it most plausibly replaced and whether SILO diffed the pair.",
           "endpoint": "fund_restatements",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_cnpj",
             "from": "p_from",
@@ -1149,6 +1210,7 @@ export const REGISTRY: Registry = {
         "restatement_diff": {
           "doc": "api.fund_restatement_diff: one row per field that changed between a restated document and its predecessor (the FIDC informe mensal for now).",
           "endpoint": "fund_restatement_diff",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_cnpj",
             "from": "p_from",
@@ -1162,6 +1224,7 @@ export const REGISTRY: Registry = {
         "judicial_recovery": {
           "doc": "api.rj_listed_documents: judicial recovery (recuperacao judicial) filings of listed companies, newest first.",
           "endpoint": "rj_listed_documents",
+          "paging": { "method": "date_window", "order": "desc" },
           "args": {
             "id": "p_id",
             "from": "p_from",
@@ -1176,7 +1239,7 @@ export const REGISTRY: Registry = {
       "status": "built",
       "summary": "Which funds look odd? Forensic screens: signals, not verdicts.",
       "example": "/v2/screens",
-      "shared": [],
+      "shared": ["limit"],
       "notes": [
         "Signal, not a verdict: a screen lists a pattern worth a look. Legal funds match every screen (exclusive vehicles, wind-downs, distressed mandates, routine corrections). Every response repeats this in meta.signal.",
         "Each threshold is hidden and defaults to the SQL function's own default; meta.request echoes the value applied. A threshold the chosen screen does not take is bad_request."
@@ -1219,66 +1282,77 @@ export const REGISTRY: Registry = {
         "list": {
           "doc": "The screens, one line each, with the family each reads and its SQL defaults (from api.catalog().screens).",
           "endpoint": "catalog",
+          "paging": { "method": "single_page", "reason": "api.catalog is one JSON object; its screens are listed as rows" },
           "args": {},
           "single": true
         },
         "captive_vehicles": {
           "doc": "FIIs whose NAV peaked above min_aum while the quotaholder count never reached max_investors.",
           "endpoint": "screen_captive_vehicles",
+          "paging": { "method": "single_page", "reason": "screens do not page: one call is the whole screen, refused over 1000 rows (raise its thresholds)" },
           "args": { "lookback_months": "p_lookback_months", "max_investors": "p_max_investors", "min_aum": "p_min_aum" },
           "sql_defaults": { "lookback_months": 3, "max_investors": 10, "min_aum": 50000000 }
         },
         "delinquency_drivers": {
           "doc": "FIDC delinquency, first vs last observation in BRL and in points of NAV, the move classified (driver). No window before 2025-01.",
           "endpoint": "screen_delinquency_drivers",
+          "paging": { "method": "single_page", "reason": "screens do not page: one call is the whole screen, refused over 1000 rows (raise its thresholds)" },
           "args": { "date": "p_end", "months": "p_months", "min_months": "p_min_months", "min_delta_brl": "p_min_delta_brl", "min_delta_pp": "p_min_delta_pp", "driver": "p_driver" },
           "sql_defaults": { "months": 12, "min_months": 6, "min_delta_brl": 1000000, "min_delta_pp": 1.0 }
         },
         "dormant_funds": {
           "doc": "FI classes that filed every month of the window with zero subscriptions and zero redemptions (empty_shell, parked_capital).",
           "endpoint": "screen_dormant_funds",
+          "paging": { "method": "single_page", "reason": "screens do not page: one call is the whole screen, refused over 1000 rows (raise its thresholds)" },
           "args": { "lookback_months": "p_lookback_months", "dormancy": "p_dormancy", "min_nav": "p_min_nav" },
           "sql_defaults": { "lookback_months": 3 }
         },
         "dormant_trend": {
           "doc": "dormant_funds counted at every month-end: funds filing, empty shells, parked capital and its NAV.",
           "endpoint": "screen_dormant_trend",
+          "paging": { "method": "single_page", "reason": "screens do not page: one call is the whole screen, refused over 1000 rows (raise its thresholds)" },
           "args": { "lookback_months": "p_lookback_months", "history_months": "p_history_months" },
           "sql_defaults": { "lookback_months": 3, "history_months": 36 }
         },
         "evergreen_aging": {
           "doc": "FIDCs whose receivables overdue more than 1080 days stay a large, nearly constant share of delinquency.",
           "endpoint": "screen_evergreen_aging",
+          "paging": { "method": "single_page", "reason": "screens do not page: one call is the whole screen, refused over 1000 rows (raise its thresholds)" },
           "args": { "lookback_months": "p_lookback_months", "min_longtail_pct": "p_min_longtail_pct", "max_variation_pp": "p_max_variation_pp" },
           "sql_defaults": { "lookback_months": 12, "min_longtail_pct": 70, "max_variation_pp": 10 }
         },
         "late_filers": {
           "doc": "FIIs and FIDCs whose monthly informe reached FNET at least min_days_late days after the cited deadline, in at least min_late months.",
           "endpoint": "screen_late_filers",
+          "paging": { "method": "single_page", "reason": "screens do not page: one call is the whole screen, refused over 1000 rows (raise its thresholds)" },
           "args": { "months": "p_months", "date": "p_end", "min_days_late": "p_min_days_late", "min_late": "p_min_late", "family": "p_family" },
           "sql_defaults": { "months": 12, "min_days_late": 5, "min_late": 2 }
         },
         "overdue_securit": {
           "doc": "CRI, CRA and other series past their filed maturity whose newest filing still reports a non-terminal status.",
           "endpoint": "screen_overdue_securit",
+          "paging": { "method": "single_page", "reason": "screens do not page: one call is the whole screen, refused over 1000 rows (raise its thresholds)" },
           "args": { "min_volume": "p_min_volume" },
           "sql_defaults": { "min_volume": 100000 }
         },
         "restatements": {
           "doc": "Funds whose FNET re-filings (versao > 1) in the window reach min_restatements and min_rate_pct of their documents.",
           "endpoint": "screen_restatements",
+          "paging": { "method": "single_page", "reason": "screens do not page: one call is the whole screen, refused over 1000 rows (raise its thresholds)" },
           "args": { "months": "p_months", "date": "p_end", "min_restatements": "p_min_restatements", "min_rate_pct": "p_min_rate_pct", "modality": "p_modalidade" },
           "sql_defaults": { "months": 12, "min_restatements": 3, "min_rate_pct": 20 }
         },
         "silent_filers": {
           "doc": "Funds CVM still lists as active whose last periodic informe is min_silent_months to max_silent_months behind their family.",
           "endpoint": "screen_silent_filers",
+          "paging": { "method": "single_page", "reason": "screens do not page: one call is the whole screen, refused over 1000 rows (raise its thresholds)" },
           "args": { "min_silent_months": "p_min_silent_months", "max_silent_months": "p_max_silent_months", "family": "p_family" },
           "sql_defaults": { "min_silent_months": 3, "max_silent_months": 24 }
         },
         "zombie_growth": {
           "doc": "FIDCs with delinquency above min_delinq_pct of NAV while NAV stays above min_aum, in one aging month.",
           "endpoint": "screen_zombie_growth",
+          "paging": { "method": "single_page", "reason": "screens do not page: one call is the whole screen, refused over 1000 rows (raise its thresholds)" },
           "args": { "date": "p_period", "min_delinq_pct": "p_min_delinq_pct", "min_aum": "p_min_aum" },
           "sql_defaults": { "min_delinq_pct": 5, "min_aum": 1000000 }
         }
@@ -1289,12 +1363,12 @@ export const REGISTRY: Registry = {
       "status": "built",
       "summary": "A clean (id, date, metric, value) table across families.",
       "example": "/v2/panel?id=PETR4,VALE3&metric=close_return",
-      "shared": ["id", "from", "to"],
+      "shared": ["id", "from", "to", "limit"],
       "window_months": 36,
       "notes": [
-        "panel has one kind, so it takes no kind parameter. id is a comma-separated list of tickers, fund CNPJs, option or termo tickers and futures codes. The tier ceiling applies (3 ids anonymous, 50 signed in) and is refused above it (over_limit), never trimmed.",
+        "panel has one kind, so it takes no kind parameter. id is a comma-separated list of tickers, fund CNPJs, option or termo tickers and futures codes. The gateway's tier ceiling (config.ts: 1 id anonymous, 3 signed in) is refused above it (forbidden_for_tier), and the SQL's own (3 anonymous, 50 signed in) is refused verbatim (over_limit); never trimmed.",
         "Missing months stay absent: no fill, no return across a gap. Metric names are catalog().metrics (coverage?kind=catalog); an unknown name is unknown_parameter.",
-        "With no id and a family, panel walks the family (universe mode, monthly, signed-in callers only); min_nav and min_months narrow it."
+        "With no id and a family, panel walks the family (universe mode, monthly); min_nav and min_months narrow it. The gateway serves universe mode to the pro tier only (config.ts), which no caller reaches until #1064."
       ],
       "parameters": [
         {
@@ -1327,8 +1401,9 @@ export const REGISTRY: Registry = {
       ],
       "kinds": {
         "panel": {
-          "doc": "api.panel: long rows (id, id_type, asset_class, date, metric, value, source), 3 years back from to by default. Refuses above 1,000 rows (over_limit): narrow from/to, ids or metrics.",
+          "doc": "api.panel: long rows (id, id_type, asset_class, date, metric, value, source), 3 years back from to by default, paged with the function's p_after cursor.",
           "endpoint": "panel",
+          "paging": { "method": "p_after", "key": ["date", "id", "metric", "asset_class"] }, "daily": { "parameter": "freq", "value": "day" },
           "args": { "id": "p_ids", "metric": "p_metrics", "from": "p_from", "to": "p_to", "freq": "p_freq", "family": "p_entity_type", "min_nav": "p_min_nav", "min_months": "p_min_months" }
         }
       }
@@ -1339,7 +1414,7 @@ export const REGISTRY: Registry = {
       "summary": "Diagnose a portfolio: resolve statement lines, fees, look-through, movement (POST).",
       "example": "POST /v2/portfolio?kind=resolve {\"names\": [\"ITAU RF DI\"]}",
       "method": "POST",
-      "shared": [],
+      "shared": ["limit"],
       "notes": [
         "A data call is a POST: kind, month and the hidden parameters go in the query string, the lists go in a JSON body (see body). ?help stays a GET. Read-only: every kind is one api.portfolio_* function.",
         "Each list is capped by its function (200 entries, 70 for debenture_returns, 50 classes for equivalents) and refused above it, never trimmed.",
@@ -1376,46 +1451,55 @@ export const REGISTRY: Registry = {
         "resolve": {
           "doc": "api.portfolio_resolve: up to 5 ranked candidate funds per statement line (a printed CNPJ wins, then an ETF ticker, an exact name, a trigram match).",
           "endpoint": "portfolio_resolve",
+          "paging": { "method": "single_page", "reason": "a set of ids is the request: no cursor and no window; one call is the whole answer, refused over 1000 rows" },
           "args": { "names": "p_names", "id": "p_cnpjs", "quotas": "p_quotas", "quota_dates": "p_quota_dates" }
         },
         "fees": {
           "doc": "api.portfolio_fees: the disclosed fee and the fee estimated from the balancete, never mixed.",
           "endpoint": "portfolio_fees",
+          "paging": { "method": "single_page", "reason": "a set of ids is the request: no cursor and no window; one call is the whole answer, refused over 1000 rows" },
           "args": { "id": "p_cnpjs", "month": "p_month" }
         },
         "fee_peers": {
           "doc": "api.portfolio_fee_peers: the admin fee against funds and ETFs of the same filed class, one row per CNPJ.",
           "endpoint": "portfolio_fee_peers",
+          "paging": { "method": "single_page", "reason": "a set of ids is the request: no cursor and no window; one call is the whole answer, refused over 1000 rows" },
           "args": { "id": "p_cnpjs", "as_of": "p_as_of" }
         },
         "lookthrough": {
           "doc": "api.portfolio_lookthrough: one CDA month, holdings followed through fund quotas up to max_depth levels.",
           "endpoint": "portfolio_lookthrough",
+          "paging": { "method": "single_page", "reason": "a set of ids is the request: no cursor and no window; one call is the whole answer, refused over 1000 rows" },
           "args": { "id": "p_cnpjs", "month": "p_month", "max_depth": "p_max_depth" }
         },
         "movement": {
           "doc": "api.portfolio_movement: the fund's monthly quota return against its filed class (movimento incomum).",
           "endpoint": "portfolio_movement",
+          "paging": { "method": "single_page", "reason": "a set of ids is the request: no cursor and no window; one call is the whole answer, refused over 1000 rows" },
           "args": { "id": "p_cnpjs", "month": "p_month" }
         },
         "instruments": {
           "doc": "api.portfolio_instruments: CRA, CRI and debenture codes matched to their series, one line per code.",
           "endpoint": "portfolio_instruments",
+          "paging": { "method": "single_page", "reason": "a set of ids is the request: no cursor and no window; one call is the whole answer, refused over 1000 rows" },
           "args": { "id": "p_codes" }
         },
         "fund_terms": {
           "doc": "api.portfolio_fund_terms: manager, administrator and redemption terms as filed, one line per CNPJ.",
           "endpoint": "portfolio_fund_terms",
+          "paging": { "method": "single_page", "reason": "a set of ids is the request: no cursor and no window; one call is the whole answer, refused over 1000 rows" },
           "args": { "id": "p_cnpjs" }
         },
         "equivalents": {
           "doc": "api.portfolio_equivalents: the active ETFs tracking an index the owner-reviewed list maps to each filed class.",
           "endpoint": "portfolio_equivalents",
+          "paging": { "method": "single_page", "reason": "a set of ids is the request: no cursor and no window; one call is the whole answer, refused over 1000 rows" },
           "args": { "id": "p_classes", "as_of": "p_as_of" }
         },
         "debenture_returns": {
           "doc": "api.portfolio_debenture_returns: 13 month-ends of median fund marks (CDA block 4) per debenture ticker; marks, not trades. Needs month.",
           "endpoint": "portfolio_debenture_returns",
+          "paging": { "method": "single_page", "reason": "a set of ids is the request: no cursor and no window; one call is the whole answer, refused over 1000 rows" },
           "args": { "id": "p_tickers", "month": "p_end_month", "max_monthly_drop_pct": "p_max_monthly_drop_pct" },
           "require_one_of": ["month"]
         }
@@ -1426,7 +1510,7 @@ export const REGISTRY: Registry = {
       "status": "built",
       "summary": "How fresh is each dataset, which metrics each family files, and the whole read contract.",
       "example": "/v2/coverage",
-      "shared": [],
+      "shared": ["limit"],
       "parameters": [
         {
           "name": "kind",
@@ -1448,6 +1532,7 @@ export const REGISTRY: Registry = {
         "freshness": {
           "doc": "api.coverage(); the source's as_of is returned as data_through (in v2, as_of means point in time).",
           "endpoint": "coverage",
+          "paging": { "method": "single_page", "reason": "api.coverage returns one row per dataset, with no cursor or window" },
           "args": {},
           "filters": [{ "parameter": "dataset", "op": "in", "column": "dataset", "all": "all" }],
           "rename": { "as_of": "data_through" }
@@ -1455,12 +1540,14 @@ export const REGISTRY: Registry = {
         "metrics": {
           "doc": "api.metric_coverage(): a (family, metric) pair absent here is one the family never files, not late data.",
           "endpoint": "metric_coverage",
+          "paging": { "method": "single_page", "reason": "api.metric_coverage returns one row per family and metric, with no cursor or window" },
           "args": {},
           "filters": [{ "parameter": "dataset", "op": "in", "column": "entity_type", "all": "all" }]
         },
         "catalog": {
           "doc": "api.catalog(): metrics, constraints, limits, applicability, regime breaks, screens. Cache it.",
           "endpoint": "catalog",
+          "paging": { "method": "single_page", "reason": "api.catalog is one JSON object" },
           "args": {},
           "single": true
         }

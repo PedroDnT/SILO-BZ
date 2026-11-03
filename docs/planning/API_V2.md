@@ -9,7 +9,10 @@ v0.2 of 2026-11-01.
 `search` and `coverage`. `funds`, `fidc` and `events` are built too (#1056),
 and so are `prices` and `statements` (#1055), `screens`, `panel` and
 `portfolio` (#1058), and `derivatives`, `curves`, `macro` and
-`positioning` (#1057). All 14 resources are built.
+`positioning` (#1057). All 14 resources are built. Every list kind pages with
+one opaque cursor, and the tier page sizes and caps apply (#1059, section 5
+"Paging, as built" and section 6). The requests-per-minute limit and the pro
+tier come with #1064.
 Nothing is deployed: a merge deploys no Edge Function, and every deploy needs
 the owner's approval.
 
@@ -102,9 +105,9 @@ in the parking lot for the owner to rank.
     returned as `data_through`.
 11. Never fill, never trim silently, `null` stays `null` (root `AGENTS.md`).
 
-Until cursors land (#1052 child 6/8), `limit` has no default (`none`): it is
-passed through where the endpoint takes one, the endpoint's own ceiling
-applies, and the endpoint refuses above it rather than trim.
+`limit` is the page size on every resource (#1059). Its default is the tier's
+page maximum, and a larger value is coerced to it (Google AIP-158). No plan
+sends it to the SQL as `p_limit`.
 
 ## 4. The 14 resources
 
@@ -137,8 +140,8 @@ Notes:
   bonus shares; no dividends); `adjust=none` returns the raw `close`.
 - `search`, as built: kind `any` and `company` call `lookup` (at most 20 rows;
   `truncated` says when more matched; `company` keeps the rows with `id_type`
-  `cd_cvm`), `fund` calls `search_funds` (refuses above its tier ceiling:
-  `over_limit`), `universe` calls `research_universe`. An empty `q` with kind
+  `cd_cvm`), `fund` calls `search_funds` (the whole match, refused above the
+  SQL's tier ceiling: `over_limit`), `universe` calls `research_universe`. An empty `q` with kind
   `any` or `company` lists the research universe. `family` narrows kind `fund`;
   `as_of` reads the universe at a date (`first_observed <= as_of <= last_observed`).
 - `coverage`, as built: `freshness` calls `coverage` and returns `as_of` as
@@ -157,9 +160,8 @@ Notes:
 - `funds`, as built: `id` is a fund CNPJ (punctuation stripped, 14 digits or
   `bad_request`). `profile` calls `fund_profile`; with no `id` it reads the
   `funds` view (a GET, ordered by `cnpj`, `family` and `status` as eq.
-  filters). That read uses `Prefer: count=exact`: with no `limit`, a selection
-  over one page is refused (`over_limit`); `limit=N` serves the first N with
-  `meta.rows_total` and `meta.truncated`. `nav` calls `fund_nav` (`family` ->
+  filters). That read uses `Prefer: count=exact` and pages with order + limit
+  + offset (#1059); `meta.rows_total` is the count. `nav` calls `fund_nav` (`family` ->
   `p_entity_type`); `holdings` and `debentures` take exactly one of `id` and
   the hidden `holding` (`p_ticker` / `p_issuer`); `properties` calls
   `fii_property_history`. `?help` carries the FIDC delinquency regime break.
@@ -180,11 +182,11 @@ Notes:
   `asset_class=all` reads `quotes` (standard lot); each other class reads its
   own view (`equities`, `bdrs`, `units`, `fund_quotas`, `cash_securities`,
   `auctions`) so no column and no odd or block lot is lost. Its hidden `date`
-  defaults to the newest session in the 14 days to today. It reads through
-  the one `callView` (`Prefer: count=exact`): a session over one page is
-  refused (`over_limit`), never served cut. `freq=month`
-  keeps the last session of each month from the daily rows; the daily rows
-  still count toward the 1,000-row cap. Every price row carries `adjusted`.
+  defaults to the newest session in the 14 days to today, found with one GET
+  of one row and pinned in the cursor. The session is then read through the
+  one `callView` (`Prefer: count=exact`) a page at a time (#1059), so a
+  session of any size is served whole, never cut. `freq=month`
+  keeps the last session of each month from the daily rows. Every price row carries `adjusted`.
   With no `id`, `history` and `latest` list the research universe; `index`
   without an id gets the SQL refusal, which names the codes held.
 - `statements`, as built (#1055): `period` is sent as `p_doc_type` (`itr`,
@@ -202,13 +204,17 @@ Notes:
   `RC`), `p_family` is `family`. Every response carries `meta.signal`:
   "Signal, not a verdict".
 - `panel`, as built (#1058): one kind, so no `kind` parameter. `id` is a
-  comma-separated list sent as `p_ids`; the tier ceiling (3 anonymous, 50
-  signed in) is the SQL's refusal (`over_limit`), never a trim. `metric=auto`
+  comma-separated list sent as `p_ids`. The gateway's tier ceiling (1
+  anonymous, 3 signed in; #1059) is refused above it (`forbidden_for_tier`),
+  and the SQL's own (3 anonymous, 50 signed in) is its refusal (`over_limit`);
+  never a trim. `metric=auto`
   sends no `p_metrics`. A metric name outside `catalog().metrics` is
   `unknown_parameter` with the name in `target`; the gateway's list is pinned
   to the SQL catalog by a test, so no catalog call is made per request. With no
-  `id`, a `family` walks it (universe mode, monthly, signed in); `min_nav` and
-  `min_months` apply only there, and are `bad_request` with an `id`.
+  `id`, a `family` walks it (universe mode, monthly); `min_nav` and
+  `min_months` apply only there, and are `bad_request` with an `id`. The
+  gateway serves universe mode to the pro tier only (#1059), which no caller
+  reaches until #1064.
 - `portfolio`, as built (#1058): the one POST route. `kind`, `month` and the
   hidden parameters go in the query string; the lists go in a JSON body: `id`
   (CNPJs, instrument codes, filed class labels or debenture tickers, by kind)
@@ -232,10 +238,10 @@ Notes:
   `di_settlement` reads the `di_settlement` view, newest first. `date` applies
   to `chain` and `futures_curve`; `expiry_from` to `chain`. Ids are sent upper
   case. `option_chain` and `option_exercises` cut at a tier ceiling without
-  refusing, so the gateway asks for one row more than it serves: more rows
-  than wanted is `over_limit` unless `limit` was sent (then the first N, with
-  `meta.truncated`), and a count equal to a known ceiling is refused, because
-  it cannot be told from a cut.
+  refusing, so the gateway asks for 1,001 rows: a count above 1,000 or equal
+  to a known ceiling cannot be told from a cut. `chain` refuses it
+  (`over_limit`); `exercises` halves its date window and tries again, and
+  refuses only a single day still cut (#1059).
 - `curves`, as built (#1057): `snapshot` calls `curve`, `history` calls
   `curve_history`, `vertices` reads the `reference_rate` view for one curve on
   one session (the newest in the 14 days to today unless `date` is given).
@@ -256,8 +262,8 @@ Notes:
 - `positioning`, as built (#1057): one GET per kind on `short_interest`,
   `short_interest_by_sector`, `lending_trades`, `lending_participants` or
   `investor_flow`, newest first, `from`/`to` as a range, `sector` and
-  `investor_type` as eq. filters. A selection over one page is refused unless
-  `limit` asks for the newest N. `?help` carries the BDI notes: short interest
+  `investor_type` as eq. filters, paged with order + limit + offset (#1059).
+  `?help` carries the BDI notes: short interest
   reads only B3's `Total` rows (`is_total`), `pct_float` goes with
   `float_basis`, a lending broker (`doador` / `tomador`) is not the beneficial
   owner, and a missed session is lost.
@@ -302,17 +308,63 @@ uses a secret key.
   including the defaults applied, so it can be pasted into a methods section.
 - `meta.id_known` says whether an id is one SILO holds, so an empty `data` says
   why; it is `null` for a call that names no id.
-- `limit` is the page size, default 100, coerced to the tier maximum (child 6/8).
+- `limit` is the page size: default the tier's page maximum, coerced down to
+  it (section 6).
 - `next_page_url` is present only when more rows remain. The cursor is opaque
   and fixes the other parameters.
 
 ```json
 { "error": {
     "code": "over_limit",
-    "message": "This window holds more than one page and this resource has no cursor yet. Narrow from/to.",
-    "target": "from",
+    "message": "macro_series: refused, this request would return more than 1000 rows. ...",
+    "target": null,
     "innererror": { "sqlstate": "22023", "hint": "..." } } }
 ```
+
+### Paging, as built (#1059)
+
+- **One cursor on every list kind.** `next_page_url` is the same path with
+  `?cursor=<token>`. The token is base64url of a JSON state: the resource,
+  every original query parameter as sent, the paging method, the position and
+  the rows served so far. A request that sends a cursor and another parameter
+  with a different value is `bad_request`, naming that parameter; repeating
+  the same value is allowed. On `POST /v2/portfolio` the cursor carries a
+  digest of the body, and the next page is a POST with the same body.
+- **Unsigned.** The cursor is not signed, so the gateway trusts nothing in it.
+  Its parameters are parsed again exactly like a fresh request, the position
+  is validated by the method that reads it (a date window must lie inside the
+  request's own `from`..`to`), and the page size and the rows-per-call cap are
+  the current caller's tier, never the cursor's. Editing a cursor can at most
+  restart a walk at a position a fresh request could reach.
+- **Four methods**, declared on every plan in the registry (`paging`; a test
+  checks every plan has one):
+  - `p_after`: the function's own cursor (`panel`, `quote_history`,
+    `fund_nav`, `index_history`, `trade_consolidated_history`). Each call reads
+    one 1,000-row SQL page after the last served row's key. With
+    `freq=month`, a full SQL page's last month is read again from the next
+    page, so a month-end is never picked from half a month. `fund_nav` pages
+    with `p_after` only with a `family` (its cursor is unique only within one
+    family); with `family=all` it walks date windows.
+  - `date_window`: every other function with `from`/`to`. The first call is
+    the whole window as asked. A window the SQL refuses for its row cap (the
+    `22023` whose message says "more than 1000 rows") is halved and tried
+    again; a single day still refused is `over_limit` with the SQL's message,
+    verbatim. Any other refusal (an unknown id, a bad tenor) is returned at
+    once. Inside a window the position is an offset into its rows. Windows go
+    in the function's own date order (a test pins it to the SQL's `ORDER BY`).
+    When a split needs an end the request left open, `to` is today (UTC-3).
+  - `view_offset`: every GET view, `order` + `limit` + `offset` with
+    `Prefer: count=exact`; `meta.rows_total` is the count. `prices
+    kind=session` and `curves kind=vertices` find the newest session once and
+    pin it in the cursor.
+  - `single_page`: one call holds the whole answer (or refuses), and pages are
+    slices of it. Each such plan states why it cannot page upstream (for
+    example `lookup` returns at most 20 rows; a screen is one call).
+- **One request makes at most 12 PostgREST requests** (`MAX_UPSTREAM_CALLS`
+  in `config.ts`). When a walk spends them, the page is served short, with
+  `next_page_url`, never cut.
+- `meta.page_size`, `meta.rows_served` (all pages so far), `meta.tier`, and
+  `meta.limit_coerced_from` when `limit` was above the tier maximum.
 
 Top-level codes (10): `bad_request`, `unknown_parameter`, `unknown_id`,
 `unauthorized`, `forbidden_for_tier`, `over_limit`, `rate_limited`, `timeout`,
@@ -321,21 +373,45 @@ its message, details and hint verbatim; `57014` maps to `timeout`.
 
 ## 6. Tiers
 
-Today PostgREST has one server-wide `db-max-rows`, so no tier can have its own
-page size; the gateway can. A lower page size is harmless only if every list
-pages, so the gateway adds a cursor to every list (for date series, by
-splitting the `from`..`to` window behind the scenes). The owner sets the
-numbers; the starting proposal:
+PostgREST has one server-wide `db-max-rows`, so no tier can have its own page
+size there; the gateway can. A lower page size is harmless only because every
+list pages (section 5). Owner decision 2026-11-03 (#1061); the numbers are
+constants in one block, `supabase/functions/silo-api/config.ts`, and a test
+pins them:
 
-| Limit | Anonymous today | Anonymous (proposed) | Signed in (proposed) |
+| | anonymous (try it) | signed in (free) | pro (paid) |
 | --- | ---: | ---: | ---: |
-| Rows per page | 1,000 | 100 (coerced) | 1,000 |
-| Rows per call, all pages | unlimited | 1,000 | unlimited |
-| Ids per `panel` call | 3 | 3 | 50 |
-| Date window per call | none | 2 years (daily data) | none |
-| Requests per minute | none | 30 | 300 |
-| Statement timeout | 3 s | 3 s | 8 s |
-| `screens`, `portfolio` | open | signed in only | open |
+| Page size maximum (`limit` default) | 10 | 100 | 1,000 |
+| Rows per call, all pages | 50 | 1,000 | unlimited |
+| Date window on daily data | 3 months | 2 years | none |
+| `panel` ids per call | 1 | 3 | 50 |
+| `screens`, `portfolio` | no | yes | yes |
+| `panel` universe mode | no | no | yes |
+| Requests per minute | 10 | 30 | 300 |
+
+As built (#1059):
+
+- **The tier.** No `Authorization: Bearer` (or the publishable key sent as
+  one) is anonymous; any other Bearer is signed in, and PostgREST verifies it
+  on the call (an invalid token is `unauthorized` there). The gateway does not
+  decode the JWT. Pro and the requests-per-minute limit come with #1064; until
+  then every signed-in caller is signed in, and no caller reaches pro.
+- **Rows per call.** When a walk reaches the cap, the response has no
+  `next_page_url`, and `meta.tier_cap_reached` is `true` with
+  `meta.tier_cap_message`, which says how to get a higher tier. Never a silent
+  stop. Rows may remain past the cap; the message says so.
+- **Daily data.** A plan marked `daily` in the registry (`prices` history,
+  index and forward; `derivatives` history, exercises, termo, futures and
+  `di_settlement`; `curves` history; `macro` fx; every `positioning` kind;
+  `panel` with `freq=day`) reads at most the tier's window. A default window
+  wider than it is narrowed to it (`meta.request.from` and
+  `meta.window_narrowed_to_tier` say so); a `from` the caller sent that is
+  earlier is `forbidden_for_tier`. `macro` series is not marked: its SGS
+  series mix daily and monthly codes.
+- **`screens` and `portfolio`** are `forbidden_for_tier` for anonymous
+  callers (`?help` stays open). `panel` above the tier's ids, or in universe
+  mode below pro, is `forbidden_for_tier` before any call.
+- Statement timeouts stay the SQL's (3 s anonymous, 8 s signed in).
 
 ## 7. Plan
 
