@@ -16,6 +16,13 @@ project_id = "SILO-BZ"
 enabled = true
 verify_jwt = false
 
+# The v2 REST gateway (docs/planning/API_V2.md). Public and read-only like
+# silo-mcp; a caller's own Bearer JWT is forwarded to PostgREST, which checks it.
+# Not deployed: a deploy needs the owner's approval (#1052).
+[functions.silo-api]
+enabled = true
+verify_jwt = false
+
 # DJEN relay for the RJ collector (#846): runs in sa-east-1 because DJEN refuses
 # non-Brazilian egress. Its own shared-token check replaces the JWT check.
 [functions.djen-relay]
