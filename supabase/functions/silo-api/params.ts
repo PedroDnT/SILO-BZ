@@ -201,3 +201,87 @@ function applyFilter(f: FilterSpec, v: Value, rows: Row[]): Row[] {
     return typeof lo === "string" && typeof hi === "string" && lo <= d && d <= hi;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Required ids and default windows (funds, fidc, events: #1056).
+// ---------------------------------------------------------------------------
+
+/** Given: not null, not empty, and not the parameter's "no value" (null_value). */
+function given(resource: ResourceSpec, name: string, values: Record<string, Value>): boolean {
+  const v = values[name] ?? null;
+  if (isEmpty(v)) return false;
+  const spec = acceptedParams(resource).find((p) => p.name === name);
+  return !(spec?.null_value !== undefined && v === spec.null_value);
+}
+
+/**
+ * require_one_of: exactly one of the named parameters must be given. The SQL
+ * refuses a missing id too, but with 22023, which would read as over_limit;
+ * the gateway says what is missing instead, before any call.
+ */
+export function checkRequired(resource: ResourceSpec, kindName: string, plan: Plan, values: Record<string, Value>): void {
+  const names = plan.require_one_of;
+  if (!names?.length) return;
+  const present = names.filter((n) => given(resource, n, values));
+  if (present.length === 1) return;
+  const what = names.length === 1 ? names[0] : `exactly one of ${names.join(", ")}`;
+  const why = present.length === 0 ? "none was given" : `${present.join(" and ")} were both given`;
+  throw new ApiError(
+    400,
+    "bad_request",
+    `${resource.name} kind=${kindName} needs ${what}; ${why}. Find an id with /v2/search, or see /v2/${resource.name}?help=all.`,
+    present.length === 0 ? names[0] : present[1],
+  );
+}
+
+/** YYYY-MM-DD minus whole months; the day is clamped to the target month's last day. */
+export function minusMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const total = y * 12 + (m - 1) - months;
+  const ty = Math.floor(total / 12);
+  const tm = total - ty * 12;
+  const last = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate();
+  const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${pad(ty, 4)}-${pad(tm + 1)}-${pad(Math.min(d, last))}`;
+}
+
+/** Today in Brasilia (UTC-3, no daylight saving since 2019), as YYYY-MM-DD. */
+export function todayUtcMinus3(now: Date = new Date()): string {
+  return new Date(now.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * The values with the default window applied: when the plan takes `from`
+ * and none was sent, from = (to, or today in UTC-3) minus the resource's
+ * window_months. `to` is left as sent; with none, the endpoint's own default
+ * applies (fund_nav, for one, ends at the family's latest complete period).
+ * A from after to is refused.
+ */
+export function applyWindow(resource: ResourceSpec, plan: Plan, values: Record<string, Value>, now?: Date): Record<string, Value> {
+  const out = { ...values };
+  if (!("from" in plan.args)) return out;
+  if (out.from === null && resource.window_months) {
+    const end = typeof out.to === "string" ? out.to : todayUtcMinus3(now);
+    out.from = minusMonths(end, resource.window_months);
+  }
+  if (typeof out.from === "string" && typeof out.to === "string" && out.from > out.to) {
+    throw new ApiError(400, "bad_request", `from (${out.from}) is after to (${out.to}).`, "from");
+  }
+  return out;
+}
+
+/** A fund CNPJ id: punctuation (. / -) stripped, then exactly 14 digits, or bad_request. */
+export function normalizeCnpjId(resource: ResourceSpec, kindName: string, values: Record<string, Value>): Record<string, Value> {
+  const v = values.id;
+  if (typeof v !== "string" || v === "") return values;
+  const digits = v.replace(/[.\/\-\s]/g, "");
+  if (!/^\d{14}$/.test(digits)) {
+    throw new ApiError(
+      400,
+      "bad_request",
+      `${resource.name} kind=${kindName} takes a fund CNPJ as id (14 digits, punctuation allowed); got \`${v}\`. Find one with /v2/search?kind=fund&q=<name>.`,
+      "id",
+    );
+  }
+  return { ...values, id: digits };
+}

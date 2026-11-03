@@ -45,6 +45,7 @@ ERROR_CODES = [
 ]
 # Built in this child; the others arrive with #1052's later children.
 BUILT = {"search", "coverage"}
+BUILT |= {"funds", "fidc", "events"}  # #1056
 NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -122,7 +123,10 @@ def test_every_parameter_has_a_default():
             if p["type"] == "enum":
                 assert p["default"] in p["values"], where
             if "null_value" in p:
-                assert p["null_value"] in p["values"], where
+                if p["type"] == "enum":
+                    assert p["null_value"] in p["values"], where
+                else:
+                    assert p["null_value"] == p["default"], f"{where}: a free-text null_value is the default"
 
 
 def test_parameter_names_are_plain_words_and_never_shadow_a_shared_one():
@@ -151,7 +155,15 @@ def test_every_endpoint_exists_and_is_granted():
             ep = plan["endpoint"]
             assert ep in m, f"{r['name']} kind {kind}: api.{ep} is not in serve/endpoint_manifest.py"
             assert m[ep].granted, f"{r['name']} kind {kind}: api.{ep} is not granted to anon/authenticated"
-            assert m[ep].kind == "rpc", f"{r['name']} kind {kind}: api.{ep} is a view; the gateway calls functions only so far"
+            want = "view" if plan.get("view") else "rpc"
+            assert m[ep].kind == want, f"{r['name']} kind {kind}: api.{ep} is a {m[ep].kind}; the plan says {want}"
+
+
+def _view_columns(view: str) -> set[str]:
+    """The filterable columns of a GET view, from the published openapi.json."""
+    spec = json.loads((ROOT / "openapi.json").read_text(encoding="utf-8"))
+    params = spec["paths"][f"/{view}"]["get"]["parameters"]
+    return {p["name"] for p in params if p.get("in") == "query"} - {"select", "order", "limit", "offset"}
 
 
 def test_every_argument_maps_a_declared_parameter_to_a_declared_p_argument():
@@ -160,9 +172,20 @@ def test_every_argument_maps_a_declared_parameter_to_a_declared_p_argument():
         accepted = _accepted(r)
         for kind, plan in _plans(r):
             ep = m[plan["endpoint"]]
+            if plan.get("view"):
+                cols = _view_columns(ep.name)
+                assert plan.get("order"), f"{r['name']} kind {kind}: a view read needs an order, or a page is undefined"
+                for col in [c.split(".")[0] for c in plan["order"].split(",")] + list(plan.get("where", {})):
+                    assert col in cols, f"{r['name']} kind {kind}: api.{ep.name} has no column {col}"
             for v2, p_name in plan["args"].items():
                 assert v2 in accepted, f"{r['name']} kind {kind}: {v2} is not a parameter {r['name']} takes"
+                if plan.get("view"):
+                    ok = p_name in cols or (v2 == "limit" and p_name == "limit")
+                    assert ok, f"{r['name']} kind {kind}: api.{ep.name} has no column {p_name}"
+                    continue
                 assert p_name in ep.params, f"{r['name']} kind {kind}: api.{ep.name} declares no {p_name} ({ep.params})"
+            for name in plan.get("require_one_of", []):
+                assert name in plan["args"], f"{r['name']} kind {kind}: requires {name} but never sends it"
             for f in plan.get("filters", []):
                 assert f["parameter"] in accepted, (r["name"], kind, f)
                 assert f["op"] in ("in", "between"), (r["name"], kind, f)
@@ -199,7 +222,10 @@ def test_function_is_read_only_and_holds_no_secret():
         p.read_text(encoding="utf-8") for p in FN_DIR.rglob("*.ts") if not p.name.endswith("_test.ts")
     )
     methods = set(re.findall(r'method: "([A-Z]+)"', src))
-    assert methods == {"POST"}, f"the gateway only calls POST /rpc/<fn>: {methods}"
+    assert methods == {"POST", "GET"}, f"the gateway only calls POST /rpc/<fn> and GET /<view>: {methods}"
+    # GET is the view read (#1056) and nothing else: one call site, in callView.
+    postgrest = (FN_DIR / "postgrest.ts").read_text(encoding="utf-8")
+    assert src.count('method: "GET"') == 1 and 'method: "GET"' in postgrest.split("export async function callView", 1)[1]
     for forbidden in ("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEYS", "SUPABASE_DB_URL"):
         assert forbidden not in src, forbidden
     env_reads = set(re.findall(r'get\("([A-Z_]+)"\)', src))
@@ -213,6 +239,60 @@ def test_config_disables_jwt_verification_for_the_function():
     section = re.search(r"\[functions\.silo-api\](.*?)(?:\n\[|\Z)", toml, re.S)
     assert section, "[functions.silo-api] missing from supabase/config.toml"
     assert re.search(r"^verify_jwt\s*=\s*false\s*$", section.group(1), re.M)
+
+
+# -- funds, fidc, events (#1056) ------------------------------------------------
+
+ISSUE_1056 = {
+    "funds": {
+        "profile": "fund_profile", "nav": "fund_nav", "holdings": "fund_holdings",
+        "debentures": "fund_debentures", "properties": "fii_property_history",
+    },
+    "fidc": {
+        "portfolio": "fidc_portfolio", "tranches": "fidc_tranches", "aging": "fidc_aging",
+        "cedentes": "fidc_cedentes", "sacados": "fidc_sacados",
+    },
+    "events": {
+        "company": "company_events", "fund": "fund_documents", "restatements": "fund_restatements",
+        "restatement_diff": "fund_restatement_diff", "judicial_recovery": "rj_listed_documents",
+    },
+}
+WINDOWS_1056 = {"funds": 36, "fidc": 24, "events": 12}
+HIDDEN_1056 = {"funds": {"holding", "status"}, "fidc": {"series", "cedente", "item"}, "events": {"family"}}
+
+
+@pytest.mark.parametrize("name", sorted(ISSUE_1056))
+def test_1056_kinds_map_to_the_issue_endpoints(name):
+    r = next(x for x in _resources() if x["name"] == name)
+    assert {k: v["endpoint"] for k, v in r["kinds"].items()} == ISSUE_1056[name]
+    kind = next(p for p in r["parameters"] if p["name"] == "kind")
+    assert kind["default"] == next(iter(ISSUE_1056[name])), "the first kind is the default"
+    assert r["window_months"] == WINDOWS_1056[name]
+    hidden = {p["name"] for p in r["parameters"] if p["visibility"] == "hidden"}
+    assert hidden == HIDDEN_1056[name]
+
+
+def test_a_resource_whose_kinds_take_from_declares_a_default_window():
+    for r in _built():
+        if any("from" in plan["args"] for _, plan in _plans(r)):
+            assert r.get("window_months", 0) > 0, f"{r['name']}: from has no default window"
+
+
+def test_with_no_id_funds_and_fidc_list_the_funds_view():
+    for name, where in (("funds", {}), ("fidc", {"entity_type": "fidc"})):
+        r = next(x for x in _resources() if x["name"] == name)
+        first = r["kinds"][next(iter(r["kinds"]))]
+        assert first["when_empty"]["parameter"] == "id"
+        plan = first["when_empty"]["plan"]
+        assert plan["endpoint"] == "funds" and plan["view"] is True
+        assert plan.get("where", {}) == where
+        assert plan["args"].get("limit") == "limit"
+
+
+def test_fidc_help_keeps_the_2020_11_delinquency_regime_break():
+    for name in ("fidc", "funds"):
+        r = next(x for x in _resources() if x["name"] == name)
+        assert any("2020-11" in n and "delinquency" in n for n in r["notes"]), name
 
 
 @pytest.mark.parametrize("name", RESOURCES)

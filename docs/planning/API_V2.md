@@ -6,7 +6,8 @@ v0.2 of 2026-11-01.
 
 **Status.** The skeleton is built (#1053): the Edge Function
 `supabase/functions/silo-api/`, its resource registry, and the resources
-`search` and `coverage`. The other 12 are listed by `GET /v2/` as `planned`.
+`search` and `coverage`. `funds`, `fidc` and `events` are built too (#1056).
+The rest are listed by `GET /v2/` as `planned`.
 Nothing is deployed: a merge deploys no Edge Function, and every deploy needs
 the owner's approval.
 
@@ -112,13 +113,13 @@ Main parameters, defaults in brackets.
 | `search` | `q` [empty: list the universe], `kind` [`any`; `company`, `fund`, `universe`], `family` [all] | n/a | `as_of` [none] | built |
 | `prices` | `kind` [`history`; `latest`, `session`, `index`, `forward`], `freq` [`day`; `month`], `adjust` [`split`; `none`] | 1 year | `board` [all], `asset_class` [all], `fields` [core] | planned |
 | `statements` | `kind` [`all`; `income`, `balance`, `cashflow`, `headline`, `versions`], `period` [`both`; `quarterly`, `annual`], `scope` [`consolidated`; `individual`] | 5 years | `as_of` [none] | planned |
-| `funds` | `kind` [`profile`; `nav`, `holdings`, `debentures`, `properties`], `family` [all; `fi`, `fidc`, `fii`, `fip`, ...] | 3 years | `holding` [none: reverse lookup by ticker or issuer], `status` [all] | planned |
-| `fidc` | `kind` [`portfolio`; `tranches`, `aging`, `cedentes`, `sacados`] | 2 years | `series`, `cedente`, `item` [all] | planned |
+| `funds` | `kind` [`profile`; `nav`, `holdings`, `debentures`, `properties`], `family` [all; `fi`, `fidc`, `fii`, `fip`, ...] | 3 years | `holding` [none: reverse lookup by ticker or issuer], `status` [all] | built |
+| `fidc` | `kind` [`portfolio`; `tranches`, `aging`, `cedentes`, `sacados`] | 2 years | `series`, `cedente`, `item` [all] | built |
 | `derivatives` | `kind` [`chain`; `history`, `exercises`, `termo`, `futures`, `futures_curve`, `di_settlement`], `date` [latest session] | 1 year | `expiry_from` [today] | planned |
 | `curves` | `kind` [`snapshot`; `history`, `vertices`], `curve` [`PRE`; `DOC`, ...], `tenor` [252 business days, for history] | 1 year | `date` [latest session] | planned |
 | `macro` | `kind` [`series`; `inflation`, `inflation_items`, `fx`, `expectations`] | 1 year; 3 years for inflation | `family`, `currency` [`USD`], `horizon` | planned |
 | `positioning` | `kind` [`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`] | 3 months | `sector`, `investor_type` [all] | planned |
-| `events` | `kind` [`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`], `category` [all] | 12 months | `family` [all] | planned |
+| `events` | `kind` [`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`], `category` [all] | 12 months | `family` [all] | built |
 | `screens` | `kind` [none: list the screens with one-line descriptions] | per screen | each screen's thresholds, with today's SQL defaults | planned |
 | `panel` | `metric` [each family's default metric, as today], `freq` [`month`; `day` for quotes only], `family` [auto] | 3 years | `min_nav`, `min_months` [none] | planned |
 | `portfolio` (POST) | `kind` [`resolve`; `fees`, `fee_peers`, `lookthrough`, `movement`, `instruments`, `fund_terms`, `equivalents`, `debenture_returns`], `month` [latest complete] | n/a | `max_depth` [3] | planned |
@@ -143,6 +144,33 @@ Notes:
   and returns the one JSON object as `data[0]`. `dataset` narrows freshness by
   dataset name and metrics by fund family; a name no row carries is refused
   with the known names.
+- Default windows, as built (#1056): with no `from`, a kind that takes one
+  gets `from` = `to` minus the window, or today (UTC-3) minus the window when
+  `to` is not sent. With no `to`, the endpoint's own default applies (for
+  `fund_nav`, the family's latest complete period). `meta.request` echoes the
+  `from` applied. A `from` after `to` is `bad_request`.
+- A required id, as built: a kind whose SQL needs an id (or exactly one of an
+  id and a reverse-lookup parameter) is refused with `bad_request` before any
+  call, because the SQL's own refusal is `22023` and would read as `over_limit`.
+- `funds`, as built: `id` is a fund CNPJ (punctuation stripped, 14 digits or
+  `bad_request`). `profile` calls `fund_profile`; with no `id` it reads the
+  `funds` view (a GET, ordered by `cnpj`, `family` and `status` as eq.
+  filters). That read uses `Prefer: count=exact`: with no `limit`, a selection
+  over one page is refused (`over_limit`); `limit=N` serves the first N with
+  `meta.rows_total` and `meta.truncated`. `nav` calls `fund_nav` (`family` ->
+  `p_entity_type`); `holdings` and `debentures` take exactly one of `id` and
+  the hidden `holding` (`p_ticker` / `p_issuer`); `properties` calls
+  `fii_property_history`. `?help` carries the FIDC delinquency regime break.
+- `fidc`, as built: one kind per `fidc_*` function. `series` -> `p_series`,
+  `cedente` -> `p_cedente` (exactly one of `id` and `cedente`), `item` ->
+  `fidc_portfolio`'s `p_kind` (`sector`, `scr_debtor`, `scr_operation`,
+  `tax_debt`). With no `id`, `portfolio` lists the FIDC registry from the
+  `funds` view. `?help` carries the 2020-11 delinquency regime break.
+- `events`, as built: `category` is the source's own label (`p_category`,
+  `p_tipo` or `p_doc_type`); the hidden `family` is `fund_restatements`'
+  `p_tipo_fundo` (`fii`, `fidc`, `etf`). `company`, `fund` and
+  `restatement_diff` need an `id`; `restatements` and `judicial_recovery`
+  list every fund or company without one. The fund kinds take a fund CNPJ.
 
 ### The first five minutes
 
