@@ -54,7 +54,8 @@ it read-only. Four infrastructures, four products.
    `api.rate_hit()` in `api_rate_counter`, the one table an API caller writes.
    v1 paths skip the gateway, so they are not counted.
 
-`webapp/` and `silo-api` (the v2 gateway) exist but are not deployed.
+`webapp/`, `silo-api` (the v2 gateway) and `silo-mcp-v2` (its 14 MCP tools, which
+run the gateway in process) exist but are not deployed.
 
 Deeper: [README](../../README.md), [API](../reference/API.md),
 [data modeling](../reference/DATA_MODELING.md).

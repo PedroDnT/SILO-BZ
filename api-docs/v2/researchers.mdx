@@ -1,0 +1,65 @@
+---
+title: "v2 for researchers"
+description: "Preview, not deployed. Point in time, survivorship, price adjustment, reproducibility and a citation line, in the v2 gateway."
+icon: "graduation-cap"
+---
+
+<Warning>
+  **Preview, not deployed.** The v2 gateway is built but not deployed yet. This page describes it as built.
+</Warning>
+
+Five things decide whether a result from SILO can be trusted in a paper or a backtest. Each one below names the parameter that controls it and its default. The calls use the base URL from the [v2 quickstart](/api-docs/v2/quickstart):
+
+```bash
+export SILO_V2="https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
+```
+
+### Point in time: `as_of`
+
+By default, `statements` returns the latest stored version of every filing. That is **not** point in time: a restated quarter shows its restated numbers.
+
+```bash
+curl "$SILO_V2/statements?id=PETR4&kind=income&as_of=2020-06-30"
+```
+
+With `as_of`, only documents CVM received before that date are read, each at the highest version known then. `as_of` is a hidden parameter: it works but is not in the main table. It does not apply to `kind=versions`, which lists every version on purpose.
+
+### Survivorship: `search?kind=universe&as_of=`
+
+```bash
+curl "$SILO_V2/search?kind=universe&as_of=2020-01-31"
+```
+
+The listed shares and units that traded on that date: the ticker and ISIN pairs whose first and last observed sessions span it, dead names included. Build a sample from this list, not from today's tickers. With no `as_of`, the list holds every pair the B3 tape has seen since 2019-01-02.
+
+### Adjustment: `adjust`
+
+`prices` defaults to `adjust=split`: the close adjusted for splits, groupings and bonus shares. **It is not adjusted for dividends.** No dividend-adjusted series exists in v2.
+
+```bash
+curl "$SILO_V2/prices?id=PETR4&adjust=none"
+```
+
+`adjust=none` is the raw close as traded. Every row carries `adjusted` (true or false), so the two never mix silently. Only `kind=history` is adjusted; `latest`, `session`, `index` and `forward` are never adjusted.
+
+### Reproducibility: `meta.request`
+
+Every response echoes, in `meta.request`, every parameter the resource takes with the value the gateway applied, defaults included. Paste it into a methods section and the call can be replayed exactly. `meta.endpoint` names the `api.*` endpoint that answered.
+
+`meta.data_version` is planned in the spec but not built yet. Until it is, record the data version from `coverage`:
+
+```bash
+curl "$SILO_V2/coverage?dataset=quotes"
+```
+
+Its `landed_at` and `landed_git_sha` say when the data you read was loaded, and by which version of the pipeline. `data_through` is the newest elapsed period, and `complete_through` is how much the source has fully published.
+
+### Citation
+
+Cite the request and the data version, not only the site. A template (fill in the angle brackets):
+
+```text
+SILO, Brazilian public financial data, API v2 (preview). <request URL>. Retrieved <date, UTC-3>. Data landed <landed_at> (pipeline <landed_git_sha>), from coverage. https://github.com/PedroDnT/SILO-BZ
+```
+
+The underlying sources are public: CVM, B3, BACEN and IBGE. Name the source of the rows you used as well.
