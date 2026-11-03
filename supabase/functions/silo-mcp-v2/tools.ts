@@ -23,6 +23,7 @@ import { ApiError } from "../silo-api/errors.ts";
 import { acceptedParams } from "../silo-api/params.ts";
 import { type BodySpec, type ParamSpec, REGISTRY, type ResourceSpec, SHARED_NAMES } from "../silo-api/registry.ts";
 import { makeHandler as makeGateway } from "../silo-api/server.ts";
+import { idDoc } from "./id_docs.ts";
 
 export const TOOL_PREFIX = "silo_";
 
@@ -144,6 +145,9 @@ export function buildTool(r: ResourceSpec): V2Tool {
   const hidden = all.filter((p) => p.visibility === "hidden");
   const properties: Json = {};
   for (const p of [...main, ...shared]) properties[p.name] = paramSchema(p);
+  // id means something different on each resource (id_docs.ts), never the shared generic sentence.
+  const id = idDoc(r);
+  if (id && properties.id) properties.id = { ...(properties.id as Json), description: `${id} Default: none.` };
   if (hidden.length) {
     properties.options = {
       type: "object",

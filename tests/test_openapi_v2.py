@@ -56,6 +56,22 @@ def test_main_parameters_are_enums_with_defaults_and_hidden_ones_are_marked():
         assert "Preview, not deployed" in op["description"]
 
 
+def test_id_is_described_per_resource_not_with_the_generic_sentence():
+    gen = _gen()
+    registry = gen.load_registry()
+    generic = registry["shared_parameters"]["id"]["doc"]
+    spec = json.loads(SPEC.read_text(encoding="utf-8"))
+    for r in registry["resources"]:
+        op = next(iter(spec["paths"][f"/{r['name']}"].values()))
+        ids = [p for p in op["parameters"] if p["name"] == "id"]
+        assert bool(ids) == ("id" in (r.get("shared") or [])), r["name"]
+        if ids:
+            assert generic not in ids[0]["description"], r["name"]
+            assert ids[0]["description"] == gen.id_doc(r, gen.load_id_docs()) + " Default: none."
+    funds = next(p for p in spec["paths"]["/funds"]["get"]["parameters"] if p["name"] == "id")
+    assert "14-digit fund CNPJ" in funds["description"] and "ticker" not in funds["description"]
+
+
 def test_server_and_prefilled_public_key():
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
     assert spec["openapi"] == "3.1.0"

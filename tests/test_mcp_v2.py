@@ -82,6 +82,65 @@ def test_main_parameters_fit_the_tool_schema_rule():
                 assert p["default"] in p["values"], f"{r['name']}.{p['name']}: the default is not one of its values"
 
 
+def _id_docs() -> dict[str, str]:
+    src = (V2 / "id_docs.ts").read_text(encoding="utf-8")
+    m = re.search(r"// BEGIN ID_DOCS\nexport const ID_DOCS: Record<string, string> = (\{.*?\});\n// END ID_DOCS", src, re.S)
+    assert m, "the ID_DOCS block was not found in silo-mcp-v2/id_docs.ts"
+    return json.loads(m.group(1))
+
+
+def _id_mappings() -> dict[tuple[str, str], str]:
+    """(resource, kind) -> the ID_DOCS key of the argument that kind maps id to."""
+    out = {}
+    for r in _registry()["resources"]:
+        if "id" not in (r.get("shared") or []):
+            continue  # portfolio's id is a body list (its body doc says what it holds), not the shared id
+        for kind, spec in (r.get("kinds") or {}).items():
+            arg = (spec.get("args") or {}).get("id")
+            if arg:
+                out[(r["name"], kind)] = f"{spec['endpoint']}.{arg}"
+    return out
+
+
+def _cnpj_normalised() -> set[tuple[str, str]]:
+    """(resource, kind) pairs whose id the gateway runs through normalizeCnpjId (resources/*.ts)."""
+    out: set[tuple[str, str]] = set()
+    kinds = {r["name"]: list(r.get("kinds") or {}) for r in _registry()["resources"]}
+    for path in (FN / "silo-api" / "resources").glob("*.ts"):
+        src = path.read_text(encoding="utf-8")
+        if "normalizeCnpjId(" not in src.replace("import { normalizeCnpjId", ""):
+            continue
+        only = re.search(r"const FUND_KINDS = new Set\(\[(.*?)\]\);", src)
+        if only:
+            assert "FUND_KINDS.has(kind) ? normalizeCnpjId(" in src, path.name
+            names = re.findall(r'"([a-z_]+)"', only.group(1))
+        else:
+            assert re.search(r"\(kind, _plan, values\) => normalizeCnpjId\(", src), (
+                f"{path.name}: normalizeCnpjId applies in a way this test does not recognise; update the test"
+            )
+            names = kinds[path.stem]
+        out |= {(path.stem, k) for k in names}
+    return out
+
+
+def test_every_id_mapping_has_a_phrase_and_no_phrase_is_stale():
+    phrases, mappings = _id_docs(), _id_mappings()
+    missing = sorted({key for key in mappings.values() if key not in phrases})
+    stale = sorted(set(phrases) - set(mappings.values()))
+    assert not missing, f"id_docs.ts has no phrase for {missing}"
+    assert not stale, f"id_docs.ts phrases no kind maps id to: {stale}"
+
+
+def test_a_cnpj_normalised_id_is_described_as_a_fund_cnpj_and_only_then():
+    phrases, mappings, cnpj = _id_docs(), _id_mappings(), _cnpj_normalised()
+    assert {r for r, _ in cnpj} == {"funds", "fidc", "events"}, "the set of CNPJ-normalising resources changed"
+    for (resource, kind), key in mappings.items():
+        says = "14-digit fund CNPJ (punctuation allowed" in phrases[key]
+        assert says == ((resource, kind) in cnpj), (resource, kind, phrases[key])
+    generic = _registry()["shared_parameters"]["id"]["doc"]
+    assert all(generic not in p for p in phrases.values())
+
+
 def test_deno_test_sits_next_to_the_function_so_ci_runs_it():
     tests = sorted(V2.glob("*_test.ts"))
     assert tests, "the CI deno job runs only function directories holding a *_test.ts"

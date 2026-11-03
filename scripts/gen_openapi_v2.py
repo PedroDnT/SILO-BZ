@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FN_DIR = ROOT / "supabase" / "functions" / "silo-api"
 REGISTRY_TS = FN_DIR / "registry.ts"
 ERRORS_TS = FN_DIR / "errors.ts"
+ID_DOCS_TS = ROOT / "supabase" / "functions" / "silo-mcp-v2" / "id_docs.ts"
 OUT = ROOT / "api-docs" / "v2" / "openapi.json"
 
 SERVER = "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
@@ -54,6 +55,65 @@ def load_error_codes() -> list[str]:
     if not m:
         raise SystemExit("ERROR_CODES was not found in errors.ts")
     return re.findall(r'"([a-z_]+)"', m.group(1))
+
+
+def load_id_docs() -> dict[str, str]:
+    """The per-(endpoint, argument) id phrases MCP v2 uses too (silo-mcp-v2/id_docs.ts)."""
+    src = ID_DOCS_TS.read_text(encoding="utf-8")
+    m = re.search(r"// BEGIN ID_DOCS\nexport const ID_DOCS: Record<string, string> = (\{.*?\});\n// END ID_DOCS", src, re.S)
+    if not m:
+        raise SystemExit("the ID_DOCS block (between BEGIN and END markers) was not found in id_docs.ts")
+    return json.loads(m.group(1))
+
+
+def id_key(plan: dict) -> str | None:
+    arg = (plan.get("args") or {}).get("id")
+    return f"{plan['endpoint']}.{arg}" if arg else None
+
+
+def id_doc(resource: dict, phrases: dict[str, str]) -> str | None:
+    """What id means on this resource, by kind. The same text as idDoc() in id_docs.ts."""
+    if "id" not in (resource.get("shared") or []):
+        return None
+    entries = list((resource.get("kinds") or {}).items())
+    single = len(entries) == 1
+
+    def kinds(names: list[str]) -> str:
+        return f"{'kinds' if len(names) > 1 else 'kind'} {', '.join(names)}"
+
+    def verb(names: list[str], one: str, many: str) -> str:
+        return many if len(names) > 1 else one
+
+    by_phrase: dict[str, list[str]] = {}
+    required: list[str] = []
+    either: list[str] = []
+    empty: dict[str, list[str]] = {}
+    none: list[str] = []
+    for name, kind in entries:
+        key = id_key(kind)
+        if not key:
+            none.append(name)
+            continue
+        if key not in phrases:
+            raise SystemExit(f"no ID_DOCS phrase for {resource['name']} kind {name} ({key})")
+        by_phrase.setdefault(phrases[key], []).append(name)
+        req = kind.get("require_one_of") or []
+        if req == ["id"]:
+            required.append(name)
+        elif "id" in req:
+            either.append(f"{name}: id or {' or '.join(x for x in req if x != 'id')} is required")
+        we = kind.get("when_empty")
+        if we and we.get("parameter") == "id":
+            empty.setdefault(f"api.{we['plan']['endpoint']}", []).append(name)
+    what = [f"{', '.join(names)} {verb(names, 'takes', 'take')} {phrase}" for phrase, names in by_phrase.items()]
+    parts = [f"The id is {'; '.join(by_phrase)}." if single else f"By kind: {'; '.join(what)}."]
+    if required:
+        parts.append(f"Required for {kinds(required)}.")
+    parts.extend(f"Kind {e}." for e in either)
+    parts.extend(f"With no id, {kinds(n)} {verb(n, 'reads', 'read')} {ep} (what SILO holds)." for ep, n in empty.items())
+    if none:
+        parts.append(f"K{kinds(none)[1:]} {verb(none, 'takes', 'take')} no id.")
+    return " ".join(parts)
 
 
 def _default_text(p: dict) -> str:
@@ -150,7 +210,14 @@ def _body(resource: dict) -> dict:
     }
 
 
+def _id_parameter(param: dict, resource: dict, phrases: dict[str, str]) -> dict:
+    """id means something different on each resource: never the shared generic sentence."""
+    doc = id_doc(resource, phrases) if param["name"] == "id" else None
+    return {**param, "description": f"{doc} Default: none."} if doc else param
+
+
 def build(registry: dict, error_codes: list[str]) -> dict:
+    phrases = load_id_docs()
     paths: dict = {
         "/": {
             "get": {
@@ -175,7 +242,7 @@ def build(registry: dict, error_codes: list[str]) -> dict:
             "summary": f"v2 {r['name']}",
             "description": _description(r),
             "x-mint": {"href": f"/api-docs/v2/reference/{r['name']}"},
-            "parameters": [_parameter(p, examples) for p in main + shared + hidden],
+            "parameters": [_id_parameter(_parameter(p, examples), r, phrases) for p in main + shared + hidden],
             "responses": _responses(),
         }
         if r.get("method") == "POST":

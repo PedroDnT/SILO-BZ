@@ -218,7 +218,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. Default: none: the resource lists the ids it holds.",
+            "description": "By kind: history, latest take a B3 ticker (PETR4); session takes a B3 ticker (none: every ticker of the session); index takes a B3 index code (IBOV, IFIX, ...); forward takes a B3 FORWARD-segment ticker. With no id, kinds history, latest read api.research_universe (what SILO holds). Default: none.",
             "schema": {
               "type": "string"
             },
@@ -401,7 +401,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. Default: none: the resource lists the ids it holds.",
+            "description": "By kind: all, income, balance, cashflow, headline, versions take a listed company's ticker, 14-digit CNPJ or CVM code. With no id, kinds all, income, balance, cashflow, headline, versions read api.research_universe (what SILO holds). Default: none.",
             "schema": {
               "type": "string"
             },
@@ -550,7 +550,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. Default: none: the resource lists the ids it holds.",
+            "description": "By kind: profile, nav, holdings, debentures, properties take a 14-digit fund CNPJ (punctuation allowed). Required for kinds nav, properties. Kind holdings: id or holding is required. Kind debentures: id or holding is required. With no id, kind profile reads api.funds (what SILO holds). Default: none.",
             "schema": {
               "type": "string"
             },
@@ -670,7 +670,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. Default: none: the resource lists the ids it holds.",
+            "description": "By kind: portfolio, tranches, aging, cedentes, sacados take a FIDC's 14-digit fund CNPJ (punctuation allowed). Required for kinds tranches, aging, sacados. Kind cedentes: id or cedente is required. With no id, kind portfolio reads api.funds (what SILO holds). Default: none.",
             "schema": {
               "type": "string"
             },
@@ -820,7 +820,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. Default: none: the resource lists the ids it holds.",
+            "description": "By kind: chain, exercises take an option prefix, at least 3 characters (PETR); history takes one option code (codneg); termo takes one termo code (codneg); futures takes one outright futures contract (DI1F27, DOLF27); futures_curve takes a futures root, DI1, DOL or WDO (none: DI1); di_settlement takes one DI1 contract (none: every contract). Required for kinds chain, history, exercises, termo, futures. Default: none.",
             "schema": {
               "type": "string"
             },
@@ -1056,7 +1056,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. Default: none: the resource lists the ids it holds.",
+            "description": "By kind: series takes an SGS series label or code (SELIC_META, CDI, IGPM, 432); inflation takes one series label (IPCA, IPCA_CORE_EX0, ...; none: every series); inflation_items takes an IBGE structure number or SIDRA item code (none: the groups); expectations takes a Focus indicator (IPCA, Selic, ...; none: every indicator). Required for kind series. Kind fx takes no id. Default: none.",
             "schema": {
               "type": "string"
             }
@@ -1196,7 +1196,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. Default: none: the resource lists the ids it holds.",
+            "description": "By kind: short_interest takes a B3 ticker (none: every ticker); lending, lending_brokers take a B3 ticker. Kinds short_by_sector, investor_flow take no id. Default: none.",
             "schema": {
               "type": "string"
             },
@@ -1326,7 +1326,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. Default: none: the resource lists the ids it holds.",
+            "description": "By kind: company takes a listed company's ticker, 14-digit CNPJ or CVM code; fund, restatement_diff take a 14-digit fund CNPJ (punctuation allowed); restatements takes a 14-digit fund CNPJ (punctuation allowed; none: every fund's); judicial_recovery takes a listed company's ticker, 14-digit CNPJ or CVM code (none: every company's). Required for kinds company, fund, restatement_diff. Default: none.",
             "schema": {
               "type": "string"
             },
@@ -1809,7 +1809,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. Default: none: the resource lists the ids it holds.",
+            "description": "The id is a comma-separated list of tickers, fund CNPJs, option or termo tickers and futures codes, up to the tier's id ceiling. Default: none.",
             "schema": {
               "type": "string"
             },

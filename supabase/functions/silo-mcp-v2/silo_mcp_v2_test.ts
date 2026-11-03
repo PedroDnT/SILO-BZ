@@ -12,6 +12,9 @@ import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { acceptedParams } from "../silo-api/params.ts";
 import { REGISTRY, SHARED_NAMES } from "../silo-api/registry.ts";
 import { callTool, paramSchema, planCall, TOOLS, TOOLS_BY_NAME } from "./tools.ts";
+import { idDoc } from "./id_docs.ts";
+// A static JSON import needs no --allow-read: the generated v2 OpenAPI file (scripts/gen_openapi_v2.py).
+import OPENAPI from "../../../api-docs/v2/openapi.json" with { type: "json" };
 import { makeHandler } from "./server.ts";
 
 const ENV: Record<string, string> = {
@@ -59,7 +62,7 @@ Deno.test("schemas come from the registry: main and shared on top, hidden in opt
     const extra = [hidden.length ? ["options"] : [], r.body?.length ? ["body"] : []].flat();
     assertEquals(Object.keys(props).sort(), [...top, ...extra].sort(), r.name);
     assert(top.filter((n) => !SHARED_NAMES.includes(n)).length <= 3, `${r.name}: at most 3 main parameters`);
-    for (const p of all.filter((p) => p.visibility === "main")) {
+    for (const p of all.filter((p) => p.visibility === "main" && p.name !== "id")) {
       assertEquals(props[p.name], paramSchema(p), `${r.name}.${p.name}`);
       if (p.type === "enum") {
         assertEquals(props[p.name].enum, p.values, `${r.name}.${p.name} enum`);
@@ -73,6 +76,26 @@ Deno.test("schemas come from the registry: main and shared on top, hidden in opt
     }
     assertEquals(tool.inputSchema.additionalProperties, false, r.name);
   }
+});
+
+Deno.test("id is described per resource, never with the shared generic sentence, and matches the OpenAPI file", () => {
+  const generic = REGISTRY.shared_parameters.id.doc;
+  const spec = OPENAPI as { paths: Record<string, Record<string, { parameters?: Array<{ name: string; description: string }> }>> };
+  let described = 0;
+  for (const r of REGISTRY.resources) {
+    const props = TOOLS_BY_NAME.get(`silo_${r.name}`)!.inputSchema.properties as Record<string, { description?: string }>;
+    const doc = idDoc(r);
+    assertEquals("id" in props, doc !== null, `${r.name}: an id argument exactly when the resource takes id`);
+    if (doc === null) continue;
+    described++;
+    assertEquals(props.id.description, `${doc} Default: none.`, r.name);
+    assert(!props.id.description!.includes(generic), `${r.name} reuses the generic id sentence`);
+    const op = Object.values(spec.paths[`/${r.name}`])[0];
+    const oasId = op.parameters!.find((p) => p.name === "id")!;
+    assertEquals(oasId.description, props.id.description, `${r.name}: MCP and OpenAPI say the same about id`);
+  }
+  assertEquals(described, 9);
+  assertStringIncludes(idDoc(REGISTRY.resources.find((r) => r.name === "fidc")!)!, "14-digit fund CNPJ");
 });
 
 Deno.test("prices: fields defaults to core and lives in options; the description says so", () => {

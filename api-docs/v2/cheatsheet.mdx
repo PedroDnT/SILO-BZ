@@ -14,7 +14,7 @@ Base URL: `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2`. E
 
 | Parameter | Meaning | Default |
 | --- | --- | --- |
-| `id` | The thing you want: a ticker, a 14-digit CNPJ, a CVM code or a series code. The gateway detects which. | none: the resource lists the ids it holds |
+| `id` | The thing you want. What it is depends on the resource and the kind: a ticker, a 14-digit fund CNPJ, a company's ticker, CNPJ or CVM code, an option prefix, a series code, or a list on `panel`. Each resource's endpoint page and its MCP tool say which, by kind. | none: some kinds then list what SILO holds, and some refuse |
 | `from` | First date of the window, `YYYY-MM-DD`. | the resource's default window, counted back from `to` |
 | `to` | Last date of the window, `YYYY-MM-DD`. | the latest complete period, from `coverage` |
 | `limit` | The page size. A larger value is coerced to the tier's maximum. | the tier's page maximum |
