@@ -117,7 +117,10 @@ export function selectPlan(kind: KindSpec, values: Record<string, Value>): Plan 
 }
 
 function planUses(plan: Plan, name: string): boolean {
-  return name in plan.args || (plan.filters ?? []).some((f) => f.parameter === name);
+  return name in plan.args ||
+    (plan.filters ?? []).some((f) => f.parameter === name) ||
+    (plan.uses ?? []).includes(name) ||
+    plan.view_by?.parameter === name;
 }
 
 function sameValue(a: Value, b: Value): boolean {
@@ -155,8 +158,9 @@ export function buildArgs(resource: ResourceSpec, plan: Plan, values: Record<str
   for (const [name, pName] of Object.entries(plan.args)) {
     const v = values[name] ?? null;
     if (v === null) continue;
-    if (specs.get(name)?.null_value !== undefined && v === specs.get(name)?.null_value) continue;
-    args[pName] = v;
+    const spec = specs.get(name);
+    if (spec?.null_value !== undefined && v === spec.null_value) continue;
+    args[pName] = typeof v === "string" && spec?.sql_values?.[v] !== undefined ? spec.sql_values[v] : v;
   }
   return args;
 }
@@ -182,6 +186,13 @@ export function applySelections(plan: Plan, values: Record<string, Value>, rows:
 
 function applyFilter(f: FilterSpec, v: Value, rows: Row[]): Row[] {
   if (v === null || (f.all !== undefined && v === f.all)) return rows;
+  if (f.op === "month_last") return lastPerMonth(rows, f.column as string);
+  if (f.op === "in" && f.map) {
+    // An enum mapped to a column value: it cannot be mistyped, so a value no
+    // row carries is no row (an empty answer), not a refusal.
+    const want = (Array.isArray(v) ? v : [String(v)]).map((w) => f.map?.[w] ?? w);
+    return rows.filter((r) => want.includes(String(r[f.column as string])));
+  }
   if (f.op === "in") {
     const col = f.column as string;
     const want = Array.isArray(v) ? v : [String(v)];
@@ -284,4 +295,29 @@ export function normalizeCnpjId(resource: ResourceSpec, kindName: string, values
     );
   }
   return { ...values, id: digits };
+}
+
+// ---------------------------------------------------------------------------
+// prices freq=month (#1055).
+// ---------------------------------------------------------------------------
+
+/**
+ * The last session of each month: of the rows whose `col` (an ISO date) falls
+ * in one calendar month, the one with the latest date. A selection of rows
+ * that exist, never an interpolation: a month with no row has no row. Order
+ * is kept. A row with no date cannot be placed in a month and is not kept.
+ */
+export function lastPerMonth(rows: Row[], col: string): Row[] {
+  const last = new Map<string, string>();
+  for (const r of rows) {
+    const d = r[col];
+    if (typeof d !== "string" || d.length < 10) continue;
+    const m = d.slice(0, 7);
+    const seen = last.get(m);
+    if (seen === undefined || d > seen) last.set(m, d);
+  }
+  return rows.filter((r) => {
+    const d = r[col];
+    return typeof d === "string" && last.get(d.slice(0, 7)) === d;
+  });
 }

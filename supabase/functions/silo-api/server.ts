@@ -21,6 +21,8 @@ import { events } from "./resources/events.ts";
 import { fidc } from "./resources/fidc.ts";
 import { funds } from "./resources/funds.ts";
 import { search } from "./resources/search.ts";
+import { prices } from "./resources/prices.ts";
+import { statements } from "./resources/statements.ts";
 
 export interface ServerDeps {
   fetchImpl?: FetchLike;
@@ -30,7 +32,7 @@ export interface ServerDeps {
 type Handler = (req: ParsedRequest, ctx: CallContext) => Promise<Envelope>;
 
 /** The built resources. A registry entry with status built and no handler fails at load. */
-export const HANDLERS: Record<string, Handler> = { search, coverage, funds, fidc, events };
+export const HANDLERS: Record<string, Handler> = { search, coverage, funds, fidc, events, prices, statements };
 
 for (const r of REGISTRY.resources) {
   if ((r.status === "built") !== (r.name in HANDLERS)) {
@@ -62,7 +64,8 @@ export function helpBody(resource: ResourceSpec, level: "main" | "all"): Envelop
   const params = acceptedParams(resource).filter((p) => level === "all" || p.visibility === "main");
   const endpoints = new Set<string>();
   for (const k of Object.values(resource.kinds ?? {})) {
-    endpoints.add(`api.${k.endpoint}`);
+    if (k.view_by) for (const v of Object.values(k.view_by.views)) endpoints.add(`api.${v}`);
+    else endpoints.add(`api.${k.endpoint}`);
     if (k.when_empty) endpoints.add(`api.${k.when_empty.plan.endpoint}`);
   }
   const help = {

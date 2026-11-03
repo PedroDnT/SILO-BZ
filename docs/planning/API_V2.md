@@ -6,7 +6,8 @@ v0.2 of 2026-11-01.
 
 **Status.** The skeleton is built (#1053): the Edge Function
 `supabase/functions/silo-api/`, its resource registry, and the resources
-`search` and `coverage`. `funds`, `fidc` and `events` are built too (#1056).
+`search` and `coverage`. `funds`, `fidc` and `events` are built too (#1056),
+and so are `prices` and `statements` (#1055).
 The rest are listed by `GET /v2/` as `planned`.
 Nothing is deployed: a merge deploys no Edge Function, and every deploy needs
 the owner's approval.
@@ -111,8 +112,8 @@ Main parameters, defaults in brackets.
 | Resource | Main parameters (max 3, `kind` included) | Default window | Hidden parameters | Status |
 | --- | --- | --- | --- | --- |
 | `search` | `q` [empty: list the universe], `kind` [`any`; `company`, `fund`, `universe`], `family` [all] | n/a | `as_of` [none] | built |
-| `prices` | `kind` [`history`; `latest`, `session`, `index`, `forward`], `freq` [`day`; `month`], `adjust` [`split`; `none`] | 1 year | `board` [all], `asset_class` [all], `fields` [core] | planned |
-| `statements` | `kind` [`all`; `income`, `balance`, `cashflow`, `headline`, `versions`], `period` [`both`; `quarterly`, `annual`], `scope` [`consolidated`; `individual`] | 5 years | `as_of` [none] | planned |
+| `prices` | `kind` [`history`; `latest`, `session`, `index`, `forward`], `freq` [`day`; `month`], `adjust` [`split`; `none`] | 1 year | `board` [all], `asset_class` [all], `fields` [core], `date` [latest session] | built |
+| `statements` | `kind` [`all`; `income`, `balance`, `cashflow`, `headline`, `versions`], `period` [`both`; `quarterly`, `annual`], `scope` [`consolidated`; `individual`] | 5 years | `as_of` [none], `statement` [`DRE`] | built |
 | `funds` | `kind` [`profile`; `nav`, `holdings`, `debentures`, `properties`], `family` [all; `fi`, `fidc`, `fii`, `fip`, ...] | 3 years | `holding` [none: reverse lookup by ticker or issuer], `status` [all] | built |
 | `fidc` | `kind` [`portfolio`; `tranches`, `aging`, `cedentes`, `sacados`] | 2 years | `series`, `cedente`, `item` [all] | built |
 | `derivatives` | `kind` [`chain`; `history`, `exercises`, `termo`, `futures`, `futures_curve`, `di_settlement`], `date` [latest session] | 1 year | `expiry_from` [today] | planned |
@@ -171,6 +172,26 @@ Notes:
   `p_tipo_fundo` (`fii`, `fidc`, `etf`). `company`, `fund` and
   `restatement_diff` need an `id`; `restatements` and `judicial_recovery`
   list every fund or company without one. The fund kinds take a fund CNPJ.
+- `prices`, as built (#1055): `history` calls `quote_history` (`adjust=split`
+  selects `close_adj`, `none` the raw `close`; `fields=core` adds `isin`),
+  `latest` calls `quote_latest`, `index` calls `index_history`, `forward`
+  calls `trade_consolidated_history`. `session` is one GET on a view:
+  `asset_class=all` reads `quotes` (standard lot); each other class reads its
+  own view (`equities`, `bdrs`, `units`, `fund_quotas`, `cash_securities`,
+  `auctions`) so no column and no odd or block lot is lost. Its hidden `date`
+  defaults to the newest session in the 14 days to today. It reads through
+  the one `callView` (`Prefer: count=exact`): a session over one page is
+  refused (`over_limit`), never served cut. `freq=month`
+  keeps the last session of each month from the daily rows; the daily rows
+  still count toward the 1,000-row cap. Every price row carries `adjusted`.
+  With no `id`, `history` and `latest` list the research universe; `index`
+  without an id gets the SQL refusal, which names the codes held.
+- `statements`, as built (#1055): `period` is sent as `p_doc_type` (`itr`,
+  `dfp`) and `scope` as `p_scope` (`con`, `ind`). `company_financials` takes no
+  `p_doc_type`, so for `headline` the period is a selection on the rows'
+  `doc_type`. `versions` needs one statement, so it takes a hidden `statement`
+  (default `DRE`) and no `as_of`. With no `id`, every kind lists the research
+  universe, whose `cnpj` links a ticker to its filer.
 
 ### The first five minutes
 

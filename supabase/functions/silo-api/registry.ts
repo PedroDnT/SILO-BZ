@@ -28,18 +28,22 @@ export interface ParamSpec {
   values?: string[];
   /** A value sent to the endpoint as SQL NULL (no narrowing), e.g. family=all. */
   null_value?: string;
+  /** v2 value -> the value the endpoint takes, e.g. period quarterly -> itr. */
+  sql_values?: Record<string, string>;
 }
 
 export interface FilterSpec {
   /** The v2 parameter the selection reads. */
   parameter: string;
   /** in: row[column] is one of the values. between: row[low] <= value <= row[high]. */
-  op: "in" | "between";
+  op: "in" | "between" | "month_last";
   column?: string;
   low?: string;
   high?: string;
   /** The parameter value that means "no selection". */
   all?: string;
+  /** in only: v2 value -> column value. The parameter is an enum, so a value no row carries is no row, not a typo. */
+  map?: Record<string, string>;
 }
 
 export interface Plan {
@@ -66,6 +70,11 @@ export interface Plan {
   order?: string;
   /** Exactly one of these parameters must be given (one name = it is required). */
   require_one_of?: string[];
+  // -- prices, statements (#1055) --
+  /** view only: the view is chosen by this parameter's value (endpoint is the default view). */
+  view_by?: { parameter: string; views: Record<string, string> };
+  /** Parameters the resource module reads itself (e.g. prices' adjust and fields). */
+  uses?: string[];
 }
 
 export interface KindSpec extends Plan {
@@ -216,15 +225,204 @@ export const REGISTRY: Registry = {
     },
     {
       "name": "prices",
-      "status": "planned",
+      "status": "built",
       "summary": "What did it trade at? Daily history (split-adjusted by default), latest quote, sessions, indices, B3 FORWARD prints.",
-      "example": "/v2/prices?id=PETR4"
+      "example": "/v2/prices?id=PETR4",
+      "shared": ["id", "from", "to"],
+      "window_months": 12,
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["history", "latest", "session", "index", "forward"],
+          "default": "history",
+          "doc": "history: one ticker's daily series. latest: its newest session. session: every quote of one session (the seven price views in one). index: a B3 index's daily levels. forward: B3 FORWARD-segment prints (fixed-income ETFs COTAHIST does not carry)."
+        },
+        {
+          "name": "freq",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["day", "month"],
+          "default": "day",
+          "doc": "kind history, index, forward. month: the last session of each month, selected from the daily rows (no interpolation; a month with no session has no row). The daily rows still count toward the 1,000-row cap."
+        },
+        {
+          "name": "adjust",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["split", "none"],
+          "default": "split",
+          "doc": "kind history. split: close_adj (splits, groupings, bonus shares; no dividends). none: the raw close as traded. Every row carries adjusted (true or false); the other kinds are never adjusted."
+        },
+        {
+          "name": "board",
+          "visibility": "hidden",
+          "type": "string",
+          "default": null,
+          "default_doc": "all boards: the series follows the ISIN across boards",
+          "doc": "kind history, latest, session. A BDI board code (02 is the standard lot)."
+        },
+        {
+          "name": "asset_class",
+          "visibility": "hidden",
+          "type": "enum",
+          "values": ["all", "equity", "bdr", "unit", "fund_quota", "cash_security", "auction"],
+          "default": "all",
+          "doc": "kind session. all: api.quotes (standard lot, tpmerc 010). Each class reads its own view (equities, bdrs, units, fund_quotas, cash_securities: standard, odd and block lots, with lot on the row; auctions: tpmerc 017), with every column it publishes."
+        },
+        {
+          "name": "fields",
+          "visibility": "hidden",
+          "type": "enum",
+          "values": ["core", "all"],
+          "default": "core",
+          "doc": "core: a short set (history: ticker, trade_date, close_adj or close, isin). all: every column the endpoint publishes. index and forward publish few columns, so core is all of them."
+        },
+        {
+          "name": "date",
+          "visibility": "hidden",
+          "type": "date",
+          "default": null,
+          "default_doc": "the latest session in the 14 days to today that matches the other filters",
+          "doc": "kind session. The session date, YYYY-MM-DD."
+        }
+      ],
+      "kinds": {
+        "history": {
+          "doc": "api.quote_history: one ticker, oldest first, 1 year to the latest session by default. Refuses (over_limit) above 1,000 daily rows: narrow from/to. With no id: the research universe (the tickers held).",
+          "endpoint": "quote_history",
+          "args": { "id": "p_ticker", "from": "p_from", "to": "p_to", "board": "p_board" },
+          "filters": [{ "parameter": "freq", "op": "month_last", "column": "trade_date", "all": "day" }],
+          "uses": ["adjust", "fields"],
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+        },
+        "latest": {
+          "doc": "api.quote_latest: the ticker's newest session (raw, adjusted false). With no id: the research universe.",
+          "endpoint": "quote_latest",
+          "args": { "id": "p_ticker", "board": "p_board" },
+          "uses": ["fields"],
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+        },
+        "session": {
+          "doc": "One session's quotes from one price view (raw, adjusted false). A view answer is cut at 1,000 rows, so 1,000 rows or more is refused (over_limit): narrow with asset_class, board or id.",
+          "endpoint": "quotes",
+          "view": true,
+          "order": "trade_date.desc,ticker.asc",
+          "view_by": {
+            "parameter": "asset_class",
+            "views": { "all": "quotes", "equity": "equities", "bdr": "bdrs", "unit": "units", "fund_quota": "fund_quotas", "cash_security": "cash_securities", "auction": "auctions" }
+          },
+          "args": { "id": "ticker", "board": "board", "date": "trade_date" },
+          "uses": ["fields"]
+        },
+        "index": {
+          "doc": "api.index_history: one B3 index code (IBOV, IFIX, ...), levels as published (total-return indices, not adjusted). With no id the SQL refusal names the codes held.",
+          "endpoint": "index_history",
+          "args": { "id": "p_index", "from": "p_from", "to": "p_to" },
+          "filters": [{ "parameter": "freq", "op": "month_last", "column": "trade_date", "all": "day" }],
+          "uses": ["fields"]
+        },
+        "forward": {
+          "doc": "api.trade_consolidated_history: one FORWARD-segment ticker; last_price is the close, ref_price is never a trade.",
+          "endpoint": "trade_consolidated_history",
+          "args": { "id": "p_ticker", "from": "p_from", "to": "p_to" },
+          "filters": [{ "parameter": "freq", "op": "month_last", "column": "trade_date", "all": "day" }],
+          "uses": ["fields"]
+        }
+      }
     },
     {
       "name": "statements",
-      "status": "planned",
+      "status": "built",
       "summary": "What did the company file? Income, balance sheet, cash flow, headline figures and every stored version.",
-      "example": "/v2/statements?id=PETR4&kind=income"
+      "example": "/v2/statements?id=PETR4&kind=income",
+      "shared": ["id", "from", "to"],
+      "window_months": 60,
+      "parameters": [
+        {
+          "name": "kind",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["all", "income", "balance", "cashflow", "headline", "versions"],
+          "default": "all",
+          "doc": "all: every filed line, long (api.financials). income, balance, cashflow: the standard lines, wide. headline: revenue, net income, assets, equity, margins (api.company_financials). versions: every stored version of one statement (api.financial_statement_history)."
+        },
+        {
+          "name": "period",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["both", "quarterly", "annual"],
+          "default": "both",
+          "null_value": "both",
+          "sql_values": { "quarterly": "itr", "annual": "dfp" },
+          "doc": "quarterly: ITR filings. annual: DFP filings. A quarterly filing holds the 3-month and the year-to-date figure; period_months on the row says which. Never add the two."
+        },
+        {
+          "name": "scope",
+          "visibility": "main",
+          "type": "enum",
+          "values": ["consolidated", "individual"],
+          "default": "consolidated",
+          "sql_values": { "consolidated": "con", "individual": "ind" },
+          "doc": "Consolidated and individual are separate filings of the same period; they are never merged."
+        },
+        {
+          "name": "as_of",
+          "visibility": "hidden",
+          "type": "date",
+          "default": null,
+          "default_doc": "none: the latest stored version of every document, which is NOT point in time",
+          "doc": "Point in time: only documents CVM received before this date, at the highest version known then. Not for kind versions."
+        },
+        {
+          "name": "statement",
+          "visibility": "hidden",
+          "type": "enum",
+          "values": ["DRE", "BPA", "BPP", "DFC_MD", "DFC_MI", "DMPL", "DRA", "DVA"],
+          "default": "DRE",
+          "doc": "kind versions: the one statement to read (DRE income, BPA assets, BPP liabilities and equity, DFC_MD or DFC_MI cash flow, DMPL, DRA, DVA)."
+        }
+      ],
+      "kinds": {
+        "all": {
+          "doc": "api.financials: every line, one row per account, latest stored version. Refuses above 1,000 rows (over_limit): narrow from/to or period. With no id (every kind): the research universe, whose cnpj links a ticker to its filer.",
+          "endpoint": "financials",
+          "args": { "id": "p_id", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope", "as_of": "p_as_of" },
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+        },
+        "income": {
+          "doc": "api.income_statements: one row per filed period, with period_months.",
+          "endpoint": "income_statements",
+          "args": { "id": "p_id", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope", "as_of": "p_as_of" },
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+        },
+        "balance": {
+          "doc": "api.balance_sheets: one row per filed date. A balance sheet is a point in time, so the source has no period_months.",
+          "endpoint": "balance_sheets",
+          "args": { "id": "p_id", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope", "as_of": "p_as_of" },
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+        },
+        "cashflow": {
+          "doc": "api.cash_flow_statements: one row per filed period, with period_months.",
+          "endpoint": "cash_flow_statements",
+          "args": { "id": "p_id", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope", "as_of": "p_as_of" },
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+        },
+        "headline": {
+          "doc": "api.company_financials: headline figures per filed period. The function takes no p_doc_type, so period is a selection on the rows' doc_type.",
+          "endpoint": "company_financials",
+          "args": { "id": "p_id", "from": "p_from", "to": "p_to", "scope": "p_scope", "as_of": "p_as_of" },
+          "filters": [{ "parameter": "period", "op": "in", "column": "doc_type", "all": "both", "map": { "quarterly": "itr", "annual": "dfp" } }],
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+        },
+        "versions": {
+          "doc": "api.financial_statement_history: every stored version of one statement (hidden statement, default DRE), with filing metadata. No as_of: it already shows every version.",
+          "endpoint": "financial_statement_history",
+          "args": { "id": "p_id", "statement": "p_statement", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope" },
+          "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "args": {} } }
+        }
+      }
     },
     {
       "name": "funds",
