@@ -2,8 +2,11 @@
 //
 // One kind, so no kind parameter: api.panel. id is a comma-separated list
 // (tickers, fund CNPJs, option and termo tickers, futures codes) sent as
-// p_ids; the tier ceiling (3 anonymous, 50 signed in) is the SQL's, and above
-// it the SQL refuses (over_limit), never trims. metric -> p_metrics (auto:
+// p_ids. The gateway's tier ceiling (config.ts panel_ids: 1 anonymous, 3
+// signed in, #1059) is refused above it (forbidden_for_tier), before the
+// SQL's own (3 anonymous, 50 signed in, refused verbatim as over_limit);
+// never trimmed. Universe mode (no id) is the pro tier's (config.ts
+// panel_universe), which no caller reaches until #1064. metric -> p_metrics (auto:
 // each family's default, p_metrics not sent), freq -> p_freq, family ->
 // p_entity_type. Default window: 3 years back from `to` (or today, UTC-3).
 //
@@ -12,6 +15,7 @@
 // target). The valid names are catalog().metrics, listed in PANEL_METRICS;
 // tests/test_api_v2_registry.py pins that list to the SQL catalog.
 
+import { HIGHER_TIER, TIERS } from "../config.ts";
 import { ApiError } from "../errors.ts";
 import type { Envelope } from "../envelope.ts";
 import type { ParsedRequest, Value } from "../params.ts";
@@ -28,7 +32,9 @@ export const PANEL_METRICS: string[] = [
   "inflows", "redemptions", "quotaholders", "receivables", "sacado_top1", "sacado_top25",
 ];
 
-function prepare(_kind: string, _plan: unknown, values: Record<string, Value>): Record<string, Value> {
+function prepare(_kind: string, _plan: unknown, values: Record<string, Value>, ctx: CallContext): Record<string, Value> {
+  const tier = ctx.tier ?? "anonymous";
+  const limits = TIERS[tier];
   const out = { ...values };
   if (Array.isArray(out.metric) || (typeof out.metric === "string" && out.metric !== "auto")) {
     const asked = Array.isArray(out.metric) ? out.metric : [out.metric];
@@ -46,6 +52,15 @@ function prepare(_kind: string, _plan: unknown, values: Record<string, Value>): 
   }
   const ids = typeof out.id === "string" ? out.id.split(",").map((s) => s.trim()).filter((s) => s !== "") : [];
   if (ids.length) {
+    if (ids.length > limits.panel_ids) {
+      throw new ApiError(
+        403,
+        "forbidden_for_tier",
+        `panel takes at most ${limits.panel_ids} id${limits.panel_ids === 1 ? "" : "s"} per call for the ${tier} tier; ${ids.length} were given. ` +
+          `Split the ids across calls (never trimmed). ${HIGHER_TIER[tier]}`,
+        "id",
+      );
+    }
     out.id = ids;
     for (const name of ["min_nav", "min_months"]) {
       if (out[name] !== null) {
@@ -65,6 +80,14 @@ function prepare(_kind: string, _plan: unknown, values: Record<string, Value>): 
   }
   if (out.freq !== "month") {
     throw new ApiError(400, "bad_request", "Universe mode (no id) is monthly: funds file monthly. Leave freq out, or pass id.", "freq");
+  }
+  if (!limits.panel_universe) {
+    throw new ApiError(
+      403,
+      "forbidden_for_tier",
+      `panel universe mode (no id, a whole family) is not served to the ${tier} tier. Pass id (at most ${limits.panel_ids}). ${HIGHER_TIER[tier]}`,
+      "id",
+    );
   }
   return out;
 }

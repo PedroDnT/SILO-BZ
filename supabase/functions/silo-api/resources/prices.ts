@@ -8,15 +8,16 @@
 // last session of each month from the daily rows (params.ts), never a fill.
 //
 // Every price row carries `adjusted` (true only for close_adj); a column the
-// source publishes is never dropped from fields=all. A view answer is cut at
-// PostgREST's 1,000 rows, so a full page is refused (over_limit), never served.
+// source publishes is never dropped from fields=all. A session is paged with
+// order + limit + offset and an exact count (#1059): never cut, never refused
+// for its size.
 
 import { ApiError } from "../errors.ts";
 import type { Envelope } from "../envelope.ts";
 import { type ParsedRequest, todayUtcMinus3, type Value } from "../params.ts";
 import { callView, type CallContext } from "../postgrest.ts";
 import { type Plan, RESOURCES_BY_NAME } from "../registry.ts";
-import { type Row, runKind, VIEW_PAGE } from "./run.ts";
+import { type Row, runKind, type ViewQuery } from "./run.ts";
 
 const PRICES = RESOURCES_BY_NAME.get("prices")!;
 
@@ -62,17 +63,6 @@ function raw(rows: Row[]): Row[] {
   return rows.map((r) => ("adjusted" in r ? r : { ...r, adjusted: false }));
 }
 
-function overLimit(view: string, what: string, total: number | null): ApiError {
-  const held = total === null ? `at least ${VIEW_PAGE}` : String(total);
-  return new ApiError(
-    400,
-    "over_limit",
-    `prices kind=session: api.${view} holds ${held} rows for ${what}, more than one page (${VIEW_PAGE}). The gateway refuses rather than trim. Narrow with asset_class, board or id.`,
-    "asset_class",
-    { sqlstate: null, hint: `A view answer is cut at ${VIEW_PAGE} rows (db-max-rows).` },
-  );
-}
-
 /** YYYY-MM-DD minus n calendar days. */
 function daysBefore(date: string, n: number): string {
   const d = new Date(`${date}T00:00:00Z`);
@@ -81,10 +71,13 @@ function daysBefore(date: string, n: number): string {
 }
 
 /**
- * kind=session: one GET (callView) on the view asset_class picks, eq on id,
- * board and date. With no date, the newest session in the lookback.
+ * kind=session: the view asset_class picks, eq on id and board, and one
+ * session: the date asked, or the newest session in the lookback, resolved by
+ * one GET of one row (callView) and pinned in the cursor so every page reads
+ * the same session. The session is then paged with order + limit + offset
+ * (run.ts, #1059), so a session of any size is served whole, page by page.
  */
-async function readSession(plan: Plan, values: Record<string, Value>, ctx: CallContext): Promise<{ endpoint: string; rows: Row[] }> {
+async function readSession(plan: Plan, values: Record<string, Value>, ctx: CallContext, pin: string | null): Promise<ViewQuery> {
   const by = plan.view_by!;
   const view = by.views[String(values[by.parameter])];
   if (!view) throw new ApiError(500, "internal", `prices: no view for ${by.parameter}=${values[by.parameter]}.`);
@@ -95,30 +88,22 @@ async function readSession(plan: Plan, values: Record<string, Value>, ctx: CallC
     if (v === null || v === undefined || name === "date") continue;
     eq[column] = name === "id" ? String(v).toUpperCase() : v;
   }
-  const date = typeof values.date === "string" ? values.date : null;
-  const since = daysBefore(todayUtcMinus3(), SESSION_LOOKBACK_DAYS);
-  const page = await callView(ctx, view, eq, plan.order, VIEW_PAGE, { trade_date: date ? `eq.${date}` : `gte.${since}` });
-  const n = page.rows.length;
-  // Every row of the selection arrived: the count says so, or (no count) the page is not full.
-  const whole = page.total !== null ? n >= page.total : n < VIEW_PAGE;
-  if (date) {
-    if (!whole) throw overLimit(view, `session ${date}`, page.total);
-    return { endpoint: view, rows: page.rows };
+  let date = typeof values.date === "string" ? values.date : pin;
+  if (date === null) {
+    const since = daysBefore(todayUtcMinus3(), SESSION_LOOKBACK_DAYS);
+    const newest = await callView(ctx, view, eq, plan.order, 1, { trade_date: `gte.${since}` });
+    const top = newest.rows[0]?.trade_date;
+    if (typeof top !== "string") {
+      throw new ApiError(
+        400,
+        "bad_request",
+        `prices kind=session: api.${view} has no session from ${since} to today that matches. Pass date=YYYY-MM-DD.`,
+        "date",
+      );
+    }
+    date = top;
   }
-  if (n === 0) {
-    throw new ApiError(
-      400,
-      "bad_request",
-      `prices kind=session: api.${view} has no session from ${since} to today that matches. Pass date=YYYY-MM-DD.`,
-      "date",
-    );
-  }
-  // Rows come newest first, so the newest session is a block at the top. It
-  // is whole when an older row follows it, or when every row arrived.
-  const top = page.rows[0].trade_date;
-  const rows = page.rows.filter((r) => r.trade_date === top);
-  if (rows.length === n && !whole) throw overLimit(view, `the latest session (${top})`, null);
-  return { endpoint: view, rows };
+  return { view, eq, filters: { trade_date: `eq.${date}` }, pin: typeof values.date === "string" ? null : date };
 }
 
 export function prices(req: ParsedRequest, ctx: CallContext): Promise<Envelope> {

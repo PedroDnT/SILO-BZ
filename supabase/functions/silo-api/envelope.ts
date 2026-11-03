@@ -4,8 +4,8 @@
 //
 // meta.request echoes every parameter the resource takes, with the default
 // that was applied, so a request can be pasted into a methods section and
-// replayed. next_page_url is present only when more rows remain; no resource
-// pages yet (#1052 child 6/8), so it is never set here. Rows are passed
+// replayed. next_page_url is present only when more rows remain; it carries
+// one opaque cursor, set by resources/run.ts (#1059). Rows are passed
 // through as PostgREST returned them: nothing filled, null stays null.
 
 import type { ApiError } from "./errors.ts";

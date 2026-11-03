@@ -38,6 +38,13 @@ export interface ErrorBody {
 
 /** A v2 error with its HTTP status. Thrown inside the gateway, rendered once. */
 export class ApiError extends Error {
+  /**
+   * The refusal is a row cap (the window holds more than one page), so a
+   * date-window walk may halve the window and try again (paging.ts, #1059).
+   * Any other refusal (an unknown id, a bad tenor) is returned at once.
+   */
+  rowCap = false;
+
   constructor(
     public status: number,
     public code: ErrorCode,
@@ -80,7 +87,12 @@ export function fromPostgrest(status: number, bodyText: string, endpoint: string
   const message = str(parsed.message) ?? (bodyText || `HTTP ${status} from ${endpoint}`);
   const inner: InnerError = { sqlstate, hint: str(parsed.hint), details: str(parsed.details) };
 
-  if (sqlstate === "22023") return new ApiError(400, "over_limit", message, null, inner);
+  if (sqlstate === "22023") {
+    const e = new ApiError(400, "over_limit", message, null, inner);
+    // api.assert_row_cap's phrase, load-bearing (the SDK's SiloOverCap matches it too).
+    e.rowCap = message.includes("more than 1000 rows");
+    return e;
+  }
   if (sqlstate === "57014") return new ApiError(504, "timeout", message, null, inner);
   if (sqlstate === "42501") return new ApiError(403, "forbidden_for_tier", message, null, inner);
   if (status === 401 || sqlstate === "PGRST301" || sqlstate === "PGRST302") {

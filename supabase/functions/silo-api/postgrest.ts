@@ -3,13 +3,16 @@
 // The same rules as silo-mcp (supabase/functions/silo-mcp/tools.ts):
 //   * read-only: POST /rpc/<fn> on schema `api`, or GET /<view> on schema
 //     `api` for a registry plan marked view (callView), nothing else;
-//   * one v2 call = exactly one PostgREST request, never retried;
+//   * one v2 call = one PostgREST request, never retried; a paged kind makes
+//     at most MAX_UPSTREAM_CALLS (config.ts), each a new window or page, never
+//     the same request again (paging.ts, #1059);
 //   * the only key is the public anon / publishable key, never a secret one;
 //   * an error comes back verbatim (errors.ts maps it to a v2 code).
 // One difference: a caller's own `Authorization: Bearer <JWT>` is forwarded,
 // so a signed-in caller keeps the signed-in tier. The apikey header is always
 // the gateway's publishable key; a caller's apikey header is never forwarded.
 
+import type { Tier } from "./config.ts";
 import { ApiError, fromPostgrest } from "./errors.ts";
 
 export interface BridgeConfig {
@@ -70,6 +73,12 @@ export interface CallContext {
   cfg: BridgeConfig;
   fetchImpl: FetchLike;
   bearer: string | null;
+  /**
+   * #1059: anonymous with no bearer, signed_in with one. PostgREST verifies
+   * the token on the call (an invalid one is refused as unauthorized); the
+   * gateway does not decode it. pro arrives with #1064.
+   */
+  tier?: Tier;
 }
 
 /** POST /rpc/<endpoint> on schema api. Returns the parsed JSON, or throws ApiError. */
@@ -112,10 +121,11 @@ export interface ViewPage {
 }
 
 /**
- * GET /<view> on schema api: eq. filters, an order and a page size, with
- * `Prefer: count=exact` so a cut page is visible. PostgREST cuts a view at
- * db-max-rows and cannot refuse; the caller of this function decides what a
- * cut means (run.ts refuses it unless the caller asked for the first N).
+ * GET /<view> on schema api: eq. filters, an order, a page size and an
+ * offset, with `Prefer: count=exact` so the rows left are known. PostgREST
+ * cuts a view at db-max-rows and cannot refuse; the gateway pages it with
+ * order + limit + offset and says through next_page_url that rows remain
+ * (run.ts, #1059).
  */
 export async function callView(
   ctx: CallContext,
@@ -125,12 +135,15 @@ export async function callView(
   limit: number,
   /** Other PostgREST filters, operator included: column -> e.g. "gte.2026-10-20" (prices kind=session, #1055). */
   filters: Record<string, string> = {},
+  /** Rows of the ordered selection to skip (the view cursor, #1059). */
+  offset = 0,
 ): Promise<ViewPage> {
   const qs = new URLSearchParams({ select: "*" });
   for (const [col, v] of Object.entries(eq)) qs.set(col, `eq.${String(v)}`);
   for (const [col, f] of Object.entries(filters)) qs.set(col, f);
   if (order) qs.set("order", order);
   qs.set("limit", String(limit));
+  if (offset > 0) qs.set("offset", String(offset));
   const headers: Record<string, string> = {
     apikey: ctx.cfg.anonKey,
     Accept: "application/json",

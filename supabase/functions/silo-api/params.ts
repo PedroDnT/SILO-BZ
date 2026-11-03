@@ -8,6 +8,7 @@
 //     silently ignored (a typo or a misplaced filter must not look like an answer).
 
 import { ApiError } from "./errors.ts";
+import type { CursorState } from "./paging.ts";
 import type { BodySpec, FilterSpec, KindSpec, ParamSpec, Plan, ResourceSpec } from "./registry.ts";
 import { REGISTRY, SHARED_NAMES } from "./registry.ts";
 
@@ -21,6 +22,19 @@ export interface ParsedRequest {
   values: Record<string, Value>;
   /** portfolio (#1058): the POST body's lists, by field name (parseBody). */
   body?: Record<string, unknown[]>;
+  /** #1059: what a next_page_url needs, and the cursor this request sent (server.ts). */
+  paging?: PagingContext;
+}
+
+export interface PagingContext {
+  /** The cursor the request sent, decoded; null on a first page. */
+  cursor: CursorState | null;
+  /** Every query parameter of the walk, as sent (cursor excluded). */
+  q: Record<string, string>;
+  /** The URL a next page is fetched from, without its query. */
+  base: string;
+  /** POST only: the body's digest (paging.ts bodyDigest). */
+  body?: string;
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -56,8 +70,9 @@ function coerce(spec: ParamSpec, raw: string): Value {
     case "integer": {
       if (!/^\d+$/.test(raw)) throw new ApiError(400, "bad_request", `${spec.name} must be an integer; got \`${raw}\`.`, spec.name);
       const n = Number(raw);
-      if (spec.name === "limit" && (n < 1 || n > 1000)) {
-        throw new ApiError(400, "bad_request", `limit must be in 1..1000; got ${n}.`, "limit");
+      // limit is the page size: above the tier's maximum it is coerced (run.ts, #1059), never refused.
+      if (spec.name === "limit" && n < 1) {
+        throw new ApiError(400, "bad_request", `limit must be 1 or more; got ${n}.`, "limit");
       }
       return n;
     }
@@ -142,7 +157,7 @@ function sameValue(a: Value, b: Value): boolean {
 export function checkApplicable(resource: ResourceSpec, kindName: string, plan: Plan, values: Record<string, Value>): void {
   const kind = resource.kinds?.[kindName];
   for (const spec of acceptedParams(resource)) {
-    if (spec.name === "kind") continue;
+    if (spec.name === "kind" || spec.name === "limit") continue; // limit: the page size of every kind (#1059)
     if (kind?.when_empty?.parameter === spec.name && plan !== kind) continue;
     if (sameValue(values[spec.name] ?? null, spec.default)) continue;
     if (planUses(plan, spec.name)) continue;
@@ -226,7 +241,7 @@ function applyFilter(f: FilterSpec, v: Value, rows: Row[]): Row[] {
 // ---------------------------------------------------------------------------
 
 /** Given: not null, not empty, and not the parameter's "no value" (null_value). */
-function given(resource: ResourceSpec, name: string, values: Record<string, Value>): boolean {
+export function given(resource: ResourceSpec, name: string, values: Record<string, Value>): boolean {
   const v = values[name] ?? null;
   if (isEmpty(v)) return false;
   const spec = acceptedParams(resource).find((p) => p.name === name);

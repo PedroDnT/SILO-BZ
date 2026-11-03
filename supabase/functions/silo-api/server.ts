@@ -10,12 +10,19 @@
 //                                JSON body of lists; still read-only rpc calls
 //
 // Public: verify_jwt = false (supabase/config.toml, or --no-verify-jwt on
-// deploy). Every call is one PostgREST request with the publishable key; a
+// deploy). Every PostgREST request carries the publishable key; a
 // caller's Bearer JWT is forwarded so the signed-in tier applies (postgrest.ts).
+//
+// Paging (#1059): a request with `cursor` is the cursor's own walk. Its
+// parameters are parsed again like a fresh request; another parameter with a
+// different value is bad_request (paging.ts). The tier is the caller's now:
+// anonymous with no Bearer, signed_in with one (config.ts).
 
 import { ApiError } from "./errors.ts";
+import { HIGHER_TIER, type Tier, TIERS } from "./config.ts";
 import { CORS, type Envelope, envelope, errorResponse, json } from "./envelope.ts";
 import { acceptedParams, parseBody, type ParsedRequest, parseQuery } from "./params.ts";
+import { bodyDigest, cursorQuery, decodeCursor } from "./paging.ts";
 import { type BridgeConfig, callerBearer, type CallContext, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY, RESOURCES_BY_NAME, type ResourceSpec } from "./registry.ts";
 import { coverage } from "./resources/coverage.ts";
@@ -132,11 +139,40 @@ async function handle(req: Request, cfg: BridgeConfig | { error: string }, fetch
     throw new ApiError(501, "unavailable", `${resource.name} is planned, not built yet (#1052). /v2/${resource.name}?help describes it.`, "resource");
   }
 
-  const parsed = parseQuery(resource, url.searchParams);
-  if (method === "POST") parsed.body = parseBody(resource, await req.text());
+  // A cursor fixes every parameter of the walk; its own are parsed like a fresh request.
+  const token = url.searchParams.get("cursor");
+  const cursor = token === null ? null : decodeCursor(token, resource.name);
+  const query = cursor ? cursorQuery(url.searchParams, cursor) : url.searchParams;
+  const parsed = parseQuery(resource, query);
+  let digest: string | undefined;
+  if (method === "POST") {
+    const text = await req.text();
+    parsed.body = parseBody(resource, text);
+    digest = bodyDigest(text);
+    if (cursor && cursor.b !== digest) {
+      throw new ApiError(400, "bad_request", "A cursor on POST needs the same body as the first page; this body differs. Send it unchanged, or start again without cursor.", "body");
+    }
+  }
+  parsed.paging = { cursor, q: Object.fromEntries(query.entries()), base: `${url.origin}${url.pathname}`, body: digest };
   if ("error" in cfg) throw new ApiError(503, "unavailable", `silo-api is misconfigured: ${cfg.error}`);
-  const ctx: CallContext = { cfg, fetchImpl, bearer: callerBearer(req.headers.get("authorization"), cfg) };
+  const bearer = callerBearer(req.headers.get("authorization"), cfg);
+  const tier: Tier = bearer ? "signed_in" : "anonymous";
+  gateTier(resource, tier);
+  const ctx: CallContext = { cfg, fetchImpl, bearer, tier };
   return json(200, await HANDLERS[resource.name](parsed, ctx));
+}
+
+/** screens and portfolio by tier (config.ts). ?help stays open to every tier. */
+function gateTier(resource: ResourceSpec, tier: Tier): void {
+  const t = TIERS[tier];
+  const open = resource.name === "screens" ? t.screens : resource.name === "portfolio" ? t.portfolio : true;
+  if (open) return;
+  throw new ApiError(
+    403,
+    "forbidden_for_tier",
+    `${resource.name} is not served to the ${tier} tier. ${HIGHER_TIER[tier]} /v2/${resource.name}?help describes it.`,
+    "resource",
+  );
 }
 
 export function makeHandler(deps: ServerDeps = {}): (req: Request) => Promise<Response> {
