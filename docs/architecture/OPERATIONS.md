@@ -38,10 +38,10 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 
 ## Changes
 
-- PR → `test.yml` (pytest, SQL compile) → auto-merge.
+- PR → `test.yml` (pytest, SQL compile, Deno) → auto-merge.
   Hook and PR CI share a DB-password guard.
   A PR touching `src/portfolio/` or `deploy/cloudflare/engine/` also runs
-  `engine_image.yml` (build and smoke, no publish).
+  `engine_image.yml` (build, smoke, no publish).
 - A merge deploys nothing to the database. Migrations apply on the next
   workflow run, analytical SQL on the next scheduled run or `analytics-only`.
   `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo
