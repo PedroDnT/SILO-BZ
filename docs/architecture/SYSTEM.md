@@ -14,8 +14,8 @@ it read-only. Four infrastructures, four products.
       api      views + functions: the contract
            ┌──────────────┬───────────┴──────┬──────────────┬──────────────┐
            ▼              ▼                  ▼              ▼              ▼
-   PostgREST · SDK    silo-mcp          dashboard/      research job   diagnosis
-   serve/ (local)     Edge Function     Vercel build    read-only      Cloudflare
+   PostgREST · SDK    silo-mcp/silo-api dashboard/      research job   diagnosis
+   serve/ (local)     Edge Functions    Vercel build    read-only      Cloudflare
    └──────── read api.* ───────┘        └── read public directly ──┘   Worker+Container
 ```
 
@@ -50,7 +50,7 @@ it read-only. Four infrastructures, four products.
 7. **Stateless diagnosis.** The engine keeps no user portfolio in Supabase;
    masked traces go to R2 only ([DECISIONS](DECISIONS.md)).
 
-`webapp/` exists but is not deployed.
+`webapp/` and `silo-api` (the v2 gateway) exist but are not deployed.
 
 Deeper: [README](../../README.md), [API](../reference/API.md),
 [data modeling](../reference/DATA_MODELING.md).

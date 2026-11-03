@@ -1,0 +1,291 @@
+# API v2: a gateway with 14 resources in front of schema `api`
+
+Epic: #1052. Owner decisions on 2026-11-01 and 2026-11-03 (UTC-3). This is the
+spec the epic's children build against; it replaces the working drafts v0.1 and
+v0.2 of 2026-11-01.
+
+**Status.** The skeleton is built (#1053): the Edge Function
+`supabase/functions/silo-api/`, its resource registry, and the resources
+`search` and `coverage`. The other 12 are listed by `GET /v2/` as `planned`.
+Nothing is deployed: a merge deploys no Edge Function, and every deploy needs
+the owner's approval.
+
+## Why
+
+The public API has 85 paths (18 views, 67 functions), 245 function arguments
+with 81 different names (`p_cnpj`, `p_cnpjs`, `p_id`, `p_ids`, `p_ticker`,
+`p_code`, `p_codneg` all mean "the thing I want"), and views that expose up to
+37 columns as filters. Seven near-identical price views. Names that mislead:
+`lookup` vs `search_funds`, `financials` vs `company_financials` vs
+`financial_statement_history`, `curve` vs `reference_rate` vs `curve_history`.
+Four paging behaviours. The owner's words: too many endpoints, confusing names,
+endless parameters.
+
+## Decisions (owner)
+
+1. A gateway in front of PostgREST. The SQL in schema `api` stays the single
+   source of truth, and nothing in schema `api` changes for this epic.
+2. 14 resources replace 85 paths (section 4).
+3. Shared parameters on every list resource: `id`, `from`, `to`, `limit`, `cursor`.
+4. **At most 3 main parameters per resource, and `kind` counts as one of
+   them** (decided 2026-11-03). Other parameters work but are hidden: not in
+   the quickstart, not in the main docs table, not in the MCP tool's main
+   schema (they go in one `options` object).
+5. **Every parameter has a default.** With no `id`, a resource lists the ids it holds.
+6. **`prices` defaults to `adjust=split`** (today's `close_adj`; decided
+   2026-11-03). `adjust=none` is the raw tape.
+7. One envelope and one error object (section 5).
+8. Lower limits for anonymous callers. The numbers are the owner's to set (section 6).
+9. Host: a Supabase Edge Function `silo-api`, the same pattern as `silo-mcp`.
+   Path prefix `/v2/`. Both are reversible defaults.
+
+Out of scope: the ANBIMA-linked endpoints (section 8), deploying anything, and
+new data (dividend-adjusted returns, corporate actions, bulk snapshots).
+
+## 1. Best practices taken
+
+| Source | Rule | Decision |
+| --- | --- | --- |
+| Microsoft REST guidelines, Azure API design | A meaningful default for every optional parameter; `fields` for projection. | Every parameter has a default. `fields` is a shared hidden parameter. |
+| Microsoft REST guidelines | One error object: `code`, `message`, `target`, `innererror`; about 20 codes at most. | Adopted, with 10 codes. The SQLSTATE goes in `innererror`. |
+| Google AIP-158 | Page size optional with a default; above the maximum it is coerced; a missing next token is the only end-of-list signal. | `limit` is the page size, coerced to the tier maximum, and `next_page_url` says more rows exist, so a cut is never silent. |
+| Google AIP-160 | One `filter` string, not one parameter per column. | The view columns become one hidden `filter` parameter. |
+| Rippling | Cursor pagination on every list. | Same pattern (section 5). |
+| Progressive disclosure (Apple WWDC22, SDK guides) | The common case needs 0 to 3 arguments; no hidden modes. | 3 main parameters. `kind` is always explicit, never inferred from which other parameters are present. |
+| Anthropic, "Writing effective tools for agents" | Fewer tools with a clear purpose; a concise/detailed switch; errors that say how to fix the call. | 14 MCP tools `silo_<resource>`; `fields=core` concise, `fields=all` detailed; SILO's why/how error text stays. |
+
+One departure: where Google returns an error for a bad argument combination,
+SILO already refuses, and more strongly: a request that crosses a ceiling with
+no cursor still refuses with `22023`.
+
+## 2. What a quant researcher or a grad student needs
+
+| Need | SILO today | In the gateway |
+| --- | --- | --- |
+| Point-in-time reads (no look-ahead) | `p_as_of` on 8 functions | Shared hidden `as_of` wherever the SQL can honour it |
+| No survivorship bias | `research_universe` first and last observed dates | `search?kind=universe&as_of=2020-01-31`: the names that traded then, dead ones included |
+| Stable identity | ISIN in `research_universe`; CNPJ for funds and companies | Every row carries `isin` or `cnpj` beside the ticker |
+| Raw and adjusted prices kept apart | Raw `close`, split-adjusted `close_adj`, no dividend adjustment | `adjust=split` (default) or `none`; rows carry `adjusted`; no dividend-adjusted series exists, and the docs say so |
+| Tidy, long tables | Long rows, column names vary | Long everywhere; one name per thing (`date`, `id`, `value`) |
+| Clear date meaning | Per endpoint | `period_end` and `filed_at` on filings, `date` on sessions |
+| Reproducibility | `landed_git_sha`, `landed_at` in `coverage` | `meta.request` echoes every parameter; `meta.data_version` on every response |
+| CSV | None | Shared hidden `format=json` (default) or `csv` |
+| Citation | None | One docs page with a citation line and the data version |
+
+No dividend-adjusted return series and no corporate-actions resource: both are
+in the parking lot for the owner to rank.
+
+## 3. Parameter rules
+
+1. **Shared parameters:** `id`, `from`, `to`, `limit`, `cursor`, one meaning
+   everywhere. A resource declares which of them it takes; sending one it does
+   not take is `unknown_parameter`.
+2. **Main parameters: at most 3 per resource, `kind` included.**
+3. **Hidden parameters:** everything else. They work and are listed in
+   `?help=all` and on the resource's advanced docs page only.
+4. **Shared hidden parameters:** `fields`, `format`, `as_of`, `filter`.
+5. **Every parameter has a default.** No call fails because a parameter is missing.
+6. **`id` default:** none, and with no `id` the resource lists the ids it holds,
+   paged, with names. This is also the discovery path.
+7. **Date defaults:** `to` = the latest complete period (from `coverage`);
+   `from` = a per-resource window (section 4). An explicit `from` or `to` is
+   served as given.
+8. **Names:** plain words, `snake_case`, no `p_` prefix.
+9. **An unknown name is refused** (`unknown_parameter`, naming it in `target`).
+   Today a typo in a `panel` metric is silently ignored. A known parameter with
+   a non-default value that the chosen `kind` cannot use is `bad_request`,
+   never ignored.
+10. **`as_of` means point in time only.** The freshness field of `coverage` is
+    returned as `data_through`.
+11. Never fill, never trim silently, `null` stays `null` (root `AGENTS.md`).
+
+Until cursors land (#1052 child 6/8), `limit` has no default (`none`): it is
+passed through where the endpoint takes one, the endpoint's own ceiling
+applies, and the endpoint refuses above it rather than trim.
+
+## 4. The 14 resources
+
+Main parameters, defaults in brackets.
+
+| Resource | Main parameters (max 3, `kind` included) | Default window | Hidden parameters | Status |
+| --- | --- | --- | --- | --- |
+| `search` | `q` [empty: list the universe], `kind` [`any`; `company`, `fund`, `universe`], `family` [all] | n/a | `as_of` [none] | built |
+| `prices` | `kind` [`history`; `latest`, `session`, `index`, `forward`], `freq` [`day`; `month`], `adjust` [`split`; `none`] | 1 year | `board` [all], `asset_class` [all], `fields` [core] | planned |
+| `statements` | `kind` [`all`; `income`, `balance`, `cashflow`, `headline`, `versions`], `period` [`both`; `quarterly`, `annual`], `scope` [`consolidated`; `individual`] | 5 years | `as_of` [none] | planned |
+| `funds` | `kind` [`profile`; `nav`, `holdings`, `debentures`, `properties`], `family` [all; `fi`, `fidc`, `fii`, `fip`, ...] | 3 years | `holding` [none: reverse lookup by ticker or issuer], `status` [all] | planned |
+| `fidc` | `kind` [`portfolio`; `tranches`, `aging`, `cedentes`, `sacados`] | 2 years | `series`, `cedente`, `item` [all] | planned |
+| `derivatives` | `kind` [`chain`; `history`, `exercises`, `termo`, `futures`, `futures_curve`, `di_settlement`], `date` [latest session] | 1 year | `expiry_from` [today] | planned |
+| `curves` | `kind` [`snapshot`; `history`, `vertices`], `curve` [`PRE`; `DOC`, ...], `tenor` [252 business days, for history] | 1 year | `date` [latest session] | planned |
+| `macro` | `kind` [`series`; `inflation`, `inflation_items`, `fx`, `expectations`] | 1 year; 3 years for inflation | `family`, `currency` [`USD`], `horizon` | planned |
+| `positioning` | `kind` [`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`] | 3 months | `sector`, `investor_type` [all] | planned |
+| `events` | `kind` [`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`], `category` [all] | 12 months | `family` [all] | planned |
+| `screens` | `kind` [none: list the screens with one-line descriptions] | per screen | each screen's thresholds, with today's SQL defaults | planned |
+| `panel` | `metric` [each family's default metric, as today], `freq` [`month`; `day` for quotes only], `family` [auto] | 3 years | `min_nav`, `min_months` [none] | planned |
+| `portfolio` (POST) | `kind` [`resolve`; `fees`, `fee_peers`, `lookthrough`, `movement`, `instruments`, `fund_terms`, `equivalents`, `debenture_returns`], `month` [latest complete] | n/a | `max_depth` [3] | planned |
+| `coverage` | `kind` [`freshness`; `metrics`, `catalog`], `dataset` [all] | n/a | none | built |
+
+Notes:
+
+- "As today" defaults come from the SQL function defaults in `openapi.json`
+  (`curve` defaults to `PRE`, `quote_history` to one year, `screen_dormant_funds`
+  to a 3-month lookback).
+- `curves` names the B3 reference vertices (`reference_rate` today) `vertices`.
+- `prices` with `adjust=split` returns today's `close_adj` (splits, groupings,
+  bonus shares; no dividends); `adjust=none` returns the raw `close`.
+- `search`, as built: kind `any` and `company` call `lookup` (at most 20 rows;
+  `truncated` says when more matched; `company` keeps the rows with `id_type`
+  `cd_cvm`), `fund` calls `search_funds` (refuses above its tier ceiling:
+  `over_limit`), `universe` calls `research_universe`. An empty `q` with kind
+  `any` or `company` lists the research universe. `family` narrows kind `fund`;
+  `as_of` reads the universe at a date (`first_observed <= as_of <= last_observed`).
+- `coverage`, as built: `freshness` calls `coverage` and returns `as_of` as
+  `data_through`; `metrics` calls `metric_coverage`; `catalog` calls `catalog`
+  and returns the one JSON object as `data[0]`. `dataset` narrows freshness by
+  dataset name and metrics by fund family; a name no row carries is refused
+  with the known names.
+
+### The first five minutes
+
+```
+GET /v2/                                   -> the 14 resources, one line and one example each
+GET /v2/search?q=petrobras                 -> ids, names, tickers, ISIN, CNPJ
+GET /v2/prices?id=PETR4                    -> one year of split-adjusted daily closes
+GET /v2/statements?id=PETR4&kind=income    -> five years of income statements
+GET /v2/prices?help                        -> kinds, main parameters, defaults, data span
+```
+
+No call above needs a parameter beyond `id` and `kind`.
+
+## 5. Paths, response, paging, errors
+
+Paths: `GET /v2/` (the index), `GET /v2/<resource>`, `GET /v2/<resource>?help`
+(`?help=all` adds the hidden parameters). The gateway calls PostgREST with the
+publishable key and schema `api`, exactly as `silo-mcp` does, and forwards a
+caller's `Authorization: Bearer` JWT so the signed-in tier applies. It never
+uses a secret key.
+
+```json
+{
+  "data": [ { "date": "2026-10-30", "id": "PETR4", "isin": "BRPETRACNPR6", "close": 38.12, "adjusted": true } ],
+  "meta": {
+    "resource": "prices", "kind": "history",
+    "request": { "id": "PETR4", "from": "2025-10-31", "to": "2026-10-30", "adjust": "split" },
+    "data_through": "2026-10-30", "data_version": "landed 2026-10-31T03:41 UTC-3, git 1a2b3c4",
+    "id_known": true, "source": "B3 COTAHIST"
+  },
+  "next_page_url": "https://<gateway>/v2/prices?cursor=..."
+}
+```
+
+(Values illustrative, not real data.)
+
+- `data` is always the array key. `meta.request` echoes every parameter,
+  including the defaults applied, so it can be pasted into a methods section.
+- `meta.id_known` says whether an id is one SILO holds, so an empty `data` says
+  why; it is `null` for a call that names no id.
+- `limit` is the page size, default 100, coerced to the tier maximum (child 6/8).
+- `next_page_url` is present only when more rows remain. The cursor is opaque
+  and fixes the other parameters.
+
+```json
+{ "error": {
+    "code": "over_limit",
+    "message": "This window holds more than one page and this resource has no cursor yet. Narrow from/to.",
+    "target": "from",
+    "innererror": { "sqlstate": "22023", "hint": "..." } } }
+```
+
+Top-level codes (10): `bad_request`, `unknown_parameter`, `unknown_id`,
+`unauthorized`, `forbidden_for_tier`, `over_limit`, `rate_limited`, `timeout`,
+`unavailable`, `internal`. A PostgREST `22023` maps to `over_limit` and keeps
+its message, details and hint verbatim; `57014` maps to `timeout`.
+
+## 6. Tiers
+
+Today PostgREST has one server-wide `db-max-rows`, so no tier can have its own
+page size; the gateway can. A lower page size is harmless only if every list
+pages, so the gateway adds a cursor to every list (for date series, by
+splitting the `from`..`to` window behind the scenes). The owner sets the
+numbers; the starting proposal:
+
+| Limit | Anonymous today | Anonymous (proposed) | Signed in (proposed) |
+| --- | ---: | ---: | ---: |
+| Rows per page | 1,000 | 100 (coerced) | 1,000 |
+| Rows per call, all pages | unlimited | 1,000 | unlimited |
+| Ids per `panel` call | 3 | 3 | 50 |
+| Date window per call | none | 2 years (daily data) | none |
+| Requests per minute | none | 30 | 300 |
+| Statement timeout | 3 s | 3 s | 8 s |
+| `screens`, `portfolio` | open | signed in only | open |
+
+## 7. Plan
+
+| Step | What | Gate |
+| --- | --- | --- |
+| 1 | Skeleton, registry, `search`, `coverage` (#1053) | Offline tests green |
+| 2 | Deno tests in CI | CI runs them |
+| 3 | The other 12 resources | Contract tests: each old endpoint and the new resource return the same rows for a fixed sample |
+| 4 | Cursors on every list; tiers and rate limits | Load test on the anonymous limits |
+| 5 | MCP v2 (14 tools `silo_<resource>`) | Rerun the agent evaluation (baseline 2/12); it must beat it |
+| 6 | Docs, quickstart, SDK, `llms.txt`, a "For researchers" page (point in time, survivorship, adjustment, data version, citation) | Someone new completes the three-call quickstart |
+| 7 | Deploy; later, mark the old paths deprecated | The owner |
+
+The children of #1052 are the authoritative order.
+
+## 8. Old to new: all 85 paths
+
+| New | Replaces |
+| --- | --- |
+| `search` | `lookup`, `search_funds`, `research_universe` |
+| `prices` | `quote_history`, `quote_latest`, `quotes`, `equities`, `bdrs`, `units`, `fund_quotas`, `cash_securities`, `auctions`, `index_history`, `trade_consolidated_history` |
+| `statements` | `financials`, `income_statements`, `balance_sheets`, `cash_flow_statements`, `company_financials`, `financial_statement_history` |
+| `funds` | `funds`, `fund_profile`, `fund_nav`, `fund_holdings`, `fund_debentures`, `fii_property_history` |
+| `fidc` | `fidc_portfolio`, `fidc_tranches`, `fidc_aging`, `fidc_cedentes`, `fidc_sacados` |
+| `derivatives` | `option_chain`, `option_history`, `option_exercises`, `termo_history`, `future_series`, `future_curve`, `di_settlement` |
+| `curves` | `curve`, `curve_history`, `reference_rate` |
+| `macro` | `macro_series`, `inflation`, `inflation_items`, `ptax`, `ptax_daily`, `focus_expectations` |
+| `positioning` | `short_interest`, `short_interest_by_sector`, `lending_trades`, `lending_participants`, `investor_flow` |
+| `events` | `company_events`, `fund_documents`, `fund_restatements`, `fund_restatement_diff`, `rj_listed_documents` |
+| `screens` | `screen_captive_vehicles`, `screen_delinquency_drivers`, `screen_dormant_funds`, `screen_dormant_trend`, `screen_evergreen_aging`, `screen_late_filers`, `screen_overdue_securit`, `screen_restatements`, `screen_silent_filers`, `screen_zombie_growth` |
+| `panel` | `panel` |
+| `portfolio` | `portfolio_resolve`, `portfolio_fees`, `portfolio_fee_peers`, `portfolio_lookthrough`, `portfolio_movement`, `portfolio_instruments`, `portfolio_fund_terms`, `portfolio_equivalents`, `portfolio_debenture_returns` |
+| `coverage` | `coverage`, `metric_coverage`, `catalog` |
+| **Held back (ANBIMA)** | `anbima_classes`, `class_return_distribution`, `credit_implied_rate`, `credit_market_history`, `portfolio_credit_returns` |
+
+The held-back group waits until the ANBIMA drop (owner, 2026-10-31) settles.
+`credit_market_history` and `portfolio_credit_returns` are not clearly ANBIMA;
+their sources were not verified. `portfolio_equivalents`, `portfolio_fees`,
+`portfolio_fee_peers` and `portfolio_movement` mention an ANBIMA class in their
+text: check whether that is a label or a real dependency before building
+`portfolio`.
+
+### Parameters that disappear
+
+| Old | New |
+| --- | --- |
+| `p_id`, `p_ids`, `p_cnpj`, `p_cnpjs`, `p_ticker`, `p_tickers`, `p_code`, `p_codes`, `p_codneg`, `p_root`, `p_index`, `p_series` (as an id) | `id` (a list where the old one was a list) |
+| `p_from`, `p_to` | `from`, `to` |
+| `p_limit`, `p_after` | `limit`, `cursor` |
+| `p_entity_type`, `p_family`, `p_modalidade`, `p_tipo_fundo` | `family` |
+| `p_doc_type` | `period` (`quarterly` or `annual`) |
+| `p_as_of` | `as_of` (hidden; point in time only) |
+| `p_statement` | `kind` |
+| `p_kind`, `p_category`, `p_tipo`, `p_level`, `p_endpoint` | `kind` or `category`, one per resource |
+| 35 view columns used as filters | `board`, `asset_class`, `fields`, and the hidden `filter` |
+| `p_trade_date`, `p_month`, `p_end_month`, `p_end` | `date` (or `month` on `portfolio`) |
+
+The count falls from 81 argument names to about 20 across the API.
+
+## 9. Parking lot
+
+Bulk Parquet or CSV snapshots per dataset; dividend-adjusted total returns; a
+corporate-actions resource; line-item normalization; Brazil insider and
+large-stake data; a cited plain-English search; per-user keys.
+
+## Sources
+
+Microsoft REST API guidelines and Azure API design best practices; Google
+AIP-158 and AIP-160; Rippling, "How Rippling builds enterprise-grade APIs"
+(2026-07); Apple WWDC22, "The craft of SwiftUI API design"; Anthropic, "Writing
+effective tools for AI agents" (2025-09); QVeris, DataCamp and QuantConnect
+data guides; the HyperDB reproducible-pipeline README.
