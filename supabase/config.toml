@@ -23,6 +23,13 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+# MCP v2: 14 tools, one per v2 resource, running the silo-api gateway in
+# process (#1060). Public and read-only like silo-mcp, which stays beside it.
+# Not deployed: a deploy needs the owner's approval (#1052).
+[functions.silo-mcp-v2]
+enabled = true
+verify_jwt = false
+
 # DJEN relay for the RJ collector (#846): runs in sa-east-1 because DJEN refuses
 # non-Brazilian egress. Its own shared-token check replaces the JWT check.
 [functions.djen-relay]

@@ -1,0 +1,2296 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SILO API v2 (preview, not deployed)",
+    "version": "v2",
+    "description": "The v2 gateway over SILO's schema `api`: 14 resources, five shared parameters, one envelope and one error object. Generated from supabase/functions/silo-api/registry.ts by scripts/gen_openapi_v2.py; do not edit by hand. Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`."
+  },
+  "servers": [
+    {
+      "url": "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2",
+      "description": "The silo-api Edge Function (preview, not deployed)."
+    }
+  ],
+  "security": [
+    {
+      "apikey": []
+    },
+    {
+      "apikey": [],
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "v2_index",
+        "summary": "v2 index",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nThe 14 resources, one line each, with an example call.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/index"
+        },
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "operationId": "v2_search",
+        "summary": "v2 search",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nWhat is this name or id? Companies, funds and listed shares, with their stable ids (CNPJ, ISIN).\n\nExample: `/v2/search?q=petrobras`\n\nKinds:\n\n- `any`: Resolve a name or id across companies, funds and tickers.\n- `company`: The company rows (id_type cd_cvm) of the lookup answer; truncated still says when more than 20 entries matched.\n- `fund`: Fund name or CNPJ search, largest latest NAV first. Refuses (over_limit) when more match than the SQL's tier ceiling: narrow q.\n- `universe`: The research universe: one row per ticker+ISIN pair of listed shares and units.\n\n`GET /v2/search?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/search"
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "A ticker, ISIN, CNPJ, CVM code, or words of a company or fund name (every word must match, accents and case ignored). Default: empty: list the research universe (kind any or company) or every fund (kind fund, which refuses above its tier ceiling).",
+            "schema": {
+              "type": "string"
+            },
+            "example": "petrobras"
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "any: exact ids, then companies, then funds (at most 20 rows). company: the company rows of that answer. fund: fund search, largest latest NAV first. universe: every listed share and unit since 2019-01-02. Default: any.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "any",
+                "company",
+                "fund",
+                "universe"
+              ],
+              "default": "any"
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "description": "Narrows kind=fund to one fund family. Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "fi",
+                "fidc",
+                "fii",
+                "fip",
+                "fiagro"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind=universe (or an empty q): only the ticker+ISIN pairs whose first_observed <= as_of <= last_observed, dead names included. Survivorship-free. Default: none: every pair the tape has seen.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prices": {
+      "get": {
+        "operationId": "v2_prices",
+        "summary": "v2 prices",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nWhat did it trade at? Daily history (split-adjusted by default), latest quote, sessions, indices, B3 FORWARD prints.\n\nExample: `/v2/prices?id=PETR4`\n\nKinds:\n\n- `history`: api.quote_history: one ticker, oldest first, 1 year to the latest session by default, paged with the function's p_after cursor. With no id: the research universe (the tickers held).\n- `latest`: api.quote_latest: the ticker's newest session (raw, adjusted false). With no id: the research universe.\n- `session`: One session's quotes from one price view (raw, adjusted false). Paged with order + limit + offset; the default session is pinned in the cursor.\n- `index`: api.index_history: one B3 index code (IBOV, IFIX, ...), levels as published (total-return indices, not adjusted). With no id the SQL refusal names the codes held.\n- `forward`: api.trade_consolidated_history: one FORWARD-segment ticker; last_price is the close, ref_price is never a trade.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\n`GET /v2/prices?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/prices"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "history: one ticker's daily series. latest: its newest session. session: every quote of one session (the seven price views in one). index: a B3 index's daily levels. forward: B3 FORWARD-segment prints (fixed-income ETFs COTAHIST does not carry). Default: history.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "history",
+                "latest",
+                "session",
+                "index",
+                "forward"
+              ],
+              "default": "history"
+            }
+          },
+          {
+            "name": "freq",
+            "in": "query",
+            "required": false,
+            "description": "kind history, index, forward. month: the last session of each month, selected from the daily rows (no interpolation; a month with no session has no row). Default: day.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "month"
+              ],
+              "default": "day"
+            }
+          },
+          {
+            "name": "adjust",
+            "in": "query",
+            "required": false,
+            "description": "kind history. split: close_adj (splits, groupings, bonus shares; no dividends). none: the raw close as traded. Every row carries adjusted (true or false); the other kinds are never adjusted. Default: split.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "split",
+                "none"
+              ],
+              "default": "split"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "By kind: history, latest take a B3 ticker (PETR4); session takes a B3 ticker (none: every ticker of the session); index takes a B3 index code (IBOV, IFIX, ...); forward takes a B3 FORWARD-segment ticker. With no id, kinds history, latest read api.research_universe (what SILO holds). Default: none.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR4"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind history, latest, session. A BDI board code (02 is the standard lot). Default: all boards: the series follows the ISIN across boards.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "asset_class",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind session. all: api.quotes (standard lot, tpmerc 010). Each class reads its own view (equities, bdrs, units, fund_quotas, cash_securities: standard, odd and block lots, with lot on the row; auctions: tpmerc 017), with every column it publishes. Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "equity",
+                "bdr",
+                "unit",
+                "fund_quota",
+                "cash_security",
+                "auction"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). core: a short set (history: ticker, trade_date, close_adj or close, isin). all: every column the endpoint publishes. index and forward publish few columns, so core is all of them. Default: core.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "core",
+                "all"
+              ],
+              "default": "core"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind session. The session date, YYYY-MM-DD. Default: the latest session in the 14 days to today that matches the other filters.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/statements": {
+      "get": {
+        "operationId": "v2_statements",
+        "summary": "v2 statements",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nWhat did the company file? Income, balance sheet, cash flow, headline figures and every stored version.\n\nExample: `/v2/statements?id=PETR4&kind=income`\n\nKinds:\n\n- `all`: api.financials: every line, one row per account, latest stored version. Paged by date windows. With no id (every kind): the research universe, whose cnpj links a ticker to its filer.\n- `income`: api.income_statements: one row per filed period, with period_months.\n- `balance`: api.balance_sheets: one row per filed date. A balance sheet is a point in time, so the source has no period_months.\n- `cashflow`: api.cash_flow_statements: one row per filed period, with period_months.\n- `headline`: api.company_financials: headline figures per filed period. The function takes no p_doc_type, so period is a selection on the rows' doc_type.\n- `versions`: api.financial_statement_history: every stored version of one statement (hidden statement, default DRE), with filing metadata. No as_of: it already shows every version.\n\nWith no `from`, a dated kind reads the last 60 months to `to`.\n\n`GET /v2/statements?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/statements"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "all: every filed line, long (api.financials). income, balance, cashflow: the standard lines, wide. headline: revenue, net income, assets, equity, margins (api.company_financials). versions: every stored version of one statement (api.financial_statement_history). Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "income",
+                "balance",
+                "cashflow",
+                "headline",
+                "versions"
+              ],
+              "default": "all"
+            },
+            "example": "income"
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "description": "quarterly: ITR filings. annual: DFP filings. A quarterly filing holds the 3-month and the year-to-date figure; period_months on the row says which. Never add the two. Default: both.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "both",
+                "quarterly",
+                "annual"
+              ],
+              "default": "both"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "description": "Consolidated and individual are separate filings of the same period; they are never merged. Default: consolidated.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "consolidated",
+                "individual"
+              ],
+              "default": "consolidated"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "By kind: all, income, balance, cashflow, headline, versions take a listed company's ticker, 14-digit CNPJ or CVM code. With no id, kinds all, income, balance, cashflow, headline, versions read api.research_universe (what SILO holds). Default: none.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR4"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). Point in time: only documents CVM received before this date, at the highest version known then. Not for kind versions. Default: none: the latest stored version of every document, which is NOT point in time.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "statement",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind versions: the one statement to read (DRE income, BPA assets, BPP liabilities and equity, DFC_MD or DFC_MI cash flow, DMPL, DRA, DVA). Default: DRE.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRE",
+                "BPA",
+                "BPP",
+                "DFC_MD",
+                "DFC_MI",
+                "DMPL",
+                "DRA",
+                "DVA"
+              ],
+              "default": "DRE"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/funds": {
+      "get": {
+        "operationId": "v2_funds",
+        "summary": "v2 funds",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nWhat is this fund and how is it doing? Profile, NAV, holdings, debentures, FII properties.\n\nExample: `/v2/funds?id=33000167000101&kind=nav`\n\nKinds:\n\n- `profile`: api.fund_profile: one row per family the CNPJ files under. With no id: the api.funds registry view, ordered by cnpj, paged with order + limit + offset.\n- `nav`: api.fund_nav: monthly NAV, quota, quotaholders and flows, oldest first. With no to, the series ends at the family's latest complete period. Refuses above 1000 rows: narrow from, or pin family.\n- `holdings`: api.fund_holdings: the listed equities a fund holds (CDA), or with holding the funds that hold a ticker. Paged by date windows.\n- `debentures`: api.fund_debentures: the debentures a fund holds, or with holding the funds that hold an issuer's paper. Paged by date windows.\n- `properties`: api.fii_property_history: an FII's properties, every filed version, newest first.\n\nWith no `from`, a dated kind reads the last 36 months to `to`.\n\nid is a fund CNPJ: 14 digits, punctuation allowed. Find one with /v2/search?kind=fund&q=<name>.\n\nkind=nav columns are per family: a null outside the family's list is not applicable, not missing (coverage?kind=catalog, applicability).\n\nFIDC delinquency (api.fund_nav, panel) starts 2013-01 and is on every row only from 2020-11 (regime break; coverage?kind=catalog lists it under regime_breaks). Through 2020-10-31 a fund with no tab VI row that month is null, not zero and not clean books; from 2020-11-30 it is filed on every row (a fund with none files 0). Never read a pre-2020-11 null as zero or fill it, and never compare a count of reporting funds across 2020-10 -> 2020-11.\n\n`GET /v2/funds?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/funds"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "profile: one fund's registry row and AUM (with no id: the fund registry). nav: the monthly NAV and flows series. holdings: the listed equities it holds (CDA). debentures: the debentures it holds. properties: an FII's real estate. Default: profile.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "profile",
+                "nav",
+                "holdings",
+                "debentures",
+                "properties"
+              ],
+              "default": "profile"
+            },
+            "example": "nav"
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "description": "One fund family. kind=nav: the series filed under that family (one CNPJ can file under two). With no id: the registry rows of that family. Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "fi",
+                "fidc",
+                "fii",
+                "fip",
+                "fiagro"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "By kind: profile, nav, holdings, debentures, properties take a 14-digit fund CNPJ (punctuation allowed). Required for kinds nav, properties. Kind holdings: id or holding is required. Kind debentures: id or holding is required. With no id, kind profile reads api.funds (what SILO holds). Default: none.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "33000167000101"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "holding",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). Reverse lookup, instead of id. kind=holdings: the funds that hold this ticker. kind=debentures: the funds that hold this issuer's debentures (ticker, CVM code or CNPJ). Default: none: what the fund in id holds.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). With no id: only registry rows whose status is this, exactly as CVM publishes it (e.g. EM FUNCIONAMENTO NORMAL). Default: all.",
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fidc": {
+      "get": {
+        "operationId": "v2_fidc",
+        "summary": "v2 fidc",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nWhat is inside this FIDC? Portfolio, tranches, aging, cedentes, sacados.\n\nExample: `/v2/fidc?id=<cnpj>&kind=tranches`\n\nKinds:\n\n- `portfolio`: api.fidc_portfolio, newest first. Paged by date windows. With no id: the FIDC registry, ordered by cnpj.\n- `tranches`: api.fidc_tranches: per series, quota value, quotaholders and returns. Paged by date windows.\n- `aging`: api.fidc_aging: the to_maturity, overdue and overdue_total ladders. Paged by date windows.\n- `cedentes`: api.fidc_cedentes: the originators a fund buys from, or with cedente the funds that buy from one. Paged by date windows.\n- `sacados`: api.fidc_sacados: the largest debtors, as anonymized ranks (there is no debtor-side lookup). Paged by date windows.\n\nWith no `from`, a dated kind reads the last 24 months to `to`.\n\nid is a FIDC CNPJ: 14 digits, punctuation allowed. With no id, kind=portfolio lists the FIDC registry (api.funds, entity_type fidc).\n\nFIDC delinquency (api.fund_nav, panel) starts 2013-01 and is on every row only from 2020-11 (regime break; coverage?kind=catalog lists it under regime_breaks). Through 2020-10-31 a fund with no tab VI row that month is null, not zero and not clean books; from 2020-11-30 it is filed on every row (a fund with none files 0). Never read a pre-2020-11 null as zero or fill it, and never compare a count of reporting funds across 2020-10 -> 2020-11.\n\nTab X (the SCR grade ladders of kind=portfolio) is filed from 2023-10: earlier months have no scr rows, not zero-graded ones. Values are as filed.\n\n`GET /v2/fidc?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/fidc"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "portfolio: the receivables book, long (tab II sectors, tab X SCR ladders, tax debt). tranches: each senior and subordinated series. aging: the to-maturity and overdue ladders. cedentes: the originators it buys from. sacados: its largest debtors, as anonymized ranks. Default: portfolio.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "portfolio",
+                "tranches",
+                "aging",
+                "cedentes",
+                "sacados"
+              ],
+              "default": "portfolio"
+            },
+            "example": "tranches"
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "By kind: portfolio, tranches, aging, cedentes, sacados take a FIDC's 14-digit fund CNPJ (punctuation allowed). Required for kinds tranches, aging, sacados. Kind cedentes: id or cedente is required. With no id, kind portfolio reads api.funds (what SILO holds). Default: none.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "<cnpj>"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind=tranches: one TAB_X_CLASSE_SERIE, matched exactly as filed. Default: all.",
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          },
+          {
+            "name": "cedente",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind=cedentes, instead of id: the funds that buy from this originator (CPF or CNPJ, or a listed ticker or CVM code). Default: all.",
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          },
+          {
+            "name": "item",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind=portfolio: one part of the book, matched against the row's kind column: sector (tab II), scr_debtor or scr_operation (tab X ladders), tax_debt. Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "sector",
+                "scr_debtor",
+                "scr_operation",
+                "tax_debt"
+              ],
+              "default": "all"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/derivatives": {
+      "get": {
+        "operationId": "v2_derivatives",
+        "summary": "v2 derivatives",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nOptions, termo and futures: chains, histories, exercises, the DI1 settlement.\n\nExample: `/v2/derivatives?id=PETR&kind=chain`\n\nKinds:\n\n- `chain`: api.option_chain: calls and puts of one prefix on one session, by expiry, strike, side. One call holds the chain, served in pages; a chain the SQL may have cut (199 anonymous, 1,000 rows) is refused.\n- `history`: api.option_history: one option code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.\n- `exercises`: api.option_exercises: exercise prints for a prefix, oldest first. Paged by date windows; a window the SQL may have cut is halved.\n- `termo`: api.termo_history: one termo code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.\n- `futures`: api.future_series: one DI1, DOL or WDO contract through time, oldest first. Refuses above 1000 rows.\n- `futures_curve`: api.future_curve: every contract of a root (id, default DI1) on one session, nearest first.\n- `di_settlement`: api.di_settlement (a GET view): DI1 settlement rate, previous rate, open interest per session and contract, newest first. With no id, every contract, paged with order + limit + offset.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\nid per kind: chain and exercises take an option prefix (at least 3 characters, e.g. PETR); history and termo one B3 code (codneg); futures one outright contract (DI1F27, DOLF27); futures_curve a root (DI1, DOL or WDO; none: DI1); di_settlement one DI1 contract (none: every contract).\n\nchain and exercises are cut by the SQL at a tier ceiling without saying so, so the gateway asks for 1,001 rows: a count equal to a tier ceiling (chain 200 or 2000, exercises 500 or 5000, or PostgREST's 1000) or above 1,000 cannot be told from a cut. chain refuses it (over_limit); exercises halves its date window and tries again, and refuses only a single day that is still cut.\n\nExercises are exercise events, not quotes. DI1 rates are % a.a. on 252 business days, as B3 settles them; nothing is derived.\n\n`GET /v2/derivatives?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/derivatives"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "chain: one session's option chain for a prefix. history: one option's daily quotes. exercises: option exercise events for a prefix. termo: one forward (termo) code's quotes. futures: one futures contract's daily settlement. futures_curve: every contract of a root on one session. di_settlement: DI1 settlement rates per session and contract. Default: chain.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "chain",
+                "history",
+                "exercises",
+                "termo",
+                "futures",
+                "futures_curve",
+                "di_settlement"
+              ],
+              "default": "chain"
+            },
+            "example": "chain"
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "kind chain and futures_curve: the B3 session, YYYY-MM-DD. A date with no session returns no rows. Default: the latest session held (chain: the newest option session; futures_curve: the root's newest session).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "By kind: chain, exercises take an option prefix, at least 3 characters (PETR); history takes one option code (codneg); termo takes one termo code (codneg); futures takes one outright futures contract (DI1F27, DOLF27); futures_curve takes a futures root, DI1, DOL or WDO (none: DI1); di_settlement takes one DI1 contract (none: every contract). Required for kinds chain, history, exercises, termo, futures. Default: none.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expiry_from",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind chain: only series expiring on or after this date. Default: today (the SQL's CURRENT_DATE): expired series are left out.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/curves": {
+      "get": {
+        "operationId": "v2_curves",
+        "summary": "v2 curves",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nWhat does the rate curve look like? B3 reference curves, their history and vertices.\n\nExample: `/v2/curves?curve=PRE`\n\nKinds:\n\n- `snapshot`: api.curve: one curve on one session, shortest vertex first, fixed and moving vertices with rate_basis.\n- `history`: api.curve_history: one fixed vertex through time, oldest first. Refuses above 1000 rows: narrow from/to.\n- `vertices`: api.reference_rate (a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published). Paged with order + limit + offset; the default session is pinned in the cursor.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\nPRE and DPL are % a.a. on 252 business days; DOC is % a.a. linear on 360 calendar days, so its vertices under about 30 calendar days are not a rate level. rate_basis rides on every snapshot and history row.\n\nPast the last maturity of the anchoring contract (DI1, DDI, DAP) B3 extrapolates: the long vertices are not prices. Nothing is interpolated: a tenor that is not one of B3's fixed vertices is refused with the list.\n\n`GET /v2/curves?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/curves"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "snapshot: one curve on one session, every vertex, with its rate basis. history: one fixed vertex through time. vertices: the raw reference-rate rows (api.reference_rate) of one curve on one session. Default: snapshot.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "snapshot",
+                "history",
+                "vertices"
+              ],
+              "default": "snapshot"
+            }
+          },
+          {
+            "name": "curve",
+            "in": "query",
+            "required": false,
+            "description": "PRE: DI x pre. DOC: the clean onshore dollar coupon. DPL: the clean IPCA coupon (a real rate). Default: PRE.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PRE",
+                "DOC",
+                "DPL"
+              ],
+              "default": "PRE"
+            },
+            "example": "PRE"
+          },
+          {
+            "name": "tenor",
+            "in": "query",
+            "required": false,
+            "description": "kind history: the nominal tenor of one of B3's fixed vertices, in CALENDAR days (B3's vertex_code: 1, 30, 60, 90, ... 360, 720, ... 10800). 360 is the one-year vertex. Any other tenor is refused with the list, never interpolated. Default: 360.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 360
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind snapshot and vertices: the B3 session, YYYY-MM-DD. Default: the newest session held for the curve (vertices: the newest in the 14 days to today).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/macro": {
+      "get": {
+        "operationId": "v2_macro",
+        "summary": "v2 macro",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nMacro series, inflation and its item tree, PTAX, Focus expectations.\n\nExample: `/v2/macro?kind=inflation`\n\nKinds:\n\n- `series`: api.macro_series: one SGS series by label or code, oldest first. Refuses above 1000 rows: narrow from/to.\n- `inflation`: api.inflation: the IPCA set by month with acc_12m, 3 years by default. Refuses above 1000 rows: pin id or family, or narrow from.\n- `inflation_items`: api.inflation_items: IBGE's IPCA tree (weight, monthly change, contribution, year-to-date and 12-month change), 3 years by default. With no id, the groups (level 1); with an id, that item at its own level.\n- `fx`: api.ptax: one currency's PTAX, BRL per one unit, as published. currency=all reads the api.ptax_daily view, every currency at once.\n- `expectations`: api.focus_expectations: one survey and horizon across survey dates (the weekly revision path), median, mean and standard deviation. Refuses above 1000 rows.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\nid per kind: series takes a label or SGS code (SELIC_META, CDI, IGPM, 432); inflation one series label (IPCA, IPCA_CORE_EX0, ...; none: every series); inflation_items an IBGE structure number or SIDRA item code (none: the groups); expectations a Focus indicator (IPCA, Selic, ...; none: every indicator).\n\nBACEN's IPCA group codes 1640-1643 are Comunicação, Saúde, Despesas pessoais, Educação, as measured against SIDRA. Focus rows are baseCalculo=0 (the trailing 30-day sample); the 12-month inflation survey is unsmoothed. Nothing is filled.\n\n`GET /v2/macro?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/macro"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "series: one BACEN SGS series. inflation: the IPCA set (headline, cores, groups, diffusion) with 12-month accumulation. inflation_items: IBGE's IPCA item tree with weights. fx: BACEN PTAX buy and sell rates. expectations: the BCB Focus survey path. Default: series.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "series",
+                "inflation",
+                "inflation_items",
+                "fx",
+                "expectations"
+              ],
+              "default": "series"
+            },
+            "example": "inflation"
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "By kind: series takes an SGS series label or code (SELIC_META, CDI, IGPM, 432); inflation takes one series label (IPCA, IPCA_CORE_EX0, ...; none: every series); inflation_items takes an IBGE structure number or SIDRA item code (none: the groups); expectations takes a Focus indicator (IPCA, Selic, ...; none: every indicator). Required for kind series. Kind fx takes no id. Default: none.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind inflation: headline, core, classification, diffusion or group (all: every family). kind expectations: the Focus survey, annual (the default), monthly, selic (COPOM meetings) or inflation_12m. Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "headline",
+                "core",
+                "classification",
+                "diffusion",
+                "group",
+                "annual",
+                "monthly",
+                "selic",
+                "inflation_12m"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind fx: an ISO code held (USD, EUR, GBP, JPY, ARS). all: every currency, from the api.ptax_daily view (paged with order + limit + offset). Default: USD.",
+            "schema": {
+              "type": "string",
+              "default": "USD"
+            }
+          },
+          {
+            "name": "horizon",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind expectations: the target horizon exactly as BACEN publishes it: a year (2027) for annual, MM/YYYY for monthly, a COPOM meeting (R6/2028) for selic. Default: family annual: the current year (UTC-3); every other survey needs one.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/positioning": {
+      "get": {
+        "operationId": "v2_positioning",
+        "summary": "v2 positioning",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nWho is short, lending or flowing in? Short interest, lending trades and brokers, investor flow.\n\nExample: `/v2/positioning?id=PETR4`\n\nKinds:\n\n- `short_interest`: api.short_interest (a GET view), newest first. With no id, every ticker, paged with order + limit + offset.\n- `short_by_sector`: api.short_interest_by_sector (a GET view), newest first.\n- `lending`: api.lending_trades (a GET view): count, quantity, rates and how many brokers stood on each leg, newest first.\n- `lending_brokers`: api.lending_participants (a GET view): per broker, quantity lent, borrowed and net, and how much it crossed its own clients, newest first.\n- `investor_flow`: api.investor_flow (a GET view): buy, sell and net by investor type, newest first.\n\nWith no `from`, a dated kind reads the last 3 months to `to`.\n\nB3 keeps about 21 business days of the lending book and publishes no archive: history starts when SILO began capturing, and a missed session is lost, not late.\n\nShort interest reads only B3's own Total rows of the open-position book (is_total), never the per-market rows added up. Read pct_float with float_basis: index_free_float and shares_outstanding are different denominators.\n\nlending_brokers: the broker is the B3 participant on the leg (doador / tomador), not the beneficial owner; about 75% of trades carry the same broker on both legs. Never read a large borrow as the broker being short.\n\ninvestor_flow is in R$ thousands, differenced from B3's month-to-date snapshots; a row with flow_basis unknown_opening_snapshot carries null flows on purpose.\n\n`GET /v2/positioning?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/positioning"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "short_interest: the short balance per ticker and session, with % of float and days to cover. short_by_sector: the short balance by B3 sector. lending: daily lending trades per ticker. lending_brokers: per ticker, session and broker, quantity lent and borrowed. investor_flow: daily net flow by investor type. Default: short_interest.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "short_interest",
+                "short_by_sector",
+                "lending",
+                "lending_brokers",
+                "investor_flow"
+              ],
+              "default": "short_interest"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "By kind: short_interest takes a B3 ticker (none: every ticker); lending, lending_brokers take a B3 ticker. Kinds short_by_sector, investor_flow take no id. Default: none.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR4"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sector",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind short_interest and short_by_sector: one B3 sector, exactly as B3 publishes it (Não classificado holds the tickers with none). Default: all.",
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          },
+          {
+            "name": "investor_type",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind investor_flow: one investor type, exactly as B3 publishes it. Default: all.",
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "operationId": "v2_events",
+        "summary": "v2 events",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nWhat was filed or restated? Company IPE filings, fund documents, restatements, judicial recovery.\n\nExample: `/v2/events?id=PETR4`\n\nKinds:\n\n- `company`: api.company_events: IPE filings, newest first. Paged by date windows.\n- `fund`: api.fund_documents: FNET documents, newest first, each version its own fnet_id. Refuses above 1000 rows: narrow from or pin category.\n- `restatements`: api.fund_restatements: one row per document with versao > 1, with the version it most plausibly replaced and whether SILO diffed the pair.\n- `restatement_diff`: api.fund_restatement_diff: one row per field that changed between a restated document and its predecessor (the FIDC informe mensal for now).\n- `judicial_recovery`: api.rj_listed_documents: judicial recovery (recuperacao judicial) filings of listed companies, newest first.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\nid is a ticker, 14-digit CNPJ or CVM code for kind company and judicial_recovery, and a fund CNPJ for kind fund, restatements and restatement_diff.\n\nDates are delivery days. With no to, company and judicial_recovery end today and the fund kinds have no upper bound.\n\n`GET /v2/events?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/events"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "company: a listed company's IPE filings (fatos relevantes, comunicados, ...). fund: a fund's FNET documents. restatements: FNET documents re-filed as a new version (with no id: every fund's). restatement_diff: field by field, what changed in a fund's restated documents. judicial_recovery: listed companies' judicial recovery filings (with no id: every company's). Default: company.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "company",
+                "fund",
+                "restatements",
+                "restatement_diff",
+                "judicial_recovery"
+              ],
+              "default": "company"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "One label, matched exactly as the source labels it. kind=company: the IPE categoria (e.g. Fato Relevante). kind=fund and restatement_diff: the FNET tipo_documento. kind=judicial_recovery: the CVM Tipo (accented as published). Default: all.",
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "By kind: company takes a listed company's ticker, 14-digit CNPJ or CVM code; fund, restatement_diff take a 14-digit fund CNPJ (punctuation allowed); restatements takes a 14-digit fund CNPJ (punctuation allowed; none: every fund's); judicial_recovery takes a listed company's ticker, 14-digit CNPJ or CVM code (none: every company's). Required for kinds company, fund, restatement_diff. Default: none.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR4"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind=restatements: the FNET fund type link (FII, FIDC or ETF). all includes documents not linked to a fund type yet. Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "fii",
+                "fidc",
+                "etf"
+              ],
+              "default": "all"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/screens": {
+      "get": {
+        "operationId": "v2_screens",
+        "summary": "v2 screens",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nWhich funds look odd? Forensic screens: signals, not verdicts.\n\nExample: `/v2/screens`\n\nKinds:\n\n- `list`: The screens, one line each, with the family each reads and its SQL defaults (from api.catalog().screens).\n- `captive_vehicles`: FIIs whose NAV peaked above min_aum while the quotaholder count never reached max_investors.\n- `delinquency_drivers`: FIDC delinquency, first vs last observation in BRL and in points of NAV, the move classified (driver). No window before 2025-01.\n- `dormant_funds`: FI classes that filed every month of the window with zero subscriptions and zero redemptions (empty_shell, parked_capital).\n- `dormant_trend`: dormant_funds counted at every month-end: funds filing, empty shells, parked capital and its NAV.\n- `evergreen_aging`: FIDCs whose receivables overdue more than 1080 days stay a large, nearly constant share of delinquency.\n- `late_filers`: FIIs and FIDCs whose monthly informe reached FNET at least min_days_late days after the cited deadline, in at least min_late months.\n- `overdue_securit`: CRI, CRA and other series past their filed maturity whose newest filing still reports a non-terminal status.\n- `restatements`: Funds whose FNET re-filings (versao > 1) in the window reach min_restatements and min_rate_pct of their documents.\n- `silent_filers`: Funds CVM still lists as active whose last periodic informe is min_silent_months to max_silent_months behind their family.\n- `zombie_growth`: FIDCs with delinquency above min_delinq_pct of NAV while NAV stays above min_aum, in one aging month.\n\nSignal, not a verdict: a screen lists a pattern worth a look. Legal funds match every screen (exclusive vehicles, wind-downs, distressed mandates, routine corrections). Every response repeats this in meta.signal.\n\nEach threshold is hidden and defaults to the SQL function's own default; meta.request echoes the value applied. A threshold the chosen screen does not take is bad_request.\n\n`GET /v2/screens?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/screens"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "list (the default, no kind given): the screens, one line each, with their defaults. Any other value runs that screen (api.screen_<kind>). Default: list.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "list",
+                "captive_vehicles",
+                "delinquency_drivers",
+                "dormant_funds",
+                "dormant_trend",
+                "evergreen_aging",
+                "late_filers",
+                "overdue_securit",
+                "restatements",
+                "silent_filers",
+                "zombie_growth"
+              ],
+              "default": "list"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). zombie_growth: the aging month-end (p_period). delinquency_drivers, restatements, late_filers: the window end (p_end). Default: the screen's own: zombie_growth the latest aging month; delinquency_drivers the latest complete FIDC month; restatements today; late_filers the newest month whose deadline has passed.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "months",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). delinquency_drivers (2..24), restatements, late_filers (1..36): the window length in months. Default: the screen's SQL default (12).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "lookback_months",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). captive_vehicles, evergreen_aging, dormant_funds, dormant_trend: the trailing window in months. Default: the screen's SQL default: captive_vehicles 3, evergreen_aging 12, dormant_funds 3, dormant_trend 3.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "history_months",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). dormant_trend: month-ends emitted, 1..60. Default: the SQL default (36).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_months",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). delinquency_drivers: observations a fund needs, 2..months. Default: the SQL default (6).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_aum",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). zombie_growth, captive_vehicles: the NAV floor, BRL. Default: the screen's SQL default: zombie_growth 1000000, captive_vehicles 50000000 (BRL).",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_nav",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). dormant_funds: keep rows whose last NAV is at least this, BRL (an output filter). Default: none: no floor.",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_delinq_pct",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). zombie_growth: delinquency floor, percent of NAV, 0..100. Default: the SQL default (5).",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "max_investors",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). captive_vehicles: flagged when the window minimum quotaholder count is below this, 1..1000. Default: the SQL default (10).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_longtail_pct",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). evergreen_aging: share of delinquency overdue more than 1080 days, 0..100. Default: the SQL default (70).",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "max_variation_pp",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). evergreen_aging: largest move of that share across the window, percentage points. Default: the SQL default (10).",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_volume",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). overdue_securit: paid-in volume floor, BRL. Default: the SQL default (100000).",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_delta_brl",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). delinquency_drivers: the up/down threshold on delinquency, BRL. Default: the SQL default (1000000).",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_delta_pp",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). delinquency_drivers: the up/down threshold on the rate, percentage points. Default: the SQL default (1.0).",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_restatements",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). restatements: re-filings (versao > 1) in the window, 1..1000. Default: the SQL default (3).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_rate_pct",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). restatements: re-filings as percent of the fund's documents in the window, 0..100. Default: the SQL default (20).",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_days_late",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). late_filers: days past the cited deadline that count as late, 1..90. Default: the SQL default (5).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_late",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). late_filers: late months a fund needs in the window. Default: the SQL default (2).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_silent_months",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). silent_filers: complete months with no filing, 1..120. Default: the SQL default (3).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "max_silent_months",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). silent_filers: and at most this many, up to 240. Default: the SQL default (24).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "dormancy",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). dormant_funds: keep one dormancy (an output filter). empty_shell: no quotaholder. parked_capital: quotaholders, no flow. Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "empty_shell",
+                "parked_capital"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "driver",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). delinquency_drivers: keep one class of move (an output filter). Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "consistent_worsening",
+                "value_up_rate_masked",
+                "denominator_only",
+                "improvement",
+                "stable"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "modality",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). restatements: count only one FNET modalidade. RE: voluntary. RC: required by CVM. Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "RE",
+                "RC"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). late_filers (fii, fidc) and silent_filers (fi, fidc, fii, fiagro): keep one family (an output filter). Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "fi",
+                "fidc",
+                "fii",
+                "fiagro"
+              ],
+              "default": "all"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel": {
+      "get": {
+        "operationId": "v2_panel",
+        "summary": "v2 panel",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nA clean (id, date, metric, value) table across families.\n\nExample: `/v2/panel?id=PETR4,VALE3&metric=close_return`\n\nWith no `from`, a dated kind reads the last 36 months to `to`.\n\npanel has one kind, so it takes no kind parameter. id is a comma-separated list of tickers, fund CNPJs, option or termo tickers and futures codes. The gateway's tier ceiling (config.ts: 1 id anonymous, 3 signed in) is refused above it (forbidden_for_tier), and the SQL's own (3 anonymous, 50 signed in) is refused verbatim (over_limit); never trimmed.\n\nMissing months stay absent: no fill, no return across a gap. Metric names are catalog().metrics (coverage?kind=catalog); an unknown name is unknown_parameter.\n\nWith no id and a family, panel walks the family (universe mode, monthly); min_nav and min_months narrow it. The gateway serves universe mode to the pro tier only (config.ts): a user the owner lists in api_user_tier (#1064).\n\n`GET /v2/panel?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/panel"
+        },
+        "parameters": [
+          {
+            "name": "metric",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated catalog metric names (close, close_adj, close_return, volume, nav, delinquency, ...). auto: each id's family default, as api.panel with no p_metrics (close_adj for shares and units, close for other tickers, settlement_rate for futures, nav for funds). Comma-separated list. Default: auto.",
+            "schema": {
+              "type": "string",
+              "default": "auto"
+            },
+            "example": "close_return"
+          },
+          {
+            "name": "freq",
+            "in": "query",
+            "required": false,
+            "description": "month: the last session of each month for tickers, the filed month for funds. day: tickers and futures only (funds file monthly). Default: month.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "month",
+                "day"
+              ],
+              "default": "month"
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "description": "auto: every family a CNPJ files under (a CNPJ filing as fi and fidc yields one row per family). One family narrows the fund rows to it; with no id it walks that family (universe mode). Default: auto.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "fi",
+                "fidc",
+                "fii",
+                "fip",
+                "fiagro"
+              ],
+              "default": "auto"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "The id is a comma-separated list of tickers, fund CNPJs, option or termo tickers and futures codes, up to the tier's id ceiling. Default: none.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR4,VALE3"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "min_nav",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). Universe mode only: keep funds whose latest NAV in the window is at least this, BRL. Default: none: no floor.",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_months",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). Universe mode only: keep funds with at least this many observations of the first metric. Default: none: no floor.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portfolio": {
+      "post": {
+        "operationId": "v2_portfolio",
+        "summary": "v2 portfolio",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nDiagnose a portfolio: resolve statement lines, fees, look-through, movement (POST).\n\nExample: `POST /v2/portfolio?kind=resolve {\"names\": [\"ITAU RF DI\"]}`\n\nKinds:\n\n- `resolve`: api.portfolio_resolve: up to 5 ranked candidate funds per statement line (a printed CNPJ wins, then an ETF ticker, an exact name, a trigram match).\n- `fees`: api.portfolio_fees: the disclosed fee and the fee estimated from the balancete, never mixed.\n- `fee_peers`: api.portfolio_fee_peers: the admin fee against funds and ETFs of the same filed class, one row per CNPJ.\n- `lookthrough`: api.portfolio_lookthrough: one CDA month, holdings followed through fund quotas up to max_depth levels.\n- `movement`: api.portfolio_movement: the fund's monthly quota return against its filed class (movimento incomum).\n- `instruments`: api.portfolio_instruments: CRA, CRI and debenture codes matched to their series, one line per code.\n- `fund_terms`: api.portfolio_fund_terms: manager, administrator and redemption terms as filed, one line per CNPJ.\n- `equivalents`: api.portfolio_equivalents: the active ETFs tracking an index the owner-reviewed list maps to each filed class.\n- `debenture_returns`: api.portfolio_debenture_returns: 13 month-ends of median fund marks (CDA block 4) per debenture ticker; marks, not trades. Needs month.\n\nA data call is a POST: kind, month and the hidden parameters go in the query string, the lists go in a JSON body (see body). ?help stays a GET. Read-only: every kind is one api.portfolio_* function.\n\nEach list is capped by its function (200 entries, 70 for debenture_returns, 50 classes for equivalents) and refused above it, never trimmed.\n\nNot served: portfolio_credit_returns (held back with the ANBIMA-linked endpoints). The class in fees, fee_peers, movement and equivalents is the ANBIMA class label as filed in the CVM Extrato; no ANBIMA table is read.\n\n`GET /v2/portfolio?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/portfolio"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "resolve: statement lines to candidate funds. fees: estimated and disclosed fees. fee_peers: the admin fee against its filed class. lookthrough: holdings through fund quotas. movement: the month's quota return against its class. instruments: CRA, CRI and debenture codes. fund_terms: manager, administrator, redemption terms. equivalents: the ETFs that track a class's index. debenture_returns: 13 month-ends of debenture marks. Default: resolve.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "resolve",
+                "fees",
+                "fee_peers",
+                "lookthrough",
+                "movement",
+                "instruments",
+                "fund_terms",
+                "equivalents",
+                "debenture_returns"
+              ],
+              "default": "resolve"
+            },
+            "example": "resolve"
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "required": false,
+            "description": "Any day of the month. fees, lookthrough, movement: the month read. debenture_returns: the window's last month. Default: the latest complete month, as each function defines it (fees: each fund's newest balancete; lookthrough: the last complete CDA month; movement: the last complete FI month). debenture_returns has no default month and needs one.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "max_depth",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). lookthrough: fund-quota levels looked through, 1..6 (the SQL default is 4). Default: 4.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 4
+            }
+          },
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). fee_peers: dates the comparison and excludes later documents; it reads the latest Extrato, so it is not a historical backtest. equivalents: snapshots dated after it are not read. Default: today (the SQL default).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "max_monthly_drop_pct",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). debenture_returns: a monthly PU drop beyond this is flagged queda_pu_possivel_evento. Default: none: every decrease is flagged limite_pendente (the threshold is the owner's to set).",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "A JSON object of lists. Every other parameter goes in the query string.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "array",
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "description": "The list: fund CNPJs (fees, fee_peers, lookthrough, movement, fund_terms; resolve: the CNPJ each line prints, parallel to names), instrument codes (instruments), filed ANBIMA class labels (equivalents) or debenture tickers (debenture_returns). Null entries are allowed where the function takes them. Default: none: required by every kind except resolve."
+                  },
+                  "names": {
+                    "type": "array",
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "description": "resolve: one statement line each, the fund name as printed. Default: none: required by resolve."
+                  },
+                  "quotas": {
+                    "type": "array",
+                    "items": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "description": "resolve: the quota value each line prints, parallel to names, for the tie-break. Default: none."
+                  },
+                  "quota_dates": {
+                    "type": "array",
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date"
+                    },
+                    "description": "resolve: the date each quota refers to, parallel to names. Default: none."
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "names": [
+                  "ITAU RF DI"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/coverage": {
+      "get": {
+        "operationId": "v2_coverage",
+        "summary": "v2 coverage",
+        "description": "<Warning>Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`.</Warning>\n\nHow fresh is each dataset, which metrics each family files, and the whole read contract.\n\nExample: `/v2/coverage`\n\nKinds:\n\n- `freshness`: api.coverage(); the source's as_of is returned as data_through (in v2, as_of means point in time).\n- `metrics`: api.metric_coverage(): a (family, metric) pair absent here is one the family never files, not late data.\n- `catalog`: api.catalog(): metrics, constraints, limits, applicability, regime breaks, screens. Cache it.\n\n`GET /v2/coverage?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "x-mint": {
+          "href": "/api-docs/v2/reference/coverage"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "freshness: per dataset, data_through (newest elapsed period), complete_through, landed_at, landed_git_sha. metrics: filed span per (family, metric). catalog: the read contract as one JSON object. Default: freshness.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "freshness",
+                "metrics",
+                "catalog"
+              ],
+              "default": "freshness"
+            }
+          },
+          {
+            "name": "dataset",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated. kind=freshness: dataset names (funds_fidc, quotes, ...). kind=metrics: fund families (fi, fidc, ...). A name no row carries is refused, with the known names. Comma-separated list. Default: all.",
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "apikey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "apikey",
+        "description": "The public publishable key. It identifies the project, not you, and is the anonymous tier.",
+        "x-default": "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Optional. A user JWT from Supabase Auth, for the signed-in tier. Never a secret key."
+      }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {},
+            "description": "Always a list. Rows as the endpoint returned them; null stays null."
+          },
+          "meta": {
+            "type": "object",
+            "required": [
+              "resource",
+              "kind",
+              "request",
+              "id_known"
+            ],
+            "properties": {
+              "resource": {
+                "type": "string"
+              },
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "request": {
+                "type": "object",
+                "description": "Every parameter the resource takes, with the default applied."
+              },
+              "id_known": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Whether SILO holds the id; null when the call names none."
+              },
+              "endpoint": {
+                "type": "string",
+                "description": "The api.* endpoint that answered."
+              }
+            },
+            "additionalProperties": true
+          },
+          "next_page_url": {
+            "type": "string",
+            "description": "Present only when more rows remain. It carries one opaque cursor."
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "target",
+              "innererror"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "bad_request",
+                  "unknown_parameter",
+                  "unknown_id",
+                  "unauthorized",
+                  "forbidden_for_tier",
+                  "over_limit",
+                  "rate_limited",
+                  "timeout",
+                  "unavailable",
+                  "internal"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "target": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "innererror": {
+                "type": "object",
+                "properties": {
+                  "sqlstate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "hint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "details": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

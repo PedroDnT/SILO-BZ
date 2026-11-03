@@ -1,0 +1,85 @@
+---
+title: "v2 quickstart"
+description: "Preview, not deployed. Five calls to the v2 gateway, none needing more than id and kind."
+icon: "rocket"
+---
+
+<Warning>
+  **Preview, not deployed.** The v2 gateway (`silo-api`) and MCP v2 (`silo-mcp-v2`) are built but not deployed yet. These calls work once the owner deploys them. Until then, use the [v1 quickstart](/api-docs/quickstart).
+</Warning>
+
+### The base URL
+
+```bash
+export SILO_V2="https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
+```
+
+The anonymous tier needs no key and no sign-in. Every parameter has a default, and `meta.request` in each response shows the defaults the gateway applied.
+
+### 1. See the 14 resources
+
+```bash
+curl "$SILO_V2/"
+```
+
+One line per resource, with an example call and its `?help` link.
+
+### 2. Find an id
+
+```bash
+curl "$SILO_V2/search?q=petrobras"
+```
+
+Companies, funds and listed shares that match the name, with their stable ids (CNPJ, ISIN, tickers). Use an id from here in the next calls. Never guess a ticker or a CNPJ.
+
+### 3. Prices
+
+```bash
+curl "$SILO_V2/prices?id=PETR4"
+```
+
+The daily history, split-adjusted by default (`adjust=split`). Every row says whether it is `adjusted`.
+
+### 4. One statement
+
+```bash
+curl "$SILO_V2/statements?id=PETR4&kind=income"
+```
+
+The income statement, quarterly and annual, consolidated by default.
+
+### 5. Ask a resource what it takes
+
+```bash
+curl "$SILO_V2/prices?help"
+```
+
+The kinds, the main parameters and their defaults, and the `api.*` endpoints behind them. `?help=all` adds the hidden parameters.
+
+### Read a response
+
+Every data call returns the same envelope. The shape below is illustrative of shape only; it shows no real values.
+
+```json
+{
+  "data": ["<rows, as the endpoint returned them>"],
+  "meta": {
+    "resource": "<resource>",
+    "kind": "<kind>",
+    "request": { "<every parameter>": "<the value applied>" },
+    "id_known": "<true | false | null>",
+    "endpoint": "<the api.* endpoint that answered>"
+  },
+  "next_page_url": "<present only when more rows remain>"
+}
+```
+
+- `data` is always a list. A null stays null; nothing is filled.
+- `next_page_url` carries one opaque `cursor`. Send it alone to get the next page.
+- An error is one object, `{ "error": { "code", "message", "target", "innererror" } }`. A SILO refusal (`over_limit`) keeps its message word for word: narrow the call, do not retry it.
+
+### Next
+
+- [Cheatsheet](/api-docs/v2/cheatsheet): the shared parameters and every resource's main parameters.
+- [For researchers](/api-docs/v2/researchers): point in time, survivorship, adjustment, reproducibility and citation.
+- The **v2 endpoints (preview)** section has one page per resource, each with a "try it" playground. It needs the deploy too.

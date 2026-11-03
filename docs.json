@@ -78,6 +78,20 @@
         "group": "Endpoints",
         "icon": "terminal",
         "openapi": "openapi.json"
+      },
+      {
+        "group": "v2 (preview)",
+        "icon": "flask",
+        "pages": [
+          "api-docs/v2/quickstart",
+          "api-docs/v2/cheatsheet",
+          "api-docs/v2/researchers"
+        ]
+      },
+      {
+        "group": "v2 endpoints (preview)",
+        "icon": "terminal",
+        "openapi": "api-docs/v2/openapi.json"
       }
     ]
   },
