@@ -123,9 +123,12 @@ export async function callView(
   eq: Record<string, unknown>,
   order: string | undefined,
   limit: number,
+  /** Other PostgREST filters, operator included: column -> e.g. "gte.2026-10-20" (prices kind=session, #1055). */
+  filters: Record<string, string> = {},
 ): Promise<ViewPage> {
   const qs = new URLSearchParams({ select: "*" });
   for (const [col, v] of Object.entries(eq)) qs.set(col, `eq.${String(v)}`);
+  for (const [col, f] of Object.entries(filters)) qs.set(col, f);
   if (order) qs.set("order", order);
   qs.set("limit", String(limit));
   const headers: Record<string, string> = {

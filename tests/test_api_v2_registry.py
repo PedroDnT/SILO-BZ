@@ -46,6 +46,7 @@ ERROR_CODES = [
 # Built in this child; the others arrive with #1052's later children.
 BUILT = {"search", "coverage"}
 BUILT |= {"funds", "fidc", "events"}  # #1056
+BUILT |= {"prices", "statements"}  # #1055
 NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -157,6 +158,8 @@ def test_every_endpoint_exists_and_is_granted():
             assert m[ep].granted, f"{r['name']} kind {kind}: api.{ep} is not granted to anon/authenticated"
             want = "view" if plan.get("view") else "rpc"
             assert m[ep].kind == want, f"{r['name']} kind {kind}: api.{ep} is a {m[ep].kind}; the plan says {want}"
+            for view in plan.get("view_by", {}).get("views", {}).values():  # #1055
+                assert view in m and m[view].kind == "view" and m[view].granted, f"{r['name']} kind {kind}: api.{view}"
 
 
 def _view_columns(view: str) -> set[str]:
@@ -188,7 +191,7 @@ def test_every_argument_maps_a_declared_parameter_to_a_declared_p_argument():
                 assert name in plan["args"], f"{r['name']} kind {kind}: requires {name} but never sends it"
             for f in plan.get("filters", []):
                 assert f["parameter"] in accepted, (r["name"], kind, f)
-                assert f["op"] in ("in", "between"), (r["name"], kind, f)
+                assert f["op"] in ("in", "between", "month_last"), (r["name"], kind, f)
                 assert f.get("column") or (f.get("low") and f.get("high")), (r["name"], kind, f)
 
 
@@ -197,7 +200,9 @@ def test_every_accepted_parameter_is_used_by_some_kind():
     for r in _built():
         used = {"kind"}
         for _, plan in _plans(r):
-            used |= set(plan["args"]) | {f["parameter"] for f in plan.get("filters", [])}
+            used |= set(plan["args"]) | {f["parameter"] for f in plan.get("filters", [])} | set(plan.get("uses", []))
+            if "view_by" in plan:
+                used.add(plan["view_by"]["parameter"])
         for spec in r["kinds"].values():
             if "when_empty" in spec:
                 used.add(spec["when_empty"]["parameter"])
@@ -298,3 +303,74 @@ def test_fidc_help_keeps_the_2020_11_delinquency_regime_break():
 @pytest.mark.parametrize("name", RESOURCES)
 def test_the_spec_names_every_resource(name):
     assert f"`{name}`" in SPEC.read_text(encoding="utf-8"), f"docs/planning/API_V2.md does not name {name}"
+
+
+# --------------------------------------------------- prices and statements (#1055) --
+
+ANALYTICAL = ROOT / "src" / "store" / "analytical"
+PRICES_TS = FN_DIR / "resources" / "prices.ts"
+
+
+def _sql() -> str:
+    return "\n".join(p.read_text(encoding="utf-8") for p in sorted(ANALYTICAL.glob("[0-9][0-9]_*.sql")))
+
+
+def _resource(name: str) -> dict:
+    return next(r for r in _resources() if r["name"] == name)
+
+
+def test_history_fields_are_the_sql_quote_history_fields():
+    """fields=all must name every field api.quote_history publishes, no more."""
+    body = re.search(r"FUNCTION api\.quote_history_fields\(\).*?VALUES(.*?)\$\$;", _sql(), re.S)
+    assert body, "api.quote_history_fields() not found"
+    sql_fields = re.findall(r"^\s*\('([a-z_]+)',", body.group(1), re.M)
+    ts = re.search(r"export const HISTORY_FIELDS: string\[\] = \[(.*?)\];", PRICES_TS.read_text(encoding="utf-8"), re.S)
+    assert ts, "HISTORY_FIELDS not found in prices.ts"
+    assert re.findall(r'"([a-z_]+)"', ts.group(1)) == [f for f in sql_fields if f not in ("ticker", "trade_date")]
+
+
+def test_session_reads_the_seven_price_views_on_columns_they_publish():
+    session = _resource("prices")["kinds"]["session"]
+    views = session["view_by"]["views"]
+    assert sorted(views.values()) == sorted(["quotes", "equities", "bdrs", "units", "fund_quotas", "cash_securities", "auctions"])
+    sql = _sql()
+    for view in views.values():
+        body = re.search(rf"CREATE OR REPLACE VIEW api\.{view} AS(.*?)\bFROM\b", sql, re.S)
+        assert body, view
+        for column in session["args"].values():
+            assert re.search(rf"(\bAS\s+{column}\b|\bv\.{column}\s*,)", body.group(1)), f"api.{view} publishes no {column}"
+
+
+def test_value_maps_name_declared_values():
+    for r in _built():
+        for p in r["parameters"]:
+            assert set(p.get("sql_values", {})) <= set(p.get("values", [])), (r["name"], p["name"])
+        for _, plan in _plans(r):
+            for f in plan.get("filters", []):
+                if "map" in f:
+                    assert f["map"] == _accepted(r)[f["parameter"]].get("sql_values"), (r["name"], f)
+
+
+def test_prices_and_statements_windows_are_the_sql_default_windows():
+    """window_months (1 year, 5 years) is the window each SQL function defaults to (365, 1825 days)."""
+    sql = _sql()
+    for name, months in (("prices", 12), ("statements", 60)):
+        r = _resource(name)
+        assert r["window_months"] == months
+        for kind, plan in _plans(r):
+            if "from" not in plan["args"]:
+                continue
+            fn = re.search(rf"FUNCTION api\.{plan['endpoint']}\((.*?)\)\s*\n\s*RETURNS", sql, re.S)
+            assert fn, plan["endpoint"]
+            m = re.search(r"p_from\s+DATE\s+DEFAULT\s+\(CURRENT_DATE\s*-\s*(\d+)\)", fn.group(1))
+            assert m and int(m.group(1)) == months * 365 // 12, (name, kind)
+            assert "to" in plan["args"], (name, kind)
+
+
+def test_statements_period_and_scope_map_to_the_sql_codes():
+    st = {p["name"]: p for p in _resource("statements")["parameters"]}
+    assert st["period"]["sql_values"] == {"quarterly": "itr", "annual": "dfp"} and st["period"]["null_value"] == "both"
+    assert st["scope"]["sql_values"] == {"consolidated": "con", "individual": "ind"}
+    kinds = _resource("statements")["kinds"]
+    assert "as_of" not in kinds["versions"]["args"], "financial_statement_history has no p_as_of"
+    assert kinds["versions"]["args"]["statement"] == "p_statement"

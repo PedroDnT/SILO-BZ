@@ -2,7 +2,9 @@
 //
 // One kind = one plan = one api.* call, then the declared selections. The
 // resource modules (search.ts, coverage.ts, ...) add only what the registry
-// cannot declare, through `prepare` (e.g. funds normalises a CNPJ id).
+// cannot declare, through `prepare` (e.g. funds normalises a CNPJ id) or the
+// hooks of KindHooks (prices: the arguments of a call, how a view is read,
+// and a projection or a column the kind always carries).
 
 import { ApiError } from "../errors.ts";
 import { type Envelope, envelope, type Meta } from "../envelope.ts";
@@ -19,10 +21,30 @@ import {
 import { callRpc, callView, type CallContext } from "../postgrest.ts";
 import type { Plan, ResourceSpec } from "../registry.ts";
 
+export type Row = Record<string, unknown>;
+type Values = Record<string, Value>;
+
 /** A resource's own step between validation and the call; returns the values to send. */
 export type Prepare = (kindName: string, plan: Plan, values: Record<string, Value>) => Record<string, Value>;
 
-export async function runKind(resource: ResourceSpec, req: ParsedRequest, ctx: CallContext, prepare?: Prepare): Promise<Envelope> {
+// -- hooks (prices, #1055) ---------------------------------------------------
+export interface KindHooks {
+  prepare?: Prepare;
+  /** Change an rpc plan's `p_` arguments before the call. */
+  args?: (plan: Plan, values: Values, args: Record<string, unknown>) => Record<string, unknown>;
+  /** Read a view plan itself (through callView): returns the view that answered and its rows. */
+  view?: (plan: Plan, values: Values, ctx: CallContext) => Promise<{ endpoint: string; rows: Row[] }>;
+  /** After the declared selections: a projection, or a column the kind always carries. Never a fill. */
+  rows?: (plan: Plan, values: Values, rows: Row[]) => Row[];
+}
+
+export async function runKind(
+  resource: ResourceSpec,
+  req: ParsedRequest,
+  ctx: CallContext,
+  hooksOrPrepare: KindHooks | Prepare = {},
+): Promise<Envelope> {
+  const hooks: KindHooks = typeof hooksOrPrepare === "function" ? { prepare: hooksOrPrepare } : hooksOrPrepare;
   const kindName = req.kind;
   const kind = kindName ? resource.kinds?.[kindName] : undefined;
   if (!kindName || !kind) throw new ApiError(500, "internal", `${resource.name} has no kind \`${kindName}\` in the registry.`);
@@ -31,7 +53,7 @@ export async function runKind(resource: ResourceSpec, req: ParsedRequest, ctx: C
   checkApplicable(resource, kindName, plan, req.values);
   checkRequired(resource, kindName, plan, req.values);
   let values = applyWindow(resource, plan, req.values);
-  if (prepare) values = prepare(kindName, plan, values);
+  if (hooks.prepare) values = hooks.prepare(kindName, plan, values);
   const meta: Meta = {
     resource: resource.name,
     kind: kindName,
@@ -39,20 +61,29 @@ export async function runKind(resource: ResourceSpec, req: ParsedRequest, ctx: C
     id_known: null,
     endpoint: `api.${plan.endpoint}`,
   };
-  if (plan.view) return runView(resource, plan, values, ctx, meta);
+  if (plan.view && !hooks.view) return runView(resource, plan, values, ctx, meta);
 
-  const result = await callRpc(ctx, plan.endpoint, buildArgs(resource, plan, values));
-
-  let rows: Record<string, unknown>[];
-  if (plan.single) {
-    rows = result === null ? [] : [result as Record<string, unknown>];
-  } else if (Array.isArray(result)) {
-    rows = result as Record<string, unknown>[];
+  let rows: Row[];
+  if (plan.view && hooks.view) {
+    const read = await hooks.view(plan, values, ctx);
+    meta.endpoint = `api.${read.endpoint}`;
+    rows = read.rows;
   } else {
-    throw new ApiError(500, "internal", `api.${plan.endpoint} returned a single value where the registry expects rows.`);
+    let args = buildArgs(resource, plan, values);
+    if (hooks.args) args = hooks.args(plan, values, args);
+    const result = await callRpc(ctx, plan.endpoint, args);
+    if (plan.single) {
+      rows = result === null ? [] : [result as Row];
+    } else if (Array.isArray(result)) {
+      rows = result as Row[];
+    } else {
+      throw new ApiError(500, "internal", `api.${plan.endpoint} returned a single value where the registry expects rows.`);
+    }
   }
 
-  return envelope(applySelections(plan, values, rows), meta);
+  let out = applySelections(plan, values, rows);
+  if (hooks.rows) out = hooks.rows(plan, values, out);
+  return envelope(out, meta);
 }
 
 // -- a view plan (#1056) -----------------------------------------------------
