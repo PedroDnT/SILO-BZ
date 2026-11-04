@@ -42,6 +42,9 @@ concurrency:
   group: supabase-ingest
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   apply-schema:
     name: "Apply schema"

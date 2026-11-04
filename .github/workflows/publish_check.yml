@@ -31,6 +31,9 @@ on:
     workflows: ["Daily CVM Ingest"]
     types: [completed]
 
+permissions:
+  contents: read
+
 jobs:
   publish-check:
     name: Confirm the public host serves the newest build

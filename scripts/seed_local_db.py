@@ -261,12 +261,22 @@ def _norm_fi_cda(row: Dict, year: int, month: int) -> Optional[Dict]:
     }
 
 
-def _norm_fidc_mensal(row: Dict, year: int, month: int) -> Optional[Dict]:
+def _row_period(row: Dict) -> Optional[str]:
+    """DT_COMPTC as an ISO date, or None so the caller drops the row."""
+    try:
+        return _period_to_date(_find_field(row, "DT_COMPTC"))
+    except ValueError:
+        return None
+
+
+def _norm_fidc_mensal(row: Dict) -> Optional[Dict]:
     cnpj_raw = _find_cnpj_field(row)
     cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
     if len(cnpj) != 14:
         return None
-    period = _period_to_date(_find_field(row, "DT_COMPTC"), year, month)
+    period = _row_period(row)
+    if not period:
+        return None
     return {
         "cnpj":          cnpj,
         "period":        period,
@@ -313,12 +323,14 @@ def _norm_fii_mensal(row: Dict, doc_type: str, year: int) -> Optional[Dict]:
     }
 
 
-def _norm_fidc_tranche(row: Dict, year: int, month: int) -> Optional[Dict]:
+def _norm_fidc_tranche(row: Dict) -> Optional[Dict]:
     cnpj_raw = _find_cnpj_field(row)
     cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
     if not cnpj:
         return None
-    period = _period_to_date(_find_field(row, "DT_COMPTC"), year, month)
+    period = _row_period(row)
+    if not period:
+        return None
     return {
         "cnpj":               cnpj,
         "period":             period,
@@ -329,12 +341,14 @@ def _norm_fidc_tranche(row: Dict, year: int, month: int) -> Optional[Dict]:
     }
 
 
-def _norm_fidc_tranche_flows(row: Dict, year: int, month: int) -> Optional[Dict]:
+def _norm_fidc_tranche_flows(row: Dict) -> Optional[Dict]:
     cnpj_raw = _find_cnpj_field(row)
     cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
     if not cnpj:
         return None
-    period = _period_to_date(_find_field(row, "DT_COMPTC"), year, month)
+    period = _row_period(row)
+    if not period:
+        return None
     return {
         "cnpj":        cnpj,
         "period":      period,
@@ -345,12 +359,14 @@ def _norm_fidc_tranche_flows(row: Dict, year: int, month: int) -> Optional[Dict]
     }
 
 
-def _norm_fidc_aging(row: Dict, year: int, month: int) -> Optional[Dict]:
+def _norm_fidc_aging(row: Dict) -> Optional[Dict]:
     cnpj_raw = _find_cnpj_field(row)
     cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
     if not cnpj:
         return None
-    period = _period_to_date(_find_field(row, "DT_COMPTC"), year, month)
+    period = _row_period(row)
+    if not period:
+        return None
     return {
         "cnpj":               cnpj,
         "period":             period,
@@ -512,7 +528,7 @@ async def seed_fidc_mensal(conn, fetcher, months):
         t0 = time.time()
         print(f"  FIDC mensal {year}-{month:02d} … fetching", end="", flush=True)
         raw_rows = await fetcher.fetch("fidc", "mensal", year=year, month=month)
-        records = [_norm_fidc_mensal(row, year, month) for row in raw_rows]
+        records = [r for row in raw_rows if (r := _norm_fidc_mensal(row))]
         records = [r for r in records if r]
         n = _insert(conn, "cvm_fidc_mensal", cols, records)
         total += n
@@ -564,7 +580,7 @@ async def seed_fidc_tranche(conn, fetcher, months):
 
             def _key(row):
                 cnpj = _normalize_cnpj(_find_cnpj_field(row) or "")
-                period = _period_to_date(_find_field(row, "DT_COMPTC"), year, month)
+                period = _row_period(row)
                 return (cnpj, period, _find_field(row, "TAB_X_CLASSE_SERIE") or "")
 
             x3 = {_key(r): r for r in rows_x3}
@@ -572,7 +588,7 @@ async def seed_fidc_tranche(conn, fetcher, months):
 
             records = []
             for row in rows_x2:
-                base = _norm_fidc_tranche(row, year, month)
+                base = _norm_fidc_tranche(row)
                 if not base:
                     continue
                 k = (base["cnpj"], base["period"], base["classe_serie"])
@@ -604,7 +620,7 @@ async def _seed_fidc_tranche_flows(conn, fetcher, months):
         print(f"  FIDC tranche_flows {year}-{month:02d} … fetching", end="", flush=True)
         try:
             raw_rows = await fetcher.fetch("fidc", "mensal_tab_X4", year=year, month=month)
-            records = [r for row in raw_rows if (r := _norm_fidc_tranche_flows(row, year, month))]
+            records = [r for row in raw_rows if (r := _norm_fidc_tranche_flows(row))]
             n = _insert(conn, "cvm_fidc_tranche_flows", cols, records)
             total += n
             print(f"  → {n:,} rows  ({time.time()-t0:.1f}s)")
@@ -628,7 +644,7 @@ async def _seed_fidc_aging(conn, fetcher, months):
         print(f"  FIDC aging {year}-{month:02d} … fetching", end="", flush=True)
         try:
             raw_rows = await fetcher.fetch("fidc", "mensal_tab_VI", year=year, month=month)
-            records = [r for row in raw_rows if (r := _norm_fidc_aging(row, year, month))]
+            records = [r for row in raw_rows if (r := _norm_fidc_aging(row))]
             n = _insert(conn, "cvm_fidc_aging", cols, records)
             total += n
             print(f"  → {n:,} rows  ({time.time()-t0:.1f}s)")
