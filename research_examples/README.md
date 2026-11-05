@@ -49,6 +49,38 @@ the separate live API preflight passes for the required research RPCs.
 future latest-result updates do not change that evidence. The spend ledger
 must exist, reconcile with its entries, and stay within the US$20 total cap.
 
+### MCP v2 comparison
+
+The original runner remains the default. Use the same entry point with
+`--transport mcp-v2` to expose the live server's 14 native tool schemas:
+
+```bash
+python research_examples/agent_eval.py --transport mcp-v2
+python research_examples/agent_eval.py --transport mcp-v2 --preflight
+```
+
+The first command is offline. The second checks the live catalog and one row
+from each of the three required research paths, with no model requests.
+`--run` repeats those checks before making paid requests; a failed or empty
+probe stops the run. A v1 preflight report cannot authorize a v2 run.
+Anonymous access is the default; `SILO_USER_JWT` selects the caller's own
+signed-in access. No credential is saved in evaluation artifacts.
+
+V2 keeps the same model, questions, turn limit, five-data-call limit and
+cumulative US$20 spend ledger. Data results retain the 100-row/80-KB caps;
+catalog discovery permits 160 KB because the live catalog exceeds 80 KB.
+Calls are spaced for anonymous rate limits. The agent receives only the
+professional question and the public MCP tools, never the evaluator probes
+or baseline grading. A model error or missing usage stops the run and retains
+the whole-case cost reserve in the shared ledger until billing is reconciled.
+
+Paid runs save `research_examples/eval-v2-results.json` and
+`docs/reference/research/agent-evaluation-v2-results.md`. They preserve the
+tool schemas, bounded public rows, errors, usage, and a per-case comparison
+against the saved v1 baseline. V2 rubric scores remain ungraded until an
+independent review; technical completion is not a pass. The original v1
+results and its graded 2/12 baseline are preserved.
+
 ## Debenture/equity readiness
 
 [Bounded existing-data audit](debenture_equity/README.md): render a single-capture

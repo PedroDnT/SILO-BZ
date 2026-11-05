@@ -543,7 +543,26 @@ def main() -> int:
     parser.add_argument("--case-id", action="append", help="Run only the specified case ID; may be repeated")
     parser.add_argument("--preflight-report", type=Path, help="Fresh read-only live contract report required with --run")
     parser.add_argument("--budget-usd", type=float, default=DEFAULT_BUDGET_USD)
+    parser.add_argument("--transport", choices=("v1", "mcp-v2"), default="v1")
+    parser.add_argument("--preflight", action="store_true", help="Read-only live checks for --transport mcp-v2")
     args = parser.parse_args()
+
+    if args.transport == "mcp-v2":
+        if args.preflight_report:
+            parser.error("MCP v2 performs its own live preflight; a v1 report cannot authorize it")
+        sys.path.insert(0, str(ROOT))
+        from research_examples.mcp_v2_eval import main as mcp_main
+
+        forwarded = ["--budget-usd", str(args.budget_usd)]
+        for case_id in args.case_id or []:
+            forwarded.extend(["--case-id", case_id])
+        if args.run:
+            forwarded.append("--run")
+        if args.preflight:
+            forwarded.append("--preflight")
+        return mcp_main(forwarded)
+    if args.preflight:
+        parser.error("--preflight requires --transport mcp-v2")
 
     all_cases = load_cases()
     try:

@@ -1,0 +1,1 @@
+| 2026-11-05 | `codex/1061-v2-evaluation` | #1061: add an opt-in native MCP v2 evaluation transport with live preflight, bounded calls, shared spend accounting, separate results and per-case v1 baseline comparison. Default v1 behavior and graded baseline stay intact. Pro grant and paid evaluation await owner approval. |
