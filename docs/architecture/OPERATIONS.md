@@ -61,14 +61,13 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
   follows at 06:00 (09:00).
   [Contract](../reference/research/debenture-secondary-market-capture.md).
 
-## Not automated
+## Manual checks and agents
 
 - `scripts/verify_pipeline.py` runs by hand. All issuers' B3 events once:
   `mode=b3-corporate-events-full`.
 - DB Health checks matview lag on `fact_fund_monthly` only; the others share
   its apply and go stale with it.
-- Sentinel runs daily since 2026-10-06; Scout and Builder are paused
-  (`.claude/agents/`, item 13).
+- `codex.yml`: issue replies; Builder gated (#1079). [Registry](../planning/AGENTS.md).
 
 See [database maintenance](../reference/DATABASE_MAINTENANCE.md),
 [Supabase operations](../reference/supabase_operations.md).
