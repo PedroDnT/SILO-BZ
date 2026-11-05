@@ -72,11 +72,13 @@ it.
    - **3 or more open agent PRs:** stop. No-op: "budget full".
 4. Check that the label `agent:builder` exists. If not, stop. No-op: "label
    agent:builder missing; the owner creates labels". Do not create it.
-5. Take the open issue labelled `ready-for-agent` with the **highest priority**
-   (`P0-critical`, then `P1-next`, `P2-later`, then no priority; never `P3-parked`),
-   the oldest by creation date within that priority, that
-   has no open PR already referencing it, and that is one of the two shapes
-   above. Skip the ones that are not, and note them in your session output.
+5. Run `python3 scripts/agent_queue.py --builder`. Take the first `eligible`
+   issue that is one of the two shapes above. The shared selector preserves
+   highest priority first (`P0-critical`, `P1-next`, `P2-later`, no priority),
+   oldest within a priority, and excludes `P3-parked`. It also skips conflicting
+   triage labels, epics, assignees, open blockers, linked open PRs and file
+   overlaps. Report `skipped` reasons. Re-run immediately before claiming:
+   assign first, then post the root AGENTS.md claim. A competing claim means stop.
    None left: stop. No-op: "no eligible ready-for-agent issue".
 
 ## Step 1: measure the source before writing anything

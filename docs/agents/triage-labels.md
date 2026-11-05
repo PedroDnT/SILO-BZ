@@ -41,15 +41,38 @@ duplicate or an invalid issue with GitHub's close reason ("duplicate", "not plan
 
 ## What starts work
 
-No label starts work. A label only marks an issue. Work starts in one of three ways:
+No label starts work. A label only marks an issue. Work starts in these ways:
 
 1. The owner runs `/orchestrate` in a Claude Code session. It takes the open
    `ready-for-agent` issues and opens one PR per issue.
-2. The Builder agent runs weekly and takes the oldest `ready-for-agent` issue. It is
-   paused (`docs/planning/AGENTS.md`).
+2. Builder takes one eligible issue by priority, oldest within a priority. The
+   legacy Claude routine is paused. The Codex workflow supports manual dispatch;
+   its weekly schedule stays gated pending validation (#1079).
 3. A user with write access writes `@claude` in an issue, a comment or a review.
    `conventions.yml` starts an agent that pushes a `claude/` branch and posts a link.
    The owner opens the PR. This route works on any issue, whatever its label.
+4. A human with current repository write access mentions `@codex` in a new issue
+   or issue comment. `codex.yml` posts a read-only response using the issue and
+   its comments. Ordinary replies and bot comments do not invoke it. This local
+   extension leaves native Codex PR mentions to the native integration.
+
+Codex uses the existing `OPENAI_API_KEY` Actions secret and API billing. Model
+execution has read-only GitHub permissions and no GitHub write credentials; a
+separate publishing job posts responses or validates a Builder patch and opens
+one draft PR. Builder stays within the existing dataset/API-only scope.
+
+Actions → **Codex issue responder and Builder** → **Run workflow** defaults to
+`dry_run=true`: show eligibility without claiming or calling a model. A dispatch
+with `dry_run=false` claims one issue. The Wednesday 10:00 UTC-3 (13:00 UTC)
+schedule requires `CODEX_BUILDER_ENABLED=true`; leave it unset until #1079's
+manual trial succeeds. Keep the legacy Builder paused to avoid duplicate workers.
+
+Builder and `/orchestrate` use `scripts/agent_queue.py`. GitHub claims remain
+cooperative across providers; Codex serializes its own workflow runs and rechecks
+the latest claim before publishing. A competing claim blocks publication. An
+existing Builder PR blocks new Builder work until reviewed or repaired; the
+three-open-agent-PR budget still applies. Tickets: #1077 (responder), #1078
+(queue), #1079 (live validation and activation).
 
 ```mermaid
 flowchart TD
@@ -59,8 +82,9 @@ flowchart TD
     C -->|wontfix| F["Close"]
     C -->|ready-for-agent| G["Eligible only; nothing runs"]
     G --> S1["1. Owner runs /orchestrate"]
-    G -.-> S2["2. Builder, weekly (paused)"]
+    G --> S2["2. Builder manual dispatch; weekly gated"]
     A2["@claude in an issue or comment"] --> S3["3. conventions.yml agent job"]
+    A3["Trusted human @codex issue mention"] --> S4["4. Read-only issue response"]
     S1 --> P1["One PR per issue"]
     S2 -.-> P2["Draft PR; owner marks it ready"]
     S3 --> P3["claude/ branch + link; owner opens the PR"]

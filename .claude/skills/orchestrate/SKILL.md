@@ -10,15 +10,14 @@ GitHub is REST only (`gh api repos/PedroDnT/SILO-BZ/...`; GraphQL is 403 here).
 
 ## 1. Queue
 
-1. `git fetch origin main`. List open issues labelled `ready-for-agent` (and the filter
-   label, if the owner gave one). Order them by priority: `P0-critical`, `P1-next`,
-   `P2-later`, then no priority; oldest first within a priority.
-2. Drop an issue that: carries `needs-triage`, `ready-for-human`, `wontfix` or `P3-parked`; has an
-   assignee; is blocked by an open issue (`.../issues/{n}/dependencies/blocked_by`); has an
-   open PR that references it; names no file in its body.
-3. **Overlap check.** List every open PR's changed files (`.../pulls/{n}/files`). An issue
-   that names one of them is skipped this run. Two queued issues that name the same file
-   run one after the other, never side by side.
+1. `git fetch origin main`. Run `python3 scripts/agent_queue.py`; `eligible` is
+   ordered by priority, oldest within a priority. Apply the owner's optional
+   label filter to those entries.
+2. Use the shared selector's `skipped` reasons. It excludes conflicting triage
+   labels, epics, parked issues, assignees, open blockers, linked open PRs,
+   missing paths and paths overlapping open PRs. Re-run before each claim.
+3. Two queued issues that name the same file run one after the other, never
+   side by side. A competing claim means stop that item, not overwrite it.
 4. Show the owner the queue (issue, files, skipped and why) before step 2 starts.
 
 ## 2. Claim and fan out

@@ -1,0 +1,3 @@
+# Builder measures public sources before implementing a dataset.
+[sandbox_workspace_write]
+network_access = true

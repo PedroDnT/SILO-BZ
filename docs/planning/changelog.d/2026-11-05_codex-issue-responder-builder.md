@@ -1,0 +1,1 @@
+| 2026-11-05 | `codex/issue-responder-builder` | Add trusted Codex issue replies, a shared priority-ordered agent queue and a guarded manual Builder runner. Keep weekly Builder activation gated pending #1079; record Sentinel runtime as unverified. (#1077, #1078) |

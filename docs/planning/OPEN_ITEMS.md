@@ -141,6 +141,12 @@ Moved to [`docs/archive/OPEN_ITEMS_DONE.md`](../archive/OPEN_ITEMS_DONE.md) on 2
 
 ## 13. B7 agent loop: Sentinel scheduled, Builder and Scout paused
 
+**Codex workflow extension:** #1077 and #1078 implement issue replies and the shared
+priority-ordered queue with a manual Builder dispatch. The weekly gate remains
+unset pending a successful manual trial and draft-PR review (#1079). The legacy
+Builder stays paused. Sentinel's provider-side execution still needs verification;
+its registry id is not runtime evidence. See [registry](AGENTS.md#github-workflow-runners).
+
 [AGENTS.md](AGENTS.md) is approved (2026-09-24). The manual Builder run on FIDC
 informe `tab_X_7` (AGENTS.md §5) passed: PR #291 merged on 2026-09-24 with 0
 human-edited lines after the agent's commit and a green first CI. The prompt

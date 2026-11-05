@@ -3,7 +3,9 @@
 The design of SILO's governed agent loop, backlog item B7 in
 [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md) §7. Approved by Pedro on
 2026-09-24. The §5 test passed on 2026-09-24 and the three prompt files exist;
-**nothing is scheduled yet**: see §6.
+the registry records a Sentinel routine; the legacy Builder and Scout remain
+paused. Codex issue replies and a gated Builder workflow are described below;
+live activation is tracked in #1079. See §6 for the historical routine setup.
 
 The contrast this is written against is Liqi (COMPETITIVE_GAPS §4.5), whose
 agent count reads 13 to 20+ depending on the source, and whose CEO, as Pedro
@@ -110,6 +112,28 @@ the labels exist; until a row has one, that agent does not run.
 The Sentinel's 08:51 (05:51 UTC-3) sits after the 06:00 ingest, 07:30 DB Health and the
 08:00 watchdog and publish check, so it reads a day whose own-side state has
 settled.
+
+### GitHub workflow runners
+
+| Runner | Entry point | Schedule / trigger | Output | Kill switch |
+| --- | --- | --- | --- | --- |
+| Codex responder | `.github/codex/respond.md`, `codex.yml` | trusted human issue mention; live validation pending #1079 | one read-only issue comment | disable `codex.yml` |
+| Codex Builder | `.github/codex/builder.md`, `codex.yml` | manual dispatch; Wednesday 10:00 UTC-3 (13:00 UTC) only with `CODEX_BUILDER_ENABLED=true` | one draft `agent:builder` PR | unset `CODEX_BUILDER_ENABLED`; disable workflow to stop manual runs too |
+
+The responder does not implement changes. The Codex Builder follows the existing
+dataset/API scope through a wrapper prompt; its queue uses
+`scripts/agent_queue.py`, also used by the legacy Builder and Orchestrator. It
+assigns before posting its claim, rechecks ownership before publishing and keeps
+GitHub write credentials out of model execution. GitHub-token-created PRs need
+an explicit `test.yml` dispatch; the publisher performs that dispatch. Agent
+provenance names the wrapper prompt commit, base revision and Actions run.
+
+Builder dispatch defaults to a queue-only dry run. Keep its weekly gate unset
+and the legacy Builder paused until the successful manual trial and owner review
+in #1079. A current open Builder PR blocks new Builder work; its repair/review
+is the owner's next action. The three-open-agent-PR budget still applies.
+Sentinel runtime must be checked in its provider; its recorded id alone does not
+prove execution. Daily-ingest failure alerts remain deterministic.
 
 ### b. Prompts are versioned files
 
