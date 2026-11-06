@@ -53,7 +53,7 @@ def test_main_parameters_are_enums_with_defaults_and_hidden_ones_are_marked():
                 assert got["schema"]["default"] == p["default"], (r["name"], p["name"])
             hidden = got["description"].startswith("Hidden parameter")
             assert hidden == (p["visibility"] == "hidden"), (r["name"], p["name"])
-        assert "Preview, not deployed" in op["description"]
+        assert "Deployed preview" in op["description"]
 
 
 def test_id_is_described_per_resource_not_with_the_generic_sentence():
@@ -95,9 +95,9 @@ def test_cheatsheet_names_every_resource_and_main_default():
             assert f"`{p['name']}` (`{default}`" in row or f"`{p['name']}` ({default})" in row, (r["name"], p["name"], default)
 
 
-def test_every_v2_page_says_preview_not_deployed():
+def test_every_v2_page_says_deployed_preview():
     for page in sorted((ROOT / "api-docs" / "v2").glob("*.mdx")):
-        assert "Preview, not deployed" in page.read_text(encoding="utf-8"), page.name
+        assert "Deployed preview" in page.read_text(encoding="utf-8"), page.name
 
 
 def test_docs_json_points_the_v2_group_at_the_spec():

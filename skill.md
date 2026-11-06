@@ -1,119 +1,34 @@
 ---
 name: silo
 description: >
-  Use when answering questions about Brazilian public financial data via the
-  public read API — B3 cash quotes, CVM funds (NAV, flows, FIDC delinquency),
-  panels, lookup, and coverage. Not for ingest, schema, or landing tables.
+  Retrieve and verify Brazilian public financial data through the read-only
+  SILO API or MCP v2. Use for prices, company filings, funds, credit, derivatives,
+  macro, market positioning, events and research panels.
 ---
 
-# SILO (agents)
+# SILO v2 for agents
 
-Public **read** API for Brazilian fund and market data. Ingest is not exposed.
+## Connect and make the first call
 
-This file is the loader: credentials, the first call, and the shape of an
-answer. **It does not restate the contract.** The row caps, the tier ceilings,
-the null semantics and the regime breaks live in exactly two places — the
-[Conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions)
-page for humans and `POST /rpc/catalog` for code. Read one of them before you
-reason about a limit; do not reason from this file's summary, because it does
-not have one.
-
-## Start here
-
-1. `https://octo-98895abd.mintlify.site/llms.txt` — index of every page
-2. Docs MCP (no auth): `https://octo-98895abd.mintlify.site/mcp`. Data MCP
-   (no auth, read-only, one tool per endpoint):
-   `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp`
-3. `POST /rpc/catalog` — the contract as JSON. Call it once, cache it, and read
-   `limits`, `metrics`, `applicability`, `regime_breaks` and `constraints` off
-   the payload instead of from memory. `version` says which contract the server
-   is serving.
-
-Full pages beat training data. When the two disagree, the pages win; when a
-page and the catalog disagree, the catalog wins.
+1. Use the [v2 quickstart](https://octo-98895abd.mintlify.site/api-docs/v2/quickstart.md) or the [documentation index](https://octo-98895abd.mintlify.site/llms.txt). For tool use, connect via Streamable HTTP to `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp-v2`, then call `tools/list`. The docs MCP at `https://octo-98895abd.mintlify.site/mcp` searches documentation.
+2. If using REST, start at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2`. The index lists available resources. `GET /<resource>?help=all`, relative to that base, lists parameters, defaults and supported kinds. For metric definitions and applicability, use `GET /coverage?kind=catalog` or `silo_coverage({"kind":"catalog"})`. Use the gateway's help and tool schemas for v2 request parameters and defaults.
+3. Try `silo_search({"q":"petrobras"})` or `GET /search?q=petrobras` without a credential. Choose the identifier that matches the intended entity before fetching its data.
 
 ## Credentials
 
-Base URL (no trailing slash when joining `/rpc/...`):
+Anonymous access works without a key and has lower ceilings. For authenticated access, ask the user to sign in at [SILO sign-in](https://silo-bz-deloslabs.vercel.app/signin.html) and configure their Supabase Auth user access token as `Authorization: Bearer <access token>` in the REST or MCP client. Send it only to the SILO function URLs above. Keep it out of prompts, logs, URLs and committed configuration. An expired or invalid bearer is rejected on data calls. Ask for a fresh token if authentication fails, and check `meta.tier` to confirm the access level when a call succeeds. Pro access is granted separately.
 
-```
-https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1
-```
+The following **public publishable key** is retained for legacy v1 clients and compatibility checks. For v1 it goes in the `apikey` header. The v2 gateway does not need it.
 
-The publishable key is **shared, for testing**. Send it only as `apikey`, never
-as `Authorization: Bearer` — it is not a JWT:
-
-```
+```text
 apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 ```
 
-Never `sb_secret_…` / `service_role`. Never `Accept-Profile: public`. You cannot
-mint or forge a key, and there is no endpoint that issues one.
+## Answer a research question
 
-Anonymous access is free and deliberately small. To raise the ceilings, send a
-human to https://silo-bz-deloslabs.vercel.app/signin.html (GitHub) and then send **both**
-headers:
+1. **Resolve the entity.** Use `silo_search` for names and identifiers. Check the match and the resource's accepted identifier type. Preserve uncertainty if the input is ambiguous.
+2. **Check coverage.** Use `silo_coverage` with the relevant dataset before claiming freshness, and compare the requested window with `data_through` and `complete_through`. Check metric applicability before interpreting a missing field. For point-in-time queries, check whether the resource supports `as_of`.
+3. **Fetch and continue.** Select the resource and `kind`, inspect the applied parameters in `meta.request`, then follow all relevant pages within the task's scope. In REST follow `next_page_url`; in MCP extract its `cursor` and pass it alone to the same tool. A tier cap makes a result partial. For `over_limit`, narrow the request using the error guidance. For `429`, respect `Retry-After` when supplied. If a first result is empty, check the identifier, coverage, date window and related resource before concluding that the answer is unavailable.
+4. **Calculate and cite.** Compute ratios, ranks and other derived results locally. State units, period and adjustments. Preserve nulls and gaps, and never invent an observation or an identifier match. Cite the request or tool arguments, the source and retrieval date, and available provenance such as `meta.endpoint`, `landed_at` or a source document link. If evidence is still incomplete, say what you checked and what prevents an answer.
 
-```
-apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
-Authorization: Bearer <access token>
-```
-
-**The token expires in about an hour and expiry is silent** — you drop back to
-anonymous limits rather than getting a `401`, so a call that worked an hour ago
-starts failing on an id ceiling. Read that as "my token died".
-
-The numbers for both tiers are `catalog().limits.tiers`, and in prose on
-[Conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions#authentication).
-Do not carry them in your head; they change.
-
-## How to answer a finance question
-
-1. `POST /rpc/coverage` with `{}` — one row per dataset. **Do not claim
-   freshness without it.** Read `as_of`, not `newest_period`; read `notes`
-   before differencing anything.
-2. Resolve names with `POST /rpc/lookup` (`p_query`). A 14-digit id is a CNPJ;
-   anything else is a ticker. Do not invent ticker↔CNPJ joins — the only
-   published one is CVM's FCA map, which `lookup` already returns as `tickers`.
-3. Pull a panel: `POST /rpc/panel` with `p_ids`, `p_metrics`, `p_freq`. Mix
-   tickers and fund CNPJs in one call. `freq=day` is quotes only; mix equity
-   with fund fundamentals on `freq=month`. Take metric names from
-   `catalog().metrics` — an unrecognised one is **ignored, not rejected**, and
-   the panel comes back smaller and plausible.
-4. Reduce **locally** (corr, rank, ratios, regressions). There is no
-   `POST /query` and no server-side correlation; the catalog lists these as
-   `notebook_reducers`.
-5. Before reading a null as a gap, call `coverage` and `metric_coverage`. A null
-   outside a family's column set is **not applicable**, and a `(family, metric)`
-   pair absent from `metric_coverage` is one that family never files.
-
-Worked end-to-end examples, runnable: [`notebooks/`](https://github.com/PedroDnT/SILO-BZ/tree/main/notebooks)
-in the repository, and the [Python SDK](https://octo-98895abd.mintlify.site/api-docs/sdk)
-(`pip install -e sdk/`), which wraps the paging cursors and raises on a
-truncated response.
-
-## Do not
-
-- Fabricate a price, NAV, fill, ranking, or identifier match. Missing stays
-  missing. No ffill, no interpolation, no carried-forward last observation.
-- Treat a calendar gap as a multi-month `close_return` (it is null / omitted),
-  or read `close_return` as a total return — quotes are unadjusted
-  (`adjusted = false`) and a 2:1 split reports roughly −50 %.
-- Read `delinquency` as a rate. It is **BRL value**; divide by `nav` yourself.
-- Chain-link a FIDC `delinquency` series across 2024-12 → 2025-01. It is null on
-  every row before 2025-01 (a source-format boundary, `catalog().regime_breaks`);
-  the series **starts** there.
-- Pivot a panel on `(id, date, metric)`. The grain includes `asset_class` —
-  one CNPJ can file under two families in the same month.
-- Retry a refused call by shrinking the ask blindly. Over one page, functions
-  raise `22023` rather than trim: page `panel` / `quote_history` / `fund_nav`
-  with `p_after`, and narrow the window on the rest. Nothing is ever silently
-  truncated on an RPC call.
-- Touch landing tables (`cvm_*`, `b3_cotahist`, `cia_*`, `bacen_*`,
-  `cvm_ingest_log`) or send `Accept-Profile: public`. Schema `api` is the whole
-  public surface.
-
-Pages: [conventions](https://octo-98895abd.mintlify.site/api-docs/conventions)
-(the contract) · [for agents](https://octo-98895abd.mintlify.site/api-docs/agents)
-(the operator guide) · [panel](https://octo-98895abd.mintlify.site/api-docs/panel)
-· [coverage](https://octo-98895abd.mintlify.site/api-docs/coverage).
+For research conventions, see the [v2 researcher guide](https://octo-98895abd.mintlify.site/api-docs/v2/researchers.md). For existing PostgREST integrations, see the [v1 quickstart](https://octo-98895abd.mintlify.site/api-docs/quickstart.md).

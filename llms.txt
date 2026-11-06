@@ -1,17 +1,31 @@
 # SILO
 
-> Public read API for Brazilian public financial data — CVM fund disclosures (FI, FIDC, FII, FIP, FIAGRO), listed-company financials, ANBIMA class aggregates, B3 cash quotes, options and termo, and Brazilian inflation (BACEN's IPCA series and IBGE's item tree with weights). Schema `api` over Supabase PostgREST. Read-only; ingest is not exposed.
+> Read-only API and MCP for Brazilian public financial data, including company statements, funds, credit, prices, derivatives, macro and market positioning.
 
-Start with Conventions & limits: it is the single source of truth for auth tiers, the 1,000-row page, null semantics and regime breaks, and every other page links back to it rather than restating them. The machine-readable twin is `POST /rest/v1/rpc/catalog`.
+## Start here with v2
 
-## Start here
+The REST API and MCP v2 are live in preview. Anonymous data calls need no key. To sign in, configure a user access token as `Authorization: Bearer <access token>`. See the Quickstart for the first call and the skill for the agent workflow.
+
+- [v2 quickstart](https://octo-98895abd.mintlify.site/api-docs/v2/quickstart.md): Discover resources, resolve an identifier, query data, check coverage and connect an agent.
+- [Agent skill](https://octo-98895abd.mintlify.site/skill.md): Authentication, tool selection, pagination, empty results, partial results and provenance.
+- [REST v2 resource index](https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/): 14 resources. Add `?help=all` to a resource path for parameters, kinds and defaults.
+- [MCP v2](https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp-v2): Remote Streamable HTTP. Call `tools/list` to discover the 14 tools. Start with `silo_search` to resolve identifiers and `silo_coverage` to check freshness.
+- [v2 catalog](https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/coverage?kind=catalog): Metric definitions, applicability, constraints and regime breaks.
+- [v2 cheatsheet](https://octo-98895abd.mintlify.site/api-docs/v2/cheatsheet.md): Shared parameters, resources, defaults and tool arguments.
+- [v2 for researchers](https://octo-98895abd.mintlify.site/api-docs/v2/researchers.md): Point-in-time queries, survivorship, adjustments, reproducibility and citation.
+- [v2 OpenAPI](https://octo-98895abd.mintlify.site/api-docs/v2/openapi.json): Machine-readable REST contract for the 14 resources.
+
+## Existing v1 integrations
+
+The pages below cover PostgREST and the legacy MCP. Use the v2 links above for gateway parameters, authentication behavior and limits.
+
 
 - [SILO](https://octo-98895abd.mintlify.site/index.md): What the API serves, and the shortest path from nothing to an answer.
-- [Quickstart](https://octo-98895abd.mintlify.site/api-docs/quickstart.md): Get the publishable key, make your first request, and read the response — in under a minute.
-- [Conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions.md): THE CONTRACT. Base URL, auth tiers and every ceiling, the 1,000-row cap and the p_after cursor protocol, null and not-applicable semantics, the FIDC 2025-01 regime break, freshness columns, and error behavior. Written here and nowhere else.
-- [Python SDK](https://octo-98895abd.mintlify.site/api-docs/sdk.md): silo-client — a thin, honest Python client over the read API: one method per endpoint, a capped response raises, views page, nothing is fabricated.
-- [For agents](https://octo-98895abd.mintlify.site/api-docs/agents.md): The operator guide for coding agents — what to read, how to get a token, the first live call, and how to screen a whole fund family.
-- [MCP server](https://octo-98895abd.mintlify.site/api-docs/mcp.md): Connect Claude, ChatGPT or Cursor to SILO over MCP: one read-only tool per API endpoint, no key, no signup, errors passed through verbatim. Live at https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp.
+- [v1 quickstart](https://octo-98895abd.mintlify.site/api-docs/quickstart.md): Get the publishable key, make your first request, and read the response — in under a minute.
+- [v1 conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions.md): PostgREST contract. Base URL, auth tiers and every ceiling, the 1,000-row cap and the p_after cursor protocol, null and not-applicable semantics, the FIDC 2025-01 regime break, freshness columns, and error behavior.
+- [v1 Python SDK](https://octo-98895abd.mintlify.site/api-docs/sdk.md): silo-client — a thin, honest Python client over the read API: one method per endpoint, a capped response raises, views page, nothing is fabricated.
+- [v1 agent guide](https://octo-98895abd.mintlify.site/api-docs/agents.md): The operator guide for coding agents — what to read, how to get a token, the first live call, and how to screen a whole fund family.
+- [v1 MCP server](https://octo-98895abd.mintlify.site/api-docs/mcp.md): Connect Claude, ChatGPT or Cursor to SILO over MCP: one read-only tool per API endpoint, no key, no signup, errors passed through verbatim. Live at https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp.
 - [Data inventory](https://octo-98895abd.mintlify.site/api-docs/data-inventory.md): What we ingest, what we don't, and what we hold but don't serve.
 - [Market coverage](https://octo-98895abd.mintlify.site/api-docs/market-coverage.md): What exists, how far back it goes, how often it updates — and the one dataset that is a ratchet.
 - [Known limitations](https://octo-98895abd.mintlify.site/api-docs/known-limitations.md): What the API does not do yet and what is planned — sector-specific charts of accounts, tickers that resolve to nothing, the duplicated ITR spans, unadjusted prices.
@@ -66,23 +80,14 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 
 ## For machines
 
-- [skill.md](https://octo-98895abd.mintlify.site/skill.md): The agent loader — credentials, the first call, and the shape of an answer. Points at the contract rather than restating it.
+- [skill.md](https://octo-98895abd.mintlify.site/skill.md): Connect an agent to v2, authenticate when needed, and verify and cite the result.
 - [Docs MCP](https://octo-98895abd.mintlify.site/mcp): Search and read these pages over MCP. No login.
-- [catalog()](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/catalog): `POST` with `{}` and an `apikey` header. The contract as JSON — `limits`, `metrics`, `applicability`, `regime_breaks`, `constraints`, and a `version` saying what the server is actually serving.
-- [Data API](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/): The live base URL. Views are `GET /<view>`; functions are `POST /rpc/<function>`.
+- [v1 catalog()](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/catalog): `POST` with `{}` and an `apikey` header. The contract as JSON — `limits`, `metrics`, `applicability`, `regime_breaks`, `constraints`, and a `version` saying what the server is actually serving.
+- [v1 Data API](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/): The live base URL. Views are `GET /<view>`; functions are `POST /rpc/<function>`.
 
-## v2 (preview, not deployed)
-
-The v2 gateway (`silo-api`, 14 resources) and MCP v2 (`silo-mcp-v2`, 14 tools named `silo_<resource>`) are built but not deployed. Use the pages above until the owner deploys them.
-
-- [v2 quickstart](https://octo-98895abd.mintlify.site/api-docs/v2/quickstart.md): Preview, not deployed. Five calls to the v2 gateway, none needing more than id and kind.
-- [v2 cheatsheet](https://octo-98895abd.mintlify.site/api-docs/v2/cheatsheet.md): Preview, not deployed. The five shared parameters, the 14 resources, their main parameters and defaults, and the MCP v2 tools.
-- [v2 for researchers](https://octo-98895abd.mintlify.site/api-docs/v2/researchers.md): Preview, not deployed. Point in time (as_of), survivorship (search kind=universe), adjustment (adjust=split, no dividends), reproducibility (meta.request) and a citation line.
-
-## OpenAPI Spec
+## v1 OpenAPI Spec
 
 - [openapi.json](https://octo-98895abd.mintlify.site/openapi.json): OpenAPI 3.1 covering every granted view and function, generated from the live Postgres catalog by `scripts/gen_openapi.py` and guarded against drift in both directions by `tests/test_openapi_spec.py`. Nothing in it is hand-maintained.
-- [v2 openapi.json](https://octo-98895abd.mintlify.site/api-docs/v2/openapi.json): Preview, not deployed. OpenAPI 3.1 for the 14 v2 resources, generated from `supabase/functions/silo-api/registry.ts` by `scripts/gen_openapi_v2.py` and checked by `tests/test_openapi_v2.py`. It feeds the v2 "try it" playground.
 
 ## Optional
 

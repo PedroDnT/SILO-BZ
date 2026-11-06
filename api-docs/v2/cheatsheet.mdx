@@ -1,11 +1,11 @@
 ---
 title: "v2 cheatsheet"
-description: "Preview, not deployed. The five shared parameters, the 14 resources, their main parameters and defaults."
+description: "Deployed preview. The five shared parameters, the 14 resources, their main parameters and defaults."
 icon: "table"
 ---
 
 <Warning>
-  **Preview, not deployed.** The v2 gateway is built but not deployed yet. This page describes it as built.
+  **Deployed preview.** The v2 gateway is live. Agent evaluation and v1 retirement are pending.
 </Warning>
 
 Base URL: `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2`. Every parameter has a default. A name a resource does not take is refused as `unknown_parameter`, never ignored.
@@ -51,7 +51,7 @@ Every other parameter is hidden. It works, and `GET /v2/<resource>?help=all` lis
 
 ### MCP v2
 
-MCP v2 (`silo-mcp-v2`, preview, not deployed) has one tool per resource, named `silo_<resource>`: `silo_search`, `silo_prices`, and so on. A tool's top-level arguments are its main parameters and the shared ones, with the same enums and defaults as this table. Hidden parameters go in one optional `options` object. The result is the same envelope, and errors come back word for word.
+MCP v2 (`silo-mcp-v2`, deployed preview) has one tool per resource, named `silo_<resource>`: `silo_search`, `silo_prices`, and so on. A tool's top-level arguments are its main parameters and the shared ones, with the same enums and defaults as this table. Hidden parameters go in one optional `options` object. The result is the same envelope, and errors come back word for word.
 
 ### Errors
 

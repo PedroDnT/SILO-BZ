@@ -1,0 +1,1 @@
+| 2026-11-06 | codex/silo-v2-agent-onboarding | **Point agent onboarding at the live API and MCP v2 (#1081).** The v2 quickstart shows a first query and the auth flow, `llms.txt` leads with v2, and `skill.md` explains coverage, pagination, limits and provenance. Existing v1 integrations keep their references. |
