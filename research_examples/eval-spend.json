@@ -1,6 +1,6 @@
 {
   "note": "Model-usage estimate from observed runs. Three smoke costs are rounded from earlier run outputs; actual OpenAI billing has not been reconciled.",
-  "estimated_usd": 0.604687,
+  "estimated_usd": 2.164687,
   "entries": [
     {
       "run": "earlier-smoke-1",
@@ -76,6 +76,12 @@
       "run": "2026-09-25T01:20:53.529359+00:00",
       "case": "L3",
       "estimated_usd": 0.049456
+    },
+    {
+      "run": "2026-11-06T22:05:06.305138+00:00",
+      "transport": "mcp-v2",
+      "case": "Q1",
+      "estimated_usd": 1.56
     }
   ]
 }

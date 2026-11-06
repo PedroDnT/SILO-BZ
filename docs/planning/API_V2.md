@@ -22,8 +22,22 @@ playground from `api-docs/v2/openapi.json`, generated from the registry by
 `scripts/gen_openapi_v2.py`. `meta.data_version` (section 2) is not built yet;
 the researchers page says to read `landed_at` and `landed_git_sha` from
 `coverage` until it is.
-Nothing is deployed: a merge deploys no Edge Function, and every deploy needs
-the owner's approval.
+**Deployed preview since 2026-11-04.** The owner-approved rollout activated
+`silo-api` and `silo-mcp-v2`; live catalog v82, all 14 resource help pages,
+search, prices, cursor paging and tier/error behavior were checked
+([rollout evidence](https://github.com/PedroDnT/SILO-BZ/issues/1061#issuecomment-6641311719)).
+A merge still deploys no Edge Function. V1 remains live until the consumer
+migration and privilege changes in #1065 are accepted.
+
+The native MCP v2 evaluator is built (#1076). Its 2026-11-06 live preflight
+passed all required research probes, but the paid attempt stopped on Q1 with
+OpenAI HTTP 401 and no observed usage. No case completed and no new rubric
+score exists. The ledger retains the US$1.56 whole-case reserve; cumulative
+accounted estimates/reserves are US$2.164687, not reconciled billing. A full
+12-case retry's US$18.72 reserve would now exceed the US$20 cumulative cap;
+reconcile the failed attempt's billing before planning that retry. Owner pro
+access also remains unverified because the configured database connection
+was refused. #1061 tracks these remaining rollout gates.
 
 ## Why
 

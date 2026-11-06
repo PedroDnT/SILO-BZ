@@ -3,6 +3,29 @@
 One entry per agent session that the owner asked to log: date (UTC-3), branch, what was done, decisions,
 assumptions, and anything touched outside the asked scope. Newest first.
 
+## 2026-11-06 · codex/v2-rollout-followup (#1061, #1079)
+
+**Done.** Closed recovered DB Health #1021 after eight passing runs and #1042
+following bounded live API acceptance. Corrected the API v2 deployment status in
+the README and planning documents. Native MCP preflight passed all required
+research probes. The authorized paid attempt stopped on Q1 with OpenAI HTTP 401,
+zero observed usage and no completed answer; preserved its result and US$1.56
+reserve in the shared ledger (cumulative US$2.164687, not reconciled billing).
+
+**Decisions and limits.** No replacement score or independent grading is possible
+without completed answers. A full retry's reserve now exceeds the US$20 cap until
+billing is reconciled. The configured database connection was refused, so no pro
+grant occurred. V1 retirement remains gated on migrated, accepted consumers.
+
+**Agent validation.** Queue-only run 42301881067 failed before queue selection:
+checkout cleanup encountered the orphan `whiting` gitlink, introduced in #1074.
+The command reproduces locally. Remove the tracked gitlink only, preserving the
+local directory, then rerun after merge. No schedule or Sentinel runtime was
+claimed as validated; no new feature was added to create an eligible Builder trial.
+
+**Scope.** Existing rollout follow-up requested by the owner. No schema apply,
+credential value, production deployment or v1 privilege change belongs to this diff.
+
 ## 2026-10-21 · cclaude/compassionate-turing-hejjp3 · handoff (freeze cleanup, orchestrator runs, dollar futures)
 
 This entry is the handoff for the next Claude session. Read it, then check the live state with `gh api repos/PedroDnT/SILO-BZ/...`

@@ -1,0 +1,1 @@
+| 2026-11-06 | codex/v2-rollout-followup | Reconcile API v2 planning with the approved live rollout and close the recovered health and API-fix P0 tickets after acceptance checks. Record the passing native MCP preflight, the stopped OpenAI 401 attempt with its retained cost reserve, and the remaining pro-access, agent-validation and v1-retirement gates. |
