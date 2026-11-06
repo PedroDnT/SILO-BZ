@@ -152,8 +152,22 @@ def test_default_is_offline_and_does_not_load_credentials(monkeypatch, capsys):
 
     monkeypatch.setattr(v2, "BoundedMCP", unexpected)
     monkeypatch.setattr(agent_eval, "load_local_openai_key", unexpected)
+    monkeypatch.setattr(agent_eval, "load_spend_ledger", lambda: {"entries": [], "estimated_usd": 0.0})
     assert v2.main([]) == 0
     assert "No network or model requests" in capsys.readouterr().out
+
+
+def test_prior_spend_blocks_preflight_before_network(monkeypatch):
+    def unexpected(*args, **kwargs):
+        raise AssertionError("over-budget preflight must not connect")
+
+    monkeypatch.setattr(v2, "BoundedMCP", unexpected)
+    monkeypatch.setattr(agent_eval, "load_spend_ledger", lambda: {
+        "entries": [{"estimated_usd": 19.0}], "estimated_usd": 19.0,
+    })
+    with pytest.raises(SystemExit) as exc:
+        v2.main(["--preflight"])
+    assert exc.value.code == 2
 
 
 @pytest.mark.parametrize("arguments", [["--budget-usd", "nan"], ["--budget-usd", "21"], ["--case-id", "missing"]])
