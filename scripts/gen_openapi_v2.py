@@ -15,7 +15,7 @@ group in ``docs.json`` (#1060). Main parameters are enums with their defaults;
 hidden parameters are marked in their description. The server is the
 ``silo-api`` function base, and the public publishable key is prefilled in the
 playground's ``apikey`` field with Mintlify's ``x-default`` extension. The
-gateway is not deployed yet, so every operation says "preview, not deployed".
+gateway is a deployed preview; agent evaluation and v1 retirement remain pending.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ SERVER = "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
 # The public publishable key, the same one api-docs/quickstart.mdx prints. It
 # identifies the project, not a person, and maps to the anon role.
 PUBLISHABLE_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
-PREVIEW = "Preview, not deployed. The v2 gateway is built but not deployed yet; this call works once the owner deploys `silo-api`."
+PREVIEW = "Deployed preview. The v2 gateway is live; agent evaluation and v1 retirement are pending."
 
 
 def load_registry() -> dict:
@@ -252,7 +252,7 @@ def build(registry: dict, error_codes: list[str]) -> dict:
     return {
         "openapi": "3.1.0",
         "info": {
-            "title": "SILO API v2 (preview, not deployed)",
+            "title": "SILO API v2 (deployed preview)",
             "version": registry["version"],
             "description": (
                 "The v2 gateway over SILO's schema `api`: 14 resources, five shared parameters, one envelope and one "
@@ -260,7 +260,7 @@ def build(registry: dict, error_codes: list[str]) -> dict:
                 "do not edit by hand. " + PREVIEW
             ),
         },
-        "servers": [{"url": SERVER, "description": "The silo-api Edge Function (preview, not deployed)."}],
+        "servers": [{"url": SERVER, "description": "The silo-api Edge Function (deployed preview)."}],
         "security": [{"apikey": []}, {"apikey": [], "bearerAuth": []}],
         "paths": paths,
         "components": {
