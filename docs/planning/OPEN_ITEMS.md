@@ -9,6 +9,10 @@ as a second list, in `README.md` of this directory, written by another session
 that could not see this one; they are folded in here and that list is now a
 pointer. Anything provisional or missing goes in this file.
 
+Current API v2 rollout and agent activation are in item 27. Older dated
+measurements and proposal sections below are historical context, not proof
+that a failure or rollout gate is still current; verify their linked issues.
+
 ## Known good as of 2026-10-06
 
 | Surface              | State                                                                                                                                           |
@@ -912,3 +916,39 @@ cannot be rebuilt. **Owner, to enable:**
 Once enabled, a failed upload turns the daily run red as its last step. Size is not
 measured yet; the current-month FI daily file changes every day, so expect tens to
 hundreds of MB a day.
+
+## 27. API v2 rollout and agent activation (#1061, #1065, #1079)
+
+Current acceptance checks on 2026-11-06 (Brasília):
+
+- **P0 #1021 closed:** eight consecutive DB Health runs passed across 3–6 November,
+  including scheduled run [42203607038](https://github.com/PedroDnT/SILO-BZ/actions/runs/42203607038).
+- **P0 #1042 closed:** bounded production calls confirm company lookup and its
+  truncation flag, holding-fund names and position kinds, quarterly financial
+  filtering, and the catalog's DOC short-vertex warning. Fixes are merged in #1043/#1044.
+- **V2 is deployed preview:** REST and MCP v2 were activated on 2026-11-04;
+  [rollout evidence](https://github.com/PedroDnT/SILO-BZ/issues/1061#issuecomment-6641311719).
+  The 2026-11-06 native MCP preflight found all 14 tools and nonempty results
+  for the three required research probes.
+- **Evaluation #1061 is blocked:** the paid attempt stopped on Q1 with OpenAI
+  HTTP 401; no answer completed and no new score exists. Replace the existing
+  OpenAI credential through secure environment settings. The ledger retains
+  US$1.56 for unobserved cost (cumulative US$2.164687); do not remove that reserve
+  without billing reconciliation. Reserving another full 12-case run would
+  exceed the US$20 cap. The independent v1 baseline remains 2/12.
+- **Owner pro access #1061 remains unverified:** the existing POSTGRES_URL was
+  present but the configured database connection was refused. Restore a supported
+  database connection before checking/upserting the already identified owner's tier;
+  do not substitute another account or claim that a grant happened.
+- **Agent activation #1079 remains gated:** queue-only Actions run
+  [42301881067](https://github.com/PedroDnT/SILO-BZ/actions/runs/42301881067)
+  failed during checkout cleanup on the orphan `whiting` gitlink. Removing only
+  that tracked gitlink fixes the reproduced local command and preserves the local
+  directory. Re-run the workflow after the correction lands, then validate the
+  responder and one eligible Builder issue before enabling the weekly schedule.
+  No new dataset/endpoint is authorized merely to manufacture a trial. Sentinel
+  runtime still needs evidence from its provider; its registry id is not a run.
+- **V1 retirement #1065 remains blocked:** migrate/accept the SDK, local adapter,
+  dashboards and evaluation first, then the gateway role and production privilege
+  changes. Current failures do not justify revoking v1. Close epic #1052 only
+  after the remaining rollout acceptance is complete.
