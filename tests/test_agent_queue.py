@@ -43,7 +43,7 @@ def test_queue_selects_oldest_and_checks_blockers_and_linked_prs(monkeypatch):
         if endpoint.startswith("issues?"):
             return rows
         if endpoint == "issues/1/dependencies/blocked_by":
-            return [{"state": "open"}]
+            return [{"number": 9, "state": "open"}]
         if endpoint == "issues/2/timeline":
             return [{"source": {"issue": {"state": "open", "pull_request": {"url": "pr"}}}}]
         return []
@@ -51,6 +51,32 @@ def test_queue_selects_oldest_and_checks_blockers_and_linked_prs(monkeypatch):
     result = agent_queue.queue("owner/repo", builder=True)
     assert [i["number"] for i in result["eligible"]] == [3, 4]
     assert [i["number"] for i in result["skipped"]] == [1, 2]
+    assert result["skipped"][0]["reason"] == "blocked by an open issue #9"
+
+
+@pytest.mark.parametrize("body,states,eligible", [
+    ("Blocked by: #7", {7: "open"}, False),
+    ("Blocked by: #7", {7: "closed"}, True),
+    ("Part of #7", {7: "open"}, True),
+    ("**Blocked by:** #7 (docs) and the deploy (#8).", {7: "closed", 8: "open"}, False),
+])
+def test_body_blocked_by_line_blocks_while_a_named_issue_is_open(monkeypatch, body, states, eligible):
+    rows = [issue(1, body=body + "\nImplement src/store/analytical/99_api_test.sql")]
+    fetched = []
+    def fake_gh(repo, endpoint, method="GET", data=None):
+        fetched.append(endpoint)
+        return {"number": int(endpoint.rsplit("/", 1)[1]),
+                "state": states[int(endpoint.rsplit("/", 1)[1])]}
+    monkeypatch.setattr(agent_queue, "pages", lambda repo, endpoint:
+                        rows if endpoint.startswith("issues?") else [])
+    monkeypatch.setattr(agent_queue, "gh", fake_gh)
+    result = agent_queue.queue("o/r")
+    assert bool(result["eligible"]) is eligible
+    if not eligible:
+        assert result["skipped"] == [{"number": 1, "reason": "blocked by an open issue #"
+                                      + str(max(n for n, s in states.items() if s == "open"))}]
+    # Only the `Blocked by:` line is fetched; `Part of #n` never is.
+    assert fetched == ([f"issues/{n}" for n in sorted(states)] if "Blocked by" in body else [])
 
 
 def test_directory_and_glob_overlap():

@@ -12,6 +12,9 @@ import subprocess
 BLOCKING_LABELS = {"needs-triage", "needs-info", "ready-for-human", "wontfix", "epic", "P3-parked"}
 PRIORITY = {"P0-critical": 0, "P1-next": 1, "P2-later": 2}
 PATH = re.compile(r"(?<![\w/])(?:[\w.-]+/)+[\w.*-]+(?:\.[\w*-]+)?")
+# `Blocked by: #n` in the body is the documented fallback for the dependency API
+# (docs/agents/issue-tracker.md). Only that line counts; `Part of #n` does not.
+BLOCKED_BY = re.compile(r"blocked by\**\s*:", re.IGNORECASE)
 
 
 def gh(repo, endpoint, method="GET", data=None):
@@ -44,13 +47,19 @@ def issue_paths(issue):
     return sorted(paths)
 
 
+def body_blockers(issue):
+    """Issue numbers named on the body's `Blocked by:` line(s)."""
+    return sorted({int(n) for line in (issue.get("body") or "").splitlines()
+                   if BLOCKED_BY.search(line) for n in re.findall(r"#(\d+)", line)})
+
+
 def overlaps(planned, changed):
     return any(fnmatch.fnmatchcase(other, path) or other.startswith(path.rstrip("/") + "/")
                or path.startswith(other.rstrip("/") + "/")
                for path in planned for other in changed)
 
 
-def skip_reason(issue, *, blocked=False, linked_pr=False, changed=(), builder=False):
+def skip_reason(issue, *, blocked=(), linked_pr=False, changed=(), builder=False):
     labels = {label["name"] for label in issue.get("labels", [])}
     if "ready-for-agent" not in labels:
         return "not ready-for-agent"
@@ -61,7 +70,8 @@ def skip_reason(issue, *, blocked=False, linked_pr=False, changed=(), builder=Fa
     if issue.get("assignees"):
         return "assigned"
     if blocked:
-        return "blocked by an open issue"
+        numbers = sorted(blocked) if isinstance(blocked, (list, tuple, set)) else []
+        return "blocked by an open issue" + "".join(f" #{n}" for n in numbers)
     if linked_pr:
         return "already referenced by an open PR"
     paths = issue_paths(issue)
@@ -99,8 +109,12 @@ def queue(repo, *, builder=False):
             continue
         reason = skip_reason(issue, changed=changed, builder=builder)
         if reason is None:
-            blocked = any(i["state"] == "open" for i in pages(
-                repo, f"issues/{issue['number']}/dependencies/blocked_by"))
+            # Either source blocks: the dependency API, or a `Blocked by: #n` body line
+            # naming an issue that is still open (#1084).
+            blocked = {i["number"] for i in pages(
+                repo, f"issues/{issue['number']}/dependencies/blocked_by") if i["state"] == "open"}
+            blocked.update(n for n in body_blockers(issue)
+                           if gh(repo, f"issues/{n}")["state"] == "open")
             timeline = pages(repo, f"issues/{issue['number']}/timeline")
             linked = any((event.get("source") or {}).get("issue", {}).get("pull_request")
                          and event["source"]["issue"].get("state") == "open"
