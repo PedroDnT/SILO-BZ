@@ -86,10 +86,13 @@ PRICES_USD_PER_MTOK: dict[str, tuple[float, float, float, float]] = {
     # 2026-10-04. "-" means no separate write fee: written tokens are part of
     # input_tokens, so they are priced at the input rate here, never as free.
     "gpt-5.1": (1.25, 10.00, 1.25, 0.125),
-    # gpt-5-mini, the investigator's default judge (engine 1.12, #605): its model page,
+    # Historical judge pricing, retained for explicit overrides and old usage records:
     # https://developers.openai.com/api/docs/models/gpt-5-mini, read 2026-10-05 (input $0.25, cached
     # input $0.025, output $2.00). No separate cache-write fee: written tokens at the input rate.
     "gpt-5-mini": (0.25, 2.00, 0.25, 0.025),
+    # Investigator judge replacement; Standard, default 30m cache writes. Verified
+    # 2026-11-11: https://developers.openai.com/api/docs/models/gpt-5.6-terra
+    "gpt-5.6-terra": (2.00, 12.00, 2.50, 0.20),
 }
 # "Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x
 # output for the full request" (the gpt-6-astra, gpt-6.1-sol and gpt-6-luna model pages,
@@ -97,6 +100,7 @@ PRICES_USD_PER_MTOK: dict[str, tuple[float, float, float, float]] = {
 # the lower reading, so the long rate applies early rather than late. Total input is the
 # uncached, cache-write and cache-read tokens together.
 LONG_CONTEXT_USD_PER_MTOK: dict[str, tuple[int, tuple[float, float, float, float]]] = {
+    "gpt-5.6-terra": (272_000, (4.00, 18.00, 5.00, 0.40)),
     "gpt-6-astra": (272_000, (20.00, 75.00, 25.00, 2.00)),
     "gpt-6.1-sol": (272_000, (4.00, 15.00, 5.00, 0.20)),
     "gpt-6-luna": (272_000, (0.20, 0.75, 0.25, 0.02)),
@@ -193,6 +197,10 @@ class CostMeter:
         """Raise ``CostCapExceeded`` if the worst case would pass the cap."""
         est_input = -(-prompt_chars // _CHARS_PER_TOKEN_ESTIMATE)
         worst = tokens_cost_usd(model, input_tokens=est_input, output_tokens=max_tokens)
+        if model == "gpt-5.6-terra":
+            # Implicit cache writes cost more than uncached input. Reserve a full
+            # write at the default 30m rate; usage still books the actual mix.
+            worst = tokens_cost_usd(model, cache_write_tokens=est_input, output_tokens=max_tokens)
         if self.spent_usd + worst > self.cap_usd:
             raise CostCapExceeded(
                 f"next call could cost up to US${worst:.4f}; spent US${self.spent_usd:.4f} "

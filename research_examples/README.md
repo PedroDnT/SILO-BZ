@@ -23,8 +23,17 @@ research_examples/requirements-eval.txt` in an environment with pip, or use
 The evaluator reads `OPENAI_API_KEY` from the environment or the ignored root
 `.env`. It uses the published read-only demo SILO access with `--public-demo`.
 
+The current model is `gpt-5.6-terra`; the saved `gpt-5-mini` runs remain historical.
 Run `.venv/bin/python research_examples/agent_eval.py --public-demo` first to
-validate the 12-case budget without paid model calls. Add `--run` and
+check the 12-case budget without network or model calls. With the documented
+922,000 maximum input tokens and current prices, the existing full-context
+policy reserves US$69.69 per case (including 25% uncertainty), so even one case
+is refused under the unchanged cumulative US$20 cap. This is a configuration
+refusal, not a measured model cost. Owner approval of a separately enforced
+smaller-context protocol is needed before a paid evaluation; do not raise the cap
+or clear the spend ledger. Credential access to the replacement remains unverified.
+
+Once an approved protocol fits the cap, add `--run` and
 `--preflight-report <path>` to execute the cases after the live read-only
 contract check passes. The report must be a JSON object with a UTC
 `checked_at` (within six hours), the exact `base_url`, `read_only: true`,
@@ -35,8 +44,8 @@ for a smoke run. The model sees
 only each case's professional question; expected dispositions and review
 notes remain in `research_examples/eval_cases.json`.
 
-Each live case updates `docs/reference/research/agent-evaluation-results.md` and
-`research_examples/eval-results.json`. The Markdown file is the readable
+Each new live case updates `docs/reference/research/agent-evaluation-gpt-5.6-terra-results.md` and
+`research_examples/eval-gpt-5.6-terra-results.json`. The Markdown file is the readable
 results summary. The JSON file preserves tool order, usage, errors, and
 answers for review. New runs also preserve bounded public response rows for
 independent numeric review. `research_examples/eval-spend.json` tracks the
@@ -48,6 +57,11 @@ the separate live API preflight passes for the required research RPCs.
 `research_examples/baseline-results.json` preserves the graded baseline;
 future latest-result updates do not change that evidence. The spend ledger
 must exist, reconcile with its entries, and stay within the US$20 total cap.
+The runner records the model and price basis; it sums costs per request so the
+272,000-token long-context threshold is not applied to aggregate usage across
+turns. All input is conservatively charged at the default 30-minute cache-write
+rate; no cache-read discount is assumed. A model error or missing usage stops
+the run and retains the full-case reserve until billing is reconciled.
 
 ### MCP v2 comparison
 
@@ -59,14 +73,15 @@ python research_examples/agent_eval.py --transport mcp-v2
 python research_examples/agent_eval.py --transport mcp-v2 --preflight
 ```
 
-The first command is offline. The second checks the live catalog and one row
+The first command is offline. Both currently refuse at the budget gate above.
+With an affordable approved protocol, the second checks the live catalog and one row
 from each of the three required research paths, with no model requests.
 `--run` repeats those checks before making paid requests; a failed or empty
 probe stops the run. A v1 preflight report cannot authorize a v2 run.
 Anonymous access is the default; `SILO_USER_JWT` selects the caller's own
 signed-in access. No credential is saved in evaluation artifacts.
 
-V2 keeps the same model, questions, turn limit, five-data-call limit and
+V2 shares the current runner's model, questions, turn limit, five-data-call limit and
 cumulative US$20 spend ledger. Data results retain the 100-row/80-KB caps;
 catalog discovery permits 160 KB because the live catalog exceeds 80 KB.
 Calls are spaced for anonymous rate limits. The agent receives only the
@@ -74,12 +89,15 @@ professional question and the public MCP tools, never the evaluator probes
 or baseline grading. A model error or missing usage stops the run and retains
 the whole-case cost reserve in the shared ledger until billing is reconciled.
 
-Paid runs save `research_examples/eval-v2-results.json` and
-`docs/reference/research/agent-evaluation-v2-results.md`. They preserve the
+New paid runs save `research_examples/eval-v2-gpt-5.6-terra-results.json` and
+`docs/reference/research/agent-evaluation-v2-gpt-5.6-terra-results.md`. They preserve the
 tool schemas, bounded public rows, errors, usage, and a per-case comparison
 against the saved v1 baseline. V2 rubric scores remain ungraded until an
 independent review; technical completion is not a pass. The original v1
-results and its graded 2/12 baseline are preserved.
+results and its graded 2/12 baseline are preserved, as are the 2026-11-06 MCP v2
+artifacts in `eval-v2-results.json` and `agent-evaluation-v2-results.md`.
+The new model differs from both historical baselines: score changes cannot be
+attributed to the v1/v2 transport alone.
 
 ## Debenture/equity readiness
 

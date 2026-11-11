@@ -10,8 +10,8 @@ Providers come from ``src/portfolio/report/llm.py`` (``SILO_LLM_PROVIDER``; the 
 structured-output path as the Redator). Models:
 
 * ``SILO_INVESTIGATOR_EXTRACTOR_MODEL``, default ``gpt-5.1`` (openai) or ``claude-opus-5-5`` (anthropic);
-* ``SILO_INVESTIGATOR_JUDGE_MODEL``, default ``gpt-5-mini`` (openai; listed callable by
-  probe_openai_models.yml, see llm.py); no default for anthropic, so tier B stays off until one is set.
+* ``SILO_INVESTIGATOR_JUDGE_MODEL``, default ``gpt-5.6-terra`` (openai; documented replacement,
+  credential access not yet verified); no default for anthropic, so tier B stays off until one is set.
 
 When both name the same model, tier B is refused (``tier_b_enabled`` false): a model cannot check itself.
 
@@ -37,7 +37,7 @@ from src.portfolio.report import llm
 EXTRACTOR_ENV = "SILO_INVESTIGATOR_EXTRACTOR_MODEL"
 JUDGE_ENV = "SILO_INVESTIGATOR_JUDGE_MODEL"
 DEFAULT_EXTRACTOR = {"openai": "gpt-5.1", "anthropic": "claude-opus-5-5"}
-DEFAULT_JUDGE = {"openai": "gpt-5-mini"}
+DEFAULT_JUDGE = {"openai": "gpt-5.6-terra"}
 INVESTIGATOR_SHARE_USD = 0.30
 EFFORT = "low"
 EXTRACTOR_MAX_TOKENS = 8000
