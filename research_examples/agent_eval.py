@@ -51,25 +51,36 @@ except ImportError:  # pragma: no cover - local type-checking environment may om
             pass
 
 
-MODEL = "gpt-5-mini"
+MODEL = "gpt-5.6-terra"
 MAX_TURNS = 12
 MAX_OUTPUT_TOKENS = 2_000
-MAX_CONTEXT_TOKENS = 400_000
-USD_PER_M_INPUT = 0.25
-USD_PER_M_OUTPUT = 2.00
+MAX_CONTEXT_TOKENS = 922_000  # documented maximum input; no smaller enforced context cap
+USD_PER_M_INPUT = 2.00
+USD_PER_M_OUTPUT = 12.00
+USD_PER_M_CACHE_WRITE = 2.50  # default 30m; input is conservatively charged as writes
+USD_PER_M_CACHED_INPUT = 0.20
+LONG_CONTEXT_THRESHOLD = 272_000
+PRICE_BASIS = {
+    "checked_on": "2026-11-11", "tier": "standard", "cache_ttl": "30m",
+    "input": USD_PER_M_INPUT, "output": USD_PER_M_OUTPUT,
+    "cache_write": USD_PER_M_CACHE_WRITE, "cached_input": USD_PER_M_CACHED_INPUT,
+    "long_context_above_tokens": LONG_CONTEXT_THRESHOLD,
+    "long_input_multiplier": 2, "long_output_multiplier": 1.5,
+    "accounting": "per_request; all input charged at cache-write rate; no cache discount",
+}
 DEFAULT_BUDGET_USD = 20.00
 REQUIRED_RESEARCH_RPCS = ("financial_statement_history", "fii_property_history", "focus_expectations")
 MAX_DATA_ROWS = 100
 MAX_DATA_CALLS = 5
 MAX_TOOL_CHARS = 80_000
 CASE_FILE = Path(__file__).with_name("eval_cases.json")
-JSON_RESULT = Path(__file__).with_name("eval-results.json")
+JSON_RESULT = Path(__file__).with_name(f"eval-{MODEL}-results.json")
 SPEND_LEDGER = Path(__file__).with_name("eval-spend.json")
-MARKDOWN_RESULT = ROOT / "docs" / "reference" / "research" / "agent-evaluation-results.md"
+MARKDOWN_RESULT = ROOT / "docs" / "reference" / "research" / f"agent-evaluation-{MODEL}-results.md"
 
 # Pricing and context are fixed to this model and were checked against the
-# official model page on 2026-09-23. Update these constants if the model or
-# prices change: https://developers.openai.com/api/docs/models/gpt-5-mini
+# official model and pricing pages on 2026-11-11. Update these constants if the model or
+# prices change: https://developers.openai.com/api/docs/models/gpt-5.6-terra
 
 INSTRUCTIONS = """You are a careful Brazilian public-markets research analyst.
 Start with the SILO catalog, then inspect the available public tools. Check
@@ -107,15 +118,14 @@ def runtime_question(case: dict[str, str]) -> str:
 
 def worst_case_cost_usd(turns: int = MAX_TURNS) -> float:
     """Reserve whole-context charges plus 25% for unobserved failure cost."""
-    return 1.25 * turns * (
-        MAX_CONTEXT_TOKENS * USD_PER_M_INPUT
-        + MAX_OUTPUT_TOKENS * USD_PER_M_OUTPUT
-    ) / 1_000_000
+    return 1.25 * turns * actual_cost_usd(MAX_CONTEXT_TOKENS, MAX_OUTPUT_TOKENS)
 
 
 def actual_cost_usd(input_tokens: int, output_tokens: int) -> float:
-    # Cached input, if any, is deliberately charged at the full input rate.
-    return (input_tokens * USD_PER_M_INPUT + output_tokens * USD_PER_M_OUTPUT) / 1_000_000
+    """Conservative usage estimate for ONE request, including possible cache writes."""
+    long_context = input_tokens > LONG_CONTEXT_THRESHOLD
+    return (input_tokens * USD_PER_M_CACHE_WRITE * (2 if long_context else 1)
+            + output_tokens * USD_PER_M_OUTPUT * (1.5 if long_context else 1)) / 1_000_000
 
 
 def load_spend_ledger() -> dict[str, Any]:
@@ -412,11 +422,13 @@ class UsageHooks(RunHooks):
         self.input_tokens = 0
         self.output_tokens = 0
         self.requests = 0
+        self.estimated_usd = 0.0
 
     async def on_llm_end(self, context: Any, agent: Any, response: Any) -> None:
         self.requests += 1
         self.input_tokens += response.usage.input_tokens
         self.output_tokens += response.usage.output_tokens
+        self.estimated_usd += actual_cost_usd(response.usage.input_tokens, response.usage.output_tokens)
 
 
 def process_checks(events: list[dict[str, Any]], expected: str) -> dict[str, Any]:
@@ -602,7 +614,7 @@ def main() -> int:
         "started_at": datetime.now(timezone.utc).isoformat(),
         "model": MODEL, "budget_usd": args.budget_usd, "estimated_usd": 0.0,
         "prior_estimated_usd": ledger["estimated_usd"],
-        "price_basis_usd_per_million": {"input": USD_PER_M_INPUT, "output": USD_PER_M_OUTPUT},
+        "price_basis_usd_per_million": PRICE_BASIS,
         "cases": [], "run_note": "",
     }
     openapi = json.loads((ROOT / "openapi.json").read_text())
@@ -636,21 +648,25 @@ def main() -> int:
                 item["duration_seconds"] = round(time.monotonic() - started, 3)
                 item["usage"] = {"requests": hooks.requests, "input_tokens": hooks.input_tokens,
                                  "output_tokens": hooks.output_tokens}
-                item["estimated_usd"] = round(actual_cost_usd(hooks.input_tokens, hooks.output_tokens), 6)
+                item["estimated_usd"] = round(hooks.estimated_usd, 6)
+                if item["status"] == "error" or not (hooks.input_tokens or hooks.output_tokens):
+                    item["observed_usage_estimate_usd"] = item["estimated_usd"]
+                    item["estimated_usd"] = max(item["estimated_usd"], worst_case_cost_usd())
+                    item["cost_basis"] = "worst_case_reserve_for_unobserved_cost"
+                    record["run_note"] = "Stopped after a model error or missing usage; the whole-case reserve is retained for unknown billed cost."
                 item["tool_events"] = tools.events
                 item["technical_classification"] = technical_classification(item)
                 item["checks"] = process_checks(tools.events, case["expected_disposition"])
                 record["cases"].append(item)
                 record["estimated_usd"] = round(sum(c["estimated_usd"] for c in record["cases"]), 6)
-                ledger["entries"].append({"run": record["started_at"], "case": case["id"],
+                ledger["entries"].append({"run": record["started_at"], "model": MODEL, "case": case["id"],
                                           "estimated_usd": item["estimated_usd"]})
                 ledger["estimated_usd"] = round(sum(entry["estimated_usd"] for entry in ledger["entries"]), 6)
                 SPEND_LEDGER.write_text(json.dumps(ledger, indent=2) + "\n")
                 record["cumulative_estimated_usd"] = ledger["estimated_usd"]
                 write_results(record)
                 print(f"{case['id']}: {item['status']}, discovery={item['checks']['discovery_before_data']}, cost=${item['estimated_usd']:.4f}")
-                if hooks.requests and not (hooks.input_tokens or hooks.output_tokens):
-                    record["run_note"] = "Usage unavailable after a billed request; stopped to protect the budget."
+                if record["run_note"]:
                     break
     except Exception as exc:
         record["run_note"] = f"Stopped before or during agent cases: {type(exc).__name__}."

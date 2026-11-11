@@ -9,13 +9,15 @@ import pytest
 from research_examples import agent_eval
 
 
-def test_twelve_private_cases_fit_the_authorized_spend_cap():
+def test_replacement_preserves_cases_but_full_context_reserve_exceeds_existing_cap():
     cases = agent_eval.load_cases()
     assert len(cases) == 12
     assert {case["expected_disposition"] for case in cases} == {
         "answer_or_bounded_limit", "limitation"
     }
-    assert len(cases) * agent_eval.worst_case_cost_usd() <= 20
+    assert agent_eval.DEFAULT_BUDGET_USD == 20
+    assert agent_eval.worst_case_cost_usd() == pytest.approx(69.69)
+    assert len(cases) * agent_eval.worst_case_cost_usd() > agent_eval.DEFAULT_BUDGET_USD
 
 
 def test_discovery_check_rejects_failed_or_late_catalog_calls():
@@ -218,3 +220,134 @@ def test_spend_ledger_fails_closed_on_inconsistent_estimate(monkeypatch, tmp_pat
     path.write_text(json.dumps({"estimated_usd": 0.1, "entries": [{"estimated_usd": 0.5}]}))
     with pytest.raises(ValueError, match="consistent nonnegative"):
         agent_eval.load_spend_ledger()
+
+
+@pytest.mark.parametrize("tokens, expected", [(272_000, 0.692), (272_001, 1.378005)])
+def test_replacement_cost_includes_cache_writes_and_long_context(tokens, expected):
+    assert agent_eval.actual_cost_usd(tokens, 1000) == pytest.approx(expected)
+
+
+@pytest.mark.asyncio
+async def test_usage_is_priced_per_request_not_aggregate_context():
+    from types import SimpleNamespace
+
+    hooks = agent_eval.UsageHooks()
+    response = SimpleNamespace(usage=SimpleNamespace(input_tokens=200_000, output_tokens=1000))
+    await hooks.on_llm_end(None, None, response)
+    await hooks.on_llm_end(None, None, response)
+    assert hooks.input_tokens == 400_000 and hooks.requests == 2
+    assert hooks.estimated_usd == pytest.approx(1.024)
+    assert hooks.estimated_usd < agent_eval.actual_cost_usd(400_000, 2000)
+
+
+@pytest.mark.parametrize("args", [[], ["--run", "--case-id", "L1"]])
+def test_replacement_refuses_unaffordable_v1_before_credentials_or_network(monkeypatch, args):
+    def unexpected(*args, **kwargs):
+        raise AssertionError("must refuse before loading a key or connecting")
+
+    monkeypatch.setattr(agent_eval, "load_local_openai_key", unexpected)
+    monkeypatch.setattr(agent_eval, "SiloClient", unexpected)
+    monkeypatch.setattr(agent_eval, "AsyncOpenAI", unexpected)
+    monkeypatch.setattr(agent_eval.sys, "argv", ["agent_eval.py", *args])
+    with pytest.raises(SystemExit) as exc:
+        agent_eval.main()
+    assert exc.value.code == 2
+
+
+def test_replacement_writes_separate_results_without_rewriting_baseline(monkeypatch, tmp_path):
+    from research_examples import mcp_v2_eval as v2
+
+    assert agent_eval.MODEL in agent_eval.JSON_RESULT.name
+    assert agent_eval.MODEL in agent_eval.MARKDOWN_RESULT.name
+    assert agent_eval.MODEL in v2.JSON_RESULT.name
+    assert agent_eval.MODEL in v2.MARKDOWN_RESULT.name
+    historical = tmp_path / "eval-results.json"
+    historical.write_text('historical baseline\n')
+    monkeypatch.setattr(agent_eval, "JSON_RESULT", tmp_path / agent_eval.JSON_RESULT.name)
+    monkeypatch.setattr(agent_eval, "MARKDOWN_RESULT", tmp_path / agent_eval.MARKDOWN_RESULT.name)
+    record = {"started_at": "2026-11-11T12:00:00-03:00", "model": agent_eval.MODEL,
+              "budget_usd": 20, "estimated_usd": 0, "cases": [], "price_basis_usd_per_million": agent_eval.PRICE_BASIS}
+    agent_eval.write_results(record)
+    assert historical.read_text() == 'historical baseline\n'
+    assert json.loads(agent_eval.JSON_RESULT.read_text())["price_basis_usd_per_million"]["cache_write"] == 2.5
+    assert agent_eval.MODEL in agent_eval.MARKDOWN_RESULT.read_text()
+
+
+@pytest.mark.asyncio
+async def test_replacement_agent_uses_responses_and_tools_through_real_sdk():
+    import httpx2
+    from agents.models.openai_provider import OpenAIProvider
+
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        assert request.url.path == "/v1/responses"
+        return httpx2.Response(200, json={
+            "id": "resp_mock", "created_at": 0, "object": "response", "status": "completed",
+            "model": agent_eval.MODEL, "parallel_tool_calls": False, "tool_choice": "auto",
+            "tools": [], "output": [{"type": "message", "id": "msg_mock", "role": "assistant",
+                "status": "completed", "content": [{"type": "output_text", "text": "Limited answer.", "annotations": []}]}],
+            "usage": {"input_tokens": 100, "output_tokens": 10, "total_tokens": 110,
+                      "input_tokens_details": {"cached_tokens": 0}, "output_tokens_details": {"reasoning_tokens": 0}},
+        })
+
+    client = agent_eval.AsyncOpenAI(api_key="synthetic-test-key", max_retries=0,
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
+    adapter = agent_eval.SiloTools(object(), {"paths": {}})
+    agent = agent_eval.Agent(name="Offline migration test", model=agent_eval.MODEL,
+        instructions=agent_eval.INSTRUCTIONS, tools=adapter.as_agent_tools(),
+        model_settings=agent_eval.ModelSettings(max_tokens=agent_eval.MAX_OUTPUT_TOKENS,
+                                               parallel_tool_calls=False, verbosity="low"))
+    hooks = agent_eval.UsageHooks()
+    async with client:
+        result = await agent_eval.Runner.run(agent, "What changed?", hooks=hooks,
+            run_config=agent_eval.RunConfig(tracing_disabled=True,
+                model_provider=OpenAIProvider(openai_client=client)))
+    assert result.final_output == "Limited answer."
+    request = seen[0]
+    assert request["model"] == "gpt-5.6-terra"
+    assert request["max_output_tokens"] == 2000 and request["parallel_tool_calls"] is False
+    assert request["text"]["verbosity"] == "low"
+    assert {tool["name"] for tool in request["tools"]} == {"silo_catalog", "silo_tools", "silo_call"}
+    assert hooks.estimated_usd == pytest.approx(.00037)
+
+
+def test_v1_model_error_retains_reserve_and_stops_without_rewriting_old_spend(monkeypatch, tmp_path):
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def catalog(self):
+            return []
+
+    observed = []
+    def fail(agent, question, **kwargs):
+        observed.append(question)
+        raise RuntimeError("synthetic failure")
+
+    monkeypatch.setattr(agent_eval, "SiloClient", Client)
+    monkeypatch.setattr(agent_eval, "validate_preflight_report", lambda *a: None)
+    monkeypatch.setattr(agent_eval, "load_local_openai_key", lambda: True)
+    monkeypatch.setattr(agent_eval, "AsyncOpenAI", lambda **kw: None)
+    monkeypatch.setattr(agent_eval, "set_default_openai_client", lambda *a, **kw: None)
+    monkeypatch.setattr(agent_eval.Runner, "run_sync", fail)
+    monkeypatch.setattr(agent_eval, "worst_case_cost_usd", lambda: .1)
+    monkeypatch.setenv("SILO_URL", "https://example.invalid")
+    monkeypatch.setenv("SILO_ANON_KEY", "synthetic-test-key")
+    monkeypatch.setattr(agent_eval.sys, "argv", ["agent_eval.py", "--run", "--preflight-report", "synthetic.json"])
+    for name in ("JSON_RESULT", "MARKDOWN_RESULT", "SPEND_LEDGER"):
+        monkeypatch.setattr(agent_eval, name, tmp_path / getattr(agent_eval, name).name)
+    previous = {"run": "historical", "estimated_usd": .5}
+    agent_eval.SPEND_LEDGER.write_text(json.dumps({"estimated_usd": .5, "entries": [previous]}))
+    assert agent_eval.main() == 1
+    assert len(observed) == 1
+    record = json.loads(agent_eval.JSON_RESULT.read_text())
+    ledger = json.loads(agent_eval.SPEND_LEDGER.read_text())
+    assert ledger["entries"][0] == previous and ledger["estimated_usd"] == .6
+    assert record["cases"][0]["estimated_usd"] == .1
+    assert record["cases"][0]["observed_usage_estimate_usd"] == 0
+    assert ledger["entries"][1]["model"] == agent_eval.MODEL

@@ -27,8 +27,8 @@ from openai import AsyncOpenAI
 from research_examples import agent_eval as baseline
 
 MCP_URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp-v2"
-JSON_RESULT = Path(__file__).with_name("eval-v2-results.json")
-MARKDOWN_RESULT = baseline.ROOT / "docs/reference/research/agent-evaluation-v2-results.md"
+JSON_RESULT = Path(__file__).with_name(f"eval-v2-{baseline.MODEL}-results.json")
+MARKDOWN_RESULT = baseline.ROOT / f"docs/reference/research/agent-evaluation-v2-{baseline.MODEL}-results.md"
 # The live v2 catalog is about 129 KB; retain it whole within the existing context reserve.
 MAX_CATALOG_CHARS = 160_000
 EXPECTED_TOOLS = {f"silo_{name}" for name in (
@@ -168,8 +168,9 @@ def process_checks(events: list[dict[str, Any]]) -> dict[str, Any]:
 def write_results(record: dict[str, Any]) -> None:
     JSON_RESULT.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
     shown_at = datetime.fromisoformat(record["started_at"]).astimezone(ZoneInfo("America/Sao_Paulo"))
-    lines = ["# MCP v2 research evaluation", "", f"Run: {shown_at.isoformat()} (Brasília). Model: {baseline.MODEL}.",
-             "Same questions and model as the v1 baseline; live MCP schemas replace SDK discovery.",
+    lines = ["# MCP v2 research evaluation", "", f"Run: {shown_at.isoformat()} (Brasília). Model: {record['model']}.",
+             "Same questions as the historical gpt-5-mini baseline, with a changed model. "
+             "Differences cannot be attributed to transport alone.",
              "No v2 rubric score until independent review. The original baseline remains 2/12.",
              f"Estimated spend this run: ${record['estimated_usd']:.6f}; cumulative: ${record['cumulative_estimated_usd']:.6f}.", ""]
     lines += ["| Case | V1 run | V1 technical classification | V1 rubric pass | V2 run | V2 technical classification | V2 rubric |",
@@ -213,6 +214,7 @@ async def run(args, selected, ledger) -> int:
         record = {"started_at": datetime.now(timezone.utc).isoformat(), "transport": "mcp-v2",
                   "base_url": MCP_URL, "access": "signed_in" if os.environ.get("SILO_USER_JWT") else "anonymous",
                   "model": baseline.MODEL, "budget_usd": args.budget_usd,
+                  "price_basis_usd_per_million": baseline.PRICE_BASIS,
                   "estimated_usd": 0.0, "cumulative_estimated_usd": ledger["estimated_usd"],
                   "preflight": report, "mcp_tools": server.manifest, "cases": [], "baseline_comparison": [], "run_note": ""}
         record["limits"] = {"data_calls": baseline.MAX_DATA_CALLS, "data_rows": baseline.MAX_DATA_ROWS,
@@ -238,7 +240,7 @@ async def run(args, selected, ledger) -> int:
                 item["error_type"] = type(exc).__name__
             item.update(duration_seconds=round(time.monotonic() - started, 3), tool_events=server.events,
                         usage={"requests": hooks.requests, "input_tokens": hooks.input_tokens, "output_tokens": hooks.output_tokens},
-                        estimated_usd=round(baseline.actual_cost_usd(hooks.input_tokens, hooks.output_tokens), 6),
+                        estimated_usd=round(hooks.estimated_usd, 6),
                         checks=process_checks(server.events))
             if item["status"] == "error" or not (hooks.input_tokens or hooks.output_tokens):
                 item["observed_usage_estimate_usd"] = item["estimated_usd"]
@@ -248,7 +250,7 @@ async def run(args, selected, ledger) -> int:
             record["cases"].append(item)
             record["baseline_comparison"] = compare_baseline(record["cases"])
             record["estimated_usd"] = round(sum(c["estimated_usd"] for c in record["cases"]), 6)
-            ledger["entries"].append({"run": record["started_at"], "transport": "mcp-v2", "case": case["id"], "estimated_usd": item["estimated_usd"]})
+            ledger["entries"].append({"run": record["started_at"], "model": baseline.MODEL, "transport": "mcp-v2", "case": case["id"], "estimated_usd": item["estimated_usd"]})
             ledger["estimated_usd"] = round(sum(e["estimated_usd"] for e in ledger["entries"]), 6)
             record["cumulative_estimated_usd"] = ledger["estimated_usd"]
             baseline.SPEND_LEDGER.write_text(json.dumps(ledger, indent=2) + "\n")
@@ -278,7 +280,8 @@ def main(argv=None) -> int:
         if not math.isfinite(args.budget_usd) or not 0 < args.budget_usd <= baseline.DEFAULT_BUDGET_USD:
             raise ValueError("Budget must be positive and at most US$20")
         if ledger["estimated_usd"] + reserve > args.budget_usd:
-            raise ValueError("Prior spend plus conservative reserve exceeds the cumulative budget")
+            parser.error(f"Prior spend ${ledger['estimated_usd']:.6f} plus reserve ${reserve:.2f} "
+                         f"exceeds the cumulative budget ${args.budget_usd:.2f}")
         if args.run or args.preflight:
             return asyncio.run(run(args, selected, ledger))
         print(f"Validated {len(selected)} cases: prior ${ledger['estimated_usd']:.6f} + reserve ${reserve:.2f} <= ${args.budget_usd:.2f}. No network or model requests.")

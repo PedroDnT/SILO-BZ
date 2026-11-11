@@ -146,15 +146,17 @@ def test_baseline_comparison_does_not_score_v2_answers():
     assert v2.MARKDOWN_RESULT != agent_eval.MARKDOWN_RESULT
 
 
-def test_default_is_offline_and_does_not_load_credentials(monkeypatch, capsys):
+def test_default_refuses_unaffordable_reserve_without_network_or_credentials(monkeypatch, capsys):
     def unexpected(*args, **kwargs):
         raise AssertionError("default must not call the network or inspect keys")
 
     monkeypatch.setattr(v2, "BoundedMCP", unexpected)
     monkeypatch.setattr(agent_eval, "load_local_openai_key", unexpected)
     monkeypatch.setattr(agent_eval, "load_spend_ledger", lambda: {"entries": [], "estimated_usd": 0.0})
-    assert v2.main([]) == 0
-    assert "No network or model requests" in capsys.readouterr().out
+    with pytest.raises(SystemExit) as exc:
+        v2.main([])
+    assert exc.value.code == 2
+    assert "exceeds the cumulative budget" in capsys.readouterr().err
 
 
 def test_prior_spend_blocks_preflight_before_network(monkeypatch):
@@ -227,12 +229,11 @@ async def test_paid_path_preserves_questions_outputs_and_unknown_cost_reserve(mo
 
     async def model(agent, question, **kwargs):
         observed.append(question)
+        assert agent.model == "gpt-5.6-terra"
         if fail:
             raise RuntimeError("model request failed")
         hooks = kwargs["hooks"]
-        hooks.requests = 1
-        hooks.input_tokens = 10
-        hooks.output_tokens = 5
+        await hooks.on_llm_end(None, agent, SimpleNamespace(usage=SimpleNamespace(input_tokens=10, output_tokens=5)))
         return SimpleNamespace(final_output="Evidence is insufficient for a causal claim.")
 
     monkeypatch.setattr(v2, "BoundedMCP", Server)
@@ -244,12 +245,17 @@ async def test_paid_path_preserves_questions_outputs_and_unknown_cost_reserve(mo
     monkeypatch.setattr(v2, "JSON_RESULT", tmp_path / "v2.json")
     monkeypatch.setattr(v2, "MARKDOWN_RESULT", tmp_path / "v2.md")
     monkeypatch.setattr(agent_eval, "SPEND_LEDGER", tmp_path / "spend.json")
+    # Exercise persistence below a synthetic reserve, without relaxing the real cap.
+    monkeypatch.setattr(agent_eval, "worst_case_cost_usd", lambda: 0.1)
     selected = agent_eval.load_cases()[-2:]
     status = await v2.run(Namespace(run=True, budget_usd=20), selected, {"entries": [], "estimated_usd": 0})
     result = json.loads(v2.JSON_RESULT.read_text())
     assert observed[0] == selected[0]["question"]
     assert result["baseline_comparison"][0]["v2_rubric_pass"] is None
     assert "manual review required" in v2.MARKDOWN_RESULT.read_text()
+    assert "changed model" in v2.MARKDOWN_RESULT.read_text()
+    assert result["price_basis_usd_per_million"] == agent_eval.PRICE_BASIS
+    assert all(entry["model"] == agent_eval.MODEL for entry in json.loads(agent_eval.SPEND_LEDGER.read_text())["entries"])
     if fail:
         assert status == 1
         assert len(observed) == 1

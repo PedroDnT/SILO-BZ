@@ -585,3 +585,75 @@ def test_the_redator_prompt_forbids_digits_in_titles_and_empty_markers():
 
     assert "O título é texto simples" in redator.SYSTEM_PROMPT
     assert "não é nulo, vazio" in redator.SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize("tokens, rates", [(272_000, (2, 12, 2.5, .2)), (272_001, (4, 18, 5, .4))])
+def test_terra_prices_at_context_boundary(tokens, rates):
+    assert llm.price_for("gpt-5.6-terra", tokens) == rates
+    assert llm.tokens_cost_usd("gpt-5.6-terra", input_tokens=tokens - 2000,
+                              output_tokens=1000, cache_write_tokens=1000,
+                              cache_read_tokens=1000) == pytest.approx(
+        ((tokens - 2000) * rates[0] + 1000 * sum(rates[1:])) / 1e6)
+
+
+def test_terra_judge_uses_real_sdk_schema_and_books_cache_usage(monkeypatch):
+    import openai
+    import httpx2
+    from src.portfolio.investigator import extract as ex
+
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        assert request.url.path == "/v1/responses"
+        body = _body('{"supported": true}', usage=_usage(15000, 2000, cached=10000, written=3000, reasoning=1500))
+        body["model"] = "gpt-5.6-terra"
+        return httpx2.Response(200, json=body)
+
+    real_client = openai.OpenAI(api_key="synthetic-test-key", max_retries=0,
+                               http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: real_client)
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-test-key")
+    for key in (ex.EXTRACTOR_ENV, ex.JUDGE_ENV):
+        monkeypatch.delenv(key, raising=False)
+    parent = llm.CostMeter()
+    share = ex.ShareMeter(parent)
+    models = ex.models_from_env("openai", share)
+    assert models.extractor_model == "gpt-5.1"
+    assert models.judge_model == "gpt-5.6-terra" and models.tier_b_enabled
+    assert ex.judge_fn(models.judge)("vencimento", "2032", "Vencimento em 2032")
+    request = seen[0]
+    assert request["model"] == "gpt-5.6-terra"
+    assert request["reasoning"] == {"effort": "low"}
+    assert request["max_output_tokens"] == 3000 and request["store"] is False
+    assert request["text"]["format"]["strict"] is True
+    assert request["text"]["format"]["name"] == "Judgement"
+    expected = (2000 * 2 + 10000 * .2 + 3000 * 2.5 + 2000 * 12) / 1e6
+    assert share.spent_usd == parent.spent_usd == pytest.approx(expected)
+    assert parent.calls[0]["reasoning_tokens"] == 1500
+
+
+@pytest.mark.parametrize("parent_spend, share_spend", [(0.29, 0.29), (0.99, 0)])
+def test_terra_judge_refuses_both_caps_before_call(parent_spend, share_spend):
+    from src.portfolio.investigator import extract as ex
+
+    parent = llm.CostMeter(spent_usd=parent_spend)
+    share = ex.ShareMeter(parent)
+    share.spent_usd = share_spend
+    assert parent.cap_usd == 1.00 and share.cap_usd == .30
+    client = FakeOpenAI(_body())
+    judge = llm.OpenAIProvider(client=client, meter=share, model="gpt-5.6-terra", max_tokens=3000)
+    with pytest.raises(ex.CostShareSpent):
+        ex.judge_fn(judge)("vencimento", "2032", "Vencimento em 2032")
+    assert client.calls == []
+    assert parent.spent_usd == parent_spend and share.spent_usd == share_spend
+
+
+def test_terra_reserve_includes_cache_write_premium_and_missing_usage():
+    body = _body()
+    body["usage"] = None
+    meter = llm.CostMeter()
+    provider = llm.OpenAIProvider(client=FakeOpenAI(body), meter=meter, model="gpt-5.6-terra", max_tokens=3000)
+    provider.complete("s" * 3000, "u" * 3000, Ok)
+    assert meter.spent_usd == pytest.approx((2000 * 2.5 + 3000 * 12) / 1e6)
+    assert meter.calls[0]["usage_missing"] == 1
