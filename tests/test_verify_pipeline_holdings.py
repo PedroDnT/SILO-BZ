@@ -141,3 +141,102 @@ def test_an_empty_block_is_flagged(capsys, present):
         assert "reltuples" not in " ".join(client.statements), (
             "an empty table should short-circuit, not go on to size itself"
         )
+
+
+# ---------------------------------------------------------------------------
+# #1113: the whole report runs no COUNT(*) over a table, and a ✗ fails the run.
+# ---------------------------------------------------------------------------
+
+
+class _ByStatementCursor:
+    """Answers by what the statement asks, so a whole report can run on it."""
+
+    def __init__(self, client):
+        self._client = client
+        self._last = ""
+        self.description = []
+
+    def execute(self, query, params=()):
+        text = query if isinstance(query, str) else repr(query)
+        self._client.statements.append(text)
+        self._last = text
+
+    def fetchone(self):
+        if "EXISTS" in self._last:
+            return (self._client.present,)
+        if "reltuples" in self._last:
+            return (1_000_000,)
+        if "FILTER" in self._last:
+            return self._client.sample
+        return None
+
+    def fetchall(self):
+        return []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _ByStatementClient:
+    def __init__(self, present=True, sample=(100, 100)):
+        self.statements: list[str] = []
+        self.present = present
+        self.sample = sample
+
+    def cursor(self):
+        return _ByStatementCursor(self)
+
+
+def _unbounded_counts(statements):
+    """Every count( that is not over a LIMITed subquery: a full scan."""
+    return [s for s in statements if "count(" in s.lower() and "LIMIT" not in s.upper()]
+
+
+def test_presence_and_quality_never_count_a_whole_table():
+    client = _ByStatementClient()
+    assert vp.report_presence(client) == []
+    assert vp.report_quality(client) == []
+    assert client.statements, "the fake saw no statement at all"
+    assert _unbounded_counts(client.statements) == [], (
+        "a check went back to a full COUNT(*) (AGENTS.md, Database)"
+    )
+
+
+def test_a_subtype_presence_probe_keeps_its_filter():
+    client = _ByStatementClient()
+    assert vp.table_has_rows(client, "cvm_fii_mensal", ("doc_subtype", "geral"))
+    text = client.statements[0]
+    assert "doc_subtype" in text and "LIMIT 1" in text.upper()
+
+
+def _run_main(monkeypatch, client):
+    monkeypatch.setattr(vp, "get_pg_client", lambda: client)
+    with pytest.raises(SystemExit) as exc:
+        vp.main()
+        raise SystemExit(0)
+    return exc.value.code
+
+
+def test_main_exits_zero_when_no_check_is_marked_x(monkeypatch, capsys):
+    assert _run_main(monkeypatch, _ByStatementClient()) in (0, None)
+    assert "PASSED" in capsys.readouterr().out
+
+
+def test_main_exits_one_on_an_empty_table(monkeypatch, capsys):
+    assert _run_main(monkeypatch, _ByStatementClient(present=False)) == 1
+    out = capsys.readouterr().out
+    assert "FAILED" in out and "cvm_fi_diario is empty" in out
+
+
+def test_main_exits_one_on_a_mostly_null_key_field(monkeypatch, capsys):
+    # 50% null: ✗ in the quality section.
+    assert _run_main(monkeypatch, _ByStatementClient(sample=(50, 100))) == 1
+    assert "% null" in capsys.readouterr().out
+
+
+def test_a_warning_alone_does_not_fail_the_run(monkeypatch):
+    # 10% null: "!" — printed, but the exit code stays 0.
+    assert _run_main(monkeypatch, _ByStatementClient(sample=(90, 100))) in (0, None)
