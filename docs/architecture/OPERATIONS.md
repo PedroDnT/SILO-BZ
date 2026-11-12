@@ -44,9 +44,8 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
   `engine_image.yml` (build, smoke, no publish).
 - A merge deploys nothing to the database. Migrations apply on the next
   workflow run, analytical SQL on the next scheduled run or `analytics-only`.
-  `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo
-  needs `deploy_cloudflare.yml`, which ends with a
-  paid end-to-end report.
+  `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo needs
+  `deploy_cloudflare.yml`, which ends with a paid end-to-end report.
 - Dashboard merges do not publish (`vercel.json` disables production Git
   deploys); the deploy hook does, after a weekday scheduled apply or
   `rebuild_dashboard=true`.
@@ -56,15 +55,14 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
   trace last, logs fixed codes, keeps reports on failure.
 - Schema replay skips matching indexes, absent constraints.
 - DEB: daily/watchdog pass `vars.B3_CREDIT_ENABLED`; only `1` enables
-  7-day refresh with smaller-slice recovery. `mode=b3-credit` loads
-  one owner-approved slice, 7 days at most (item 18). `credit_implied`
-  follows at 06:00 (09:00).
+  7-day refresh with smaller-slice recovery. `mode=b3-credit` loads one
+  owner-approved slice, 7 days at most (item 18). `credit_implied` follows at 06:00 (09:00).
   [Contract](../reference/research/debenture-secondary-market-capture.md).
 
 ## Manual checks and agents
 
-- `scripts/verify_pipeline.py` runs by hand. All issuers' B3 events once:
-  `mode=b3-corporate-events-full`.
+- `scripts/verify_pipeline.py`: manual; ✗ exits 1.
+- All issuers' B3 events once: `mode=b3-corporate-events-full`.
 - DB Health checks matview lag on `fact_fund_monthly` only; the others share
   its apply and go stale with it.
 - `codex.yml`: issue replies; Builder gated (#1079). [Registry](../planning/AGENTS.md).

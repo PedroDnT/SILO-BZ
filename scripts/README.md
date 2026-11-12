@@ -9,7 +9,7 @@ Grouped by when you would reach for them.
 
 | Script                | What it does                                                                                                                                                                                                                                                           |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apply_schema.py`     | Applies `src/store/schema.sql`, then every `src/store/migrations/*.sql` in order. Idempotent. **CI uses `psql` via `.github/actions/apply-schema` instead** — it parses SQL comments correctly and fails on the first real error; this script is the local equivalent. |
+| `apply_schema.py`     | Applies `src/store/schema.sql`, then every `src/store/migrations/*.sql` in order. Idempotent. **CI uses `psql` via `.github/actions/apply-schema` instead** — it parses SQL comments correctly and fails on the first real error; this script is the local equivalent. Runs with `lock_timeout=15s` like CI; exits 1 when nothing was applied (no `POSTGRES_URL`, no driver, failed connection). |
 | `apply_analytical.sh` | Applies the analytical layer (`src/store/analytical/01…19`) — dims, fact matviews, fraud screens, ranking functions, and schema `api`. Run **after** data exists.                                                                                                      |
 
 ## Health and diagnostics (read-only, safe against production)

@@ -81,10 +81,14 @@ def test_all_files_ok_exits_zero_and_sends_each_file_whole(fake_db, items, capsy
     conn = fake_db["conn"]
     assert conn.autocommit is True
     assert conn.closed is True
-    # One execute per file, the whole file: the DO $$ ... $$ block is not split on ';'.
-    assert len(conn.executed) == len(items)
-    assert "PERFORM 1; PERFORM 2;" in conn.executed[0]
-    assert "second_file" in conn.executed[1]
+    # The session settings come first, then one execute per file, the whole
+    # file: the DO $$ ... $$ block is not split on ';'.
+    n = len(apply_schema.SESSION_SETTINGS)
+    assert conn.executed[:n] == list(apply_schema.SESSION_SETTINGS)
+    files = conn.executed[n:]
+    assert len(files) == len(items)
+    assert "PERFORM 1; PERFORM 2;" in files[0]
+    assert "second_file" in files[1]
 
     out = capsys.readouterr().out
     assert "ok a.sql" in out and "ok b.sql" in out
@@ -111,7 +115,7 @@ def test_a_failing_file_is_reported_and_exits_one(fake_db, capsys):
     assert "Done: 1 OK, 1 errors  (driver: psycopg2)" in out
 
 
-def test_no_postgres_url_prints_manual_fallback_without_exiting(monkeypatch, items, capsys):
+def test_no_postgres_url_prints_manual_fallback_and_exits_one(monkeypatch, items, capsys):
     monkeypatch.delenv("POSTGRES_URL", raising=False)
     monkeypatch.setattr(apply_schema, "_build_migration_list", lambda: items)
 
@@ -119,9 +123,12 @@ def test_no_postgres_url_prints_manual_fallback_without_exiting(monkeypatch, ite
         raise AssertionError("must not connect without POSTGRES_URL")
 
     monkeypatch.setattr(pg_client.psycopg2, "connect", _never)
-    apply_schema.main()  # returns, no SystemExit
+    with pytest.raises(SystemExit) as exc:
+        apply_schema.main()
+    assert exc.value.code == 1  # nothing was applied: never read as success
     out = capsys.readouterr().out
     assert "POSTGRES_URL not set." in out
+    assert "Nothing was applied." in out
     assert "MANUAL FALLBACK" in out
     assert "second_file" in out
 
@@ -135,10 +142,57 @@ def test_without_psycopg2_or_asyncpg_falls_back_to_manual(monkeypatch, items, ca
     monkeypatch.setattr(apply_schema, "_build_migration_list", lambda: items)
     monkeypatch.setitem(sys.modules, "psycopg2", None)
     monkeypatch.setitem(sys.modules, "asyncpg", None)
-    apply_schema.main()  # returns, no SystemExit
+    with pytest.raises(SystemExit) as exc:
+        apply_schema.main()
+    assert exc.value.code == 1
     out = capsys.readouterr().out
     assert "No PostgreSQL client available" in out
     assert "MANUAL FALLBACK" in out
+    assert "Nothing was applied." in out
+
+
+def test_failed_connection_falls_back_to_manual_and_exits_one(fake_db, monkeypatch, capsys):
+    def _refused(dsn, **kwargs):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(pg_client.psycopg2, "connect", _refused)
+    with pytest.raises(SystemExit) as exc:
+        apply_schema.main()
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "Connection failed (psycopg2): connection refused" in out
+    assert "Nothing was applied." in out
+
+
+def test_asyncpg_path_sets_lock_timeout_before_any_file(monkeypatch, items, capsys):
+    import sys
+    import types
+
+    executed: list[str] = []
+
+    class _AConn:
+        async def execute(self, sql):
+            executed.append(sql)
+
+        async def close(self):
+            pass
+
+    async def _aconnect(dsn):
+        assert dsn == FAKE_DSN
+        return _AConn()
+
+    monkeypatch.setenv("POSTGRES_URL", FAKE_DSN)
+    monkeypatch.setattr(apply_schema, "_resolve_psql", lambda: None)
+    monkeypatch.setattr(apply_schema, "_build_migration_list", lambda: items)
+    monkeypatch.setitem(sys.modules, "psycopg2", None)
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=_aconnect))
+    with pytest.raises(SystemExit) as exc:
+        apply_schema.main()
+    assert exc.value.code == 0
+    n = len(apply_schema.SESSION_SETTINGS)
+    assert executed[:n] == ["SET lock_timeout = '15s'", "SET statement_timeout = 0"]
+    assert len(executed) == n + len(items)
+    assert "(driver: asyncpg)" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("rc, code", [(0, 0), (3, 1)])
@@ -148,8 +202,11 @@ def test_psql_path_exit_code_follows_psql(monkeypatch, items, capsys, rc, code):
     monkeypatch.setattr(apply_schema, "_build_migration_list", lambda: items)
     calls = []
 
+    envs = []
+
     def _call(argv, **kwargs):
         calls.append(argv)
+        envs.append(kwargs.get("env"))
         return rc
 
     monkeypatch.setattr(apply_schema.subprocess, "call", _call)
@@ -158,7 +215,29 @@ def test_psql_path_exit_code_follows_psql(monkeypatch, items, capsys, rc, code):
     assert exc.value.code == code
     assert len(calls) == len(items)
     assert all(argv[:5] == ["/usr/bin/psql", FAKE_DSN, "-v", "ON_ERROR_STOP=1", "-q"] for argv in calls)
+    assert all(
+        env and "-c lock_timeout=15s" in env["PGOPTIONS"] and "-c statement_timeout=0" in env["PGOPTIONS"]
+        for env in envs
+    )
     assert "(driver: psql)" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "given, expected",
+    [
+        (None, "-c lock_timeout=15s -c statement_timeout=0"),
+        ("-c search_path=public", "-c search_path=public -c lock_timeout=15s -c statement_timeout=0"),
+        ("-c lock_timeout=5s", "-c lock_timeout=5s -c statement_timeout=0"),
+        ("-c lock_timeout=5s -c statement_timeout=60s", "-c lock_timeout=5s -c statement_timeout=60s"),
+    ],
+)
+def test_psql_env_defaults_pgoptions_and_keeps_an_explicit_setting(given, expected):
+    environ = {"PATH": "/usr/bin"}
+    if given is not None:
+        environ["PGOPTIONS"] = given
+    env = apply_schema._psql_env(environ)
+    assert env["PGOPTIONS"] == expected
+    assert env["PATH"] == "/usr/bin"
 
 
 def test_pg_client_connect_merges_keepalives_and_caller_wins(monkeypatch):
