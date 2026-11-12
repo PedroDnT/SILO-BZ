@@ -522,7 +522,16 @@ class TestCVMPipelineFieldMapping:
     async def test_fidc_mensal_pipeline_extracts_patrim_liq(self):
         """FIDC tab_IV data: TAB_IV_A_VL_PL is mapped to vl_patrim_liq."""
         import datetime
-        mock_bytes = _make_zip_bytes("inf_mensal_fidc_tab_IV_202503.csv", FIDC_MENSAL_ROWS)
+        # The ZIP carries the sibling members too: since #1104 a missing tab_VI
+        # or tab_II fails the slice instead of upserting NULLs. Their one row
+        # is another fund's, so this fund's vl_total stays NULL.
+        other = {"CNPJ_FUNDO_CLASSE": "11.222.333/0001-81", "DT_COMPTC": "2025-03-31"}
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("inf_mensal_fidc_tab_IV_202503.csv", _make_csv_bytes(FIDC_MENSAL_ROWS))
+            zf.writestr("inf_mensal_fidc_tab_VI_202503.csv", _make_csv_bytes([other]))
+            zf.writestr("inf_mensal_fidc_tab_II_202503.csv", _make_csv_bytes([other]))
+        mock_bytes = buf.getvalue()
         captured: list = []
 
         with _stub_pipeline(captured):
