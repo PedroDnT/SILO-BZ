@@ -23,17 +23,26 @@ research_examples/requirements-eval.txt` in an environment with pip, or use
 The evaluator reads `OPENAI_API_KEY` from the environment or the ignored root
 `.env`. It uses the published read-only demo SILO access with `--public-demo`.
 
-The current model is `gpt-5.6-terra`; the saved `gpt-5-mini` runs remain historical.
-Run `.venv/bin/python research_examples/agent_eval.py --public-demo` first to
-check the 12-case budget without network or model calls. With the documented
-922,000 maximum input tokens and current prices, the existing full-context
-policy reserves US$69.69 per case (including 25% uncertainty), so even one case
-is refused under the unchanged cumulative US$20 cap. This is a configuration
-refusal, not a measured model cost. Owner approval of a separately enforced
-smaller-context protocol is needed before a paid evaluation; do not raise the cap
-or clear the spend ledger. Credential access to the replacement remains unverified.
+The current model is `gpt-6.1-terra` (prices checked 2026-11-12); the saved
+`gpt-5-mini` runs remain historical. Run
+`.venv/bin/python research_examples/agent_eval.py --public-demo` first to
+check the 12-case budget without network or model calls.
 
-Once an approved protocol fits the cap, add `--run` and
+Every model request is capped at 50,000 input tokens (owner's choice,
+2026-11-11). The Agents SDK's `RunConfig(call_model_input_filter=...)` hook
+runs `InputCapFilter` immediately before each request. It estimates the
+instructions, the conversation and the tool schemas with tiktoken's
+`o200k_base` (installed by `requirements-eval.txt`), or with characters / 2
+when tiktoken is absent, and adds 10%. A request over the cap is never sent:
+the case stops as `context_cap_reached` with no answer, its observed usage is
+charged, and the run moves to the next case. Nothing is trimmed. Because the
+cap holds, the reserve is 1.25 × 12 turns × one capped request: US$1.0875 per
+case, US$13.05 for all 12, which fits the cumulative US$20 cap on top of the
+US$2.164687 already in the ledger. This is a configuration bound, not a
+measured model cost. Do not raise the cap or clear the spend ledger.
+Credential access to the model remains unverified.
+
+To execute, add `--run` and
 `--preflight-report <path>` to execute the cases after the live read-only
 contract check passes. The report must be a JSON object with a UTC
 `checked_at` (within six hours), the exact `base_url`, `read_only: true`,
@@ -44,8 +53,8 @@ for a smoke run. The model sees
 only each case's professional question; expected dispositions and review
 notes remain in `research_examples/eval_cases.json`.
 
-Each new live case updates `docs/reference/research/agent-evaluation-gpt-5.6-terra-results.md` and
-`research_examples/eval-gpt-5.6-terra-results.json`. The Markdown file is the readable
+Each new live case updates `docs/reference/research/agent-evaluation-gpt-6.1-terra-results.md` and
+`research_examples/eval-gpt-6.1-terra-results.json`. The Markdown file is the readable
 results summary. The JSON file preserves tool order, usage, errors, and
 answers for review. New runs also preserve bounded public response rows for
 independent numeric review. `research_examples/eval-spend.json` tracks the
@@ -73,8 +82,8 @@ python research_examples/agent_eval.py --transport mcp-v2
 python research_examples/agent_eval.py --transport mcp-v2 --preflight
 ```
 
-The first command is offline. Both currently refuse at the budget gate above.
-With an affordable approved protocol, the second checks the live catalog and one row
+The first command is offline and checks the budget gate above. The second
+checks the live catalog and one row
 from each of the three required research paths, with no model requests.
 `--run` repeats those checks before making paid requests; a failed or empty
 probe stops the run. A v1 preflight report cannot authorize a v2 run.
@@ -82,15 +91,20 @@ Anonymous access is the default; `SILO_USER_JWT` selects the caller's own
 signed-in access. No credential is saved in evaluation artifacts.
 
 V2 shares the current runner's model, questions, turn limit, five-data-call limit and
-cumulative US$20 spend ledger. Data results retain the 100-row/80-KB caps;
-catalog discovery permits 160 KB because the live catalog exceeds 80 KB.
+cumulative US$20 spend ledger, and the same 50,000-token input cap, which
+counts the 14 MCP tool schemas (about 18,000 estimated tokens with the
+instructions). Data results retain the 100-row/80-KB caps; catalog discovery
+permits 140 KB because the live catalog (about 129 KB) exceeds 80 KB. The
+catalog plus the tool schemas leave little room under the cap, so a v2 case
+may stop as `context_cap_reached` after its catalog read; that is recorded,
+not worked around.
 Calls are spaced for anonymous rate limits. The agent receives only the
 professional question and the public MCP tools, never the evaluator probes
 or baseline grading. A model error or missing usage stops the run and retains
 the whole-case cost reserve in the shared ledger until billing is reconciled.
 
-New paid runs save `research_examples/eval-v2-gpt-5.6-terra-results.json` and
-`docs/reference/research/agent-evaluation-v2-gpt-5.6-terra-results.md`. They preserve the
+New paid runs save `research_examples/eval-v2-gpt-6.1-terra-results.json` and
+`docs/reference/research/agent-evaluation-v2-gpt-6.1-terra-results.md`. They preserve the
 tool schemas, bounded public rows, errors, usage, and a per-case comparison
 against the saved v1 baseline. V2 rubric scores remain ungraded until an
 independent review; technical completion is not a pass. The original v1
