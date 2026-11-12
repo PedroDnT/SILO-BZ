@@ -13,14 +13,12 @@ Getting that backwards silently stops publishing the site, so it is pinned here.
 """
 from __future__ import annotations
 
-import contextlib
-import io
+import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -334,14 +332,20 @@ def test_backfill_is_sliceable_serial_and_never_rebuilds_dashboard():
     assert "VERCEL_DEPLOY_HOOK_URL" not in text
     assert jobs["backfill-fi"]["strategy"]["max-parallel"] == 1
     assert jobs["backfill-other"]["strategy"]["max-parallel"] == 1
-    assert "--start-year ${{ inputs.start_year }}" in text
-    assert "--end-year ${{ inputs.end_year }}" in text
+    # Inputs reach the shell through env, never pasted into the script (#1111).
+    assert "START_YEAR: ${{ inputs.start_year }}" in text
+    assert "END_YEAR: ${{ inputs.end_year }}" in text
+    assert '--start-year "$START_YEAR"' in text
+    assert '--end-year "$END_YEAR"' in text
     assert "inputs.entity" in jobs["backfill-fi"]["if"]
     assert "fi_doc_type:" in text
-    assert '--doc-type "${{ inputs.fi_doc_type }}"' in text
+    assert "FI_DOC_TYPE: ${{ inputs.fi_doc_type }}" in text
+    assert '--doc-type "$FI_DOC_TYPE"' in text
     assert "Print ingest_log + coverage snapshot" in text
-    assert "started_at < NOW() - INTERVAL '24 hours'" in text
-    assert "Marked stale by backfill coverage inspection after 24 hours" in text
+    assert "python scripts/backfill_coverage_snapshot.py" in text
+    snapshot = (ROOT / "scripts/backfill_coverage_snapshot.py").read_text()
+    assert "started_at < NOW() - INTERVAL '24 hours'" in snapshot
+    assert "Marked stale by backfill coverage inspection after 24 hours" in snapshot
 
 
 def test_refresh_etf_does_not_run_when_schema_apply_failed():
@@ -543,33 +547,27 @@ def test_the_fi_matrix_covers_every_year_a_dataset_can_reach():
 
 
 def _gate_decision(doc_type: str, year: int, repair: bool = False, **coverage) -> str:
-    """Run backfill.yml's coverage-gate decision block, without a database.
+    """Run backfill.yml's coverage-gate decision, without a database.
 
-    The block lives inside a heredoc, so nothing else in CI executes it — a
-    KeyError there surfaces only when an operator dispatches the workflow and
-    the job dies before fetching anything. Lifting it out and exec'ing it is
-    the only way to hold its behaviour from an offline test.
+    The gate is scripts/backfill_fi_year_gate.py (#1111; it was a heredoc in
+    the workflow that nothing else in CI executed). A KeyError there surfaces
+    only when an operator dispatches the workflow and the job dies before
+    fetching anything, so its decision is held here offline.
     """
-    text = (ROOT / ".github/workflows/backfill.yml").read_text()
-    start = text.index("          skip = False\n")
-    block = textwrap.dedent(text[start:text.index("          if skip:", start)])
-    block = (
-        block.replace("${{ inputs.fi_doc_type }}", doc_type)
-        .replace("${{ inputs.fi_repair_gaps }}", "true" if repair else "false")
-        .replace("${{ inputs.fi_months }}", "")
+    path = ROOT / "scripts/backfill_fi_year_gate.py"
+    spec = importlib.util.spec_from_file_location("backfill_fi_year_gate", path)
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    # Every doc type the gate counts defaults to 0 rather than being listed
+    # here, so adding one to the gate cannot break this harness.
+    counts = {doc: 0 for doc in gate.MONTHLY_DOC_TYPES}
+    counts.update(inf_diario=12, perfil_mensal=12, balancete=3)
+    cov = {"counts": counts, "yearly_status": None, "diario_rows": 0}
+    cov.update(coverage)
+    _skip, message = gate.decide(
+        year, doc_type, repair_gaps=repair, months="", force=False, coverage=cov
     )
-    # Every *_months name the block reads is defaulted to 0 rather than listed
-    # here. Listing them meant that adding a doc type to the workflow broke this
-    # harness with a NameError from inside an exec — a failure that says nothing
-    # about the gate's behaviour, which is the only thing under test.
-    ns = {name: 0 for name in set(re.findall(r"\b(\w+_months)\b", block))}
-    ns.update(year=year, diario_months=12, perfil_months=12, balancete_months=3,
-              diario_rows=0, yearly_status=None)
-    ns.update(coverage)
-    out = io.StringIO()
-    with contextlib.redirect_stdout(out):
-        exec(block, ns)  # noqa: S102 — the point is to run the shipped block
-    return out.getvalue().strip()
+    return message
 
 
 def test_the_coverage_gate_decides_every_dispatchable_doc_type():
