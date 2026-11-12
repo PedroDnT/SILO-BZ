@@ -18,15 +18,33 @@ payload=$(cat)
 command -v jq >/dev/null 2>&1 || exit 0
 
 cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty')
-# The settings `if` filter is best-effort ($() and $VAR pass it), so re-check,
-# looking only at the push itself, not the rest of a compound command.
-push=$(printf '%s\n' "$cmd" | grep -oE '(^|[[:space:];&|(])git[[:space:]]+push([[:space:]][^;&|)]*)?' | head -n 1)
-[ -n "$push" ] || exit 0
-# Deleting a remote branch or pushing tags publishes no branch content.
-printf '%s\n' "$push" | grep -qE '[[:space:]](--delete|-d|--tags)([[:space:]]|$)|[[:space:]]:[^[:space:]]' && exit 0
-
+case "$cmd" in
+*push*) ;;
+*) exit 0 ;;
+esac
 cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty')
-cd "${cwd:-.}" 2>/dev/null || exit 0
+[ -n "$cwd" ] || cwd=$PWD
+# The settings `if` filter is best-effort ($() and $VAR pass it), so re-check
+# with the parser no-push-merged-branch.sh uses (#904, #1109): only a real push
+# counts, and it is judged in the directory it runs in, which a leading
+# `cd <dir> &&` or `git -C <dir>` names; the payload `cwd` is only where the
+# command starts. The first push of a compound command is the one checked.
+# shellcheck source=lib/git-push.sh
+if ! . "${BASH_SOURCE[0]%/*}/lib/git-push.sh"; then
+  jq -n '{systemMessage: "docs check skipped: .claude/hooks/lib/git-push.sh is missing"}'
+  exit 0
+fi
+push=$(git_pushes "$cmd" "$cwd" | head -n 1)
+[ -n "$push" ] || exit 0 # no push, or one that deletes a remote branch
+IFS=$'\037' read -r -a f <<<"$push"
+# Pushing tags, or only `:branch` deletions, publishes no branch content.
+[ "${f[3]}" = 0 ] || exit 0
+[ "${f[2]}" = 0 ] || [ "${#f[@]}" -gt 4 ] || exit 0
+if [ -z "${f[0]}" ]; then
+  jq -n '{systemMessage: "docs check skipped: cannot tell which directory the push runs in"}'
+  exit 0
+fi
+cd "${f[0]}" 2>/dev/null || exit 0
 # Only this repository: the session may have cd'd into another clone.
 here=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
 home=$(git -C "${CLAUDE_PROJECT_DIR:-.}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0

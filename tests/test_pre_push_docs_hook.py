@@ -25,6 +25,9 @@ Its contract, pinned below:
   the push is denied, every time, until that page is edited in place or a
   commit carries a `No-architecture-change: <reason>` trailer; an edited page
   over its size cap is denied until it is trimmed;
+* the push is judged in the directory it runs in, which a leading `cd <dir>`
+  or `git -C <dir>` names (#1109), parsed by the same helper as the
+  merged-branch check, `.claude/hooks/lib/git-push.sh`;
 * anything it cannot judge (not a push, a branch delete, `main`, nothing
   changed, another repository) passes. The hook guards docs; it must never be
   what blocks an unrelated command. A skip it did not expect is shown to the
@@ -103,10 +106,12 @@ def repo(tmp_path: Path) -> Path:
 
 
 def run_hook(repo: Path, command: str = f"git push -u origin {BRANCH}",
-             project: Path | None = None, hook: Path = HOOK) -> dict | None:
-    """Run the hook as Claude Code does. None means the push goes through."""
+             project: Path | None = None, hook: Path = HOOK,
+             cwd: Path | None = None) -> dict | None:
+    """Run the hook as Claude Code does. None means the push goes through.
+    `cwd` is the payload's starting directory, `repo` by default."""
     payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash",
-               "tool_input": {"command": command}, "cwd": str(repo)}
+               "tool_input": {"command": command}, "cwd": str(cwd or repo)}
     env = {**ENV, "CLAUDE_PROJECT_DIR": str(project or repo)}
     out = subprocess.run(["bash", str(hook)], input=json.dumps(payload), env=env,
                          check=True, capture_output=True, text=True)
@@ -295,7 +300,9 @@ def test_the_dropped_row_test_fails_without_the_comparison(repo, tmp_path_factor
     anything else the hook checks."""
     source = HOOK.read_text(encoding="utf-8")
     assert source.count(COMPARISON) == 1, "the comparison changed; update COMPARISON"
-    mutant = tmp_path_factory.mktemp("mutant") / "pre-push-docs.sh"
+    hooks = tmp_path_factory.mktemp("mutant")
+    shutil.copytree(HOOK.parent / "lib", hooks / "lib")  # the shared push parser
+    mutant = hooks / "pre-push-docs.sh"
     mutant.write_text(source.replace(COMPARISON, 'dropped=""'), encoding="utf-8")
     merge_main_keeping_our_changelog(repo)
     assert run_hook(repo, hook=mutant) is None
@@ -380,6 +387,61 @@ def test_a_push_inside_a_compound_command_is_checked(repo):
     commit(repo, {"src/app.py": "x = 2\n"})
     reason = denied(run_hook(repo, f"pytest -q && git push -u origin {BRANCH}"))
     assert "No CHANGELOG row" in reason
+
+
+def worktree_of(repo: Path, tmp_path_factory) -> Path:
+    """The orchestrator's shape (#1109): the primary checkout back on `main`,
+    the branch checked out in a worktree that the push names."""
+    wt = tmp_path_factory.mktemp("wt") / "branch"
+    git(repo, "checkout", "-q", "main")
+    git(repo, "worktree", "add", "-q", str(wt), BRANCH)
+    return wt
+
+
+@pytest.mark.parametrize("form", ["cd {wt} && git push -u origin {branch}",
+                                  "git -C {wt} push -u origin {branch}",
+                                  "cd {wt}; git push"])
+def test_a_push_from_another_directory_is_checked_there(repo, tmp_path_factory, form):
+    """Until #1109 the hook read the branch from the payload `cwd` only, so a
+    worktree push written as `cd <wt> && git push` or `git -C <wt> push` from
+    a session on `main` went through with no changelog row."""
+    commit(repo, {"src/app.py": "x = 2\n"})
+    wt = worktree_of(repo, tmp_path_factory)
+    command = form.format(wt=wt, branch=BRANCH)
+    assert "No CHANGELOG row" in denied(run_hook(repo, command))
+    commit(wt, {"docs/planning/CHANGELOG.md": ROW, **README})
+    assert run_hook(repo, command) is None
+
+
+def test_a_relative_cd_is_resolved_against_the_payload_cwd(repo, tmp_path_factory):
+    commit(repo, {"src/app.py": "x = 2\n"})
+    wt = worktree_of(repo, tmp_path_factory)
+    reason = denied(run_hook(repo, "cd branch && git push", cwd=wt.parent))
+    assert "No CHANGELOG row" in reason
+
+
+def test_a_push_from_the_main_checkout_still_passes(repo, tmp_path_factory):
+    wt = worktree_of(repo, tmp_path_factory)
+    commit(wt, {"src/app.py": "x = 2\n"})
+    assert run_hook(wt, f"cd {repo} && git push origin main") is None
+
+
+def test_a_directory_it_cannot_enter_is_shown_as_a_skip(repo):
+    commit(repo, {"src/app.py": "x = 2\n"})
+    for command in ('cd "$WT" && git push', "git -C /no/such/dir push"):
+        assert run_hook(repo, command) == {
+            "systemMessage": "docs check skipped: cannot tell which directory the push runs in"}
+
+
+def test_a_heredoc_that_mentions_a_push_is_not_one(repo):
+    commit(repo, {"src/app.py": "x = 2\n"})
+    command = "gh issue create --body-file - <<'EOF'\ngit push -u origin x\nEOF\n"
+    assert run_hook(repo, command) is None
+
+
+def test_follow_tags_still_publishes_the_branch(repo):
+    commit(repo, {"src/app.py": "x = 2\n"})
+    assert "No CHANGELOG row" in denied(run_hook(repo, "git push --follow-tags"))
 
 
 @pytest.mark.parametrize("command", [
