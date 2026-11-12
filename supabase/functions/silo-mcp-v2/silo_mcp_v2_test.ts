@@ -208,6 +208,39 @@ Deno.test("a next page is a cursor the tool takes back", async () => {
   assertEquals(JSON.parse(second.content[0].text).data.length, 1);
 });
 
+Deno.test("a POST tool pages too: the hint and the call carry the same body with the cursor", async () => {
+  const rows = Array.from({ length: 30 }, (_, i) => ({ cnpj: String(i).padStart(14, "0") }));
+  const stub = stubFetch(200, JSON.stringify(rows));
+  const deps = { env, fetchImpl: stub.impl, headers: bearer(JWT) };
+  const body = { id: ["33000167000101"] };
+  const tool = TOOLS_BY_NAME.get("silo_portfolio")!;
+  const limit = tool.top.includes("limit") ? { limit: 10 } : { options: { limit: 10 } };
+  const first = await callTool("silo_portfolio", { kind: "fund_terms", ...limit, body }, deps);
+  assert(!first.isError, first.content[0].text);
+  const page1 = JSON.parse(first.content[0].text);
+  assertEquals(page1.data.length, 10);
+  const cursor = new URL(page1.next_page_url).searchParams.get("cursor")!;
+  const hint = first.content[2].text;
+  assertStringIncludes(hint, "the same body");
+  assertStringIncludes(hint, cursor);
+  // The hint's arguments are a call the tool takes as they stand.
+  const next = JSON.parse(hint.slice(hint.indexOf("{"), hint.lastIndexOf("}") + 1));
+  assertEquals(next, { body, cursor });
+
+  // A cursor alone is refused before any request: the gateway would refuse the empty body.
+  const before = stub.calls.length;
+  const bare = await callTool("silo_portfolio", { cursor }, deps);
+  assertEquals(bare.isError, true);
+  assertEquals(JSON.parse(bare.content[0].text).error.target, "body");
+  assertEquals(stub.calls.length, before);
+
+  const second = await callTool("silo_portfolio", next, deps);
+  assert(!second.isError, second.content[0].text);
+  const page2 = JSON.parse(second.content[0].text);
+  assertEquals(page2.data.length, 10);
+  assertEquals(page2.data[0].cnpj, "00000000000010");
+});
+
 // ------------------------------------------------ through the MCP SDK -------
 
 async function rpc(handler: (r: Request) => Promise<Response>, method: string, params: unknown, headers: Record<string, string> = {}) {
