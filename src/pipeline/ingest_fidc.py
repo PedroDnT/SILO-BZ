@@ -100,8 +100,10 @@ def ingest_fidc_mensal(
     sibling members of the same monthly ZIP and are merged in on (cnpj,
     period): `vl_inadimpl` from tab_VI (TAB_VI_B_VL_DIRCRED_INAD) and
     `vl_total` from tab_II (TAB_II_VL_CARTEIRA — the same column the HIST
-    path reads for 2013-2024). When a sibling is unavailable its column stays
-    NULL — never a guess.
+    path reads for 2013-2024). A fund absent from a sibling keeps that column
+    NULL — never a guess. A sibling that failed to load never reaches here:
+    the caller raises, so a month is not upserted with NULLs over stored
+    values (#1104).
 
     Args:
         raw_rows -- tab_IV rows

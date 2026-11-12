@@ -257,8 +257,30 @@ async def test_hist_mensal_reads_vl_inadimpl_from_tab_vi(monkeypatch):
         assert r["vl_total"] == 2000.0
 
 
+def _error_logging(ing):
+    """Make _log_finish write an 'error' row, as the real one does for a raise."""
+    from src.pipeline.cvm_pipeline import SliceFailure
+
+    ing.failures.clear()
+    finished = []
+
+    def log_finish(run_id, rows, error=None, **kw):
+        finished.append(error)
+        if error is None:
+            return "ok"
+        ing.failures.append(MagicMock(spec=SliceFailure))
+        return "error"
+
+    ing._log_finish = log_finish
+    return finished
+
+
 @pytest.mark.asyncio
-async def test_hist_mensal_keeps_pl_when_tab_vi_fails(monkeypatch):
+async def test_hist_mensal_tab_vi_failure_is_an_error_not_a_null_overwrite(monkeypatch):
+    # #1104: a tab_VI that fails to load must fail the month, never upsert
+    # vl_inadimpl=NULL over the value already stored.
+    from src.pipeline.cvm_pipeline import CVMSliceError
+
     def pages(doc_type, year, month):
         period = f"{year}-{month:02d}-01"
         if doc_type == "hist_mensal_tab_ii":
@@ -268,11 +290,44 @@ async def test_hist_mensal_keeps_pl_when_tab_vi_fails(monkeypatch):
         return RuntimeError("member not found in archive")
 
     ing, stored = _hist_ingestor(monkeypatch, pages)
-    await ing.ingest_fidc_hist_mensal(2013)
+    finished = _error_logging(ing)
+    with pytest.raises(CVMSliceError):
+        await ing.ingest_fidc_hist_mensal(2013)
 
-    assert len(stored) == 12
-    assert all(r["vl_inadimpl"] is None for r in stored)
-    assert all(r["vl_patrim_liq"] == 1700.0 for r in stored)
+    assert stored == []
+    assert len(finished) == 12
+    assert all("member not found" in (e or "") for e in finished)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing", ["mensal_tab_VI", "mensal_tab_ii"])
+async def test_mensal_sibling_failure_is_an_error_not_a_null_overwrite(monkeypatch, failing):
+    # #1104: tab_VI carries vl_inadimpl and tab_II vl_total. Either failing
+    # must log the slice 'error' and send no upsert, so the stored values
+    # are not overwritten with NULL and the gap check retries the month.
+    from src.pipeline.cvm_pipeline import CVMIngestor, CVMSliceError
+
+    ing = CVMIngestor.__new__(CVMIngestor)
+    ing._supabase = None
+    ing._log_start = MagicMock()
+    finished = _error_logging(ing)
+
+    async def fake_fetch(entity, doc_type, year, month):
+        if doc_type == failing:
+            raise RuntimeError(f"{doc_type} member unreadable")
+        return [{"CNPJ_FUNDO_CLASSE": CNPJ, "DT_COMPTC": "2025-03-31"}]
+
+    ing._fetch_all_pages = fake_fetch
+    upserts = []
+    monkeypatch.setattr(
+        "src.pipeline.ingest_fidc.upsert_rows",
+        lambda *a, **k: upserts.append(a) or 0,
+    )
+    with pytest.raises(CVMSliceError):
+        await ing.ingest_fidc_mensal(2025, 3)
+
+    assert upserts == []
+    assert len(finished) == 1 and f"{failing} member unreadable" in finished[0]
 
 
 # ---------------------------------------------------------------------------

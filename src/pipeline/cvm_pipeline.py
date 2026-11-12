@@ -1415,27 +1415,13 @@ class CVMIngestor:
         async def work():
             rows_inserted = 0
             raw_rows = await self._fetch_all_pages("fidc", "mensal", year, month)
-            # tab_IV has no delinquency column; the figure downstream screens
-            # read lives in tab_VI of the same ZIP. A tab_VI failure must not
-            # cost us the PL snapshot, so it degrades to NULL inadimplencia.
-            try:
-                rows_vi = await self._fetch_all_pages("fidc", "mensal_tab_VI", year, month)
-            except Exception as vi_exc:
-                logger.warning(
-                    "ingest_fidc_mensal %d-%02d: tab_VI unavailable, "
-                    "vl_inadimpl stays NULL: %s", year, month, _describe(vi_exc),
-                )
-                rows_vi = []
-            # Same for the portfolio total: tab_IV does not carry it, tab_II
-            # does (TAB_II_VL_CARTEIRA). Degrades to NULL, never to a guess.
-            try:
-                rows_ii = await self._fetch_all_pages("fidc", "mensal_tab_ii", year, month)
-            except Exception as ii_exc:
-                logger.warning(
-                    "ingest_fidc_mensal %d-%02d: tab_II unavailable, "
-                    "vl_total stays NULL: %s", year, month, _describe(ii_exc),
-                )
-                rows_ii = []
+            # tab_IV has no delinquency column and no portfolio total; both
+            # live in sibling members of the same ZIP (tab_VI, tab_II). A
+            # sibling that fails to load raises, so the slice is logged
+            # 'error' and retried: upserting the month without it would
+            # overwrite stored vl_inadimpl / vl_total with NULL (#1104).
+            rows_vi = await self._fetch_all_pages("fidc", "mensal_tab_VI", year, month)
+            rows_ii = await self._fetch_all_pages("fidc", "mensal_tab_ii", year, month)
             rows_inserted = ingest_fidc_mensal(self._supabase, raw_rows, rows_vi, rows_ii)
             return rows_inserted, len(raw_rows)
         return await self._audited("fidc", "mensal", year, month, work)
@@ -1461,20 +1447,13 @@ class CVMIngestor:
                 seed_fund_registry_from_hist(self._supabase, rows_ii)
 
                 # Delinquency as filed in tab_VI (TAB_VI_B_VL_DIRCRED_INAD),
-                # the same column and helper as the 2025+ path. Its own fetch,
-                # so a tab_VI failure costs only vl_inadimpl (NULL, never a
-                # guess), not the month's PL; ingest_fidc_aging logs the same
-                # member's failure under mensal_tab_vi.
-                try:
-                    rows_vi = await self._fetch_all_pages(
-                        "fidc", "hist_mensal_tab_vi", year, month,
-                    )
-                except Exception as vi_exc:
-                    logger.warning(
-                        "ingest_fidc_hist_mensal %d-%02d: tab_VI unavailable, "
-                        "vl_inadimpl stays NULL: %s", year, month, _describe(vi_exc),
-                    )
-                    rows_vi = []
+                # the same column and helper as the 2025+ path. A tab_VI
+                # failure raises, so the month is logged 'error' and retried
+                # rather than upserted with vl_inadimpl NULL over the stored
+                # value (#1104).
+                rows_vi = await self._fetch_all_pages(
+                    "fidc", "hist_mensal_tab_vi", year, month,
+                )
                 inadimpl = inadimpl_by_key(rows_vi)
 
                 # Build liabilities index from tab_III for PL approximation
