@@ -1466,6 +1466,21 @@ Deno.test("tier: a Bearer asks api.my_tier with that token; rate_hit sends no bu
   assertEquals(res.headers.get("RateLimit-Limit"), String(TIERS.signed_in.requests_per_minute));
 });
 
+Deno.test("tier: a Bearer my_tier calls anonymous (is_anonymous sign-in) sends its ip bucket and is served (#1101)", async () => {
+  // A Supabase anonymous sign-in: a real JWT whose claims carry is_anonymous: true.
+  const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const anonJwt = `${b64({ alg: "HS256", typ: "JWT" })}.${b64({ sub: "00000000-0000-4000-8000-000000000001", role: "authenticated", is_anonymous: true })}.sig`;
+  const stub = gateStub({ tier: "anonymous", hits: [1] });
+  const res = await gated(stub)(
+    new Request(`${BASE}/v2/coverage`, { headers: { Authorization: `Bearer ${anonJwt}`, "cf-connecting-ip": "198.51.100.4" } }),
+  );
+  assertEquals(res.status, 200);
+  assertEquals(fns(stub.calls), ["my_tier", "rate_hit", "coverage"]);
+  assertEquals(stub.calls[1].body, { p_bucket: "ip:198.51.100.4" });
+  assertEquals(stub.calls[1].auth, `Bearer ${anonJwt}`);
+  assertEquals(res.headers.get("RateLimit-Limit"), String(TIERS.anonymous.requests_per_minute));
+});
+
 Deno.test("tier: my_tier is cached per token for 60 s, then asked again", async () => {
   const stub = gateStub({ tier: "signed_in" });
   const clock = { t: NOW };

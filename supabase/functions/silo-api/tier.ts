@@ -10,9 +10,13 @@
 // token for TIER_CACHE_MS in this isolate's memory. An invalid token is
 // refused by PostgREST as unauthorized, which is passed on.
 //
-// Bucket: a signed-in caller's is u:<user id>, chosen by SQL from auth.uid()
-// (p_bucket is not sent, and SQL ignores it anyway). An anonymous caller's is
-// ip:<address>, from clientIp() below.
+// Bucket: chosen by the resolved tier, never by whether a Bearer was sent
+// (#1101). A signed-in or pro caller's is u:<user id>, chosen by SQL from
+// auth.uid() (p_bucket is not sent, and SQL ignores it anyway). An anonymous
+// caller's is ip:<address>, from clientIp() below, and is sent with or without
+// a Bearer: a Supabase anonymous sign-in, or a JWT with no sub, carries a token
+// that api.my_tier() calls anonymous, and api.rate_hit refuses such a caller
+// without a bucket (22023).
 //
 // Failure: fail closed. When the tier or the count cannot be read (network,
 // timeout, a missing function) the request is refused as `unavailable` and no
@@ -34,7 +38,11 @@ const TIER_NAMES: readonly Tier[] = ["anonymous", "signed_in", "pro"];
 export interface Gate {
   /** The caller's tier. */
   tier(ctx: CallContext): Promise<Tier>;
-  /** Count one request; the bucket's hits this minute, this one included. */
+  /**
+   * Count one request; the bucket's hits this minute, this one included.
+   * `ipBucket` is ip:<address> when the resolved tier is anonymous (sent as
+   * p_bucket), null otherwise (SQL buckets by auth.uid()).
+   */
   hit(ctx: CallContext, ipBucket: string | null): Promise<number>;
 }
 
@@ -77,7 +85,7 @@ export function postgresGate(now: () => number = () => Date.now()): Gate {
     async hit(ctx, ipBucket) {
       let value: unknown;
       try {
-        value = await callRpc(ctx, "rate_hit", ctx.bearer ? {} : { p_bucket: ipBucket });
+        value = await callRpc(ctx, "rate_hit", ipBucket === null ? {} : { p_bucket: ipBucket });
       } catch (e) {
         failClosed("The request count (api.rate_hit)", e);
       }
@@ -138,7 +146,9 @@ export async function enforceRate(
   now: () => number = () => Date.now(),
 ): Promise<RateState> {
   const limit = TIERS[tier].requests_per_minute;
-  const hits = await gate.hit(ctx, ctx.bearer ? null : `ip:${clientIp(headers)}`);
+  // The tier decides the bucket, not the Bearer: an anonymous sign-in has a
+  // token and still needs its ip bucket (#1101).
+  const hits = await gate.hit(ctx, tier === "anonymous" ? `ip:${clientIp(headers)}` : null);
   if (hits > limit) {
     const wait = retryAfter(now());
     const e = new ApiError(
