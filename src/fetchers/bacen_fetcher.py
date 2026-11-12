@@ -255,11 +255,14 @@ async def _olinda_get(
             if not paginate or len(batch) < _OLINDA_PAGE:
                 return collected
             skip += _OLINDA_PAGE
-    logger.warning(
-        "Olinda %s/%s hit the %d-page cap; returning %d rows",
-        service, resource, _OLINDA_MAX_PAGES, len(collected),
+    # Every page came back full, so more rows remain. Returning what we have
+    # would land a truncated dataset under an ok audit row (integrity rule 1,
+    # issue #1107): raise and let the caller narrow the window.
+    raise BacenFetchError(
+        f"Olinda {service}/{resource} hit the {_OLINDA_MAX_PAGES}-page cap "
+        f"after {len(collected)} rows with more still to fetch; "
+        f"narrow the date window"
     )
-    return collected
 
 
 # ---------------------------------------------------------------------------
