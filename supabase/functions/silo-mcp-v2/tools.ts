@@ -114,7 +114,8 @@ function firstSentence(s: string): string {
 export const SEMANTICS =
   "Read-only. The result is the v2 envelope as the gateway returns it: data (always a list), meta (resource, kind, " +
   "request with every default applied, id_known, endpoint), and next_page_url only when more rows remain. To read the " +
-  "next page, call this tool again with only `cursor` set to the cursor in next_page_url. A call stops at the tier's " +
+  "next page, call this tool again with only `cursor` set to the cursor in next_page_url (a POST tool takes `body` " +
+  "too: the same body as the first page, unchanged). A call stops at the tier's " +
   "rows-per-call cap with meta.tier_cap_reached; nothing is cut silently. Errors come back verbatim (isError) as " +
   "{error: {code, message, target, innererror}}; over_limit means narrow the request, not retry it. null means not " +
   "declared at source: never fill it or read it as zero.";
@@ -262,7 +263,18 @@ export function planCall(tool: V2Tool, rawArgs: unknown): PlannedCall {
     put(k, v);
   }
   let body: string | undefined;
-  if (tool.method === "POST") body = JSON.stringify(asObject(args.body, "body"));
+  if (tool.method === "POST") {
+    // The gateway pages a POST only with the body of the first page (its digest rides in the cursor).
+    if (args.cursor !== undefined && args.cursor !== null && (args.body === undefined || args.body === null)) {
+      throw new ApiError(
+        400,
+        "bad_request",
+        `A cursor on ${tool.name} needs the same body as the first page: call it again with that body, unchanged, and this cursor.`,
+        "body",
+      );
+    }
+    body = JSON.stringify(asObject(args.body, "body"));
+  }
   const qs = query.toString();
   return { method: tool.method, path: `/v2/${tool.resource}${qs ? `?${qs}` : ""}`, query, body };
 }
@@ -336,7 +348,13 @@ export async function callTool(name: string, rawArgs: unknown, deps: CallDeps): 
   try {
     const next = (JSON.parse(text) as { next_page_url?: string }).next_page_url;
     const cursor = next ? new URL(next).searchParams.get("cursor") : null;
-    if (cursor) content.push({ type: "text", text: `More rows remain. Next page: call ${tool.name} with {"cursor": "${cursor}"} and nothing else.` });
+    if (cursor) {
+      const text = plan.body === undefined
+        ? `More rows remain. Next page: call ${tool.name} with {"cursor": "${cursor}"} and nothing else.`
+        : `More rows remain. Next page: call ${tool.name} again with the same body and this cursor, and nothing else: ` +
+          `{"body": ${plan.body}, "cursor": "${cursor}"}.`;
+      content.push({ type: "text", text });
+    }
   } catch {
     // The envelope is returned verbatim either way; no hint when it is not JSON.
   }
