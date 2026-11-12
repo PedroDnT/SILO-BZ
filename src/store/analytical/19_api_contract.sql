@@ -4490,14 +4490,23 @@ AS $$
         -- financials row: no completeness model covers company filings, and a
         -- guessed one is the claim this function exists to prevent. The note
         -- carries the one limit the dates hide: filings without a protocol
-        -- number are not held at all.
+        -- number are not held at all. The dates are the UTC day of
+        -- data_entrega, read as two index probes on idx_cia_event_data_entrega
+        -- (migration 85, #1100): the UTC day is <= CURRENT_DATE exactly when
+        -- data_entrega is before the next UTC midnight, and the UTC day of the
+        -- newest timestamp is the newest UTC day. The earlier
+        -- MAX(...) FILTER (...) over FROM cia_event read all ~500k rows, 3 s
+        -- cold, anon's whole statement timeout.
         SELECT 'company_events'::text,
-               MAX((e.data_entrega AT TIME ZONE 'UTC')::date)
-                   FILTER (WHERE (e.data_entrega AT TIME ZONE 'UTC')::date <= CURRENT_DATE),
+               (x.as_of_ts AT TIME ZONE 'UTC')::date,
                NULL::date, 'cvm'::text,
                'IPE filings (fatos relevantes, comunicados, assembly material), one row per protocol at its newest version, text as filed, source_url on CVM''s RAD. History starts in 2015 and is NOT complete for any year: CVM assigned no protocol number before 2015 (and still omits it on a minority of filings — 12% of 2015), cia_event is keyed on (protocolo, versao), and a key is never synthesized, so those filings are not held. The period is the delivery date.'::text,
-               MAX((e.data_entrega AT TIME ZONE 'UTC')::date), '*cia_ipe*'::text
-        FROM public.cia_event e
+               (x.newest_ts AT TIME ZONE 'UTC')::date, '*cia_ipe*'::text
+        FROM (
+            SELECT (SELECT MAX(e.data_entrega) FROM public.cia_event e
+                     WHERE e.data_entrega < ((CURRENT_DATE + 1)::timestamp AT TIME ZONE 'UTC')) AS as_of_ts,
+                   (SELECT MAX(e.data_entrega) FROM public.cia_event e) AS newest_ts
+        ) x
         UNION ALL
         -- The non-inflation SGS series (macro_series). One row for nine series
         -- with different cadences, so as_of is the newest ELAPSED observation

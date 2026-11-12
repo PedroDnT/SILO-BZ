@@ -3454,3 +3454,16 @@ BEGIN
     END LOOP;
 END
 $grants$;
+
+-- api.coverage()'s company_events dates are two index probes on this index
+-- (migration 85, #1100). cia_event is created by migration 04, which runs after
+-- this file, so on a fresh database the table does not exist yet here and the
+-- migration creates the index.
+DO $cia_event_idx$
+BEGIN
+    IF to_regclass('public.cia_event') IS NOT NULL THEN
+        CREATE INDEX IF NOT EXISTS idx_cia_event_data_entrega
+            ON cia_event (data_entrega);
+    END IF;
+END
+$cia_event_idx$;
