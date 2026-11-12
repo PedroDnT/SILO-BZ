@@ -48,7 +48,9 @@ jobs:
           version: latest
 
       - name: Deploy silo-mcp
-        run: supabase functions deploy silo-mcp --project-ref "$PROJECT_REF" --no-verify-jwt
+        # --yes: the CLI (version latest) asks for confirmation and refuses
+        # without a terminal; measured on run 43200655362, 2026-11-12.
+        run: supabase functions deploy silo-mcp --project-ref "$PROJECT_REF" --no-verify-jwt --yes
 
       # The deploy command succeeding says the bundle uploaded, not that the
       # endpoint answers with this commit's contract. Ask it: versions (REST
