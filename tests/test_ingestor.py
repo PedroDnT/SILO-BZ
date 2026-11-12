@@ -732,6 +732,48 @@ class TestFiiPreviousYearInQ1:
         assert all(d.endswith(" 2027") for d in april)
 
 
+class TestFipSecuritPreviousYearInQ1:
+    """January to March, the daily run also re-reads last year's FIP and SECURIT
+    files: both are keyed by reference year, so December's reports land in last
+    year's file (#1106)."""
+
+    @staticmethod
+    def _descriptions(entity, today):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+        ingestor = CVMIngestor(service=object(), cia_fetcher=object(), client=_FakeClient())
+        tasks = ingestor._plan_daily_annual_tasks({entity}, today.year, today)
+        try:
+            return [task.description for task in tasks]
+        finally:
+            for task in tasks:
+                task.operation.close()
+
+    @staticmethod
+    def _securit_types():
+        from src.pipeline.cvm_pipeline import (
+            SECURIT_DFIN_TYPES, SECURIT_FLUXO_TYPES, SECURIT_SERIE_TYPES,
+        )
+        return list(SECURIT_SERIE_TYPES) + list(SECURIT_FLUXO_TYPES) + list(SECURIT_DFIN_TYPES)
+
+    def test_january_plans_both_years(self):
+        from src.pipeline.cvm_pipeline import FIP_PERIODIC_CONFIGS
+        fip = self._descriptions("fip", date(2027, 1, 2))
+        assert len(fip) == 2 * len(FIP_PERIODIC_CONFIGS)
+        securit = self._descriptions("securit", date(2027, 1, 2))
+        assert len(securit) == 2 * len(self._securit_types())
+        for year in (2026, 2027):
+            assert {f"fip/{d} {year}" for _, d in FIP_PERIODIC_CONFIGS} <= set(fip)
+            assert {f"securit/{t} {year}" for t in self._securit_types()} <= set(securit)
+
+    def test_april_plans_only_the_current_year(self):
+        from src.pipeline.cvm_pipeline import FIP_PERIODIC_CONFIGS
+        fip = self._descriptions("fip", date(2027, 4, 1))
+        securit = self._descriptions("securit", date(2027, 4, 1))
+        assert fip == [f"fip/{d} 2027" for _, d in FIP_PERIODIC_CONFIGS]
+        assert len(securit) == len(self._securit_types())
+        assert all(d.endswith(" 2027") for d in securit)
+
+
 class TestLogFinishStatus:
     """A not-yet-published month (404) is 'skipped', not a false 'error'."""
 
