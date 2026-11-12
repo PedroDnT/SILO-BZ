@@ -248,8 +248,10 @@ function declaredView(resource: ResourceSpec, plan: Plan, values: Values): ViewQ
 
 /**
  * One GET on a view: eq. filters (applied before PostgREST's row cap), the
- * plan's order, `need` rows from `off`, and an exact count. Rows remain while
- * off + served < the count; with no count, a full page may have more.
+ * plan's order, and `need` + 1 rows from `off`. Rows remain when the extra row
+ * came back; it is not served. No exact count is asked (#1098), so
+ * meta.rows_total is null. A page of VIEW_PAGE rows cannot ask for one more
+ * (db-max-rows would cut it), so a full page there may have more.
  */
 async function readView(
   resource: ResourceSpec,
@@ -263,15 +265,17 @@ async function readView(
   finish: (rows: Row[]) => Row[],
 ): Promise<Walked<Record<string, unknown>>> {
   const q = hooks.view ? await hooks.view(plan, values, ctx, pos.pin) : declaredView(resource, plan, values);
-  const page = await callView(ctx, q.view, q.eq, plan.order, need, q.filters, pos.off);
-  const n = page.rows.length;
+  const probe = need < VIEW_PAGE;
+  const page = await callView(ctx, q.view, q.eq, plan.order, probe ? need + 1 : need, q.filters, pos.off);
+  const more = probe ? page.rows.length > need : page.rows.length >= need && need > 0;
+  const rows = more ? page.rows.slice(0, need) : page.rows;
+  const n = rows.length;
   meta.endpoint = `api.${q.view}`;
-  meta.rows_total = page.total;
+  meta.rows_total = null;
   if (q.pin) meta.session = q.pin;
-  const more = page.total !== null ? pos.off + n < page.total : n >= need && n > 0;
   const next: Record<string, unknown> = { off: pos.off + n };
   if (q.pin) next.pin = q.pin;
-  return { rows: finish(page.rows), more, pos: next };
+  return { rows: finish(rows), more, pos: next };
 }
 
 // -- a date range on a view (derivatives, curves, macro, positioning: #1057) --

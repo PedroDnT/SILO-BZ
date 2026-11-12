@@ -289,19 +289,20 @@ Deno.test("config refuses a secret key", () => {
 const CNPJ = "33000167000101";
 const body = (c: Captured) => JSON.parse(String(c.init.body));
 
-function stubView(rows: unknown[], contentRange: string | null) {
+/** A view holding `rows` from the requested offset on: answers at most `limit` of them, as PostgREST does, and never a count (#1098). */
+function stubView(rows: unknown[]) {
   const calls: Captured[] = [];
   const impl = (input: string, init: RequestInit): Promise<Response> => {
     calls.push({ url: String(input), init });
-    const headers: Record<string, string> = { "content-type": "application/json" };
-    if (contentRange !== null) headers["content-range"] = contentRange;
-    return Promise.resolve(new Response(JSON.stringify(rows), { status: 200, headers }));
+    const limit = new URL(String(input)).searchParams.get("limit");
+    const out = limit === null ? rows : rows.slice(0, Number(limit));
+    return Promise.resolve(new Response(JSON.stringify(out), { status: 200, headers: { "content-type": "application/json" } }));
   };
   return { calls, impl };
 }
 
-async function getView(path: string, rows: unknown[], contentRange: string | null, headers: Record<string, string> = {}) {
-  const stub = stubView(rows, contentRange);
+async function getView(path: string, rows: unknown[], headers: Record<string, string> = {}) {
+  const stub = stubView(rows);
   const res = await makeHandler({ fetchImpl: stub.impl, env, gate: OPEN })(new Request(`${BASE}${path}`, { headers }));
   return { res, json: await res.json(), calls: stub.calls };
 }
@@ -348,9 +349,9 @@ Deno.test("funds kind=profile with an id calls fund_profile and takes no window"
   assertEquals(misplaced.calls.length, 0);
 });
 
-Deno.test("funds with no id GETs the funds view: eq filters, an order, Prefer count=exact", async () => {
+Deno.test("funds with no id GETs the funds view: eq filters, an order, no count asked", async () => {
   const rows = [{ cnpj: "00000000000191", entity_type: "fidc", fund_name: "A" }];
-  const { res, json, calls } = await getView("/v2/funds?family=fidc&status=EM%20FUNCIONAMENTO%20NORMAL", rows, "0-0/1");
+  const { res, json, calls } = await getView("/v2/funds?family=fidc&status=EM%20FUNCIONAMENTO%20NORMAL", rows);
   assertEquals(res.status, 200);
   assertEquals(calls.length, 1);
   assertEquals(calls[0].init.method, "GET");
@@ -359,40 +360,42 @@ Deno.test("funds with no id GETs the funds view: eq filters, an order, Prefer co
   assertEquals(u.searchParams.get("entity_type"), "eq.fidc");
   assertEquals(u.searchParams.get("status"), "eq.EM FUNCIONAMENTO NORMAL");
   assertEquals(u.searchParams.get("order"), "cnpj.asc,entity_type.asc");
-  assertEquals(u.searchParams.get("limit"), "10", "the anonymous page maximum");
+  assertEquals(u.searchParams.get("limit"), "11", "the anonymous page maximum, plus one row that says whether more remain");
   assertEquals(u.searchParams.get("offset"), null, "the first page");
   const h = calls[0].init.headers as Record<string, string>;
   assertEquals(h["Accept-Profile"], "api");
-  assertEquals(h["Prefer"], "count=exact");
+  assertEquals(h["Prefer"], undefined, "no count=exact: it scans the whole selection (#1098)");
   assertEquals(json.data, rows);
   assertEquals(json.meta.endpoint, "api.funds");
-  assertEquals(json.meta.rows_total, 1);
-  assert(!("next_page_url" in json), "the count says every row was served");
+  assertEquals(json.meta.rows_total, null, "no count is asked");
+  assert(!("next_page_url" in json), "no extra row came back: every row was served");
 });
 
 Deno.test("funds with no id pages the view with limit + offset, and says while rows remain", async () => {
-  const page = Array.from({ length: 10 }, (_, i) => ({ cnpj: String(i).padStart(14, "0") }));
-  const first = await getView("/v2/funds", page, "0-9/84211");
+  const page = Array.from({ length: 11 }, (_, i) => ({ cnpj: String(i).padStart(14, "0") }));
+  const first = await getView("/v2/funds", page);
   assertEquals(first.res.status, 200);
-  assertEquals(first.json.data.length, 10);
-  assertEquals(first.json.meta.rows_total, 84211);
+  assertEquals(first.json.data.length, 10, "the extra row says more remain and is not served");
+  assertEquals(first.json.data, page.slice(0, 10));
+  assertEquals(first.json.meta.rows_total, null);
   assertEquals(first.json.meta.rows_served, 10);
   assert(first.json.next_page_url.startsWith(`${BASE}/v2/funds?cursor=`));
-  const next = await getView(pathOf(first.json.next_page_url), page, "10-19/84211");
+  const next = await getView(pathOf(first.json.next_page_url), page);
   const u = new URL(next.calls[0].url);
-  assertEquals(u.searchParams.get("offset"), "10");
-  assertEquals(u.searchParams.get("limit"), "10");
+  assertEquals(u.searchParams.get("offset"), "10", "the next page starts after the rows served, not after the extra row");
+  assertEquals(u.searchParams.get("limit"), "11");
   assertEquals(next.json.meta.rows_served, 20);
 
-  const noCount = await getView("/v2/funds", page, null);
-  assert(noCount.json.next_page_url, "no count and a full page: more may remain, and the cursor says so");
+  const exact = await getView("/v2/funds", page.slice(0, 10));
+  assertEquals(exact.json.data.length, 10);
+  assert(!("next_page_url" in exact.json), "exactly a page and no extra row: nothing remains, no cursor");
 
-  const coerced = await getView("/v2/funds?limit=500", page, "0-9/84211");
+  const coerced = await getView("/v2/funds?limit=500", page);
   assertEquals(coerced.res.status, 200, "a limit above the tier maximum is coerced, not refused (AIP-158)");
   assertEquals(coerced.json.meta.request.limit, 10);
   assertEquals(coerced.json.meta.limit_coerced_from, 500);
-  const signed = await getView("/v2/funds?limit=500", page, "0-9/84211", SIGNED);
-  assertEquals(new URL(signed.calls[0].url).searchParams.get("limit"), "100", "the signed-in page maximum");
+  const signed = await getView("/v2/funds?limit=500", page, SIGNED);
+  assertEquals(new URL(signed.calls[0].url).searchParams.get("limit"), "101", "the signed-in page maximum, plus one");
   const zero = await get("/v2/funds?limit=0");
   assertEquals(zero.json.error.target, "limit");
 });
@@ -472,11 +475,12 @@ Deno.test("fidc maps one kind per fidc_* function with a 2-year window, and hidd
 });
 
 Deno.test("fidc with no id lists the FIDC registry from the funds view", async () => {
-  const { json, calls } = await getView("/v2/fidc?limit=5", Array(5).fill({ cnpj: CNPJ, entity_type: "fidc" }), "0-4/4120");
+  const { json, calls } = await getView("/v2/fidc?limit=5", Array(4120).fill({ cnpj: CNPJ, entity_type: "fidc" }));
   const u = new URL(calls[0].url);
   assertEquals(u.pathname, "/rest/v1/funds");
   assertEquals(u.searchParams.get("entity_type"), "eq.fidc");
-  assertEquals(u.searchParams.get("limit"), "5");
+  assertEquals(u.searchParams.get("limit"), "6");
+  assertEquals(json.data.length, 5);
   assert(json.next_page_url, "4,120 held and 5 served: the cursor says more remain");
   const item = await get("/v2/fidc?item=sector");
   assertEquals(item.json.error.target, "item", "item needs an id: it applies to the portfolio function only");
@@ -627,7 +631,7 @@ Deno.test("prices kind=session: the newest session found, pinned, and read a pag
     { ticker: "AAAA3", trade_date: "2026-10-30", board: "02", close: 1 },
     { ticker: "BBBB3", trade_date: "2026-10-30", board: "02", close: 2 },
   ];
-  const { json, calls } = await getView("/v2/prices?kind=session", rows, "0-1/2");
+  const { json, calls } = await getView("/v2/prices?kind=session", rows);
   assertEquals(calls.length, 2, "one GET finds the newest session, one reads it");
   for (const c of calls) assertEquals(c.init.method, "GET");
   const probe = new URL(calls[0].url);
@@ -637,7 +641,7 @@ Deno.test("prices kind=session: the newest session found, pinned, and read a pag
   const read = new URL(calls[1].url);
   assertEquals(read.searchParams.get("trade_date"), "eq.2026-10-30");
   assertEquals(read.searchParams.get("order"), "trade_date.desc,ticker.asc");
-  assertEquals(read.searchParams.get("limit"), "10");
+  assertEquals(read.searchParams.get("limit"), "11");
   assertEquals((calls[1].init.headers as Record<string, string>)["Accept-Profile"], "api");
   assertEquals(json.data.map((r: { ticker: string }) => r.ticker), ["AAAA3", "BBBB3"]);
   assertEquals(json.data[0].adjusted, false);
@@ -656,21 +660,21 @@ Deno.test("prices kind=session: the newest session found, pinned, and read a pag
 });
 
 Deno.test("prices kind=session pages a session of any size; the pinned session rides in the cursor", async () => {
-  const page = Array.from({ length: 10 }, (_, i) => ({ ticker: `T${i}`, trade_date: "2026-10-30" }));
-  const first = await getView("/v2/prices?kind=session&asset_class=equity", page, "0-9/1400");
+  const page = Array.from({ length: 1400 }, (_, i) => ({ ticker: `T${i}`, trade_date: "2026-10-30" }));
+  const first = await getView("/v2/prices?kind=session&asset_class=equity", page);
   assertEquals(first.res.status, 200, "1,400 rows: served in pages, never refused, never cut");
   assert(first.calls[1].url.includes("/rest/v1/equities?"));
   assertEquals(first.json.data.length, 10);
   assert(first.json.next_page_url);
-  const next = await getView(pathOf(first.json.next_page_url), page, "10-19/1400");
+  const next = await getView(pathOf(first.json.next_page_url), page);
   assertEquals(next.calls.length, 1, "the pinned session needs no second probe");
   const u = new URL(next.calls[0].url);
   assertEquals(u.searchParams.get("trade_date"), "eq.2026-10-30");
   assertEquals(u.searchParams.get("offset"), "10");
-  const whole = await getView("/v2/prices?kind=session&date=2026-10-30", page.slice(0, 3), "0-2/3");
+  const whole = await getView("/v2/prices?kind=session&date=2026-10-30", page.slice(0, 3));
   assertEquals(whole.json.data.length, 3);
   assert(!("next_page_url" in whole.json));
-  assertEquals((whole.calls[0].init.headers as Record<string, string>)["Prefer"], "count=exact");
+  assertEquals((whole.calls[0].init.headers as Record<string, string>)["Prefer"], undefined, "no count=exact (#1098)");
   const empty = await get("/v2/prices?kind=session&id=ZZZZ3", 200, "[]");
   assertEquals(empty.json.error.target, "date", "no session in the lookback: say so, never an empty answer");
 });
@@ -805,7 +809,7 @@ Deno.test("derivatives futures_curve: root default DI1 (not sent), date; di_sett
   const misplaced = await get("/v2/derivatives?kind=futures_curve&from=2026-01-01");
   assertEquals(misplaced.json.error.target, "from");
 
-  const di = await getView("/v2/derivatives?kind=di_settlement&id=di1f27&from=2026-01-01&to=2026-06-30", [{ trade_date: "2026-06-30" }], "0-0/1", SIGNED);
+  const di = await getView("/v2/derivatives?kind=di_settlement&id=di1f27&from=2026-01-01&to=2026-06-30", [{ trade_date: "2026-06-30" }], SIGNED);
   assertEquals(di.calls[0].init.method, "GET");
   const u = new URL(di.calls[0].url);
   assertEquals(u.pathname, "/rest/v1/di_settlement");
@@ -817,7 +821,7 @@ Deno.test("derivatives futures_curve: root default DI1 (not sent), date; di_sett
   const date = await get("/v2/derivatives?kind=di_settlement&date=2026-10-30");
   assertEquals(date.json.error.target, "date");
   assertEquals(date.calls.length, 0);
-  const many = await getView("/v2/derivatives?kind=di_settlement", Array.from({ length: 10 }, () => ({})), "0-9/9000");
+  const many = await getView("/v2/derivatives?kind=di_settlement", Array.from({ length: 9000 }, () => ({})));
   assert(many.json.next_page_url, "9,000 held: paged, never refused or cut");
   const wide = await get("/v2/derivatives?kind=di_settlement&from=2026-01-01&to=2026-06-30");
   assertEquals(wide.res.status, 403);
@@ -897,11 +901,11 @@ Deno.test("macro fx: ptax for one currency; currency=all reads the ptax_daily vi
   const usd = await get("/v2/macro?kind=fx");
   assert(usd.calls[0].url.endsWith("/rpc/ptax"));
   assertEquals(body(usd.calls[0]), { p_currency: "USD", p_from: M3 }, "fx is daily: the anonymous window");
-  const all = await getView("/v2/macro?kind=fx&currency=all&from=2026-10-01&limit=10", [{ date: "2026-10-30", currency: "EUR" }], "0-0/1");
+  const all = await getView("/v2/macro?kind=fx&currency=all&from=2026-10-01&limit=10", [{ date: "2026-10-30", currency: "EUR" }]);
   const u = new URL(all.calls[0].url);
   assertEquals(u.pathname, "/rest/v1/ptax_daily");
   assertEquals(u.searchParams.get("date"), "gte.2026-10-01");
-  assertEquals(u.searchParams.get("limit"), "10");
+  assertEquals(u.searchParams.get("limit"), "11");
   assertEquals(u.searchParams.get("currency"), null);
   assertEquals(all.json.meta.endpoint, "api.ptax_daily");
   const limit = await get("/v2/macro?kind=fx&limit=5");
@@ -927,7 +931,7 @@ Deno.test("macro expectations: family is the Focus survey (annual by default) an
 });
 
 Deno.test("positioning: each kind GETs its view newest first, with a 3-month range and eq filters", async () => {
-  const si = await getView("/v2/positioning?id=petr4", [{ trade_date: "2026-10-30", ticker: "PETR4" }], "0-0/1");
+  const si = await getView("/v2/positioning?id=petr4", [{ trade_date: "2026-10-30", ticker: "PETR4" }]);
   let u = new URL(si.calls[0].url);
   assertEquals(u.pathname, "/rest/v1/short_interest");
   assertEquals(u.searchParams.get("ticker"), "eq.PETR4");
@@ -935,17 +939,17 @@ Deno.test("positioning: each kind GETs its view newest first, with a 3-month ran
   assertEquals(u.searchParams.get("order"), "trade_date.desc,ticker.asc");
   assertEquals(si.json.meta.request.from, M3);
 
-  const sector = await getView("/v2/positioning?kind=short_by_sector&sector=Petr%C3%B3leo&to=2026-10-30", [], "*/0");
+  const sector = await getView("/v2/positioning?kind=short_by_sector&sector=Petr%C3%B3leo&to=2026-10-30", []);
   u = new URL(sector.calls[0].url);
   assertEquals(u.pathname, "/rest/v1/short_interest_by_sector");
   assertEquals(u.searchParams.get("sector"), "eq.Petróleo");
   assertEquals(u.searchParams.get("and"), "(trade_date.gte.2026-07-30,trade_date.lte.2026-10-30)");
 
   for (const [kind, view] of [["lending", "lending_trades"], ["lending_brokers", "lending_participants"]]) {
-    const r = await getView(`/v2/positioning?kind=${kind}&id=VALE3`, [], "*/0");
+    const r = await getView(`/v2/positioning?kind=${kind}&id=VALE3`, []);
     assertEquals(new URL(r.calls[0].url).pathname, `/rest/v1/${view}`, kind);
   }
-  const flow = await getView("/v2/positioning?kind=investor_flow&investor_type=Estrangeiro", [], "*/0");
+  const flow = await getView("/v2/positioning?kind=investor_flow&investor_type=Estrangeiro", []);
   u = new URL(flow.calls[0].url);
   assertEquals(u.pathname, "/rest/v1/investor_flow");
   assertEquals(u.searchParams.get("investor_type"), "eq.Estrangeiro");
@@ -954,12 +958,12 @@ Deno.test("positioning: each kind GETs its view newest first, with a 3-month ran
 });
 
 Deno.test("positioning pages a selection over one page and refuses a parameter its kind cannot use", async () => {
-  const page = Array.from({ length: 10 }, (_, i) => ({ ticker: `T${i}` }));
-  const many = await getView("/v2/positioning", page, "0-9/4200");
+  const page = Array.from({ length: 4200 }, (_, i) => ({ ticker: `T${i}` }));
+  const many = await getView("/v2/positioning", page);
   assertEquals(many.res.status, 200);
   assert(many.json.next_page_url, "4,200 held: paged, never refused or cut");
-  const head = await getView("/v2/positioning?limit=5", page.slice(0, 5), "0-4/4200");
-  assertEquals(new URL(head.calls[0].url).searchParams.get("limit"), "5");
+  const head = await getView("/v2/positioning?limit=5", page);
+  assertEquals(new URL(head.calls[0].url).searchParams.get("limit"), "6");
   assert(head.json.next_page_url);
   const id = await get("/v2/positioning?kind=investor_flow&id=PETR4");
   assertEquals(id.json.error.target, "id");
@@ -969,6 +973,45 @@ Deno.test("positioning pages a selection over one page and refuses a parameter i
   const help = await get("/v2/positioning?help");
   assert(help.json.data[0].notes.some((n: string) => n.includes("is_total")));
   assert(!help.json.data[0].parameters.some((p: { name: string }) => p.name === "sector"), "sector is hidden");
+});
+
+Deno.test("a view resource asks for one row more than the page, never an exact count (#1098)", async () => {
+  // positioning kind=lending: count(*) over the 3-month window outran the anon statement_timeout.
+  const rows = Array.from({ length: 11 }, (_, i) => ({ trade_date: "2026-10-30", ticker: "VALE3", n: i }));
+  const more = await getView("/v2/positioning?kind=lending&id=VALE3", rows);
+  assertEquals(more.res.status, 200);
+  assertEquals(more.calls.length, 1);
+  const h = more.calls[0].init.headers as Record<string, string>;
+  assert(!Object.values(h).some((v) => v.includes("count=")), "no Prefer count on a view call");
+  assertEquals(new URL(more.calls[0].url).searchParams.get("limit"), "11");
+  assertEquals(more.json.data, rows.slice(0, 10), "the extra row is not served");
+  assertEquals(more.json.meta.rows_served, 10);
+  assertEquals(more.json.meta.rows_total, null);
+  assert(more.json.next_page_url, "the extra row came back: more remain");
+  const state = decodeCursor(new URL(more.json.next_page_url).searchParams.get("cursor")!, "positioning");
+  assertEquals(state.p, { off: 10 });
+
+  const last = await getView(pathOf(more.json.next_page_url), rows.slice(10));
+  assertEquals(new URL(last.calls[0].url).searchParams.get("offset"), "10");
+  assertEquals(last.json.data, rows.slice(10));
+  assertEquals(last.json.meta.rows_served, 11);
+  assert(!("next_page_url" in last.json), "no extra row: no more rows, no cursor");
+
+  const none = await getView("/v2/positioning?kind=lending_brokers&id=VALE3", rows.slice(0, 10));
+  assertEquals(none.json.data.length, 10);
+  assert(!("next_page_url" in none.json), "exactly a page and no extra row: nothing remains");
+});
+
+Deno.test("a view page of db-max-rows cannot ask for one more: a full page may have more (#1098)", async () => {
+  const stub = stubView(Array.from({ length: 1500 }, (_, i) => ({ ticker: `T${i}` })));
+  const pro: Gate = { tier: () => Promise.resolve("pro"), hit: () => Promise.resolve(1) };
+  const handler = makeHandler({ fetchImpl: stub.impl, env, gate: pro });
+  const res = await handler(new Request(`${BASE}/v2/positioning?limit=1000`, { headers: SIGNED }));
+  const json = await res.json();
+  assertEquals(res.status, 200);
+  assertEquals(new URL(stub.calls[0].url).searchParams.get("limit"), "1000", "1,001 would be cut to 1,000 by db-max-rows");
+  assertEquals(json.data.length, 1000);
+  assert(json.next_page_url, "a full page of 1,000: more may remain");
 });
 
 Deno.test("every built resource keeps at most 3 main parameters, kind included", () => {
