@@ -42,11 +42,12 @@ arithmetic.
 | `EURBRL` | 21619 | `brl_per_eur` | daily | SGS's BRL/EUR selling rate |
 | `PIB` | 4380 | `brl_million` | monthly | monthly GDP, R$ millions, current prices |
 | `DBGG_PIB` | 13762 | `pct_gdp` | monthly | general-government gross debt, % of GDP (2008 methodology) |
+| `DLSP_PIB` | 4513 | `pct_gdp` | monthly | consolidated public sector net debt, % of GDP |
 | `NFSP_PRIMARIO_12M` | 5793 | `pct_gdp` | monthly | public sector borrowing requirement, primary, 12 months, % of GDP |
 | `NFSP_NOMINAL_12M` | 5727 | `pct_gdp` | monthly | the same, nominal result (interest included) |
 
 An IPCA label or code is refused with a pointer to `inflation`; anything else
-unknown raises `22023` listing the twelve. Default window: 12 months for the daily
+unknown raises `22023` listing the thirteen. Default window: 12 months for the daily
 series, 120 for the monthly ones.
 
 ### Four series that are easy to misread
