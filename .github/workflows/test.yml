@@ -851,6 +851,41 @@ jobs:
           echo "checked ${#files[@]} sources, ${#failed[@]} failed"
           [ ${#failed[@]} -eq 0 ]
 
+      # Two pytest tests need a real Postgres and skip without
+      # SILO_TEST_CREDIT_DATABASE_URL, which the offline pytest job never sets
+      # (#1114). One reproduces the production lock failure behind
+      # guard_noop_ddl; the other writes credit captures through pg_client.
+      # Both refuse any URL that is not loopback and does not end in _test, so
+      # they get a fresh silo_credit_test database in this job's service
+      # container, built by the same apply-schema action. The URL is this job's
+      # POSTGRES_URL with the database swapped, so no new credential is written.
+      - name: Create the credit-test database
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE silo_credit_test;"
+          echo "SILO_TEST_CREDIT_DATABASE_URL=${POSTGRES_URL%/*}/silo_credit_test" >> "$GITHUB_ENV"
+
+      - name: Apply schema + migrations to the credit-test database
+        uses: ./.github/actions/apply-schema
+        with:
+          postgres-url: ${{ env.SILO_TEST_CREDIT_DATABASE_URL }}
+
+      - name: Install test dependencies
+        run: pip install --quiet --disable-pip-version-check -r requirements-dev.txt
+
+      # A skip here is a failure: the point of the step is that they run.
+      - name: Lock-regression DB tests run against the credit-test database
+        run: |
+          set -euo pipefail
+          python -m pytest -v -rs -p no:cacheprovider \
+            "tests/test_guard_noop_ddl.py::test_matching_index_replay_succeeds_under_a_concurrent_reader" \
+            "tests/test_b3_credit.py::test_real_pg_client_writes_capture_dates_facts_and_single_audit" \
+            | tee /tmp/credit-db-tests.log
+          grep -Eq '(^|[^0-9])2 passed' /tmp/credit-db-tests.log || {
+            echo "::error::expected 2 passed, none skipped"; exit 1; }
+          if grep -q ' skipped' /tmp/credit-db-tests.log; then
+            echo "::error::a DB test skipped"; exit 1; fi
+
   # The Edge Functions' own offline Deno tests (#1054). Before this job no
   # workflow ran supabase/functions/silo-mcp/silo_mcp_test.ts. Every function
   # directory holding a *_test.ts is tested from inside it, so its deno.json
