@@ -18,6 +18,8 @@ Grouped by when you would reach for them.
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `verify_pipeline.py`          | The quality gate. Runs verification queries against live Supabase. **If a change makes this fail, the change is wrong — not the verifier.** |
 | `check_staleness.py`          | Ingest-staleness check behind `watchdog.yml`; re-runs ingest when a dataset falls behind.                                                   |
+| `backfill_coverage_snapshot.py` | `backfill.yml`'s inspect-coverage job: marks audit rows still `running` after 24 h as `error` (its one write), then prints the ingest log and `data_coverage`. |
+| `backfill_fi_year_gate.py`    | `backfill.yml`'s FI skip-if-complete gate for one matrix year; reads the dispatch inputs from env and writes `skip=true` to `$GITHUB_OUTPUT`. Read-only. |
 | `audit_coverage.py`           | Reports what data actually exists per table, so a dashboard figure can be judged against its own coverage.                                  |
 | `audit_matview_dependents.py` | What a `CASCADE` drop of each matview would destroy. Read before touching `fact_*`.                                                         |
 | `db_parity.py`                | Lists user tables/views with row-count estimates — used to compare two databases.                                                           |
