@@ -1354,6 +1354,52 @@ Deno.test("an unsigned cursor never widens a tier: its parameters are parsed aga
   assertEquals((await get(`/v2/macro?cursor=${outside}`)).json.error.target, "cursor", "a window before from is refused");
 });
 
+Deno.test("a walk with a defaulted from keeps its window across midnight (UTC-3): the cursor carries the request day (#1103)", async () => {
+  // Exercises with no from: the window is counted back from today. A window wider than a week is "cut"
+  // (500 rows, the anonymous ceiling) and halved; a narrower one holds 20 rows, so the first page of 10
+  // stops inside the first window and the cursor's position starts at the defaulted from.
+  const sent: Record<string, unknown>[] = [];
+  const impl: FetchLike = (_url, init) => {
+    const b = JSON.parse(String(init.body));
+    sent.push(b);
+    const days = b.p_to ? (Date.parse(b.p_to) - Date.parse(b.p_from)) / 86_400_000 + 1 : Infinity;
+    const n = days > 7 ? 500 : 20;
+    return Promise.resolve(new Response(rowsOf(n, (i) => ({ i })), { status: 200 }));
+  };
+  const clock = { t: Date.parse("2026-11-12T02:30:00Z") }; // 23:30 UTC-3 on 2026-11-11
+  const handler = makeHandler({ fetchImpl: impl, env, gate: OPEN, now: () => clock.t });
+  const call = async (path: string) => {
+    const res = await handler(new Request(`${BASE}${path}`));
+    return { res, json: await res.json() };
+  };
+  const first = await call("/v2/derivatives?kind=exercises&id=VALE");
+  assertEquals(first.res.status, 200, JSON.stringify(first.json.error ?? null));
+  assertEquals(first.json.meta.request.from, "2026-08-11", "3 anonymous months back from 2026-11-11");
+  assertEquals(sent[0].p_from, "2026-08-11");
+  const token = new URL(first.json.next_page_url).searchParams.get("cursor")!;
+  assertEquals(decodeCursor(token, "derivatives").t, "2026-11-11");
+
+  clock.t = Date.parse("2026-11-12T03:30:00Z"); // 00:30 UTC-3 on 2026-11-12: a new day
+  sent.length = 0;
+  const next = await call(pathOf(first.json.next_page_url));
+  assertEquals(next.res.status, 200, JSON.stringify(next.json.error ?? null));
+  assertEquals(next.json.meta.request.from, "2026-08-11", "the window the walk started with, not one counted from the new day");
+  assertEquals(sent[0].p_from, "2026-08-11");
+  assertEquals(next.json.data.map((r: Row) => r.i), [10, 11, 12, 13, 14, 15, 16, 17, 18, 19], "the rest of the first window");
+
+  // A fresh request on the new day counts from it.
+  const fresh = await call("/v2/derivatives?kind=exercises&id=VALE");
+  assertEquals(fresh.json.meta.request.from, "2026-08-12");
+
+  // The cursor is unsigned: a request day other than today or yesterday is refused, never trusted.
+  const state = decodeCursor(token, "derivatives");
+  for (const t of ["2026-11-10", "2026-11-13", "2026-02-30"]) {
+    const edited = await call(`/v2/derivatives?cursor=${encodeCursor({ ...state, t })}`);
+    assertEquals(edited.res.status, 400, t);
+    assertEquals(edited.json.error.target, "cursor", t);
+  }
+});
+
 Deno.test("a POST cursor needs the same body; the body travels as a digest, not in the URL", async () => {
   const rows = JSON.stringify(Array.from({ length: 30 }, (_, i) => ({ cnpj: String(i).padStart(14, "0") })));
   const first = await post("/v2/portfolio?kind=fund_terms&limit=10", { id: ["33000167000101"] }, 200, rows);

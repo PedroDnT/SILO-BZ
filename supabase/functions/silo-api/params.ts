@@ -287,16 +287,17 @@ export function todayUtcMinus3(now: Date = new Date()): string {
 /**
  * The values with the default window applied: when the plan takes `from`
  * and none was sent, from = (to, or today in UTC-3) minus the resource's
- * window_months (or the kind's own). `to` is left as sent; with none, the endpoint's own default
+ * window_months (or the kind's own); `today` is a cursor's request day on a
+ * later page (#1103). `to` is left as sent; with none, the endpoint's own default
  * applies (fund_nav, for one, ends at the family's latest complete period).
  * A from after to is refused.
  */
-export function applyWindow(resource: ResourceSpec, plan: Plan, values: Record<string, Value>, now?: Date): Record<string, Value> {
+export function applyWindow(resource: ResourceSpec, plan: Plan, values: Record<string, Value>, today?: string): Record<string, Value> {
   const out = { ...values };
   if (!("from" in plan.args)) return out;
   const months = plan.window_months ?? resource.window_months; // a kind's own window (#1057)
   if (out.from === null && months) {
-    const end = typeof out.to === "string" ? out.to : todayUtcMinus3(now);
+    const end = typeof out.to === "string" ? out.to : (today ?? todayUtcMinus3());
     out.from = minusMonths(end, months);
   }
   if (typeof out.from === "string" && typeof out.to === "string" && out.from > out.to) {

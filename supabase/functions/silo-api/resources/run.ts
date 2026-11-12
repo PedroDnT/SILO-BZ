@@ -30,6 +30,7 @@ import {
 } from "../params.ts";
 import {
   afterPos,
+  cursorDay,
   type CursorState,
   encodeCursor,
   type Method,
@@ -96,10 +97,19 @@ function isDaily(plan: Plan, values: Values): boolean {
  * window wider than it is narrowed to it (meta.request.from says so); a from
  * the caller sent that is earlier is forbidden_for_tier, never trimmed.
  */
-function tierWindow(resource: ResourceSpec, kindName: string, plan: Plan, values: Values, sentFrom: boolean, tier: Tier, meta: Meta): Values {
+function tierWindow(
+  resource: ResourceSpec,
+  kindName: string,
+  plan: Plan,
+  values: Values,
+  sentFrom: boolean,
+  tier: Tier,
+  meta: Meta,
+  today: string,
+): Values {
   const months = TIERS[tier].daily_window_months;
   if (months === null || !("from" in plan.args) || !isDaily(plan, values)) return values;
-  const end = typeof values.to === "string" ? values.to : todayUtcMinus3();
+  const end = typeof values.to === "string" ? values.to : today;
   const earliest = minusMonths(end, months);
   if (typeof values.from === "string" && values.from >= earliest) return values;
   if (!sentFrom) {
@@ -132,8 +142,12 @@ export async function runKind(
   checkApplicable(resource, kindName, plan, req.values);
   checkRequired(resource, kindName, plan, req.values);
   const meta: Meta = { resource: resource.name, kind: kindName, request: {}, id_known: null, endpoint: `api.${plan.endpoint}` };
-  let values = applyWindow(resource, plan, req.values);
-  values = tierWindow(resource, kindName, plan, values, req.values.from !== null, tier, meta);
+  // A defaulted from/to counts from the day the walk started, not from today:
+  // a cursor carries that day, so a walk that crosses midnight keeps its window (#1103).
+  const cursor: CursorState | null = req.paging?.cursor ?? null;
+  const day = cursorDay(cursor, todayUtcMinus3(new Date(ctx.now ? ctx.now() : Date.now())));
+  let values = applyWindow(resource, plan, req.values, day);
+  values = tierWindow(resource, kindName, plan, values, req.values.from !== null, tier, meta, day);
   if (hooks.prepare) values = hooks.prepare(kindName, plan, values, ctx);
 
   // limit is the page size: the tier's maximum by default, coerced down to it (AIP-158).
@@ -145,7 +159,6 @@ export async function runKind(
   meta.tier = tier;
 
   const { method, order } = pagingMethod(resource, plan, values);
-  const cursor: CursorState | null = req.paging?.cursor ?? null;
   if (cursor && cursor.m !== method) {
     throw new ApiError(400, "bad_request", "The cursor was written by another paging method than this request uses. Start again without cursor.", "cursor");
   }
@@ -203,7 +216,7 @@ export async function runKind(
       pos: pos.window!,
       order,
       need,
-      today: todayUtcMinus3(),
+      today: day,
       fetch: async (lo, hi) => finish(await rpcRows({ ...values, from: lo, to: hi })),
     }) as unknown as Walked<Record<string, unknown>>;
   } else {
@@ -218,7 +231,7 @@ export async function runKind(
   if (cap !== null && total >= cap) return capped(env, tier, total);
   const p = req.paging;
   if (!p) throw new ApiError(500, "internal", "More rows remain, but the request carries no paging context to build next_page_url.");
-  const state: CursorState = { v: 1, r: resource.name, q: p.q, m: method, p: walked.pos, n: total };
+  const state: CursorState = { v: 1, r: resource.name, q: p.q, m: method, p: walked.pos, n: total, t: day };
   if (p.body !== undefined) state.b = p.body;
   env.next_page_url = `${p.base}?cursor=${encodeCursor(state)}`;
   return env;

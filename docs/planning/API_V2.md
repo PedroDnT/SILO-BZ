@@ -350,8 +350,10 @@ uses a secret key.
 
 - **One cursor on every list kind.** `next_page_url` is the same path with
   `?cursor=<token>`. The token is base64url of a JSON state: the resource,
-  every original query parameter as sent, the paging method, the position and
-  the rows served so far. A request that sends a cursor and another parameter
+  every original query parameter as sent, the paging method, the position,
+  the rows served so far, and the request day (UTC-3) the first page counted
+  a defaulted `from`/`to` from, so a walk that crosses midnight keeps its
+  window (#1103); a day other than today or yesterday is refused. A request that sends a cursor and another parameter
   with a different value is `bad_request`, naming that parameter; repeating
   the same value is allowed. On `POST /v2/portfolio` the cursor carries a
   digest of the body, and the next page is a POST with the same body.
