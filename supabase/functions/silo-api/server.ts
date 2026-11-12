@@ -19,8 +19,9 @@
 //
 // Tier and rate (#1064, tier.ts): the tier is api.my_tier() for a Bearer
 // token (cached 60 s per token), anonymous without one; then api.rate_hit()
-// counts the request and a count above the tier's requests per minute is
-// rate_limited (429, Retry-After). Index and ?help read no data and are not
+// counts the request in the bucket the tier picks (an anonymous tier sends its
+// ip bucket even with a Bearer, #1101); a count above the tier's requests per
+// minute is rate_limited (429, Retry-After). Index and ?help read no data and are not
 // counted. Both calls fail closed (unavailable).
 
 import { ApiError } from "./errors.ts";

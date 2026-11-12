@@ -436,7 +436,9 @@ As built (#1059):
   request is counted too. Every 200 carries `RateLimit-Limit` and
   `RateLimit-Remaining`. The index and `?help` read no data and are not
   counted. A signed-in caller's bucket is `u:<user id>`, chosen by SQL from
-  `auth.uid()`. An anonymous caller's bucket is `ip:<address>`: the gateway
+  `auth.uid()`. An anonymous-tier caller's bucket is `ip:<address>`, sent
+  whenever the resolved tier is `anonymous`, so an anonymous sign-in's token
+  carries it too (#1101; before, any Bearer sent none and got 503): the gateway
   trusts `cf-connecting-ip`, which Cloudflare overwrites in front of hosted
   Supabase. `x-forwarded-for` is appended to, so its first hop is the
   caller's own word; it is used only when `cf-connecting-ip` is missing (a

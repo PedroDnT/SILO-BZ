@@ -52,6 +52,7 @@ it read-only. Four infrastructures, four products.
 8. **v2 tiers.** `silo-api` asks `api.my_tier()` for the caller's tier (pro
    is a row in the private `api_user_tier`) and counts each request with
    `api.rate_hit()` in `api_rate_counter`, the one table an API caller writes.
+   The tier picks the bucket: anonymous, token or not, is `ip:`; else `u:`.
    v1 paths skip the gateway, so they are not counted.
 
 `webapp/`, `silo-api` (the v2 gateway) and `silo-mcp-v2` (its 14 MCP tools, which
