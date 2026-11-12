@@ -158,6 +158,63 @@ def test_every_collapse_has_a_deterministic_final_tiebreak():
     company_order = dim.split("DISTINCT ON (c.cnpj_cia)")[1].split("\n)")[0]
     assert "c.cd_cvm" in company_order.split("ORDER BY")[1]
 
+# ── the float lookup stays per ticker (#1099) ─────────────────────────────
+
+
+def _fact_body() -> str:
+    return SQL_CODE.split("CREATE OR REPLACE VIEW fact_short_interest_daily")[1].split(
+        "COMMENT ON VIEW fact_short_interest_daily")[0]
+
+
+def _sector_case(text: str) -> str:
+    """The b3_sector_top CASE, whitespace-normalised."""
+    case = text.split("CASE lower(regexp_replace(btrim(split_part(x.b3_sector")[1]
+    case = case.split("AS b3_sector_top")[0]
+    return re.sub(r"\s+", " ", case).strip()
+
+
+def test_fact_does_not_join_the_full_outer_dimension():
+    """dim_ticker_float is a FULL JOIN on COALESCE(instrument, index).
+
+    Postgres cannot push a ticker through that COALESCE, so joining it built
+    the whole dimension (a DISTINCT over ~260k registry rows) on every call:
+    2.9 s warm for one ticker on 2026-11-12, over the anon 3 s budget. The
+    fact looks the float up per lent ticker instead.
+    """
+    fact = _fact_body()
+    assert "dim_ticker_float" not in fact, (
+        "fact_short_interest_daily must not join dim_ticker_float (#1099)"
+    )
+    assert "ticker_float AS" in fact
+    assert "LEFT JOIN ticker_float" in fact
+    assert fact.count("LEFT JOIN LATERAL") == 2, (
+        "the registry and index picks must be per-ticker LATERAL lookups"
+    )
+
+
+def test_fact_float_lookup_keeps_dim_ticker_float_picks():
+    """Same rows as dim_ticker_float for every lent ticker, or the numbers move."""
+    lookup = _fact_body().split("ticker_float AS")[1].split("\n)\nSELECT")[0]
+    # Newest registry row; newest index row ranked IBRA > SMLL > IBXX > IBOV.
+    assert "ORDER BY r.reference_date DESC" in lookup
+    index_pick = lookup.split("FROM public.b3_index_portfolio x")[1].split("LIMIT 1")[0]
+    assert "x.theoretical_qty > 0" in index_pick
+    assert index_pick.index("'IBRA'") < index_pick.index("'SMLL'") \
+        < index_pick.index("'IBXX'") < index_pick.index("'IBOV'")
+    # The company_ticker collapse, with its deterministic final tiebreak.
+    assert "DISTINCT ON (ct.codneg)" in lookup
+    assert "ct.versao DESC,\n                 ct.cnpj_cia" in lookup
+    # No float row when neither source carries the ticker (the FULL JOIN had none).
+    assert "WHERE i.instrumento IS NOT NULL OR x.codneg IS NOT NULL" in lookup
+
+
+def test_fact_sector_case_matches_dim_ticker_float():
+    """The sector spelling merge is copied, so the copies must stay equal."""
+    dim = SQL_CODE.split("CREATE OR REPLACE VIEW dim_ticker_float")[1].split(
+        "COMMENT ON VIEW dim_ticker_float")[0]
+    assert _sector_case(_fact_body()) == _sector_case(dim)
+
+
 # ── the month-boundary guard ──────────────────────────────────────────────
 
 

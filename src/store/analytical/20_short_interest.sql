@@ -309,6 +309,96 @@ rate AS (
     FROM public.b3_lending_rate r
     WHERE r.quantidade IS NOT NULL AND r.quantidade > 0
     GROUP BY r.trade_date, r.codneg
+),
+-- The float denominator per lent ticker: the same row dim_ticker_float gives
+-- for that ticker, looked up per ticker instead of joined from the view.
+--
+-- WHY NOT `LEFT JOIN dim_ticker_float`. That view is a FULL OUTER JOIN keyed
+-- on COALESCE(instrument, index), and Postgres cannot push a ticker or a join
+-- key through that COALESCE. Every call therefore built the whole dimension
+-- first: a DISTINCT over all ~260k b3_instrument_registry rows. Measured on
+-- production 2026-11-12 (UTC-3), `SELECT * FROM api.short_interest WHERE
+-- ticker = 'PETR4' LIMIT 10` spent 2.9 s warm (10 s cold) in that scan, over
+-- the anon 3 s budget (57014, #1099). Here the key set is only the tickers
+-- B3 has on loan (~1.4k), each looked up through the (instrumento,
+-- reference_date DESC) and (codneg, reference_date DESC) indexes, and a
+-- ticker filter on the api view reaches `t` through the join.
+--
+-- Same picks as dim_ticker_float, so the output is unchanged: the newest
+-- registry row; the newest index row ranked IBRA > SMLL > IBXX > IBOV; the
+-- company_ticker collapse; and no row at all when neither the registry nor an
+-- index portfolio carries the ticker (the FULL JOIN produced none either), so
+-- a lone vw_company_ticker match still yields NULLs. The sector CASE is a
+-- copy of dim_ticker_float's; tests/test_short_interest_sql.py fails if the
+-- two drift apart.
+ticker_float AS (
+    SELECT
+        t.codneg,
+        COALESCE(i.nome_instituicao, x.asset_name)     AS asset_name,
+        i.categoria,
+        x.b3_sector,
+        CASE lower(regexp_replace(btrim(split_part(x.b3_sector, '/', 1)), '\s+', ' ', 'g'))
+            WHEN 'bens indls'       THEN 'Bens Industriais'
+            WHEN 'bens industriais' THEN 'Bens Industriais'
+            WHEN 'financ e outros'      THEN 'Financeiro e Outros'
+            WHEN 'financeiro e outros'  THEN 'Financeiro e Outros'
+            WHEN 'cons n cíclico' THEN 'Consumo não Cíclico'
+            WHEN 'cons n ciclico' THEN 'Consumo não Cíclico'
+            WHEN 'cons n básico'  THEN 'Consumo não Cíclico'
+            WHEN 'cons n basico'  THEN 'Consumo não Cíclico'
+            WHEN 'consumo cíclico' THEN 'Consumo Cíclico'
+            WHEN 'consumo ciclico' THEN 'Consumo Cíclico'
+            WHEN 'mats básicos'    THEN 'Materiais Básicos'
+            WHEN 'mats basicos'    THEN 'Materiais Básicos'
+            WHEN 'utilidade públ'  THEN 'Utilidade Pública'
+            WHEN 'utilidade publ'  THEN 'Utilidade Pública'
+            ELSE NULLIF(regexp_replace(btrim(split_part(x.b3_sector, '/', 1)), '\s+', ' ', 'g'), '')
+        END                                            AS b3_sector_top,
+        COALESCE(x.theoretical_qty, i.capital_social)  AS float_denominator,
+        CASE
+            WHEN x.theoretical_qty IS NOT NULL THEN 'index_free_float'
+            WHEN i.capital_social  IS NOT NULL THEN 'shares_outstanding'
+            ELSE NULL
+        END                                            AS float_basis,
+        x.index_code                                   AS float_source_index,
+        ct.cnpj_cia
+    FROM (
+        SELECT DISTINCT lp.codneg
+        FROM public.b3_lending_open_position lp
+        WHERE lp.is_total
+    ) t
+    LEFT JOIN LATERAL (
+        SELECT r.instrumento, r.capital_social, r.categoria, r.nome_instituicao
+        FROM public.b3_instrument_registry r
+        WHERE r.instrumento = t.codneg
+        ORDER BY r.reference_date DESC
+        LIMIT 1
+    ) i ON true
+    LEFT JOIN LATERAL (
+        SELECT x.codneg, x.theoretical_qty, x.index_code, x.b3_sector, x.asset_name
+        FROM public.b3_index_portfolio x
+        WHERE x.codneg = t.codneg
+          AND x.theoretical_qty IS NOT NULL
+          AND x.theoretical_qty > 0
+        ORDER BY
+            x.reference_date DESC,
+            CASE x.index_code WHEN 'IBRA' THEN 1 WHEN 'SMLL' THEN 2 WHEN 'IBXX' THEN 3
+                              WHEN 'IBOV' THEN 4 ELSE 5 END
+        LIMIT 1
+    ) x ON true
+    -- A plain join, not LATERAL: vw_company_ticker recomputes each company's
+    -- newest filing per call (~13 ms), so it is built once and hashed; a
+    -- ticker filter still reaches it through ct.codneg = t.codneg.
+    LEFT JOIN (
+        SELECT DISTINCT ON (ct.codneg)
+            ct.codneg,
+            ct.cnpj_cia
+        FROM public.vw_company_ticker ct
+        WHERE ct.cnpj_cia IS NOT NULL
+        ORDER BY ct.codneg, ct.is_active DESC, ct.data_refer DESC, ct.versao DESC,
+                 ct.cnpj_cia
+    ) ct ON ct.codneg = t.codneg
+    WHERE i.instrumento IS NOT NULL OR x.codneg IS NOT NULL
 )
 SELECT
     p.trade_date,
@@ -352,7 +442,7 @@ SELECT
     r.num_contratos,
     r.rate_valor_brl
 FROM position p
-LEFT JOIN dim_ticker_float f ON f.codneg = p.codneg
+LEFT JOIN ticker_float     f ON f.codneg = p.codneg
 LEFT JOIN mv_b3_adtv_21    a ON a.codneg = p.codneg AND a.trade_date = p.trade_date
 LEFT JOIN rate             r ON r.codneg = p.codneg AND r.trade_date = p.trade_date;
 
