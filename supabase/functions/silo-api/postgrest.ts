@@ -79,6 +79,8 @@ export interface CallContext {
    * one is refused as unauthorized); the gateway does not decode it.
    */
   tier?: Tier;
+  /** The clock, in ms (tests move it); Date.now when absent. */
+  now?: () => number;
 }
 
 /** POST /rpc/<endpoint> on schema api. Returns the parsed JSON, or throws ApiError. */

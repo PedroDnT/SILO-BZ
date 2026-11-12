@@ -33,6 +33,12 @@ export interface CursorState {
   p: Record<string, unknown>;
   /** Rows served by the pages before this one. */
   n: number;
+  /**
+   * The request day (UTC-3) the first page counted its defaulted from/to
+   * from (#1103). A page after midnight counts from this day, not today, so
+   * the walk keeps the window it started with. Absent on an older cursor.
+   */
+  t?: string;
 }
 
 function badCursor(why: string): ApiError {
@@ -79,6 +85,7 @@ export function decodeCursor(token: string, resource: string): CursorState {
   if (!METHODS.includes(c.m as Method)) throw badCursor("unknown paging method");
   if (!c.p || typeof c.p !== "object" || Array.isArray(c.p)) throw badCursor("its position is not an object");
   if (!Number.isInteger(c.n) || (c.n as number) < 0) throw badCursor("its row count is not a whole number");
+  if (c.t !== undefined && (typeof c.t !== "string" || !realDate(c.t))) throw badCursor("its request day is not a date");
   return c as unknown as CursorState;
 }
 
@@ -113,6 +120,21 @@ export function bodyDigest(text: string): string {
     b = Math.imul(b ^ c, 0x01000193) >>> 0;
   }
   return a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0") + text.length.toString(16);
+}
+
+/**
+ * The day a cursor's walk counts its defaulted window from: the cursor's
+ * own request day, when it is today or yesterday (UTC-3), so a walk that
+ * crosses midnight keeps its window (#1103). The cursor is unsigned, so an
+ * older or a later day is refused: an edited day must not move a defaulted
+ * window, and with it the tier's daily window, anywhere else.
+ */
+export function cursorDay(state: CursorState | null, today: string): string {
+  if (!state || state.t === undefined) return today;
+  if (state.t > today || state.t < addDays(today, -1)) {
+    throw badCursor(`its request day ${state.t} is not today or yesterday (UTC-3)`);
+  }
+  return state.t;
 }
 
 // -- positions ----------------------------------------------------------------

@@ -175,7 +175,7 @@ async function handle(
   const bearer = callerBearer(req.headers.get("authorization"), cfg);
   const tier: Tier = await gate.tier({ cfg, fetchImpl, bearer });
   gateTier(resource, tier);
-  const ctx: CallContext = { cfg, fetchImpl, bearer, tier };
+  const ctx: CallContext = { cfg, fetchImpl, bearer, tier, now };
   const rate = await enforceRate(gate, ctx, tier, req.headers, now);
   const body = await HANDLERS[resource.name](parsed, ctx);
   return json(200, body, { "RateLimit-Limit": String(rate.limit), "RateLimit-Remaining": String(rate.remaining) });
