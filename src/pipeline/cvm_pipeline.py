@@ -276,6 +276,19 @@ class CVMSliceError(RuntimeError):
         super().__init__(f"CVM slice failed: {first}{more}")
 
 
+class PartialSliceError(RuntimeError):
+    """Part of a slice failed after other parts had already upserted rows.
+
+    Raised from inside an ``_audited`` work coroutine. ``_audited`` logs the
+    slice 'error' with this message, as for any raise, but with ``rows`` as
+    rows_upserted: the rows that landed stay, and the audit row says so (#1105).
+    """
+
+    def __init__(self, message: str, rows: int) -> None:
+        self.rows = rows
+        super().__init__(message)
+
+
 class CVMRunFailed(RuntimeError):
     """A CVM daily_update or backfill finished with failed slices.
 
@@ -904,7 +917,8 @@ class CVMIngestor:
             logger.warning("ingest %s failed: %s", name, _describe(exc))
             # rows_deleted only for a slice that replaces rows; NULL otherwise.
             extra = {} if stats is None else {"deleted": stats.get("rows_deleted") or None}
-            status = self._log_finish(run_id, 0, _describe(exc), **extra)
+            landed = exc.rows if isinstance(exc, PartialSliceError) else 0
+            status = self._log_finish(run_id, landed, _describe(exc), **extra)
             if status == "error":
                 raise CVMSliceError([self.failures[-1]]) from exc
             return 0
@@ -1162,16 +1176,25 @@ class CVMIngestor:
             rows_inserted = 0
             fetched = 0
             errors: List[str] = []
+            # Months whose member is absent from the archive, which is how a
+            # partial first year looks (the series starts mid-year in 2000).
+            absent: List[int] = []
+            failed: Dict[int, str] = {}
+            first_landed: Optional[int] = None
             for month in range(1, 13):
                 try:
                     raw_rows = await self._fetch_all_pages("fi", "hist_inf_diario", year, month)
                 except Exception as exc:
-                    # A month missing from an old archive is normal (the series
-                    # starts mid-year in 2000). Record it and keep going — the
-                    # other months are still real data.
+                    # Record it and keep going: the other months are still
+                    # real data. Whether the gap is expected is decided below.
                     logger.warning("ingest_fi_hist_diario %d-%02d failed: %s", year, month, _describe(exc))
                     errors.append(f"{month:02d}: {exc}")
+                    failed[month] = f"{month:02d}: {exc}"
+                    if "not found in archive" in str(exc):
+                        absent.append(month)
                     continue
+                if first_landed is None:
+                    first_landed = month
                 fetched += len(raw_rows)
                 chunk: List[Dict[str, Any]] = []
                 for row in raw_rows:
@@ -1185,6 +1208,21 @@ class CVMIngestor:
                 # Every month failed: the slice fails (or is skipped, when the
                 # messages say CVM has not published it), as before.
                 raise RuntimeError("; ".join(errors))
+            # Expected: a member absent from the archive for a month BEFORE the
+            # first month that loaded (a partial first year). Any other failed
+            # month (a mid-year or trailing gap, a network or parse error) fails
+            # the year with every message in error_msg, keeping the rows that
+            # landed, so the gap is reported and retried instead of logged ok.
+            unexpected = [
+                msg for month, msg in failed.items()
+                if not (month in absent and first_landed is not None and month < first_landed)
+            ]
+            if unexpected:
+                raise PartialSliceError(
+                    f"{len(unexpected)} month(s) failed, {rows_inserted} row(s) from the "
+                    f"other months kept: " + "; ".join(unexpected),
+                    rows_inserted,
+                )
             logger.info(
                 "fi/hist_inf_diario %d: %d rows from %d month(s)",
                 year, rows_inserted, 12 - len(errors),
