@@ -9,15 +9,65 @@ import pytest
 from research_examples import agent_eval
 
 
-def test_replacement_preserves_cases_but_full_context_reserve_exceeds_existing_cap():
+def test_capped_reserve_fits_all_twelve_cases_under_the_cumulative_cap():
     cases = agent_eval.load_cases()
     assert len(cases) == 12
     assert {case["expected_disposition"] for case in cases} == {
         "answer_or_bounded_limit", "limitation"
     }
     assert agent_eval.DEFAULT_BUDGET_USD == 20
-    assert agent_eval.worst_case_cost_usd() == pytest.approx(69.69)
-    assert len(cases) * agent_eval.worst_case_cost_usd() > agent_eval.DEFAULT_BUDGET_USD
+    assert agent_eval.MAX_CONTEXT_TOKENS == 50_000
+    # 1.25 x 12 turns x (50,000 x $1.25 + 2,000 x $5.00) / 1M
+    assert agent_eval.worst_case_cost_usd() == pytest.approx(1.0875)
+    prior = agent_eval.load_spend_ledger()["estimated_usd"]
+    assert prior + len(cases) * agent_eval.worst_case_cost_usd() < agent_eval.DEFAULT_BUDGET_USD
+
+
+def test_offline_v1_budget_check_passes_for_twelve_cases(monkeypatch, capsys):
+    monkeypatch.setattr(agent_eval.sys, "argv", ["agent_eval.py"])
+    assert agent_eval.main() == 0
+    assert "Validated 12 cases" in capsys.readouterr().out
+
+
+def _call(instructions, items, tools=()):
+    from agents.run_config import CallModelData, ModelInputData
+
+    agent = agent_eval.Agent(name="cap", model=agent_eval.MODEL, tools=list(tools))
+    return CallModelData(model_data=ModelInputData(input=items, instructions=instructions), agent=agent, context=None)
+
+
+def test_input_cap_passes_a_request_under_the_cap():
+    cap = agent_eval.InputCapFilter()
+    data = _call(agent_eval.INSTRUCTIONS, [{"role": "user", "content": "What changed?"}],
+                 agent_eval.SiloTools(object(), {"paths": {}}).as_agent_tools())
+    assert cap(data) is data.model_data
+    assert 0 < cap.largest_estimate < agent_eval.MAX_CONTEXT_TOKENS
+    assert cap.summary()["requests_checked"] == 1
+
+
+def test_input_cap_refuses_a_request_over_50000_estimated_tokens(monkeypatch):
+    monkeypatch.setattr(agent_eval, "_ENCODING", False)  # characters / 2, deterministic offline
+    cap = agent_eval.InputCapFilter()
+    output = {"type": "function_call_output", "call_id": "c1", "output": "1" * 100_000}
+    with pytest.raises(agent_eval.ContextCapExceeded, match="50000-token cap"):
+        cap(_call("", [{"role": "user", "content": "q"}, output]))
+    assert cap.largest_estimate > agent_eval.MAX_CONTEXT_TOKENS
+    assert agent_eval.technical_classification({"status": "context_cap_reached"}) == "context_cap_reached"
+
+
+def test_one_tool_result_alone_fits_under_the_cap_at_the_fallback_rate():
+    assert agent_eval.MAX_TOOL_CHARS / 2 < agent_eval.MAX_CONTEXT_TOKENS
+
+
+def test_input_cap_counts_mcp_tool_schemas_and_fails_closed_without_them():
+    from types import SimpleNamespace
+
+    server = SimpleNamespace(manifest=[])
+    agent = SimpleNamespace(tools=[], mcp_servers=[server])
+    with pytest.raises(agent_eval.ContextCapExceeded, match="manifest"):
+        agent_eval.tool_schemas(agent)
+    server.manifest = [{"name": "silo_macro", "description": "d", "inputSchema": {"type": "object"}, "title": "x"}]
+    assert agent_eval.tool_schemas(agent) == [{"name": "silo_macro", "description": "d", "parameters": {"type": "object"}}]
 
 
 def test_discovery_check_rejects_failed_or_late_catalog_calls():
@@ -222,7 +272,7 @@ def test_spend_ledger_fails_closed_on_inconsistent_estimate(monkeypatch, tmp_pat
         agent_eval.load_spend_ledger()
 
 
-@pytest.mark.parametrize("tokens, expected", [(272_000, 0.692), (272_001, 1.378005)])
+@pytest.mark.parametrize("tokens, expected", [(272_000, 0.345), (272_001, 0.6875025)])
 def test_replacement_cost_includes_cache_writes_and_long_context(tokens, expected):
     assert agent_eval.actual_cost_usd(tokens, 1000) == pytest.approx(expected)
 
@@ -236,7 +286,7 @@ async def test_usage_is_priced_per_request_not_aggregate_context():
     await hooks.on_llm_end(None, None, response)
     await hooks.on_llm_end(None, None, response)
     assert hooks.input_tokens == 400_000 and hooks.requests == 2
-    assert hooks.estimated_usd == pytest.approx(1.024)
+    assert hooks.estimated_usd == pytest.approx(0.51)
     assert hooks.estimated_usd < agent_eval.actual_cost_usd(400_000, 2000)
 
 
@@ -248,6 +298,9 @@ def test_replacement_refuses_unaffordable_v1_before_credentials_or_network(monke
     monkeypatch.setattr(agent_eval, "load_local_openai_key", unexpected)
     monkeypatch.setattr(agent_eval, "SiloClient", unexpected)
     monkeypatch.setattr(agent_eval, "AsyncOpenAI", unexpected)
+    monkeypatch.setattr(agent_eval, "load_spend_ledger", lambda: {
+        "entries": [{"estimated_usd": 19.0}], "estimated_usd": 19.0,
+    })
     monkeypatch.setattr(agent_eval.sys, "argv", ["agent_eval.py", *args])
     with pytest.raises(SystemExit) as exc:
         agent_eval.main()
@@ -269,7 +322,7 @@ def test_replacement_writes_separate_results_without_rewriting_baseline(monkeypa
               "budget_usd": 20, "estimated_usd": 0, "cases": [], "price_basis_usd_per_million": agent_eval.PRICE_BASIS}
     agent_eval.write_results(record)
     assert historical.read_text() == 'historical baseline\n'
-    assert json.loads(agent_eval.JSON_RESULT.read_text())["price_basis_usd_per_million"]["cache_write"] == 2.5
+    assert json.loads(agent_eval.JSON_RESULT.read_text())["price_basis_usd_per_million"]["cache_write"] == 1.25
     assert agent_eval.MODEL in agent_eval.MARKDOWN_RESULT.read_text()
 
 
@@ -300,17 +353,25 @@ async def test_replacement_agent_uses_responses_and_tools_through_real_sdk():
         model_settings=agent_eval.ModelSettings(max_tokens=agent_eval.MAX_OUTPUT_TOKENS,
                                                parallel_tool_calls=False, verbosity="low"))
     hooks = agent_eval.UsageHooks()
+    cap = agent_eval.InputCapFilter()
     async with client:
         result = await agent_eval.Runner.run(agent, "What changed?", hooks=hooks,
-            run_config=agent_eval.RunConfig(tracing_disabled=True,
+            run_config=agent_eval.RunConfig(tracing_disabled=True, call_model_input_filter=cap,
                 model_provider=OpenAIProvider(openai_client=client)))
-    assert result.final_output == "Limited answer."
+        assert result.final_output == "Limited answer."
+        assert cap.requests_checked == 1
+        # The same filter refuses an oversized request before any HTTP call.
+        with pytest.raises(agent_eval.ContextCapExceeded):
+            await agent_eval.Runner.run(agent, "x " * 120_000, hooks=hooks,
+                run_config=agent_eval.RunConfig(tracing_disabled=True, call_model_input_filter=cap,
+                    model_provider=OpenAIProvider(openai_client=client)))
+    assert len(seen) == 1
     request = seen[0]
-    assert request["model"] == "gpt-5.6-terra"
+    assert request["model"] == "gpt-6.1-terra"
     assert request["max_output_tokens"] == 2000 and request["parallel_tool_calls"] is False
     assert request["text"]["verbosity"] == "low"
     assert {tool["name"] for tool in request["tools"]} == {"silo_catalog", "silo_tools", "silo_call"}
-    assert hooks.estimated_usd == pytest.approx(.00037)
+    assert hooks.estimated_usd == pytest.approx(.000175)
 
 
 def test_v1_model_error_retains_reserve_and_stops_without_rewriting_old_spend(monkeypatch, tmp_path):

@@ -29,8 +29,11 @@ from research_examples import agent_eval as baseline
 MCP_URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp-v2"
 JSON_RESULT = Path(__file__).with_name(f"eval-v2-{baseline.MODEL}-results.json")
 MARKDOWN_RESULT = baseline.ROOT / f"docs/reference/research/agent-evaluation-v2-{baseline.MODEL}-results.md"
-# The live v2 catalog is about 129 KB; retain it whole within the existing context reserve.
-MAX_CATALOG_CHARS = 160_000
+# The live v2 catalog is about 129 KB. Below 140,000 characters it stays under
+# the 50,000-token input cap at o200k rates (about 4.4 characters per token for
+# this JSON); with the 14 tool schemas (about 17,500 tokens) the next request
+# may still be refused by baseline.InputCapFilter, which is recorded, not trimmed.
+MAX_CATALOG_CHARS = 140_000
 EXPECTED_TOOLS = {f"silo_{name}" for name in (
     "search", "prices", "statements", "funds", "fidc", "derivatives", "curves",
     "macro", "positioning", "events", "screens", "panel", "portfolio", "coverage",
@@ -196,7 +199,7 @@ def compare_baseline(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
              "v1_technical_classification": baseline.technical_classification(previous[case["id"]]),
              "v1_rubric_pass": baseline.full_rubric_pass(previous[case["id"]], review["cases"][case["id"]]),
              "v2_status": case["status"], "v2_tool_errors": sum(bool(e.get("tool_error")) for e in case["tool_events"]),
-             "v2_technical_classification": "mcp_tool_error" if case["status"] != "error" and any(e.get("tool_error") for e in case["tool_events"])
+             "v2_technical_classification": "mcp_tool_error" if case["status"] not in {"error", "context_cap_reached"} and any(e.get("tool_error") for e in case["tool_events"])
              else baseline.technical_classification(case),
              "v2_rubric_pass": None} for case in cases]
 
@@ -215,6 +218,8 @@ async def run(args, selected, ledger) -> int:
                   "base_url": MCP_URL, "access": "signed_in" if os.environ.get("SILO_USER_JWT") else "anonymous",
                   "model": baseline.MODEL, "budget_usd": args.budget_usd,
                   "price_basis_usd_per_million": baseline.PRICE_BASIS,
+                  # Resolved before any paid request, so a failed tokenizer load bills nothing.
+                  "input_cap": {"tokens": baseline.MAX_CONTEXT_TOKENS, "estimator": baseline.token_estimator()},
                   "estimated_usd": 0.0, "cumulative_estimated_usd": ledger["estimated_usd"],
                   "preflight": report, "mcp_tools": server.manifest, "cases": [], "baseline_comparison": [], "run_note": ""}
         record["limits"] = {"data_calls": baseline.MAX_DATA_CALLS, "data_rows": baseline.MAX_DATA_ROWS,
@@ -230,19 +235,24 @@ async def run(args, selected, ledger) -> int:
                           model_settings=ModelSettings(max_tokens=baseline.MAX_OUTPUT_TOKENS,
                                                        parallel_tool_calls=False, verbosity="low"))
             item: dict[str, Any] = {"id": case["id"], "question": case["question"], "status": "error"}
+            cap = baseline.InputCapFilter()
             started = time.monotonic()
             try:
-                result = await Runner.run(agent, baseline.runtime_question(case), max_turns=baseline.MAX_TURNS,
-                                          hooks=hooks, run_config=RunConfig(tracing_disabled=True))
+                result = await Runner.run(agent, baseline.runtime_question(case), max_turns=baseline.MAX_TURNS, hooks=hooks,
+                                          run_config=RunConfig(tracing_disabled=True, call_model_input_filter=cap))
                 item["answer"] = str(result.final_output or "")
                 item["status"] = "completed" if item["answer"] else "empty_answer"
+            except baseline.ContextCapExceeded as exc:
+                baseline.record_cap_refusal(item, exc)
             except Exception as exc:
                 item["error_type"] = type(exc).__name__
             item.update(duration_seconds=round(time.monotonic() - started, 3), tool_events=server.events,
                         usage={"requests": hooks.requests, "input_tokens": hooks.input_tokens, "output_tokens": hooks.output_tokens},
-                        estimated_usd=round(hooks.estimated_usd, 6),
+                        input_cap=cap.summary(), estimated_usd=round(hooks.estimated_usd, 6),
                         checks=process_checks(server.events))
-            if item["status"] == "error" or not (hooks.input_tokens or hooks.output_tokens):
+            # A cap refusal sent nothing, so every billed request was observed.
+            if item["status"] == "error" or (item["status"] != "context_cap_reached"
+                                             and not (hooks.input_tokens or hooks.output_tokens)):
                 item["observed_usage_estimate_usd"] = item["estimated_usd"]
                 item["estimated_usd"] = max(item["estimated_usd"], baseline.worst_case_cost_usd())
                 item["cost_basis"] = "worst_case_reserve_for_unobserved_cost"

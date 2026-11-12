@@ -51,17 +51,24 @@ except ImportError:  # pragma: no cover - local type-checking environment may om
             pass
 
 
-MODEL = "gpt-5.6-terra"
+MODEL = "gpt-6.1-terra"
 MAX_TURNS = 12
 MAX_OUTPUT_TOKENS = 2_000
-MAX_CONTEXT_TOKENS = 922_000  # documented maximum input; no smaller enforced context cap
-USD_PER_M_INPUT = 2.00
-USD_PER_M_OUTPUT = 12.00
-USD_PER_M_CACHE_WRITE = 2.50  # default 30m; input is conservatively charged as writes
-USD_PER_M_CACHED_INPUT = 0.20
+# Owner's choice (2026-11-11): each model request carries at most 50,000 input
+# tokens. InputCapFilter enforces it before the request is sent, so the
+# worst-case reserve prices a bound that holds. The model's window is 1,050,000.
+MAX_CONTEXT_TOKENS = 50_000
+# Estimates are inflated by 10% because the model's tokenizer is not published;
+# o200k_base is the closest public one.
+TOKEN_ESTIMATE_MARGIN = 1.10
+TOKENS_PER_INPUT_ITEM = 8  # role/type/call_id framing around each input item
+USD_PER_M_INPUT = 1.00
+USD_PER_M_OUTPUT = 5.00
+USD_PER_M_CACHE_WRITE = 1.25  # default 30m; input is conservatively charged as writes
+USD_PER_M_CACHED_INPUT = 0.05
 LONG_CONTEXT_THRESHOLD = 272_000
 PRICE_BASIS = {
-    "checked_on": "2026-11-11", "tier": "standard", "cache_ttl": "30m",
+    "checked_on": "2026-11-12", "tier": "standard", "cache_ttl": "30m",
     "input": USD_PER_M_INPUT, "output": USD_PER_M_OUTPUT,
     "cache_write": USD_PER_M_CACHE_WRITE, "cached_input": USD_PER_M_CACHED_INPUT,
     "long_context_above_tokens": LONG_CONTEXT_THRESHOLD,
@@ -72,6 +79,9 @@ DEFAULT_BUDGET_USD = 20.00
 REQUIRED_RESEARCH_RPCS = ("financial_statement_history", "fii_property_history", "focus_expectations")
 MAX_DATA_ROWS = 100
 MAX_DATA_CALLS = 5
+# At the fallback rate of 2 characters per token, 80,000 characters are 40,000
+# tokens, so one tool result alone stays under MAX_CONTEXT_TOKENS; the input
+# cap still refuses a request whose accumulated context exceeds it.
 MAX_TOOL_CHARS = 80_000
 CASE_FILE = Path(__file__).with_name("eval_cases.json")
 JSON_RESULT = Path(__file__).with_name(f"eval-{MODEL}-results.json")
@@ -79,8 +89,8 @@ SPEND_LEDGER = Path(__file__).with_name("eval-spend.json")
 MARKDOWN_RESULT = ROOT / "docs" / "reference" / "research" / f"agent-evaluation-{MODEL}-results.md"
 
 # Pricing and context are fixed to this model and were checked against the
-# official model and pricing pages on 2026-11-11. Update these constants if the model or
-# prices change: https://developers.openai.com/api/docs/models/gpt-5.6-terra
+# official model page on 2026-11-12. Update these constants if the model or
+# prices change: https://developers.openai.com/api/docs/models/gpt-6.1-terra
 
 INSTRUCTIONS = """You are a careful Brazilian public-markets research analyst.
 Start with the SILO catalog, then inspect the available public tools. Check
@@ -117,7 +127,11 @@ def runtime_question(case: dict[str, str]) -> str:
 
 
 def worst_case_cost_usd(turns: int = MAX_TURNS) -> float:
-    """Reserve whole-context charges plus 25% for unobserved failure cost."""
+    """Reserve a full capped context on every turn plus 25% for unobserved failure cost.
+
+    The bound holds because InputCapFilter refuses any request above
+    MAX_CONTEXT_TOKENS before it is sent.
+    """
     return 1.25 * turns * actual_cost_usd(MAX_CONTEXT_TOKENS, MAX_OUTPUT_TOKENS)
 
 
@@ -126,6 +140,108 @@ def actual_cost_usd(input_tokens: int, output_tokens: int) -> float:
     long_context = input_tokens > LONG_CONTEXT_THRESHOLD
     return (input_tokens * USD_PER_M_CACHE_WRITE * (2 if long_context else 1)
             + output_tokens * USD_PER_M_OUTPUT * (1.5 if long_context else 1)) / 1_000_000
+
+
+class ContextCapExceeded(RuntimeError):
+    """A model request would exceed MAX_CONTEXT_TOKENS, so it was not sent."""
+
+
+_ENCODING: Any = None
+
+
+def token_estimator() -> str:
+    """Name the estimator in use: tiktoken o200k_base when installed, else characters / 2."""
+    global _ENCODING
+    if _ENCODING is None:
+        try:
+            import tiktoken
+        except ImportError:
+            _ENCODING = False
+        else:
+            # A failed encoding download raises: the paid run must not guess.
+            _ENCODING = tiktoken.get_encoding("o200k_base")
+    return "tiktoken:o200k_base" if _ENCODING else "characters/2"
+
+
+def estimate_tokens(text: str) -> int:
+    """Count tokens with o200k_base, or fall back to one token per two characters.
+
+    The fallback is deliberately pessimistic: numeric JSON runs about 2.5
+    characters per o200k token and prose about 4, so characters / 3 could
+    undercount the data rows this evaluation reads.
+    """
+    if token_estimator() == "characters/2":
+        return math.ceil(len(text) / 2)
+    return len(_ENCODING.encode(text, disallowed_special=()))
+
+
+def _strings(value: Any) -> list[str]:
+    """Every string a request item carries; tool outputs are counted as sent, unescaped."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in _strings(item)]
+    if isinstance(value, (list, tuple)):
+        return [text for item in value for text in _strings(item)]
+    if hasattr(value, "model_dump"):
+        return _strings(value.model_dump(exclude_none=True))
+    return [] if value is None else [str(value)]
+
+
+def tool_schemas(agent: Any) -> list[dict[str, Any]]:
+    """The tool definitions sent with every request: function tools and MCP manifests."""
+    schemas = [{"name": getattr(tool, "name", ""), "description": getattr(tool, "description", ""),
+                "parameters": getattr(tool, "params_json_schema", {})}
+               for tool in getattr(agent, "tools", None) or []]
+    for server in getattr(agent, "mcp_servers", None) or []:
+        manifest = getattr(server, "manifest", None)
+        if not manifest:
+            raise ContextCapExceeded("MCP tool manifest is not loaded; the request size cannot be bounded")
+        schemas += [{"name": tool.get("name"), "description": tool.get("description"),
+                     "parameters": tool.get("inputSchema")} for tool in manifest]
+    return schemas
+
+
+def estimate_request_tokens(instructions: str | None, items: list[Any], schemas: list[dict[str, Any]]) -> int:
+    counted = (estimate_tokens(instructions or "")
+               + sum(estimate_tokens(text) for text in _strings(items))
+               + estimate_tokens(_json(schemas)))
+    return math.ceil(TOKEN_ESTIMATE_MARGIN * counted) + TOKENS_PER_INPUT_ITEM * len(items)
+
+
+class InputCapFilter:
+    """RunConfig.call_model_input_filter: refuse, never trim, a request over the input cap.
+
+    The Agents SDK calls it immediately before each model request. Raising here
+    means the request is never sent and the run stops; trimming would silently
+    drop evidence the model already cited.
+    """
+
+    def __init__(self) -> None:
+        self.requests_checked = 0
+        self.largest_estimate = 0
+
+    def __call__(self, data: Any) -> Any:
+        model_data = data.model_data
+        estimate = estimate_request_tokens(model_data.instructions, model_data.input, tool_schemas(data.agent))
+        self.requests_checked += 1
+        self.largest_estimate = max(self.largest_estimate, estimate)
+        if estimate > MAX_CONTEXT_TOKENS:
+            raise ContextCapExceeded(
+                f"Estimated {estimate} input tokens exceed the {MAX_CONTEXT_TOKENS}-token cap "
+                f"({token_estimator()}); request {self.requests_checked} was not sent.")
+        return model_data
+
+    def summary(self) -> dict[str, Any]:
+        return {"cap_tokens": MAX_CONTEXT_TOKENS, "estimator": token_estimator(),
+                "requests_checked": self.requests_checked, "largest_estimate": self.largest_estimate}
+
+
+def record_cap_refusal(item: dict[str, Any], exc: ContextCapExceeded) -> None:
+    """A refused request bills nothing: the case stops with no answer and its observed usage."""
+    item["status"] = "context_cap_reached"
+    item["error_type"] = type(exc).__name__
+    item["error_detail"] = str(exc)[:500]
 
 
 def load_spend_ledger() -> dict[str, Any]:
@@ -456,6 +572,8 @@ def process_checks(events: list[dict[str, Any]], expected: str) -> dict[str, Any
 
 def technical_classification(item: dict[str, Any]) -> str:
     """Classify execution separately from the answer's research quality."""
+    if item.get("status") == "context_cap_reached":
+        return "context_cap_reached"
     if item.get("status") == "error":
         return "turn_exhaustion" if item.get("error_type") == "MaxTurnsExceeded" else "technical_error"
     events = item.get("tool_events", [])
@@ -615,6 +733,8 @@ def main() -> int:
         "model": MODEL, "budget_usd": args.budget_usd, "estimated_usd": 0.0,
         "prior_estimated_usd": ledger["estimated_usd"],
         "price_basis_usd_per_million": PRICE_BASIS,
+        # Resolved before any paid request, so a failed tokenizer load bills nothing.
+        "input_cap": {"tokens": MAX_CONTEXT_TOKENS, "estimator": token_estimator()},
         "cases": [], "run_note": "",
     }
     openapi = json.loads((ROOT / "openapi.json").read_text())
@@ -635,21 +755,27 @@ def main() -> int:
                 )
                 started = time.monotonic()
                 item: dict[str, Any] = {"id": case["id"], "question": case["question"], "status": "error"}
+                cap = InputCapFilter()
                 try:
                     result = Runner.run_sync(
-                        agent, runtime_question(case), max_turns=MAX_TURNS,
-                        hooks=hooks, run_config=RunConfig(tracing_disabled=True),
+                        agent, runtime_question(case), max_turns=MAX_TURNS, hooks=hooks,
+                        run_config=RunConfig(tracing_disabled=True, call_model_input_filter=cap),
                     )
                     item["answer"] = str(result.final_output or "")
                     item["status"] = "completed" if item["answer"] else "empty_answer"
+                except ContextCapExceeded as exc:
+                    record_cap_refusal(item, exc)
                 except Exception as exc:
                     item["error_type"] = type(exc).__name__
                     item["error_detail"] = safe_error_detail(exc)
                 item["duration_seconds"] = round(time.monotonic() - started, 3)
                 item["usage"] = {"requests": hooks.requests, "input_tokens": hooks.input_tokens,
                                  "output_tokens": hooks.output_tokens}
+                item["input_cap"] = cap.summary()
                 item["estimated_usd"] = round(hooks.estimated_usd, 6)
-                if item["status"] == "error" or not (hooks.input_tokens or hooks.output_tokens):
+                # A cap refusal sent nothing, so every billed request was observed.
+                if item["status"] == "error" or (item["status"] != "context_cap_reached"
+                                                 and not (hooks.input_tokens or hooks.output_tokens)):
                     item["observed_usage_estimate_usd"] = item["estimated_usd"]
                     item["estimated_usd"] = max(item["estimated_usd"], worst_case_cost_usd())
                     item["cost_basis"] = "worst_case_reserve_for_unobserved_cost"
