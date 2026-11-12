@@ -146,13 +146,26 @@ def test_baseline_comparison_does_not_score_v2_answers():
     assert v2.MARKDOWN_RESULT != agent_eval.MARKDOWN_RESULT
 
 
+def test_default_budget_check_passes_all_twelve_cases_with_current_ledger(monkeypatch, capsys):
+    def unexpected(*args, **kwargs):
+        raise AssertionError("default must not call the network or inspect keys")
+
+    monkeypatch.setattr(v2, "BoundedMCP", unexpected)
+    monkeypatch.setattr(agent_eval, "load_local_openai_key", unexpected)
+    assert v2.main([]) == 0
+    out = capsys.readouterr().out
+    assert "Validated 12 cases" in out and "reserve $13.05" in out
+
+
 def test_default_refuses_unaffordable_reserve_without_network_or_credentials(monkeypatch, capsys):
     def unexpected(*args, **kwargs):
         raise AssertionError("default must not call the network or inspect keys")
 
     monkeypatch.setattr(v2, "BoundedMCP", unexpected)
     monkeypatch.setattr(agent_eval, "load_local_openai_key", unexpected)
-    monkeypatch.setattr(agent_eval, "load_spend_ledger", lambda: {"entries": [], "estimated_usd": 0.0})
+    monkeypatch.setattr(agent_eval, "load_spend_ledger", lambda: {
+        "entries": [{"estimated_usd": 7.0}], "estimated_usd": 7.0,
+    })
     with pytest.raises(SystemExit) as exc:
         v2.main([])
     assert exc.value.code == 2
@@ -229,7 +242,7 @@ async def test_paid_path_preserves_questions_outputs_and_unknown_cost_reserve(mo
 
     async def model(agent, question, **kwargs):
         observed.append(question)
-        assert agent.model == "gpt-5.6-terra"
+        assert agent.model == "gpt-6.1-terra"
         if fail:
             raise RuntimeError("model request failed")
         hooks = kwargs["hooks"]
@@ -265,3 +278,50 @@ async def test_paid_path_preserves_questions_outputs_and_unknown_cost_reserve(mo
         assert status == 0
         assert observed == [case["question"] for case in selected]
         assert result["cumulative_estimated_usd"] > 0
+
+
+@pytest.mark.asyncio
+async def test_cap_refusal_stops_the_case_without_answer_or_reserve_and_continues(monkeypatch, tmp_path):
+    class Server:
+        manifest = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        def reset_case(self):
+            self.events = []
+
+    filters = []
+
+    async def preflight(_server):
+        return {"status": "passed"}
+
+    async def model(agent, question, **kwargs):
+        filters.append(kwargs["run_config"].call_model_input_filter)
+        assert isinstance(filters[-1], agent_eval.InputCapFilter)
+        await kwargs["hooks"].on_llm_end(None, agent, SimpleNamespace(usage=SimpleNamespace(input_tokens=40_000, output_tokens=500)))
+        raise agent_eval.ContextCapExceeded("Estimated 51000 input tokens exceed the 50000-token cap")
+
+    monkeypatch.setattr(v2, "BoundedMCP", Server)
+    monkeypatch.setattr(v2, "preflight", preflight)
+    monkeypatch.setattr(agent_eval, "load_local_openai_key", lambda: True)
+    monkeypatch.setattr(agent_eval, "_ENCODING", False)
+    monkeypatch.setattr(v2, "set_default_openai_client", lambda *a, **kw: None)
+    monkeypatch.setattr(v2, "AsyncOpenAI", lambda **kw: None)
+    monkeypatch.setattr(v2.Runner, "run", model)
+    monkeypatch.setattr(v2, "JSON_RESULT", tmp_path / "v2.json")
+    monkeypatch.setattr(v2, "MARKDOWN_RESULT", tmp_path / "v2.md")
+    monkeypatch.setattr(agent_eval, "SPEND_LEDGER", tmp_path / "spend.json")
+    selected = agent_eval.load_cases()[-2:]
+    assert await v2.run(Namespace(run=True, budget_usd=20), selected, {"entries": [], "estimated_usd": 0}) == 1
+    result = json.loads(v2.JSON_RESULT.read_text())
+    assert len(filters) == 2 and filters[0] is not filters[1]
+    for case in result["cases"]:
+        assert case["status"] == "context_cap_reached" and "answer" not in case
+        assert case["estimated_usd"] == pytest.approx(agent_eval.actual_cost_usd(40_000, 500))
+        assert "cost_basis" not in case
+    assert result["run_note"] == ""
+    assert {row["v2_technical_classification"] for row in result["baseline_comparison"]} == {"context_cap_reached"}
