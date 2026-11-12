@@ -310,7 +310,8 @@ async def test_the_fiscal_set_is_fetched_from_past_its_publication_delay(monkeyp
 def test_the_fiscal_set_is_served_and_the_lookback_outlasts_the_delay():
     from src.pipeline.bacen_pipeline import INFLATION_SERIES, SGS_SERIES
 
-    assert FISCAL_SERIES == {"DBGG_PIB": 13762, "NFSP_PRIMARIO_12M": 5793, "NFSP_NOMINAL_12M": 5727}
+    assert FISCAL_SERIES == {"DBGG_PIB": 13762, "NFSP_PRIMARIO_12M": 5793, "NFSP_NOMINAL_12M": 5727,
+                             "DLSP_PIB": 4513}
     assert all(SGS_SERIES[k] == v and k not in INFLATION_SERIES for k, v in FISCAL_SERIES.items())
     assert SGS_LAGGED_LOOKBACK_DAYS >= 120
 

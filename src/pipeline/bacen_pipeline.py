@@ -85,6 +85,10 @@ FISCAL_SERIES: Dict[str, int] = {
     "DBGG_PIB":          13762,  # Dívida bruta do governo geral (% PIB), metodologia a partir de 2008
     "NFSP_PRIMARIO_12M": 5793,   # NFSP sem desvalorização cambial, 12 meses, resultado primário, setor público consolidado
     "NFSP_NOMINAL_12M":  5727,   # the same, resultado nominal
+    # Dívida líquida do setor público (% PIB), total, setor público consolidado.
+    # Checked 2026-11-12 against BACEN's open-data catalogue (SGS 4513, monthly,
+    # percent, from 2001-12) and api.bcb.gov.br (Sep/26: 69.98).
+    "DLSP_PIB":          4513,
 }
 SGS_LAGGED_LOOKBACK_DAYS = 150
 
