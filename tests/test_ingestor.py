@@ -81,6 +81,44 @@ def test_daily_annual_plan_keeps_fip_and_cia_slices_separate_from_execution():
             task.operation.close()
 
 
+class TestDailyItrDfpRunsSerially:
+    """#1108: the daily ITR/DFP slices run in their own batch at concurrency 1.
+
+    Concurrent reads of these ZIPs made CVM return content with zero rows and no
+    error (the backfill's comment), so they follow the main batch, one at a time.
+    """
+
+    async def test_itr_dfp_get_a_serial_batch_after_the_main_one(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "cia_aberta,fip")
+        monkeypatch.setenv("CVM_DAILY_CONCURRENCY", "8")
+        ingestor = CVMIngestor(service=object(), cia_fetcher=object(), client=_FakeClient())
+
+        async def _zero():
+            return 0
+
+        ingestor.ingest_cia_cad = _zero
+        batches = []
+
+        async def _record(tasks, concurrency, totals, label):
+            batches.append((label, concurrency, [t.table for t in tasks]))
+            for task in tasks:
+                task.operation.close()
+
+        ingestor._run_task_batches = _record
+        await ingestor.daily_update()
+
+        assert [label for label, _, _ in batches] == ["Daily update", "Daily update ITR/DFP"]
+        (_, main_conc, main_tables), (_, serial_conc, serial_tables) = batches
+        assert main_conc == 8
+        assert serial_conc == 1
+        # Both years, both doc types: 4 ITR/DFP slices, all in the serial batch.
+        assert serial_tables == ["cia_account"] * 4
+        assert "cia_account" not in main_tables
+        assert {"cia_event", "cia_ticker", "cvm_fip_periodic"} <= set(main_tables)
+
+
 class TestCiaItrDfpDailyDispatch:
     """The current year's ITR/DFP: full on Monday, new versions otherwise (#961).
 

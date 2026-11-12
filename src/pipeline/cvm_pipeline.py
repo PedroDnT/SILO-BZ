@@ -324,6 +324,20 @@ def _get_concurrency(name: str, default: int) -> int:
     return _env_int(f"CVM_{key}_CONCURRENCY", _env_int("CVM_INGEST_CONCURRENCY", default))
 
 
+# Tables whose daily slices run in their own batch at concurrency 1 (#1108):
+# the ITR/DFP ZIPs, whose concurrent reads came back empty without an error.
+_SERIAL_DAILY_TABLES = frozenset({"cia_account"})
+
+
+def _split_serial_daily_tasks(
+    tasks: List[IngestTask],
+) -> Tuple[List[IngestTask], List[IngestTask]]:
+    """Split the daily plan into (main batch, serial ITR/DFP batch), order kept."""
+    main = [t for t in tasks if t.table not in _SERIAL_DAILY_TABLES]
+    serial = [t for t in tasks if t.table in _SERIAL_DAILY_TABLES]
+    return main, serial
+
+
 def _new_totals() -> Dict[str, int]:
     return {table: 0 for table in _ALL_TABLES}
 
@@ -2733,11 +2747,21 @@ class CVMIngestor:
 
         tasks.extend(self._plan_daily_annual_tasks(daily_entities, year, today))
 
+        # ITR/DFP run after the main batch, one at a time, as the backfill does:
+        # concurrent reads of these ZIPs made CVM return content with zero rows
+        # and no error (#1108). Do not raise this above 1.
+        main_tasks, serial_tasks = _split_serial_daily_tasks(tasks)
         await self._run_task_batches(
-            tasks,
+            main_tasks,
             _get_concurrency("daily", 6),
             totals,
             "Daily update",
+        )
+        await self._run_task_batches(
+            serial_tasks,
+            1,  # serial: concurrency here loses data (see the ITR/DFP backfill)
+            totals,
+            "Daily update ITR/DFP",
         )
 
         # Refresh the materialized ETF metrics once the day's data is in — when
