@@ -33,9 +33,10 @@ The native MCP v2 evaluator is built (#1076). Its 2026-11-06 live preflight
 passed all required research probes, but the paid attempt stopped on Q1 with
 OpenAI HTTP 401 and no observed usage. No case completed and no new rubric
 score exists. The ledger retains the US$1.56 whole-case reserve; cumulative
-accounted estimates/reserves are US$2.164687, not reconciled billing. A full
-12-case retry's US$18.72 reserve would now exceed the US$20 cumulative cap;
-reconcile the failed attempt's billing before planning that retry. Owner pro
+accounted estimates/reserves are US$2.164687, not reconciled billing. With a
+cheaper model and an enforced 50,000-token input cap per request, a full
+12-case retry reserves US$13.05, within the US$20 cumulative cap
+(`research_examples/README.md`). Owner pro
 access also remains unverified because the configured database connection
 was refused. #1061 tracks these remaining rollout gates.
 

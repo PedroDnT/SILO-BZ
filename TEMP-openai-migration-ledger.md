@@ -97,3 +97,11 @@ No live model quality/access validation performed. No paid calls.
 Owner reviews local diff. Before release, separately approve credential access
 verification and a bounded-cost quality smoke/evaluation protocol. No paid
 operation, PR or production release is authorized by this preparation task.
+
+## Evaluator follow-up (2026-11-12, Brasília)
+
+The owner's 2026-11-11 23:24 decision moved the research evaluators (only) to
+`gpt-6.1-terra` with an enforced 50,000-token input cap per request; see
+`research_examples/README.md`. The Investigator judge keeps `gpt-5.6-terra`.
+The budget consequence above no longer holds for the evaluators: the reserve
+is US$1.0875 per case and US$13.05 for 12 cases.
