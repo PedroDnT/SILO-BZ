@@ -6,7 +6,10 @@ Usage:
     python scripts/apply_schema.py
 
 Requires: POSTGRES_URL in .env (postgresql://... format)
-Falls back to manual instructions if connection fails.
+Every session runs with lock_timeout=15s and statement_timeout=0, as the CI
+action .github/actions/apply-schema does. When nothing could be applied (no
+POSTGRES_URL, no driver, a failed connection) it prints the SQL for a manual
+paste and exits 1, so a caller never reads that as success.
 
 Migration order:
   1. schema.sql          — CREATE TABLE IF NOT EXISTS statements (base schema)
@@ -64,6 +67,29 @@ def _read(path: str) -> str:
 MIGRATIONS = []
 
 
+# Same settings as .github/actions/apply-schema (2026-08-26 incident: a queued
+# AccessExclusiveLock stalled every reader behind it). lock_timeout bounds only
+# the wait to ACQUIRE a lock; statement_timeout=0 leaves a running DDL alone.
+LOCK_TIMEOUT = "15s"
+SESSION_SETTINGS = (
+    f"SET lock_timeout = '{LOCK_TIMEOUT}'",
+    "SET statement_timeout = 0",
+)
+
+
+def _psql_env(environ=None):
+    """Environment for psql: PGOPTIONS with lock_timeout and statement_timeout,
+    unless the caller's PGOPTIONS already sets them."""
+    env = dict(os.environ if environ is None else environ)
+    opts = env.get("PGOPTIONS", "").strip()
+    if "lock_timeout" not in opts:
+        opts = f"{opts} -c lock_timeout={LOCK_TIMEOUT}".strip()
+    if "statement_timeout" not in opts:
+        opts = f"{opts} -c statement_timeout=0".strip()
+    env["PGOPTIONS"] = opts
+    return env
+
+
 def _resolve_psql():
     """Return a usable psql executable path, or None."""
     found = shutil.which("psql")
@@ -84,6 +110,7 @@ def apply_via_psql(psql: str, db_url: str, items):
     population scan (see scripts/guard_noop_ddl.py).
     """
     ok = err = 0
+    env = _psql_env()
     for name, path in items:
         sql = _sql_for_apply(path)
         with tempfile.NamedTemporaryFile(
@@ -95,6 +122,7 @@ def apply_via_psql(psql: str, db_url: str, items):
             rc = subprocess.call(
                 [psql, db_url, "-v", "ON_ERROR_STOP=1", "-q", "-f", tmp_path],
                 stdout=subprocess.DEVNULL,
+                env=env,
             )
         finally:
             os.unlink(tmp_path)
@@ -138,6 +166,8 @@ def apply_via_psycopg2(db_url: str, items):
         def execute(sql):
             with conn.cursor() as cur:
                 cur.execute(sql)
+        for setting in SESSION_SETTINGS:
+            execute(setting)
         return _apply_whole_files(execute, items)
     finally:
         conn.close()
@@ -151,6 +181,8 @@ def apply_via_asyncpg(db_url: str, items):
         # Raw asyncpg on purpose: this path runs only when psycopg2 is missing,
         # and src.store.pg_client cannot be imported without psycopg2.
         conn = await asyncpg.connect(db_url)
+        for setting in SESSION_SETTINGS:
+            await conn.execute(setting)
         ok = err = 0
         for name, path in items:
             try:
@@ -186,7 +218,8 @@ def main():
     if not db_url:
         print("  POSTGRES_URL not set.")
         print_manual_instructions(items)
-        return
+        print("\n  Nothing was applied.")
+        sys.exit(1)
     db_url = "".join(db_url.split())
 
     print(f"  Applying {len(items)} migration steps...\n")
@@ -219,6 +252,8 @@ def main():
 
     print("\n  No PostgreSQL client available. Falling back to manual instructions.")
     print_manual_instructions(items)
+    print("\n  Nothing was applied.")
+    sys.exit(1)
 
 
 if __name__ == "__main__":
