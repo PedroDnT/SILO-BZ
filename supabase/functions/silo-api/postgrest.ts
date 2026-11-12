@@ -116,16 +116,15 @@ export async function callRpc(ctx: CallContext, endpoint: string, args: Record<s
 
 export interface ViewPage {
   rows: Record<string, unknown>[];
-  /** Every row the selection holds, from Content-Range (Prefer: count=exact); null if not sent. */
-  total: number | null;
 }
 
 /**
  * GET /<view> on schema api: eq. filters, an order, a page size and an
- * offset, with `Prefer: count=exact` so the rows left are known. PostgREST
- * cuts a view at db-max-rows and cannot refuse; the gateway pages it with
- * order + limit + offset and says through next_page_url that rows remain
- * (run.ts, #1059).
+ * offset. PostgREST cuts a view at db-max-rows and cannot refuse; the gateway
+ * pages it with order + limit + offset and says through next_page_url that
+ * rows remain (run.ts, #1059). No `Prefer: count=exact`: an exact count scans
+ * the whole selection and outran the anon statement_timeout on the lending
+ * views (#1098). The caller asks for one row more than it serves instead.
  */
 export async function callView(
   ctx: CallContext,
@@ -148,7 +147,6 @@ export async function callView(
     apikey: ctx.cfg.anonKey,
     Accept: "application/json",
     "Accept-Profile": "api",
-    Prefer: "count=exact",
   };
   if (ctx.bearer) headers["Authorization"] = `Bearer ${ctx.bearer}`;
 
@@ -171,6 +169,5 @@ export async function callView(
     throw new ApiError(500, "internal", `api.${view} answered HTTP ${res.status} with a body that is not JSON.`);
   }
   if (!Array.isArray(rows)) throw new ApiError(500, "internal", `api.${view} did not answer with rows.`);
-  const m = /\/(\d+)\s*$/.exec(res.headers.get("content-range") ?? "");
-  return { rows: rows as Record<string, unknown>[], total: m ? Number(m[1]) : null };
+  return { rows: rows as Record<string, unknown>[] };
 }

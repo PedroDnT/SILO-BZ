@@ -184,8 +184,9 @@ Notes:
 - `funds`, as built: `id` is a fund CNPJ (punctuation stripped, 14 digits or
   `bad_request`). `profile` calls `fund_profile`; with no `id` it reads the
   `funds` view (a GET, ordered by `cnpj`, `family` and `status` as eq.
-  filters). That read uses `Prefer: count=exact` and pages with order + limit
-  + offset (#1059); `meta.rows_total` is the count. `nav` calls `fund_nav` (`family` ->
+  filters). That read pages with order + limit + offset (#1059), asking for
+  one row more than the page to know whether more remain (no exact count since
+  #1098; `meta.rows_total` is null). `nav` calls `fund_nav` (`family` ->
   `p_entity_type`); `holdings` and `debentures` take exactly one of `id` and
   the hidden `holding` (`p_ticker` / `p_issuer`); `properties` calls
   `fii_property_history`. `?help` carries the FIDC delinquency regime break.
@@ -208,7 +209,7 @@ Notes:
   `auctions`) so no column and no odd or block lot is lost. Its hidden `date`
   defaults to the newest session in the 14 days to today, found with one GET
   of one row and pinned in the cursor. The session is then read through the
-  one `callView` (`Prefer: count=exact`) a page at a time (#1059), so a
+  one `callView` a page at a time (#1059), so a
   session of any size is served whole, never cut. `freq=month`
   keeps the last session of each month from the daily rows. Every price row carries `adjusted`.
   With no `id`, `history` and `latest` list the research universe; `index`
@@ -377,8 +378,11 @@ uses a secret key.
     once. Inside a window the position is an offset into its rows. Windows go
     in the function's own date order (a test pins it to the SQL's `ORDER BY`).
     When a split needs an end the request left open, `to` is today (UTC-3).
-  - `view_offset`: every GET view, `order` + `limit` + `offset` with
-    `Prefer: count=exact`; `meta.rows_total` is the count. `prices
+  - `view_offset`: every GET view, `order` + `limit` + `offset`, asking for
+    one row more than the page: the extra row says more remain and is not
+    served. No `Prefer: count=exact` since #1098 (an exact count over the
+    lending views outran the anon statement timeout); `meta.rows_total` is
+    null. `prices
     kind=session` and `curves kind=vertices` find the newest session once and
     pin it in the cursor.
   - `single_page`: one call holds the whole answer (or refuses), and pages are
