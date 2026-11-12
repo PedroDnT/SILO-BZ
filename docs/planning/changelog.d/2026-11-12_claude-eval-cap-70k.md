@@ -1,0 +1,1 @@
+| 2026-11-12 | claude/eval-cap-70k | **Raise the research evaluator's input cap to 70,000 tokens (#1127, part of #1061).** Owner's choice: at 50,000 the first request plus the catalog left almost no room for data calls. The reserve is now US$1.4625 per case and US$17.55 for 12 cases on top of US$2.164687 already spent, still under the US$20 cap. No paid run. |

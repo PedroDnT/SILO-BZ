@@ -154,7 +154,7 @@ def test_default_budget_check_passes_all_twelve_cases_with_current_ledger(monkey
     monkeypatch.setattr(agent_eval, "load_local_openai_key", unexpected)
     assert v2.main([]) == 0
     out = capsys.readouterr().out
-    assert "Validated 12 cases" in out and "reserve $13.05" in out
+    assert "Validated 12 cases" in out and "reserve $17.55" in out
 
 
 def test_default_refuses_unaffordable_reserve_without_network_or_credentials(monkeypatch, capsys):
@@ -303,7 +303,7 @@ async def test_cap_refusal_stops_the_case_without_answer_or_reserve_and_continue
         filters.append(kwargs["run_config"].call_model_input_filter)
         assert isinstance(filters[-1], agent_eval.InputCapFilter)
         await kwargs["hooks"].on_llm_end(None, agent, SimpleNamespace(usage=SimpleNamespace(input_tokens=40_000, output_tokens=500)))
-        raise agent_eval.ContextCapExceeded("Estimated 51000 input tokens exceed the 50000-token cap")
+        raise agent_eval.ContextCapExceeded("Estimated 71000 input tokens exceed the 70000-token cap")
 
     monkeypatch.setattr(v2, "BoundedMCP", Server)
     monkeypatch.setattr(v2, "preflight", preflight)

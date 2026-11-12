@@ -30,7 +30,7 @@ MCP_URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp-v2"
 JSON_RESULT = Path(__file__).with_name(f"eval-v2-{baseline.MODEL}-results.json")
 MARKDOWN_RESULT = baseline.ROOT / f"docs/reference/research/agent-evaluation-v2-{baseline.MODEL}-results.md"
 # The live v2 catalog is about 129 KB. Below 140,000 characters it stays under
-# the 50,000-token input cap at o200k rates (about 4.4 characters per token for
+# the 70,000-token input cap at o200k rates (about 4.4 characters per token for
 # this JSON); with the 14 tool schemas (about 17,500 tokens) the next request
 # may still be refused by baseline.InputCapFilter, which is recorded, not trimmed.
 MAX_CATALOG_CHARS = 140_000

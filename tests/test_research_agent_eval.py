@@ -16,9 +16,9 @@ def test_capped_reserve_fits_all_twelve_cases_under_the_cumulative_cap():
         "answer_or_bounded_limit", "limitation"
     }
     assert agent_eval.DEFAULT_BUDGET_USD == 20
-    assert agent_eval.MAX_CONTEXT_TOKENS == 50_000
-    # 1.25 x 12 turns x (50,000 x $1.25 + 2,000 x $5.00) / 1M
-    assert agent_eval.worst_case_cost_usd() == pytest.approx(1.0875)
+    assert agent_eval.MAX_CONTEXT_TOKENS == 70_000
+    # 1.25 x 12 turns x (70,000 x $1.25 + 2,000 x $5.00) / 1M
+    assert agent_eval.worst_case_cost_usd() == pytest.approx(1.4625)
     prior = agent_eval.load_spend_ledger()["estimated_usd"]
     assert prior + len(cases) * agent_eval.worst_case_cost_usd() < agent_eval.DEFAULT_BUDGET_USD
 
@@ -45,11 +45,11 @@ def test_input_cap_passes_a_request_under_the_cap():
     assert cap.summary()["requests_checked"] == 1
 
 
-def test_input_cap_refuses_a_request_over_50000_estimated_tokens(monkeypatch):
+def test_input_cap_refuses_a_request_over_70000_estimated_tokens(monkeypatch):
     monkeypatch.setattr(agent_eval, "_ENCODING", False)  # characters / 2, deterministic offline
     cap = agent_eval.InputCapFilter()
-    output = {"type": "function_call_output", "call_id": "c1", "output": "1" * 100_000}
-    with pytest.raises(agent_eval.ContextCapExceeded, match="50000-token cap"):
+    output = {"type": "function_call_output", "call_id": "c1", "output": "1" * 150_000}
+    with pytest.raises(agent_eval.ContextCapExceeded, match="70000-token cap"):
         cap(_call("", [{"role": "user", "content": "q"}, output]))
     assert cap.largest_estimate > agent_eval.MAX_CONTEXT_TOKENS
     assert agent_eval.technical_classification({"status": "context_cap_reached"}) == "context_cap_reached"
