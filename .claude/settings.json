@@ -85,7 +85,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/post-edit.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/post-edit.sh\"",
             "timeout": 300,
             "statusMessage": "py_compile / pytest…"
           }

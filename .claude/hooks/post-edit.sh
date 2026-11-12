@@ -19,6 +19,9 @@ case "$f" in
   "$PWD"/*) f="${f#"$PWD"/}" ;;
   /*) exit 0 ;;  # outside this checkout: nothing to compile or test here
 esac
+# The session may have cd-ed into a subdirectory (dashboard/, #1110); the
+# checks below, py_compile and pytest all run from the checkout root.
+cd "$root" || exit 0
 case "$f" in
   *.py) ;;
   *) exit 0 ;;
