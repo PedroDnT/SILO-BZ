@@ -6,6 +6,11 @@ rates, and sample business metrics for each entity type.
 Usage:
     python scripts/verify_pipeline.py
 
+Exit code: 0 when no check is marked ✗; 1 when it cannot connect or when any
+check is marked ✗ (an EMPTY table, or a key field >= 30% null in its sample).
+"!" lines are warnings and leave the exit code at 0. It runs no COUNT(*) over a
+whole table: presence is EXISTS, size the planner estimate, rates a sample.
+
 Requires: POSTGRES_URL env var (or a .env file).
 """
 
@@ -44,28 +49,24 @@ def _scalar(client: Any, query: Any, params: tuple = ()) -> int:
     return int(row[0]) if row and row[0] is not None else 0
 
 
-def count_table(client: Any, table: str, extra_filter=None) -> int:
-    query = sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))
-    params: tuple = ()
-    if extra_filter:
-        query += sql.SQL(" WHERE {} = %s").format(sql.Identifier(extra_filter[0]))
-        params = (extra_filter[1],)
-    return _scalar(client, query, params)
-
-
-def table_has_rows(client: Any, table: str) -> bool:
+def table_has_rows(client: Any, table: str, extra_filter=None) -> bool:
     """Presence without a COUNT(*).
 
     The holdings tables are the largest in the warehouse (cvm_fi_cda_acoes alone
     is 11 GB). COUNT(*) on them is a full scan that adds minutes to a script
     whose whole job is a fast smoke test, and the answer it buys — "is anything
     here" — is one row's worth of information. LIMIT 1 stops at the first tuple.
+    `extra_filter` is a (column, value) pair for a subtype such as FII's
+    doc_subtype; the probe still stops at the first matching tuple.
     """
-    query = sql.SQL("SELECT EXISTS (SELECT 1 FROM {} LIMIT 1)").format(
-        sql.Identifier(table)
-    )
+    inner = sql.SQL("SELECT 1 FROM {}").format(sql.Identifier(table))
+    params: tuple = ()
+    if extra_filter:
+        inner += sql.SQL(" WHERE {} = %s").format(sql.Identifier(extra_filter[0]))
+        params = (extra_filter[1],)
+    query = sql.SQL("SELECT EXISTS ({} LIMIT 1)").format(inner)
     with client.cursor() as cur:
-        cur.execute(query)
+        cur.execute(query, params)
         row = cur.fetchone()
     return bool(row and row[0])
 
@@ -85,35 +86,44 @@ def estimate_rows(client: Any, table: str) -> int:
     )
 
 
-def sample_nonnull_pct(client: Any, table: str, col: str, sample: int = 50_000
-                       ) -> Optional[int]:
+def sample_nonnull(client: Any, table: str, col: str, extra_filter=None,
+                   sample: int = 50_000) -> tuple:
+    """(non-null, rows) over a bounded sample of at most `sample` rows.
+
+    Reads the first `sample` rows (of the subtype, when `extra_filter` is set)
+    rather than the table, so the cost is fixed whatever the table's size.
+    """
+    inner = sql.SQL("SELECT {col} FROM {tbl}").format(
+        col=sql.Identifier(col), tbl=sql.Identifier(table)
+    )
+    params: list = []
+    if extra_filter:
+        inner += sql.SQL(" WHERE {} = %s").format(sql.Identifier(extra_filter[0]))
+        params.append(extra_filter[1])
+    query = sql.SQL(
+        "SELECT count(*) FILTER (WHERE {col} IS NOT NULL), count(*) "
+        "FROM ({inner} LIMIT %s) s"
+    ).format(col=sql.Identifier(col), inner=inner)
+    params.append(sample)
+    with client.cursor() as cur:
+        cur.execute(query, tuple(params))
+        row = cur.fetchone()
+    if not row or not row[1]:
+        return (0, 0)
+    return (int(row[0] or 0), int(row[1]))
+
+
+def sample_nonnull_pct(client: Any, table: str, col: str, sample: int = 50_000,
+                       extra_filter=None) -> Optional[int]:
     """Population rate over a bounded sample, or None if the sample is empty.
 
-    Reads the first `sample` rows rather than the table, so the cost is fixed.
     It is a sample, not the rate — the callsite prints it with a ~ so nobody
     reads it as the whole table's number.
     """
-    query = sql.SQL(
-        "SELECT count(*) FILTER (WHERE {col} IS NOT NULL), count(*) "
-        "FROM (SELECT {col} FROM {tbl} LIMIT %s) s"
-    ).format(col=sql.Identifier(col), tbl=sql.Identifier(table))
-    with client.cursor() as cur:
-        cur.execute(query, (sample,))
-        row = cur.fetchone()
-    if not row or not row[1]:
+    nonnull, n = sample_nonnull(client, table, col, extra_filter, sample)
+    if not n:
         return None
-    return 100 * row[0] // row[1]
-
-
-def count_nonnull(client: Any, table: str, col: str, extra_filter=None) -> int:
-    query = sql.SQL("SELECT count(*) FROM {} WHERE {} IS NOT NULL").format(
-        sql.Identifier(table), sql.Identifier(col)
-    )
-    params: tuple = ()
-    if extra_filter:
-        query += sql.SQL(" AND {} = %s").format(sql.Identifier(extra_filter[0]))
-        params = (extra_filter[1],)
-    return _scalar(client, query, params)
+    return 100 * nonnull // n
 
 
 def sample_rows(client: Any, table: str, order_col: str,
@@ -144,7 +154,13 @@ def sample_rows(client: Any, table: str, order_col: str,
 # Report sections
 # ---------------------------------------------------------------------------
 
-def report_presence(client):
+def report_presence(client) -> List[str]:
+    """Print presence per table; return the label of every ✗ EMPTY row.
+
+    No COUNT(*): presence is EXISTS ... LIMIT 1, size the planner's estimate
+    (whole table, so a subtype row shows "n/a") and the key-field rate a
+    bounded sample, each printed as what it is.
+    """
     print(f"\n{SEP}")
     print("  TABLE PRESENCE")
     print(SEP)
@@ -173,22 +189,30 @@ def report_presence(client):
         ("bacen_expectativas",      None,                              "median"),
         ("cvm_ingest_log",          None,                              None),
     ]
-    print(f"  {'Table / subtype':<42} {'rows':>8}  {'key field %':>10}")
+    failures: List[str] = []
+    print(f"  {'Table / subtype':<42} {'~rows':>8}  {'~key %':>10}")
     print(f"  {SEP2}")
     for table, filt, kf in checks:
         label = table
         if filt:
             label += f" [{filt[1]}]"
-        total = count_table(client, table, extra_filter=filt)
-        if kf and total > 0:
-            nonnull = count_nonnull(client, table, kf, extra_filter=filt)
-            pct = f"{100 * nonnull // total}%"
+        if not table_has_rows(client, table, extra_filter=filt):
+            print(f"  {label:<42} {0:>8}  {'—':>10}  ✗ EMPTY")
+            failures.append(f"{label} is empty")
+            continue
+        if filt:
+            est_s = "n/a"
         else:
-            pct = "—" if total == 0 else "n/a"
-        flag = "  ✓" if total > 0 else "  ✗ EMPTY"
-        print(f"  {label:<42} {total:>8}  {pct:>10}{flag}")
+            est = estimate_rows(client, table)
+            est_s = f"~{est}" if est else "?"
+        pct_s = "n/a"
+        if kf:
+            pct = sample_nonnull_pct(client, table, kf, extra_filter=filt)
+            pct_s = f"~{pct}%" if pct is not None else "n/a"
+        print(f"  {label:<42} {est_s:>8}  {pct_s:>10}  ✓")
 
-    report_holdings_presence(client)
+    failures += report_holdings_presence(client)
+    return failures
 
 
 # The fund holdings blocks. Kept out of the COUNT(*) list above on purpose:
@@ -203,24 +227,34 @@ HOLDINGS_CHECKS = [
 ]
 
 
-def report_holdings_presence(client):
+def report_holdings_presence(client) -> List[str]:
+    failures: List[str] = []
     print(f"\n  {'Holdings block (est. rows, sampled %)':<42} {'~rows':>8}  {'~key %':>10}")
     print(f"  {SEP2}")
     for table, key_field in HOLDINGS_CHECKS:
         present = table_has_rows(client, table)
         if not present:
             print(f"  {table:<42} {0:>8}  {'—':>10}  ✗ EMPTY")
+            failures.append(f"{table} is empty")
             continue
         est = estimate_rows(client, table)
         pct = sample_nonnull_pct(client, table, key_field)
         est_s = f"~{est}" if est else "?"
         pct_s = f"~{pct}%" if pct is not None else "n/a"
         print(f"  {table:<42} {est_s:>8}  {pct_s:>10}  ✓")
+    return failures
 
 
-def report_quality(client):
+def report_quality(client) -> List[str]:
+    """Print sampled null rates; return the label of every ✗ (>= 30% null) row.
+
+    "!" (5-29% null) stays a printed warning and does not fail the run. The
+    rate is over a bounded sample (sample_nonnull), not the whole table, and is
+    printed with a ~ for that reason.
+    """
+    failures: List[str] = []
     print(f"\n{SEP}")
-    print("  KEY-FIELD NULL RATES  (target: < 5%  after pipeline fixes)")
+    print("  KEY-FIELD NULL RATES  (target: < 5%  after pipeline fixes; sampled)")
     print(SEP)
     checks = [
         ("cvm_fi_diario",       None,                            "vl_patrim_liq",                     "FI      vl_patrim_liq"),
@@ -237,15 +271,17 @@ def report_quality(client):
         ("cvm_securit_fluxo",   None,                            "recebimentos_direitos_creditorios", "SECURIT fluxo recebimentos"),
     ]
     for table, filt, col, label in checks:
-        total = count_table(client, table, extra_filter=filt)
-        nonnull = count_nonnull(client, table, col, extra_filter=filt)
+        nonnull, total = sample_nonnull(client, table, col, extra_filter=filt)
         if total == 0:
             print(f"  {label:<50}  no data")
             continue
         null_n = total - nonnull
         null_pct = 100 * null_n // total
         bar = "✓" if null_pct < 5 else ("!" if null_pct < 30 else "✗")
-        print(f"  {label:<50}  {null_pct:>3}% null  {bar}")
+        print(f"  {label:<50}  ~{null_pct:>3}% null  {bar}")
+        if bar == "✗":
+            failures.append(f"{label} is ~{null_pct}% null")
+    return failures
 
 
 def report_fi(client):
@@ -472,8 +508,8 @@ def main():
         print("  Set POSTGRES_URL and retry.")
         sys.exit(1)
 
-    report_presence(client)
-    report_quality(client)
+    failures = report_presence(client)
+    failures += report_quality(client)
     report_fi(client)
     report_fidc(client)
     report_fidc_tranche(client)
@@ -485,6 +521,13 @@ def main():
 
     print(f"\n{SEP}")
     print("  Done. For deeper analysis see: scripts/queries/ (13 numbered SQL files)")
+    if failures:
+        print(f"  FAILED: {len(failures)} check(s) marked ✗")
+        for f in failures:
+            print(f"    ✗ {f}")
+        print(SEP)
+        sys.exit(1)
+    print("  PASSED: no check marked ✗ ('!' lines are warnings)")
     print(SEP)
 
 
