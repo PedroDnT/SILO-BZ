@@ -46,6 +46,8 @@ def test_deploys_the_function_only_never_pushes_config():
     text = WORKFLOW.read_text(encoding="utf-8")
     runs = _runs()
     assert f"supabase functions deploy silo-mcp --project-ref \"$PROJECT_REF\" --no-verify-jwt" in runs
+    # The CLI refuses to deploy without a terminal unless confirmed up front.
+    assert "--no-verify-jwt --yes" in runs
     assert _spec()["jobs"]["deploy"]["env"]["PROJECT_REF"] == PROJECT_REF
     for forbidden in ("config push", "db push", "db reset"):
         assert f"supabase {forbidden}" not in runs, f"`supabase {forbidden}` must never run here"
