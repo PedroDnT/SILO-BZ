@@ -28,7 +28,7 @@ The current model is `gpt-6.1-terra` (prices checked 2026-11-12); the saved
 `.venv/bin/python research_examples/agent_eval.py --public-demo` first to
 check the 12-case budget without network or model calls.
 
-Every model request is capped at 50,000 input tokens (owner's choice,
+Every model request is capped at 70,000 input tokens (owner's choice,
 2026-11-11). The Agents SDK's `RunConfig(call_model_input_filter=...)` hook
 runs `InputCapFilter` immediately before each request. It estimates the
 instructions, the conversation and the tool schemas with tiktoken's
@@ -36,8 +36,8 @@ instructions, the conversation and the tool schemas with tiktoken's
 when tiktoken is absent, and adds 10%. A request over the cap is never sent:
 the case stops as `context_cap_reached` with no answer, its observed usage is
 charged, and the run moves to the next case. Nothing is trimmed. Because the
-cap holds, the reserve is 1.25 × 12 turns × one capped request: US$1.0875 per
-case, US$13.05 for all 12, which fits the cumulative US$20 cap on top of the
+cap holds, the reserve is 1.25 × 12 turns × one capped request: US$1.4625 per
+case, US$17.55 for all 12, which fits the cumulative US$20 cap on top of the
 US$2.164687 already in the ledger. This is a configuration bound, not a
 measured model cost. Do not raise the cap or clear the spend ledger.
 Credential access to the model remains unverified.
@@ -91,7 +91,7 @@ Anonymous access is the default; `SILO_USER_JWT` selects the caller's own
 signed-in access. No credential is saved in evaluation artifacts.
 
 V2 shares the current runner's model, questions, turn limit, five-data-call limit and
-cumulative US$20 spend ledger, and the same 50,000-token input cap, which
+cumulative US$20 spend ledger, and the same 70,000-token input cap, which
 counts the 14 MCP tool schemas (about 18,000 estimated tokens with the
 instructions). Data results retain the 100-row/80-KB caps; catalog discovery
 permits 140 KB because the live catalog (about 129 KB) exceeds 80 KB. The

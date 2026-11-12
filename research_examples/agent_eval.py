@@ -54,10 +54,11 @@ except ImportError:  # pragma: no cover - local type-checking environment may om
 MODEL = "gpt-6.1-terra"
 MAX_TURNS = 12
 MAX_OUTPUT_TOKENS = 2_000
-# Owner's choice (2026-11-11): each model request carries at most 50,000 input
+# Owner's choice (2026-11-11, raised from 50,000 the same evening so a case can
+# read the catalog and still make data calls): each request carries at most 70,000 input
 # tokens. InputCapFilter enforces it before the request is sent, so the
 # worst-case reserve prices a bound that holds. The model's window is 1,050,000.
-MAX_CONTEXT_TOKENS = 50_000
+MAX_CONTEXT_TOKENS = 70_000
 # Estimates are inflated by 10% because the model's tokenizer is not published;
 # o200k_base is the closest public one.
 TOKEN_ESTIMATE_MARGIN = 1.10
