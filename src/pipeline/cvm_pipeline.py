@@ -324,6 +324,20 @@ def _get_concurrency(name: str, default: int) -> int:
     return _env_int(f"CVM_{key}_CONCURRENCY", _env_int("CVM_INGEST_CONCURRENCY", default))
 
 
+# Tables whose daily slices run in their own batch at concurrency 1 (#1108):
+# the ITR/DFP ZIPs, whose concurrent reads came back empty without an error.
+_SERIAL_DAILY_TABLES = frozenset({"cia_account"})
+
+
+def _split_serial_daily_tasks(
+    tasks: List[IngestTask],
+) -> Tuple[List[IngestTask], List[IngestTask]]:
+    """Split the daily plan into (main batch, serial ITR/DFP batch), order kept."""
+    main = [t for t in tasks if t.table not in _SERIAL_DAILY_TABLES]
+    serial = [t for t in tasks if t.table in _SERIAL_DAILY_TABLES]
+    return main, serial
+
+
 def _new_totals() -> Dict[str, int]:
     return {table: 0 for table in _ALL_TABLES}
 
@@ -418,12 +432,13 @@ def _cda_refresh_months(today: date) -> List[Tuple[int, int]]:
     return _trailing_months(today, _CDA_REFRESH_MONTHS + 1)
 
 
-def _fii_daily_years(today: date) -> List[int]:
-    """Years whose FII yearly files the daily run re-fetches.
+def _yearly_daily_years(today: date) -> List[int]:
+    """Years whose FII, FIP and SECURIT yearly files the daily run re-fetches.
 
-    The current year, plus the previous one from January to March: December's
-    monthly reports and the year's last periodic filings are delivered (and
-    restated) early in the next year, into last year's file (issue #551).
+    The current year, plus the previous one from January to March. These files
+    are keyed by reference year, so December's reports and the year's last
+    periodic filings, delivered (and restated) early in the next year, land in
+    last year's file (FII #551; FIP and SECURIT #1106).
     """
     if today.month <= daily_window.FII_PREVIOUS_YEAR_THROUGH_MONTH:
         return [today.year - 1, today.year]
@@ -2585,25 +2600,28 @@ class CVMIngestor:
     ) -> List[IngestTask]:
         """Plan current-year slices without executing or auditing them.
 
-        FII also gets the previous year from January to March when `today` is
-        given (_fii_daily_years). The current year's ITR/DFP is a full read only
+        FII, FIP and SECURIT also get the previous year from January to March
+        when `today` is given (_yearly_daily_years). The current year's ITR/DFP is a full read only
         on the weekly full-read day, or when `today` is None
         (_cia_itr_dfp_full_read).
         """
         tasks: List[IngestTask] = []
-        fii_years = _fii_daily_years(today) if today is not None else [year]
-        # FIP — refresh current year
+        yearly_years = _yearly_daily_years(today) if today is not None else [year]
+        # FIP: the current year, plus the previous one in Q1 (#1106). The file
+        # is keyed by reference year: the Sep-Dec report, filed in January,
+        # lands in last year's file.
         if "fip" in daily_entities:
-            for _, doc_type in FIP_PERIODIC_CONFIGS:
-                tasks.append(IngestTask(
-                    "cvm_fip_periodic",
-                    f"fip/{doc_type} {year}",
-                    self.ingest_fip_periodic(doc_type, year),
-                ))
+            for fip_year in yearly_years:
+                for _, doc_type in FIP_PERIODIC_CONFIGS:
+                    tasks.append(IngestTask(
+                        "cvm_fip_periodic",
+                        f"fip/{doc_type} {fip_year}",
+                        self.ingest_fip_periodic(doc_type, fip_year),
+                    ))
 
         # FII: the current year, plus the previous one in Q1 (issue #551)
         if "fii" in daily_entities:
-            for fii_year in fii_years:
+            for fii_year in yearly_years:
                 for doc_type in FII_MENSAL_DOC_TYPES:
                     tasks.append(IngestTask(
                         "cvm_fii_mensal",
@@ -2663,27 +2681,30 @@ class CVMIngestor:
                     self.ingest_cia_itr_dfp_new_versions(doc_type, year - 1),
                 ))
 
-        # SECURIT — refresh current year
+        # SECURIT: the current year, plus the previous one in Q1 (#1106). The
+        # ZIPs are keyed by reference year: December's reports, filed in
+        # January, land in last year's file.
         if "securit" in daily_entities:
             # cvm_securit_mensal (SECURIT_MENSAL_TYPES) is not run: nothing reads it (#877).
-            for t in SECURIT_SERIE_TYPES:
-                tasks.append(IngestTask(
-                    "cvm_securit_serie",
-                    f"securit/{t} {year}",
-                    self.ingest_securit_serie(t, year),
-                ))
-            for t in SECURIT_FLUXO_TYPES:
-                tasks.append(IngestTask(
-                    "cvm_securit_fluxo",
-                    f"securit/{t} {year}",
-                    self.ingest_securit_fluxo(t, year),
-                ))
-            for t in SECURIT_DFIN_TYPES:
-                tasks.append(IngestTask(
-                    "cvm_securit_dfin",
-                    f"securit/{t} {year}",
-                    self.ingest_securit_dfin(t, year),
-                ))
+            for securit_year in yearly_years:
+                for t in SECURIT_SERIE_TYPES:
+                    tasks.append(IngestTask(
+                        "cvm_securit_serie",
+                        f"securit/{t} {securit_year}",
+                        self.ingest_securit_serie(t, securit_year),
+                    ))
+                for t in SECURIT_FLUXO_TYPES:
+                    tasks.append(IngestTask(
+                        "cvm_securit_fluxo",
+                        f"securit/{t} {securit_year}",
+                        self.ingest_securit_fluxo(t, securit_year),
+                    ))
+                for t in SECURIT_DFIN_TYPES:
+                    tasks.append(IngestTask(
+                        "cvm_securit_dfin",
+                        f"securit/{t} {securit_year}",
+                        self.ingest_securit_dfin(t, securit_year),
+                    ))
 
         return tasks
 
@@ -2726,11 +2747,21 @@ class CVMIngestor:
 
         tasks.extend(self._plan_daily_annual_tasks(daily_entities, year, today))
 
+        # ITR/DFP run after the main batch, one at a time, as the backfill does:
+        # concurrent reads of these ZIPs made CVM return content with zero rows
+        # and no error (#1108). Do not raise this above 1.
+        main_tasks, serial_tasks = _split_serial_daily_tasks(tasks)
         await self._run_task_batches(
-            tasks,
+            main_tasks,
             _get_concurrency("daily", 6),
             totals,
             "Daily update",
+        )
+        await self._run_task_batches(
+            serial_tasks,
+            1,  # serial: concurrency here loses data (see the ITR/DFP backfill)
+            totals,
+            "Daily update ITR/DFP",
         )
 
         # Refresh the materialized ETF metrics once the day's data is in — when

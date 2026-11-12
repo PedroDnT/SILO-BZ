@@ -20,8 +20,10 @@ DAILY_LOOKBACK_MONTHS = 4
 CDA_DOC_TYPES = frozenset({"cda", "cda_acoes", "cda_cotas", "cda_debentures"})
 CDA_REFRESH_MONTHS = 5
 
-# FII yearly files: the previous year is re-read from January through this
-# month, because December's reports land in last year's file early in the year.
+# FII, FIP and SECURIT yearly files: the previous year is re-read from January
+# through this month, because December's reports land in last year's file early
+# in the year (#551, #1106). The name stays FII_: the health workflow restates it.
+# The SQL predicate below still counts only FII's previous-year slices.
 FII_PREVIOUS_YEAR_THROUGH_MONTH = 3
 
 # CIA ITR/DFP current-year ZIPs: the day of the week (Monday = 0) the daily run

@@ -81,6 +81,44 @@ def test_daily_annual_plan_keeps_fip_and_cia_slices_separate_from_execution():
             task.operation.close()
 
 
+class TestDailyItrDfpRunsSerially:
+    """#1108: the daily ITR/DFP slices run in their own batch at concurrency 1.
+
+    Concurrent reads of these ZIPs made CVM return content with zero rows and no
+    error (the backfill's comment), so they follow the main batch, one at a time.
+    """
+
+    async def test_itr_dfp_get_a_serial_batch_after_the_main_one(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "cia_aberta,fip")
+        monkeypatch.setenv("CVM_DAILY_CONCURRENCY", "8")
+        ingestor = CVMIngestor(service=object(), cia_fetcher=object(), client=_FakeClient())
+
+        async def _zero():
+            return 0
+
+        ingestor.ingest_cia_cad = _zero
+        batches = []
+
+        async def _record(tasks, concurrency, totals, label):
+            batches.append((label, concurrency, [t.table for t in tasks]))
+            for task in tasks:
+                task.operation.close()
+
+        ingestor._run_task_batches = _record
+        await ingestor.daily_update()
+
+        assert [label for label, _, _ in batches] == ["Daily update", "Daily update ITR/DFP"]
+        (_, main_conc, main_tables), (_, serial_conc, serial_tables) = batches
+        assert main_conc == 8
+        assert serial_conc == 1
+        # Both years, both doc types: 4 ITR/DFP slices, all in the serial batch.
+        assert serial_tables == ["cia_account"] * 4
+        assert "cia_account" not in main_tables
+        assert {"cia_event", "cia_ticker", "cvm_fip_periodic"} <= set(main_tables)
+
+
 class TestCiaItrDfpDailyDispatch:
     """The current year's ITR/DFP: full on Monday, new versions otherwise (#961).
 
@@ -730,6 +768,48 @@ class TestFiiPreviousYearInQ1:
         assert "fii/trimestral_imovel 2026" in self._fii_descriptions(date(2027, 3, 31))
         april = self._fii_descriptions(date(2027, 4, 1))
         assert all(d.endswith(" 2027") for d in april)
+
+
+class TestFipSecuritPreviousYearInQ1:
+    """January to March, the daily run also re-reads last year's FIP and SECURIT
+    files: both are keyed by reference year, so December's reports land in last
+    year's file (#1106)."""
+
+    @staticmethod
+    def _descriptions(entity, today):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+        ingestor = CVMIngestor(service=object(), cia_fetcher=object(), client=_FakeClient())
+        tasks = ingestor._plan_daily_annual_tasks({entity}, today.year, today)
+        try:
+            return [task.description for task in tasks]
+        finally:
+            for task in tasks:
+                task.operation.close()
+
+    @staticmethod
+    def _securit_types():
+        from src.pipeline.cvm_pipeline import (
+            SECURIT_DFIN_TYPES, SECURIT_FLUXO_TYPES, SECURIT_SERIE_TYPES,
+        )
+        return list(SECURIT_SERIE_TYPES) + list(SECURIT_FLUXO_TYPES) + list(SECURIT_DFIN_TYPES)
+
+    def test_january_plans_both_years(self):
+        from src.pipeline.cvm_pipeline import FIP_PERIODIC_CONFIGS
+        fip = self._descriptions("fip", date(2027, 1, 2))
+        assert len(fip) == 2 * len(FIP_PERIODIC_CONFIGS)
+        securit = self._descriptions("securit", date(2027, 1, 2))
+        assert len(securit) == 2 * len(self._securit_types())
+        for year in (2026, 2027):
+            assert {f"fip/{d} {year}" for _, d in FIP_PERIODIC_CONFIGS} <= set(fip)
+            assert {f"securit/{t} {year}" for t in self._securit_types()} <= set(securit)
+
+    def test_april_plans_only_the_current_year(self):
+        from src.pipeline.cvm_pipeline import FIP_PERIODIC_CONFIGS
+        fip = self._descriptions("fip", date(2027, 4, 1))
+        securit = self._descriptions("securit", date(2027, 4, 1))
+        assert fip == [f"fip/{d} 2027" for _, d in FIP_PERIODIC_CONFIGS]
+        assert len(securit) == len(self._securit_types())
+        assert all(d.endswith(" 2027") for d in securit)
 
 
 class TestLogFinishStatus:

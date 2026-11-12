@@ -122,7 +122,7 @@ def test_the_cda_bound_is_the_oldest_month_the_pipeline_rereads(today):
     (date(2027, 1, 2), True), (date(2027, 3, 31), True), (date(2027, 4, 1), False),
 ])
 def test_the_fii_bound_follows_the_pipeline(today, previous):
-    years = cvm_pipeline._fii_daily_years(today)
+    years = cvm_pipeline._yearly_daily_years(today)
     assert (today.year - 1 in years) is previous
     assert (today.month <= daily_window.FII_PREVIOUS_YEAR_THROUGH_MONTH) is previous
 
