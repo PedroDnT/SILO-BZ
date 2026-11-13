@@ -1,0 +1,31 @@
+---
+title: "MCP server"
+description: "Connect a client over Streamable HTTP, list the SILO tools, and retrieve Brazilian financial data."
+icon: "plug"
+---
+
+SILO MCP v2 is a **Deployed preview** with 14 read-only tools.
+
+<Steps>
+  <Step title="Connect your client">
+    Add a remote **Streamable HTTP** server with this URL:
+
+    ```text
+    https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp-v2
+    ```
+
+    For signed-in access, configure the same Bearer header as in the [REST quickstart](/api-docs/v2/quickstart#authenticate-and-discover-resources).
+  </Step>
+  <Step title="Discover tools and resolve the ticker">
+    Initialize the connection, then use `tools/list` to load the input schemas. Call `silo_search` with `{"q":"PETR4"}` and identify the listed security in the returned rows.
+  </Step>
+  <Step title="Check coverage and read the price">
+    Call `silo_coverage` with `{"dataset":["quotes"]}`. Then call `silo_prices` with `{"id":"PETR4","kind":"latest"}` to read the raw close and trade date.
+  </Step>
+</Steps>
+
+## Read tool results
+
+Use the JSON envelope in the first text block of a successful result. It contains `data`, `meta`, and sometimes `next_page_url`. Check `meta.tier` on a data call when testing access. A tool error sets `isError`. Gateway errors include an `error` object and input-validation failures can be plain text.
+
+For another GET page, extract the opaque `cursor` from `next_page_url` and call the same tool with that cursor alone. If a POST result supplies a next page, send the same body as well. A tier cap marks a partial result. For research and citation, use the [agent workflow](/api-docs/v2/agents).

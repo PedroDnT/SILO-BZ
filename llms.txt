@@ -15,6 +15,9 @@ The REST API and MCP v2 are live in preview. Anonymous data calls need no key. T
 - [v2 for researchers](https://octo-98895abd.mintlify.site/api-docs/v2/researchers.md): Point-in-time queries, survivorship, adjustments, reproducibility and citation.
 - [v2 OpenAPI](https://octo-98895abd.mintlify.site/api-docs/v2/openapi.json): Machine-readable REST contract for the 14 resources.
 
+- [Agent onboarding](https://octo-98895abd.mintlify.site/api-docs/v2/agents.md): Give an agent the SILO skill and a reproducible research workflow.
+- [MCP connection guide](https://octo-98895abd.mintlify.site/api-docs/v2/mcp.md): Configure Streamable HTTP and make the first tool calls.
+
 ## Existing v1 integrations
 
 The pages below cover PostgREST and the legacy MCP. Use the v2 links above for gateway parameters, authentication behavior and limits.

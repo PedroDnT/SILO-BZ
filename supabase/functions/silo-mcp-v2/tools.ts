@@ -110,16 +110,6 @@ function firstSentence(s: string): string {
   return i < 0 ? s.replace(/\.$/, "") : s.slice(0, i);
 }
 
-/** Said in every tool description: what the result is and how to read it. */
-export const SEMANTICS =
-  "Read-only. The result is the v2 envelope as the gateway returns it: data (always a list), meta (resource, kind, " +
-  "request with every default applied, id_known, endpoint), and next_page_url only when more rows remain. To read the " +
-  "next page, call this tool again with only `cursor` set to the cursor in next_page_url (a POST tool takes `body` " +
-  "too: the same body as the first page, unchanged). A call stops at the tier's " +
-  "rows-per-call cap with meta.tier_cap_reached; nothing is cut silently. Errors come back verbatim (isError) as " +
-  "{error: {code, message, target, innererror}}; over_limit means narrow the request, not retry it. null means not " +
-  "declared at source: never fill it or read it as zero.";
-
 function describe(r: ResourceSpec, hidden: ParamSpec[]): string {
   const parts: string[] = [r.summary, `Example: ${r.example}`];
   const kinds = Object.entries(r.kinds ?? {});
@@ -133,7 +123,7 @@ function describe(r: ResourceSpec, hidden: ParamSpec[]): string {
   }
   if (r.method === "POST") parts.push("The lists go in body; every other argument goes in the query string the gateway reads.");
   for (const n of r.notes ?? []) parts.push(n);
-  parts.push(SEMANTICS);
+  parts.push("Read data and meta. Page with the opaque cursor from next_page_url; keep the original body for POST.");
   return parts.join("\n\n");
 }
 
@@ -187,12 +177,13 @@ export const TOOLS: V2Tool[] = REGISTRY.resources.map(buildTool);
 export const TOOLS_BY_NAME: Map<string, V2Tool> = new Map(TOOLS.map((t) => [t.name, t]));
 
 export const SERVER_INSTRUCTIONS =
-  `SILO v2 (preview): Brazilian public financial data (CVM funds and FIDC internals, listed-company filings, B3 quotes, ` +
-  `derivatives, lending and flows, BACEN and IBGE macro), read-only, as ${TOOLS.length} tools, one per v2 resource. ` +
-  "Procedure: (1) silo_coverage before claiming freshness; (2) silo_search to resolve a name to an id, never guess a " +
-  "ticker or CNPJ; (3) call the resource with id and kind; every other parameter has a default, echoed in " +
-  "meta.request. Page with cursor from next_page_url. Errors are returned verbatim: over_limit means narrow the call. " +
-  "Never fabricate a price, NAV or match; null stays null.";
+  `SILO v2 (preview) provides Brazilian public financial data through ${TOOLS.length} read-only tools. ` +
+  "Resolve an identifier with silo_search. Check freshness with silo_coverage (dataset is a list, e.g. [\"quotes\"]). " +
+  "Choose the resource and kind for the question. Request bounded windows and only the fields you need. " +
+  "Read the JSON in the first text block: data is a list, meta.request records applied parameters, and meta.tier " +
+  "shows access. Follow the opaque cursor in next_page_url with the same tool, keeping the original body for POST. " +
+  "If meta.tier_cap_reached is true, report a partial result. Keep nulls as missing. Inspect isError before reading data. " +
+  "Narrow over_limit queries; respect rate limits. Cite the observation dates and provenance.";
 
 // ---------------------------------------------------------------------------
 // The call: arguments to one gateway request, run in process.

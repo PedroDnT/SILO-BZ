@@ -34,6 +34,55 @@ MARKDOWN_RESULT = baseline.ROOT / f"docs/reference/research/agent-evaluation-v2-
 # this JSON); with the 14 tool schemas (about 17,500 tokens) the next request
 # may still be refused by baseline.InputCapFilter, which is recorded, not trimmed.
 MAX_CATALOG_CHARS = 140_000
+PRO_MODEL = "gpt-5-mini"
+PRO_INPUT_CAP = 120_000
+PRO_PRICE_BASIS = {"input": 0.25, "output": 2.0, "accounting": "uncached standard rates"}
+PRO_RESULTS = Path(__file__).with_name("eval-v2-pro-gpt-5-mini-120k-results.json")
+PRO_REPORT = baseline.ROOT / "docs/reference/research/agent-evaluation-v2-pro-gpt-5-mini-120k-results.md"
+
+
+def pro_cost(input_tokens: int, output_tokens: int) -> float:
+    return (input_tokens * PRO_PRICE_BASIS["input"] + output_tokens * PRO_PRICE_BASIS["output"]) / 1_000_000
+
+
+def case_reserve(pro: bool) -> float:
+    if not pro:
+        return baseline.worst_case_cost_usd()
+    return round(1.25 * baseline.MAX_TURNS * pro_cost(PRO_INPUT_CAP, baseline.MAX_OUTPUT_TOKENS), 6)
+
+
+class ProUsageHooks(baseline.UsageHooks):
+    async def on_llm_end(self, context, agent, response):
+        await super().on_llm_end(context, agent, response)
+        self.estimated_usd = pro_cost(self.input_tokens, self.output_tokens)
+
+
+class ProInputCap:
+    def __init__(self, client, manifest):
+        self.client = client
+        self.tools = [{"type": "function", "name": t["name"], "description": t["description"],
+                       "parameters": t["inputSchema"], "strict": False} for t in manifest]
+        self.checked = 0
+        self.largest = 0
+
+    async def __call__(self, data):
+        model_data = data.model_data
+        count = await self.client.responses.input_tokens.count(
+            model=PRO_MODEL, instructions=model_data.instructions or "",
+            input=model_data.input, tools=self.tools,
+        )
+        self.checked += 1
+        self.largest = max(self.largest, count.input_tokens)
+        if count.input_tokens > PRO_INPUT_CAP:
+            raise baseline.ContextCapExceeded(
+                f"Counted {count.input_tokens} tokens, above the {PRO_INPUT_CAP} token cap."
+            )
+        return model_data
+
+    def summary(self):
+        return {"cap_tokens": PRO_INPUT_CAP, "estimator": "responses.input_tokens",
+                "requests_checked": self.checked, "largest_estimate": self.largest}
+
 EXPECTED_TOOLS = {f"silo_{name}" for name in (
     "search", "prices", "statements", "funds", "fidc", "derivatives", "curves",
     "macro", "positioning", "events", "screens", "panel", "portfolio", "coverage",
@@ -74,8 +123,12 @@ def envelope(result: CallToolResult, *, catalog: bool = False) -> dict[str, Any]
 class BoundedMCP(MCPServerStreamableHttp):
     """Use the installed MCP transport, adding only evaluation bounds and evidence."""
 
-    def __init__(self) -> None:
-        token = os.environ.get("SILO_USER_JWT", "")
+    def __init__(self, *, require_pro: bool = False) -> None:
+        self.require_pro = require_pro
+        self.tier_failed = False
+        token = os.environ.get("SILO_INTEGRATION_KEY" if require_pro else "SILO_USER_JWT", "")
+        if require_pro and not token:
+            raise ValueError("SILO_INTEGRATION_KEY is required for the Pro evaluation")
         super().__init__(
             params={"url": MCP_URL, "timeout": 30,
                     "headers": {"Authorization": f"Bearer {token}"} if token else {}},
@@ -105,6 +158,8 @@ class BoundedMCP(MCPServerStreamableHttp):
         started = time.monotonic()
         event: dict[str, Any] = {"name": tool_name, "arguments": arguments or {}}
         try:
+            if self.tier_failed:
+                raise ValueError("Evaluation stopped receiving Pro responses")
             if tool_name not in EXPECTED_TOOLS:
                 raise ValueError("Tool is not in the evaluation manifest")
             if tool_name != "silo_coverage":
@@ -119,6 +174,10 @@ class BoundedMCP(MCPServerStreamableHttp):
             event["network_call"] = True
             result = await super().call_tool(tool_name, arguments, meta)
             value = envelope(result, catalog=tool_name == "silo_coverage" and event["arguments"].get("kind") == "catalog")
+            event["tier"] = value["meta"].get("tier")
+            if self.require_pro and event["tier"] != "pro":
+                self.tier_failed = True
+                raise ValueError("MCP data response did not report Pro access")
             event["result_json"] = value
             event["result_sha256"] = hashlib.sha256(baseline._json(value).encode()).hexdigest()
             event["returned_rows"] = len(value["data"])
@@ -146,7 +205,8 @@ async def preflight(server: BoundedMCP) -> dict[str, Any]:
             value = envelope(await server.call_tool(name, arguments), catalog=name == "silo_coverage" and arguments.get("kind") == "catalog")
             if not value["data"]:
                 raise ValueError("Required research probe returned no rows")
-            checks.append({"tool": name, "status": "passed", "rows": len(value["data"])})
+            checks.append({"tool": name, "status": "passed", "rows": len(value["data"]),
+                           "tier": value["meta"].get("tier")})
         except (ValueError, baseline.ToolResultLimitError) as exc:
             event = getattr(server, "events", [{}])[-1]
             checks.append({"tool": name, "status": "failed", "reason": event.get("error_detail", str(exc))})
@@ -169,11 +229,13 @@ def process_checks(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def write_results(record: dict[str, Any]) -> None:
-    JSON_RESULT.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
+    path = PRO_RESULTS if record.get("access") == "pro" else JSON_RESULT
+    path.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
     shown_at = datetime.fromisoformat(record["started_at"]).astimezone(ZoneInfo("America/Sao_Paulo"))
     lines = ["# MCP v2 research evaluation", "", f"Run: {shown_at.isoformat()} (Brasília). Model: {record['model']}.",
-             "Same questions as the historical gpt-5-mini baseline, with a changed model. "
-             "Differences cannot be attributed to transport alone.",
+             ("The model matches the historical v1 and previous Pro runs. Tool descriptions and input limits differ."
+              if record.get("access") == "pro" else
+              "Same questions as the historical gpt-5-mini baseline, with a changed model. Differences reflect the full run configuration."),
              "No v2 rubric score until independent review. The original baseline remains 2/12.",
              f"Estimated spend this run: ${record['estimated_usd']:.6f}; cumulative: ${record['cumulative_estimated_usd']:.6f}.", ""]
     lines += ["| Case | V1 run | V1 technical classification | V1 rubric pass | V2 run | V2 technical classification | V2 rubric |",
@@ -186,7 +248,8 @@ def write_results(record: dict[str, Any]) -> None:
         lines += [f"## {item['id']}: {item['status']}", "", item["question"], "",
                   baseline._json(item["checks"]), "", item.get("answer", item.get("error_type", "No answer")), ""]
     lines += [record.get("run_note", ""), ""]
-    MARKDOWN_RESULT.write_text("\n".join(lines))
+    path = PRO_REPORT if record.get("access") == "pro" else MARKDOWN_RESULT
+    path.write_text("\n".join(lines))
 
 
 def compare_baseline(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -204,39 +267,74 @@ def compare_baseline(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
              "v2_rubric_pass": None} for case in cases]
 
 
+def save_spend(path: Path, ledger: dict[str, Any]) -> None:
+    ledger["estimated_usd"] = round(sum(e["estimated_usd"] for e in ledger["entries"]), 6)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(ledger, indent=2) + "\n")
+    temporary.replace(path)
+
+
 async def run(args, selected, ledger) -> int:
     compare_baseline([])  # Validate evaluator-only baseline evidence before any paid request.
-    async with BoundedMCP() as server:
+    pro = getattr(args, "pro", False)
+    model = PRO_MODEL if pro else baseline.MODEL
+    reserve = case_reserve(pro)
+    ledger_path = getattr(args, "spend_ledger", None) or baseline.SPEND_LEDGER
+    async with (BoundedMCP(require_pro=True) if pro else BoundedMCP()) as server:
         report = await preflight(server)
         print(json.dumps(report, indent=2))
         if report["status"] != "passed" or not args.run:
             return 0 if report["status"] == "passed" else 1
         if not baseline.load_local_openai_key():
             raise ValueError("OPENAI_API_KEY is required in the environment or ignored .env")
-        set_default_openai_client(AsyncOpenAI(max_retries=0, timeout=60), use_for_tracing=False)
+        client = AsyncOpenAI(max_retries=0, timeout=60)
+        if pro:
+            await client.models.retrieve(model)
+        set_default_openai_client(client, use_for_tracing=False)
         record = {"started_at": datetime.now(timezone.utc).isoformat(), "transport": "mcp-v2",
-                  "base_url": MCP_URL, "access": "signed_in" if os.environ.get("SILO_USER_JWT") else "anonymous",
-                  "model": baseline.MODEL, "budget_usd": args.budget_usd,
-                  "price_basis_usd_per_million": baseline.PRICE_BASIS,
+                  "base_url": MCP_URL, "access": "pro" if pro else ("signed_in" if os.environ.get("SILO_USER_JWT") else "anonymous"),
+                  "model": model, "budget_usd": args.budget_usd,
+                  "price_basis_usd_per_million": PRO_PRICE_BASIS if pro else baseline.PRICE_BASIS,
                   # Resolved before any paid request, so a failed tokenizer load bills nothing.
-                  "input_cap": {"tokens": baseline.MAX_CONTEXT_TOKENS, "estimator": baseline.token_estimator()},
+                  "input_cap": {"tokens": PRO_INPUT_CAP if pro else baseline.MAX_CONTEXT_TOKENS,
+                                "estimator": "responses.input_tokens" if pro else baseline.token_estimator()},
                   "estimated_usd": 0.0, "cumulative_estimated_usd": ledger["estimated_usd"],
                   "preflight": report, "mcp_tools": server.manifest, "cases": [], "baseline_comparison": [], "run_note": ""}
+        if pro and not PRO_RESULTS.exists():
+            write_results(record)
+        if pro and PRO_RESULTS.exists():
+            previous = json.loads(PRO_RESULTS.read_text())
+            if previous.get("access") != "pro" or previous.get("model") != model:
+                raise ValueError("Existing Pro evaluation record does not match this profile")
+            recorded_ids = {item["id"] for item in previous["cases"]}
+            ledger_ids = {entry["case"] for entry in ledger["entries"] if entry.get("run") == previous["started_at"]}
+            if recorded_ids != ledger_ids:
+                raise ValueError("Existing Pro evaluation record and ledger do not agree")
+            selected = [case for case in selected if case["id"] not in recorded_ids]
+            record.update(previous, preflight=report, run_note="")
         record["limits"] = {"data_calls": baseline.MAX_DATA_CALLS, "data_rows": baseline.MAX_DATA_ROWS,
                             "data_characters": baseline.MAX_TOOL_CHARS, "catalog_characters": MAX_CATALOG_CHARS}
         for case in selected:
-            if ledger["estimated_usd"] + baseline.worst_case_cost_usd() > args.budget_usd:
+            if ledger["estimated_usd"] + reserve > args.budget_usd:
                 record["run_note"] = "Stopped before the next case to preserve the cumulative spend cap."
                 break
+            if pro and server.tier_failed:
+                record["run_note"] = "Stopped after an MCP response failed to confirm Pro access."
+                break
             server.reset_case()
-            hooks = baseline.UsageHooks()
-            agent = Agent(name="SILO research analyst", model=baseline.MODEL, instructions=INSTRUCTIONS,
+            hooks = ProUsageHooks() if pro else baseline.UsageHooks()
+            agent = Agent(name="SILO research analyst", model=model, instructions=INSTRUCTIONS,
                           mcp_servers=[server], mcp_config={"convert_schemas_to_strict": False},
                           model_settings=ModelSettings(max_tokens=baseline.MAX_OUTPUT_TOKENS,
                                                        parallel_tool_calls=False, verbosity="low"))
             item: dict[str, Any] = {"id": case["id"], "question": case["question"], "status": "error"}
-            cap = baseline.InputCapFilter()
+            cap = ProInputCap(client, server.manifest) if pro else baseline.InputCapFilter()
             started = time.monotonic()
+            entry = {"run": record["started_at"], "model": model, "transport": "mcp-v2",
+                     "case": case["id"], "estimated_usd": reserve}
+            if pro:
+                ledger["entries"].append(entry)
+                save_spend(ledger_path, ledger)
             try:
                 result = await Runner.run(agent, baseline.runtime_question(case), max_turns=baseline.MAX_TURNS, hooks=hooks,
                                           run_config=RunConfig(tracing_disabled=True, call_model_input_filter=cap))
@@ -254,22 +352,23 @@ async def run(args, selected, ledger) -> int:
             if item["status"] == "error" or (item["status"] != "context_cap_reached"
                                              and not (hooks.input_tokens or hooks.output_tokens)):
                 item["observed_usage_estimate_usd"] = item["estimated_usd"]
-                item["estimated_usd"] = max(item["estimated_usd"], baseline.worst_case_cost_usd())
+                item["estimated_usd"] = max(item["estimated_usd"], reserve)
                 item["cost_basis"] = "worst_case_reserve_for_unobserved_cost"
                 record["run_note"] = "Stopped after a model error or missing usage; the whole-case reserve is retained for unknown billed cost."
             record["cases"].append(item)
             record["baseline_comparison"] = compare_baseline(record["cases"])
             record["estimated_usd"] = round(sum(c["estimated_usd"] for c in record["cases"]), 6)
-            ledger["entries"].append({"run": record["started_at"], "model": baseline.MODEL, "transport": "mcp-v2", "case": case["id"], "estimated_usd": item["estimated_usd"]})
-            ledger["estimated_usd"] = round(sum(e["estimated_usd"] for e in ledger["entries"]), 6)
+            entry["estimated_usd"] = item["estimated_usd"]
+            if not pro:
+                ledger["entries"].append(entry)
+            save_spend(ledger_path, ledger)
             record["cumulative_estimated_usd"] = ledger["estimated_usd"]
-            baseline.SPEND_LEDGER.write_text(json.dumps(ledger, indent=2) + "\n")
             write_results(record)
             print(f"{case['id']}: {item['status']}; estimated ${item['estimated_usd']:.6f}")
-            if record["run_note"]:
+            if record["run_note"] and not pro:
                 break
         write_results(record)
-        return 0 if len(record["cases"]) == len(selected) and all(c["status"] == "completed" for c in record["cases"]) else 1
+        return 0 if all(c["status"] == "completed" for c in record["cases"]) and not record["run_note"] else 1
 
 
 def main(argv=None) -> int:
@@ -278,15 +377,22 @@ def main(argv=None) -> int:
     mode.add_argument("--preflight", action="store_true", help="Read-only MCP checks; no model requests")
     mode.add_argument("--run", action="store_true", help="Paid model requests only after live MCP preflight passes")
     parser.add_argument("--case-id", action="append")
+    parser.add_argument("--pro", action="store_true", help="Require the integration key and run GPT-5 mini at 120k input tokens")
+    parser.add_argument("--spend-ledger", type=Path, help="Reconciled cumulative ledger for the Pro run")
     parser.add_argument("--budget-usd", type=float, default=baseline.DEFAULT_BUDGET_USD)
     args = parser.parse_args(argv)
     try:
         cases = baseline.load_cases()
-        ledger = baseline.load_spend_ledger()
+        if args.pro and (not args.spend_ledger or args.budget_usd > 10):
+            parser.error("Pro requires a reconciled --spend-ledger and --budget-usd of at most 10")
+        ledger = baseline.load_spend_ledger(args.spend_ledger) if args.spend_ledger else baseline.load_spend_ledger()
         if set(args.case_id or []) - {case["id"] for case in cases}:
             raise ValueError("Unknown case ID")
         selected = [case for case in cases if not args.case_id or case["id"] in args.case_id]
-        reserve = len(selected) * baseline.worst_case_cost_usd()
+        completed = set()
+        if args.pro and PRO_RESULTS.exists():
+            completed = {item["id"] for item in json.loads(PRO_RESULTS.read_text())["cases"]}
+        reserve = sum(case["id"] not in completed for case in selected) * case_reserve(args.pro)
         if not math.isfinite(args.budget_usd) or not 0 < args.budget_usd <= baseline.DEFAULT_BUDGET_USD:
             raise ValueError("Budget must be positive and at most US$20")
         if ledger["estimated_usd"] + reserve > args.budget_usd:

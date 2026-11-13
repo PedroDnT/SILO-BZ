@@ -1,53 +1,52 @@
 ---
-title: "v2 quickstart"
-description: "Connect to the live SILO API and MCP v2, make a first query, and verify the result."
+title: "REST quickstart"
+description: "Make an anonymous SILO API v2 request, check data coverage, and read your first closing price."
 icon: "rocket"
 ---
 
-**Deployed preview.** SILO API v2 and MCP v2 are live. Use REST for application code or the data MCP for agents that call tools.
+SILO API v2 is a **Deployed preview**. The examples use anonymous access.
 
-### 1. Discover the API
+## Retrieve a closing price
 
-```bash
-export SILO_V2="https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
-curl -fsS "$SILO_V2/"
+Resolve PETR4 to the listing you mean, check the quotes dataset's coverage, and use the resolved ticker for the price request.
+
+<CodeGroup>
+
+```bash cURL
+SILO_V2="https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
+
+curl -fsS --get "$SILO_V2/search" --data-urlencode "q=PETR4"
+curl -fsS --get "$SILO_V2/coverage" --data-urlencode "dataset=quotes"
+curl -fsS --get "$SILO_V2/prices" --data-urlencode "id=PETR4" --data-urlencode "kind=latest"
 ```
 
-The index lists all 14 resources with an example and a help link. For a resource's full parameter list, including options and defaults, use `?help=all`. The anonymous tier needs no key or sign-in.
+```python Python
+import json
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
-### 2. Resolve an identifier and query data
+base = "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
 
-```bash
-curl -fsS --get "$SILO_V2/search" --data-urlencode "q=petrobras"
-curl -fsS "$SILO_V2/prices?id=PETR4&kind=latest"
+for resource, params in (
+    ("search", {"q": "PETR4"}),
+    ("coverage", {"dataset": "quotes"}),
+    ("prices", {"id": "PETR4", "kind": "latest"}),
+):
+    with urlopen(f"{base}/{resource}?{urlencode(params)}", timeout=20) as response:
+        print(json.load(response))
 ```
 
-Use a ticker, CNPJ or other identifier from the search result that matches the entity you meant. `kind=latest` returns the raw close. Daily history defaults to split adjustment and excludes dividends.
+</CodeGroup>
 
-### 3. Check coverage and completeness
+## Read the response
 
-```bash
-curl -fsS "$SILO_V2/coverage?dataset=quotes"
-```
+- Use `data[].trade_date` and `data[].close` for the observed date and raw closing price. Daily history can adjust for splits and excludes dividends.
+- Compare the period you need with coverage's `data_through` and `complete_through`. Record `meta.request` and `meta.endpoint` so the query can be reproduced.
+- Follow `next_page_url` for remaining pages. For paged POST requests, resend the original body unchanged. `meta.tier_cap_reached` marks a partial result even when no next page remains.
+- An empty `data` array represents no matching rows. A `null` field represents a missing or inapplicable observation. For errors, inspect `error.code` and `error.message`. Narrow an `over_limit` query and honor `Retry-After` on HTTP 429.
 
-Read `data_through` and `complete_through` before describing how current the data is. `landed_at` records ingestion, and `landed_git_sha` identifies the pipeline version. Keep the applied parameters from `meta.request` and the provenance from `meta.endpoint` when present.
+## Authenticate and discover resources
 
-Follow `next_page_url` for REST paging. In MCP, pass only its opaque `cursor` to the same tool. When `meta.tier_cap_reached` is true, the result is partial even if there is no next page.
+For signed-in access, use [SILO sign-in](https://silo-bz-deloslabs.vercel.app/signin.html) and configure the user access token as `Authorization: Bearer <access token>`. Keep it in a secret store. Verify `meta.tier` on a data call. `screens` and `portfolio` require signed-in access. Pro is granted separately.
 
-### Connect an agent over MCP
-
-Add the following URL to your client's remote MCP configuration using **Streamable HTTP**:
-
-```text
-https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp-v2
-```
-
-Discover tools with `tools/list`. The search example maps to `silo_search` with `{"q":"petrobras"}`; the quote maps to `silo_prices` with `{"id":"PETR4","kind":"latest"}`. Call `silo_coverage` with `{"dataset":"quotes"}` before making a freshness claim. Tool schemas list the arguments. Additional resource options go in `options`.
-
-### Authenticate when a task needs more access
-
-Use [SILO sign-in](https://silo-bz-deloslabs.vercel.app/signin.html) to obtain a user access token. The sign-in page shows a v1 example. For v2, send `Authorization: Bearer <access token>` to the v2 REST host or configure the same header in the MCP client. Keep the token in the client or server's secret store. An invalid or expired token is rejected on data calls. Signed-in access is required for `screens` and `portfolio`; Pro is granted separately.
-
-If the gateway returns `over_limit`, narrow the window or filters based on the error. On `429`, honor `Retry-After`. Treat nulls, empty results, partial data and errors as different outcomes.
-
-Read the [agent skill](https://octo-98895abd.mintlify.site/skill.md) for the research workflow and the [documentation index](https://octo-98895abd.mintlify.site/llms.txt) for the reference pages. Existing v1 clients can still use the [v1 quickstart](/api-docs/quickstart).
+Open the [REST reference](/api-docs/v2/reference/index) to try a request. Leave the Bearer field blank for anonymous calls, even if the playground labels the field as required. The live resource index is at the base URL. Append `?help=all` to a resource to see its accepted parameters and defaults. To use the same data from an agent, follow the [MCP setup](/api-docs/v2/mcp).

@@ -1,0 +1,1 @@
+| 2026-11-13 | codex/1146-silo-v2-onboarding | Make the REST and MCP v2 preview the default docs entry, preserve v1 links, add a revocable integration credential, and prepare a bounded Pro benchmark (#1146). |

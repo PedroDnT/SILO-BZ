@@ -1,0 +1,14 @@
+---
+title: "Agent onboarding"
+description: "Give an agent the SILO skill and a workflow for finding, checking, and citing financial observations."
+icon: "robot"
+---
+
+SILO v2 is a **Deployed preview**. Give the agent the [published skill](/skill.md) and the [documentation index](/llms.txt). Configure the [data MCP server](/api-docs/v2/mcp) if your client supports tools, or use the [REST quickstart](/api-docs/v2/quickstart) to make HTTP calls. The documentation MCP at `/mcp` on this site searches the docs. The data MCP runs queries.
+
+## Research with SILO
+
+1. Resolve identifiers with search. Use `kind` and the tool's input schema to choose the query that fits the question.
+2. Check coverage for the dataset and compare `data_through` and `complete_through` with the requested window. Fetch catalog details when you need definitions, applicability, or limits.
+3. Use bounded requests, keep the fields you need, and follow pages within scope. Report any tier cap or gap. Keep missing observations as null and distinguish empty results from errors.
+4. Cite the resource, observation period, applied parameters, retrieval time, and provenance when available. Use the [research guide](/api-docs/v2/researchers) for point-in-time queries and adjustments.
