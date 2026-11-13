@@ -2,8 +2,21 @@
 title: "Resolve an identifier"
 description: "Resolve a name or id across companies, funds and tickers."
 keywords: ["search", "any", "API", "MCP"]
+openapi: "api-docs/v2/specs/search-any.json GET /search/any"
 ---
 
+
+
+## Overview
+
+Resolve a name or id across companies, funds and tickers.
+
+
+## Coverage
+
+Coverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.
+
+## Try the API
 
 
 import { OperationQuery } from "/snippets/operation-query.jsx";
@@ -12,12 +25,46 @@ import { OperationQuery } from "/snippets/operation-query.jsx";
 
 [Request and response schema](/api-docs/v2/specs/search-any.json)
 
-<Accordion title="Code example">
+## Example
 
 ```bash
-curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/search/any?q=PETR4'
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/search/any?q=PETR4&limit=1' \
+  --header "Authorization: Bearer $SILO_TOKEN"
 ```
+
+## Example response
+
+Successful response from a Pro request on 2026-11-13. This excerpt omits fields and pagination links.
+
+```json
+{
+  "data": [
+    {
+      "id": "PETR4",
+      "id_type": "ticker",
+      "asset_class": "equity",
+      "name": "PETROBRAS",
+      "isin": "BRPETRACNPR6"
+    }
+  ],
+  "meta": {
+    "tier": "pro"
+  }
+}
+```
+
+## FAQ
+
+<Accordion title="How do I check for more results?">
+
+When present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).
 
 </Accordion>
 
-[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
+<Accordion title="Can an agent use this data?">
+
+Yes. Connect an agent through the [MCP server](/api-docs/v2/mcp).
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python)

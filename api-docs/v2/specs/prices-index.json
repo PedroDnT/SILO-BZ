@@ -122,6 +122,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -139,6 +148,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "index_code": "IBOV",
+                      "trade_date": "2025-11-13",
+                      "level": 157162.43,
+                      "divisor_step": false,
+                      "adjusted": false
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -153,7 +176,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

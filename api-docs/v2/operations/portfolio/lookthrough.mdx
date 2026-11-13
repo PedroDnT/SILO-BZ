@@ -2,8 +2,21 @@
 title: "Portfolio look-through"
 description: "One CDA month, holdings followed through fund quotas up to max_depth levels."
 keywords: ["portfolio", "lookthrough", "API", "MCP"]
+openapi: "api-docs/v2/specs/portfolio-lookthrough.json POST /portfolio/lookthrough"
 ---
 
+
+
+## Overview
+
+One CDA month, holdings followed through fund quotas up to max_depth levels.
+
+
+## Coverage
+
+Coverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.
+
+## Try the API
 
 
 import { OperationQuery } from "/snippets/operation-query.jsx";
@@ -12,15 +25,48 @@ import { OperationQuery } from "/snippets/operation-query.jsx";
 
 [Request and response schema](/api-docs/v2/specs/portfolio-lookthrough.json)
 
-<Accordion title="Code example">
+## Example
 
 ```bash
-curl --request POST 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/portfolio/lookthrough' \
-  --header 'Content-Type: application/json' \
+curl --request POST 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/portfolio/lookthrough?limit=1' \
   --header "Authorization: Bearer $SILO_TOKEN" \
-  --data '{"cnpjs": []}'
+  --header 'Content-Type: application/json' \
+  --data '{"cnpjs": ["33000167000101"]}'
 ```
+
+## Example response
+
+Successful response from a Pro request on 2026-11-13. This excerpt omits fields and pagination links.
+
+```json
+{
+  "data": [
+    {
+      "root_cnpj": "33000167000101",
+      "depth": 0,
+      "holder_cnpj": "33000167000101",
+      "block": null,
+      "asset_kind": "no_cda_filing"
+    }
+  ],
+  "meta": {
+    "tier": "pro"
+  }
+}
+```
+
+## FAQ
+
+<Accordion title="How do I check for more results?">
+
+When present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).
 
 </Accordion>
 
-[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
+<Accordion title="Can an agent use this data?">
+
+Yes. Connect an agent through the [MCP server](/api-docs/v2/mcp).
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python)

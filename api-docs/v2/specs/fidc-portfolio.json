@@ -110,6 +110,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -127,6 +136,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cnpj": "05285819000166",
+                      "entity_type": "fidc",
+                      "fund_name": "IDEAL EDUCAÇÃO FIDC",
+                      "status": "Cancelado",
+                      "fund_class": "FIDC"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -141,7 +164,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

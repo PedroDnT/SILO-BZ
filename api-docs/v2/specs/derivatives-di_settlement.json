@@ -93,6 +93,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -110,6 +119,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "trade_date": "2026-11-12",
+                      "ticker": "DI1F27",
+                      "rate_pct": 13.662,
+                      "prev_rate_pct": 13.66,
+                      "open_interest": 8115340
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -124,7 +147,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

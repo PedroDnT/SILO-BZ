@@ -81,6 +81,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "line_no": 1,
+                      "input_code": "CRA0260025T",
+                      "code": "CRA0260025T",
+                      "match_kind": "securit_cetip",
+                      "instrument_type": "cra_mensal"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

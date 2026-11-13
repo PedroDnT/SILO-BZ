@@ -145,6 +145,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -162,6 +171,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "isin": "BRPETRACNPR6",
+                      "ticker": "PETR4",
+                      "close_adj": 32.49,
+                      "trade_date": "2025-11-13",
+                      "adjusted": true
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -176,7 +199,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

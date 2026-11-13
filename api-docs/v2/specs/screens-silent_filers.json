@@ -118,6 +118,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cnpj": "55507550000193",
+                      "fund_family": "fi",
+                      "fund_name": "VALENÇA FUNDO DE INVESTIMENTO  MULTIMERCADO CRÉDITO PRIVADO",
+                      "registry_status": "Em Funcionamento Normal",
+                      "last_filed_period": "2026-07-31"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

@@ -2,8 +2,21 @@
 title: "Find companies"
 description: "The company rows (id_type cd_cvm) of the lookup answer; truncated still says when more than 20 entries matched."
 keywords: ["search", "company", "API", "MCP"]
+openapi: "api-docs/v2/specs/search-company.json GET /search/company"
 ---
 
+
+
+## Overview
+
+The company rows (id_type cd_cvm) of the lookup answer; truncated still says when more than 20 entries matched.
+
+
+## Coverage
+
+Coverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.
+
+## Try the API
 
 
 import { OperationQuery } from "/snippets/operation-query.jsx";
@@ -12,12 +25,46 @@ import { OperationQuery } from "/snippets/operation-query.jsx";
 
 [Request and response schema](/api-docs/v2/specs/search-company.json)
 
-<Accordion title="Code example">
+## Example
 
 ```bash
-curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/search/company?q=PETR4'
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/search/company?q=PETR4&limit=1' \
+  --header "Authorization: Bearer $SILO_TOKEN"
 ```
+
+## Example response
+
+Successful response from a Pro request on 2026-11-13. This excerpt omits fields and pagination links.
+
+```json
+{
+  "data": [
+    {
+      "id": "9512",
+      "id_type": "cd_cvm",
+      "asset_class": "cia",
+      "name": "PETRÓLEO BRASILEIRO S.A. - PETROBRAS",
+      "isin": null
+    }
+  ],
+  "meta": {
+    "tier": "pro"
+  }
+}
+```
+
+## FAQ
+
+<Accordion title="How do I check for more results?">
+
+When present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).
 
 </Accordion>
 
-[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
+<Accordion title="Can an agent use this data?">
+
+Yes. Connect an agent through the [MCP server](/api-docs/v2/mcp).
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python)

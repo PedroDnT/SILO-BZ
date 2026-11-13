@@ -118,6 +118,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -135,6 +144,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "endpoint_name": "ExpectativasMercadoAnuais",
+                      "indicator": "IGP-M",
+                      "survey_date": "2025-11-13",
+                      "horizon": "2026",
+                      "median": 4.0155
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -149,7 +172,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

@@ -111,6 +111,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -128,6 +137,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cnpj": "00017024000153",
+                      "period": "2023-12-01",
+                      "entity_type": "fi",
+                      "nav": 1139276.83,
+                      "quota": 34.2858809
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -142,7 +165,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

@@ -102,6 +102,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "root_cnpj": "33000167000101",
+                      "depth": 0,
+                      "holder_cnpj": "33000167000101",
+                      "block": null,
+                      "asset_kind": "no_cda_filing"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

@@ -39,7 +39,7 @@
         "tags": [
           "Discovery"
         ],
-        "description": "(); the source's as_of is returned as data_through (in v2, as_of means point in time).",
+        "description": "Find the latest available data date for each dataset.",
         "x-mint": {
           "href": "/api-docs/v2/operations/coverage/freshness"
         },
@@ -74,6 +74,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -91,6 +100,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "dataset": "anbima_classes",
+                      "data_through": "2026-10-01",
+                      "complete_through": "2026-10-01",
+                      "notes": null,
+                      "newest_period": "2026-10-01"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -105,7 +128,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

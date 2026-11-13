@@ -91,6 +91,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "classe_anbima": "Renda Fixa",
+                      "class_indices": null,
+                      "n_etfs": 0,
+                      "ticker": null,
+                      "etf_cnpj": null
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

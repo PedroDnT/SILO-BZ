@@ -111,6 +111,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cnpj": "52258255000152",
+                      "fund_name": "BINVEST FUNDO DE INVESTIMENTO EM DIREITOS CREDITÓRIOS RESPONSABILIDADE LIMITADA",
+                      "period": "2026-10-31",
+                      "nav_mm": 477.1533919,
+                      "delinquency_pct": 6.2
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

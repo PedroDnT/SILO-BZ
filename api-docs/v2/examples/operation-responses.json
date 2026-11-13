@@ -1,0 +1,1450 @@
+{
+  "/search/any": {
+    "status": 200,
+    "params": {
+      "q": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "id": "PETR4",
+          "id_type": "ticker",
+          "asset_class": "equity",
+          "name": "PETROBRAS",
+          "isin": "BRPETRACNPR6"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/search/company": {
+    "status": 200,
+    "params": {
+      "q": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "id": "9512",
+          "id_type": "cd_cvm",
+          "asset_class": "cia",
+          "name": "PETRÓLEO BRASILEIRO S.A. - PETROBRAS",
+          "isin": null
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/search/fund": {
+    "status": 200,
+    "params": {
+      "q": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/search/universe": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "ticker": "AALR3",
+          "isin": "BRAALRACNOR6",
+          "instrument_type": "equity",
+          "cnpj": "42771949000135",
+          "cnpj_basis": "fca_ticker"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/prices/history": {
+    "status": 200,
+    "params": {
+      "ticker": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "isin": "BRPETRACNPR6",
+          "ticker": "PETR4",
+          "close_adj": 32.49,
+          "trade_date": "2025-11-13",
+          "adjusted": true
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/prices/latest": {
+    "status": 200,
+    "params": {
+      "ticker": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "ticker": "PETR4",
+          "trade_date": "2026-11-12",
+          "board": "02",
+          "isin": "BRPETRACNPR6",
+          "asset_class": "equity"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/prices/session": {
+    "status": 200,
+    "params": {
+      "ticker": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "ticker": "PETR4",
+          "trade_date": "2026-11-12",
+          "board": "02",
+          "isin": "BRPETRACNPR6",
+          "asset_class": "equity"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/prices/index": {
+    "status": 200,
+    "params": {
+      "index": "IBOV",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "index_code": "IBOV",
+          "trade_date": "2025-11-13",
+          "level": 157162.43,
+          "divisor_step": false,
+          "adjusted": false
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/prices/forward": {
+    "status": 400,
+    "params": {
+      "ticker": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "error": {
+        "code": "over_limit"
+      }
+    }
+  },
+  "/statements/all": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "id": "9512",
+          "id_type": "cd_cvm",
+          "cnpj": "33000167000101",
+          "company": "PETRÓLEO BRASILEIRO S.A. - PETROBRAS",
+          "ticker": "PETR4"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/statements/income": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "id": "9512",
+          "id_type": "cd_cvm",
+          "cnpj": "33000167000101",
+          "company": "PETRÓLEO BRASILEIRO S.A. - PETROBRAS",
+          "ticker": "PETR4"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/statements/balance": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "id": "9512",
+          "id_type": "cd_cvm",
+          "cnpj": "33000167000101",
+          "company": "PETRÓLEO BRASILEIRO S.A. - PETROBRAS",
+          "ticker": "PETR4"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/statements/cashflow": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "id": "9512",
+          "id_type": "cd_cvm",
+          "cnpj": "33000167000101",
+          "company": "PETRÓLEO BRASILEIRO S.A. - PETROBRAS",
+          "ticker": "PETR4"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/statements/headline": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "id": "9512",
+          "id_type": "cd_cvm",
+          "cnpj": "33000167000101",
+          "company": "PETRÓLEO BRASILEIRO S.A. - PETROBRAS",
+          "ticker": "PETR4"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/statements/versions": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "id": "9512",
+          "id_type": "cd_cvm",
+          "cnpj": "33000167000101",
+          "company": "PETRÓLEO BRASILEIRO S.A. - PETROBRAS",
+          "ticker": "PETR4"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/funds/profile": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "00017024000153",
+          "entity_type": "fi",
+          "fund_name": "FIF - CLASSE DE INVESTIMENTO   RENDA FIXA EXPONENCIAL - RESP LIMITADA",
+          "status": "Em Funcionamento Normal",
+          "fund_class": "Classes de Cotas de Fundos FIF"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/funds/nav": {
+    "status": 200,
+    "params": {
+      "cnpj": "00017024000153",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "00017024000153",
+          "period": "2023-12-01",
+          "entity_type": "fi",
+          "nav": 1139276.83,
+          "quota": 34.2858809
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/funds/holdings": {
+    "status": 200,
+    "params": {
+      "cnpj": "00017024000153",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/funds/debentures": {
+    "status": 200,
+    "params": {
+      "cnpj": "00017024000153",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/funds/properties": {
+    "status": 200,
+    "params": {
+      "cnpj": "00017024000153",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/fidc/portfolio": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "05285819000166",
+          "entity_type": "fidc",
+          "fund_name": "IDEAL EDUCAÇÃO FIDC",
+          "status": "Cancelado",
+          "fund_class": "FIDC"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/fidc/tranches": {
+    "status": 200,
+    "params": {
+      "cnpj": "05285819000166",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/fidc/aging": {
+    "status": 200,
+    "params": {
+      "cnpj": "05285819000166",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/fidc/cedentes": {
+    "status": 200,
+    "params": {
+      "cnpj": "05285819000166",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/fidc/sacados": {
+    "status": 200,
+    "params": {
+      "cnpj": "05285819000166",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/derivatives/chain": {
+    "status": 200,
+    "params": {
+      "prefix": "PETR",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "codneg": "PETRW386W2",
+          "side": "put",
+          "strike": 38.61,
+          "expiry": "2026-11-13",
+          "trade_date": "2026-11-12"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/derivatives/history": {
+    "status": 200,
+    "params": {
+      "ticker": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/derivatives/exercises": {
+    "status": 200,
+    "params": {
+      "prefix": "PETR",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "codneg": "PETRK282E",
+          "trade_date": "2025-11-18",
+          "side": "call",
+          "strike": 27.72,
+          "expiry": "2025-11-21"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/derivatives/termo": {
+    "status": 200,
+    "params": {
+      "ticker": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/derivatives/futures": {
+    "status": 400,
+    "params": {
+      "ticker": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "error": {
+        "code": "over_limit"
+      }
+    }
+  },
+  "/derivatives/futures-curve": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "trade_date": "2026-11-12",
+          "ticker": "DI1Z26",
+          "contract_month": "2026-12-01",
+          "settlement_rate": 13.65,
+          "settlement_price": 99392.55
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/derivatives/di-settlement": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "trade_date": "2026-11-12",
+          "ticker": "DI1F27",
+          "rate_pct": 13.662,
+          "prev_rate_pct": 13.66,
+          "open_interest": 8115340
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/curves/snapshot": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "trade_date": "2026-11-12",
+          "curve": "PRE",
+          "calendar_days": 1,
+          "business_days": 1,
+          "rate": 13.65
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/curves/history": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "trade_date": "2025-11-13",
+          "curve": "PRE",
+          "tenor_days": 360,
+          "calendar_days": 361,
+          "business_days": 245
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/curves/vertices": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "trade_date": "2026-11-12",
+          "curve": "PRE",
+          "business_days": 1,
+          "calendar_days": 1,
+          "rate_pct": 13.65
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/macro/series": {
+    "status": 200,
+    "params": {
+      "series": "CDI",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "reference_date": "2025-11-13",
+          "series": "CDI",
+          "sgs_code": 12,
+          "value": 0.055131,
+          "unit": "pct_day"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/macro/inflation": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "reference_date": "2023-12-01",
+          "series": "IPCA_COMERCIALIZAVEIS",
+          "family": "classification",
+          "sgs_code": 4447,
+          "value": 0.59
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/macro/inflation-items": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "reference_month": "2023-12-01",
+          "item_code": 7170,
+          "item_number": "1",
+          "item_name": "Alimentação e bebidas",
+          "level": 1
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/macro/fx": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "reference_date": "2025-11-13",
+          "currency": "USD",
+          "buy_rate": 5.2814,
+          "sell_rate": 5.282,
+          "unit": "brl_per_usd"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/macro/expectations": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "endpoint_name": "ExpectativasMercadoAnuais",
+          "indicator": "IGP-M",
+          "survey_date": "2025-11-13",
+          "horizon": "2026",
+          "median": 4.0155
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/positioning/short-interest": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "trade_date": "2026-11-12",
+          "ticker": "A1AP34",
+          "asset_name": "ADVANCE AUTO PARTS INC",
+          "isin": "BRA1APBDR001",
+          "sector": null
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/positioning/short-by-sector": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "trade_date": "2026-11-12",
+          "sector": "Bens Industriais",
+          "tickers": 19,
+          "short_value": 9738144060.6,
+          "short_value_equities": 9738144060.6
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/positioning/lending": {
+    "status": 504,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "error": {
+        "code": "timeout"
+      }
+    }
+  },
+  "/positioning/lending-brokers": {
+    "status": 504,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "error": {
+        "code": "timeout"
+      }
+    }
+  },
+  "/positioning/investor-flow": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "reference_date": "2026-11-10",
+          "investor_type": "Institucionais",
+          "flow_basis": "delta",
+          "buy_value_thousands": 6904012,
+          "sell_value_thousands": 6917626
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/events/company": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cd_cvm": "9512",
+          "cnpj": "33000167000101",
+          "company": "PETRÓLEO BRASILEIRO S.A. - PETROBRAS",
+          "ticker": "PETR4",
+          "delivery_date": "2026-11-04"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/events/fund": {
+    "status": 200,
+    "params": {
+      "cnpj": "00017024000153",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/events/restatements": {
+    "status": 200,
+    "params": {
+      "cnpj": "33000167000101",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/events/restatement-diff": {
+    "status": 200,
+    "params": {
+      "cnpj": "33000167000101",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/events/judicial-recovery": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/screens/list": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "kind": "late_filers",
+          "summary": "FIIs and FIDCs whose monthly informe reached FNET at least min_days_late days after the cited deadline, in at least min_late months.",
+          "family": "fii, fidc (FNET)",
+          "endpoint": "api.screen_late_filers",
+          "call": "/v2/screens?kind=late_filers"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/screens/captive-vehicles": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "31962875000106",
+          "fund_name": "PROLOGIS BRAZIL LOGISTICS VENTURE FUNDO DE INVESTIMENTO IMOBILIÁRIO DE RESPONSABILIDADE LIMITADA",
+          "latest_period": "2026-09-01",
+          "max_nav_mm": 8219.33391302,
+          "min_quotaholders": 2
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/screens/delinquency-drivers": {
+    "status": 400,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "error": {
+        "code": "over_limit"
+      }
+    }
+  },
+  "/screens/dormant-funds": {
+    "status": 400,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "error": {
+        "code": "over_limit"
+      }
+    }
+  },
+  "/screens/dormant-trend": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "period": "2023-11-01",
+          "funds_filing": 25768,
+          "empty_shells": 6,
+          "parked_capital": 9064,
+          "parked_nav": 1068438692424.36
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/screens/evergreen-aging": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "12778706000168",
+          "fund_name": "FUNDO DE INVESTIMENTO EM DIREITOS CREDITÓRIOS - BRASILFACTORS CRÉDITO CORPORATIVO",
+          "months_observed": 11,
+          "min_longtail_pct": 100,
+          "max_longtail_pct": 100
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/screens/late-filers": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "37828802000102",
+          "fund_family": "fidc",
+          "fund_name": "AZURE FI EM COTAS DE FUNDOS DE INVESTIMENTO EM DIREITOS  CREDITÓRIOS - RESPONSABILIDADE LIMITADA",
+          "window_from": "2025-10-01",
+          "window_to": "2026-09-01"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/screens/overdue-securit": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "instrument_type": "cra_mensal",
+          "securitizer_cnpj": "10753164000143",
+          "instrument_code": "BRECOACRA1K5",
+          "maturity": "2017-11-07",
+          "status": "Em atraso"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/screens/restatements": {
+    "status": 504,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "error": {
+        "code": "timeout"
+      }
+    }
+  },
+  "/screens/silent-filers": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "55507550000193",
+          "fund_family": "fi",
+          "fund_name": "VALENÇA FUNDO DE INVESTIMENTO  MULTIMERCADO CRÉDITO PRIVADO",
+          "registry_status": "Em Funcionamento Normal",
+          "last_filed_period": "2026-07-31"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/screens/zombie-growth": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "52258255000152",
+          "fund_name": "BINVEST FUNDO DE INVESTIMENTO EM DIREITOS CREDITÓRIOS RESPONSABILIDADE LIMITADA",
+          "period": "2026-10-31",
+          "nav_mm": 477.1533919,
+          "delinquency_pct": 6.2
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/panel/panel": {
+    "status": 200,
+    "params": {
+      "identifiers": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "id": "PETR4",
+          "id_type": "ticker",
+          "asset_class": "equity",
+          "date": "2023-11-01",
+          "metric": "close_adj"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/portfolio/resolve": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": {
+      "names": [
+        "ITAU RF"
+      ]
+    },
+    "excerpt": {
+      "data": [
+        {
+          "line_no": 1,
+          "input_name": "ITAU RF",
+          "candidate_cnpj": "11858554000140",
+          "candidate_name": "ITAÚ RF MIX CRED PRIV FIF DA CLASSE DE INVESTIMENTO EM COTAS RESP LIMITADA",
+          "matched_name": "ITAÚ RF MIX CRED PRIV FIF DA CLASSE DE INVESTIMENTO EM COTAS RESP LIMITADA"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/portfolio/fees": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": {
+      "cnpjs": [
+        "33000167000101"
+      ]
+    },
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "33000167000101",
+          "fund_name": null,
+          "month": null,
+          "nav": null,
+          "adm_fee_flow": null
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/portfolio/fee-peers": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": {
+      "cnpjs": [
+        "33000167000101"
+      ]
+    },
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "33000167000101",
+          "classe_anbima": null,
+          "fundo_cotas": null,
+          "tp_fundo_classe": null,
+          "taxa_adm": null
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/portfolio/lookthrough": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": {
+      "cnpjs": [
+        "33000167000101"
+      ]
+    },
+    "excerpt": {
+      "data": [
+        {
+          "root_cnpj": "33000167000101",
+          "depth": 0,
+          "holder_cnpj": "33000167000101",
+          "block": null,
+          "asset_kind": "no_cda_filing"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/portfolio/movement": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": {
+      "cnpjs": [
+        "33000167000101"
+      ]
+    },
+    "excerpt": {
+      "data": [
+        {
+          "cnpj": "33000167000101",
+          "fund_name": null,
+          "month": "2026-10-01",
+          "class": null,
+          "subclass": null
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/portfolio/instruments": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": {
+      "codes": [
+        "CRA0260025T"
+      ]
+    },
+    "excerpt": {
+      "data": [
+        {
+          "line_no": 1,
+          "input_code": "CRA0260025T",
+          "code": "CRA0260025T",
+          "match_kind": "securit_cetip",
+          "instrument_type": "cra_mensal"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/portfolio/fund-terms": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": {
+      "cnpjs": [
+        "33000167000101"
+      ]
+    },
+    "excerpt": {
+      "data": [
+        {
+          "line_no": 1,
+          "input_cnpj": "33000167000101",
+          "cnpj": "33000167000101",
+          "terms_dt_comptc": null,
+          "qt_dia_conversao_cota": null
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/portfolio/equivalents": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": {
+      "classes": [
+        "Renda Fixa"
+      ]
+    },
+    "excerpt": {
+      "data": [
+        {
+          "classe_anbima": "Renda Fixa",
+          "class_indices": null,
+          "n_etfs": 0,
+          "ticker": null,
+          "etf_cnpj": null
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/portfolio/debenture-returns": {
+    "status": 200,
+    "params": {
+      "limit": 1,
+      "month": "2026-08-31"
+    },
+    "body": {
+      "tickers": [
+        "VALE18"
+      ]
+    },
+    "excerpt": {
+      "data": [
+        {
+          "line_no": 1,
+          "input_ticker": "VALE18",
+          "ticker": "VALE18",
+          "month": "2025-08-01",
+          "n_fundos": 0
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/coverage/freshness": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "dataset": "anbima_classes",
+          "data_through": "2026-10-01",
+          "complete_through": "2026-10-01",
+          "notes": null,
+          "newest_period": "2026-10-01"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/coverage/metrics": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "entity_type": "fi",
+          "metric": "inflows",
+          "first_period": "2019-01-01",
+          "last_period": "2026-11-01",
+          "filed_rows": 2128919
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/coverage/catalog": {
+    "status": 200,
+    "params": {
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "kind": "catalog",
+          "version": 83,
+          "primitive": "panel"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  }
+}

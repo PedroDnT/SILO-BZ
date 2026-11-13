@@ -94,6 +94,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -111,6 +120,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "reference_date": "2026-11-10",
+                      "investor_type": "Institucionais",
+                      "flow_basis": "delta",
+                      "buy_value_thousands": 6904012,
+                      "sell_value_thousands": 6917626
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -125,7 +148,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

@@ -111,6 +111,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -128,6 +137,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "reference_date": "2023-12-01",
+                      "series": "IPCA_COMERCIALIZAVEIS",
+                      "family": "classification",
+                      "sgs_code": 4447,
+                      "value": 0.59
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -142,7 +165,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },
