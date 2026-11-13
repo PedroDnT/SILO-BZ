@@ -2,9 +2,22 @@
 title: "Restatement changes"
 description: "One row per field that changed between a restated document and its predecessor (the FIDC informe mensal for now)."
 keywords: ["events", "restatement_diff", "API", "MCP"]
-openapi: "api-docs/v2/specs/events-restatement_diff.json GET /events/restatement-diff"
 ---
 
-One row per field that changed between a restated document and its predecessor (the FIDC informe mensal for now).
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "events", "kind": "restatement_diff", "path": "/events/restatement-diff", "method": "GET", "title": "Restatement changes", "group": "Filings and events", "description": "One row per field that changed between a restated document and its predecessor (the FIDC informe mensal for now).", "parameters": [{"name": "category", "target": "category", "description": "Exact document category.", "schema": {"type": "string", "default": "all"}, "required": false, "advanced": true}, {"name": "cnpj", "target": "id", "description": "Fund CNPJ (14 digits).", "schema": {"type": "string"}, "required": true, "advanced": false}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/events-restatement_diff.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/events/restatement-diff'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

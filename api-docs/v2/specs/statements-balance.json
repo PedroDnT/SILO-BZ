@@ -39,7 +39,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "One row per filed date.",
+        "description": "Reported assets, liabilities and equity by filing period.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/balance"
         },

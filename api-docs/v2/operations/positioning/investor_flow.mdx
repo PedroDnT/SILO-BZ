@@ -2,9 +2,22 @@
 title: "Investor flow"
 description: "(a GET view): buy, sell and net by investor type, newest first."
 keywords: ["positioning", "investor_flow", "API", "MCP"]
-openapi: "api-docs/v2/specs/positioning-investor_flow.json GET /positioning/investor-flow"
 ---
 
-(a GET view): buy, sell and net by investor type, newest first.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "positioning", "kind": "investor_flow", "path": "/positioning/investor-flow", "method": "GET", "title": "Investor flow", "group": "Market positioning", "description": "(a GET view): buy, sell and net by investor type, newest first.", "parameters": [{"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "investor_type", "target": "investor_type", "description": "Exact investor category.", "schema": {"type": "string", "default": "all"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/positioning-investor_flow.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/positioning/investor-flow'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

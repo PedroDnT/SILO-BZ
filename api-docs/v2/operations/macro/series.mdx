@@ -4,15 +4,21 @@ description: "Historical observations for one economic series, with dates and un
 keywords: ["macro", "series", "API", "MCP"]
 ---
 
-`GET /macro/series`
 
-[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
 
-import { SeriesQuery } from "/snippets/series-query.jsx";
+import { OperationQuery } from "/snippets/operation-query.jsx";
 
-<SeriesQuery choices={[{"value": "SELIC_META", "code": "432", "label": "Selic target — % per year", "unit": "pct_year", "frequency": "daily"}, {"value": "SELIC_DIARIA", "code": "11", "label": "Selic daily rate — % per business day", "unit": "pct_day", "frequency": "daily"}, {"value": "CDI", "code": "12", "label": "CDI daily rate — % per business day", "unit": "pct_day", "frequency": "daily"}, {"value": "IGPM", "code": "189", "label": "IGP-M inflation — % per month", "unit": "pct_month", "frequency": "monthly"}, {"value": "INPC", "code": "188", "label": "INPC inflation — % per month", "unit": "pct_month", "frequency": "monthly"}, {"value": "POUPANCA", "code": "25", "label": "Savings return (old rule) — % per anniversary period", "unit": "pct_period", "frequency": "daily"}, {"value": "USDBRL", "code": "1", "label": "US dollar exchange rate — BRL per USD", "unit": "brl_per_usd", "frequency": "daily"}, {"value": "EURBRL", "code": "21619", "label": "Euro exchange rate — BRL per EUR", "unit": "brl_per_eur", "frequency": "daily"}, {"value": "PIB", "code": "4380", "label": "Monthly GDP — BRL millions", "unit": "brl_million", "frequency": "monthly"}, {"value": "DBGG_PIB", "code": "13762", "label": "Gross government debt — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}, {"value": "NFSP_PRIMARIO_12M", "code": "5793", "label": "Primary borrowing requirement (12 months) — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}, {"value": "NFSP_NOMINAL_12M", "code": "5727", "label": "Nominal borrowing requirement (12 months) — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}, {"value": "DLSP_PIB", "code": "4513", "label": "Net public-sector debt — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}]} />
+<OperationQuery operation={{"resource": "macro", "kind": "series", "path": "/macro/series", "method": "GET", "title": "Economic series", "group": "Macroeconomics", "description": "Historical observations for one economic series, with dates and units.", "parameters": [{"name": "series", "target": "id", "description": "Choose an economic series. Units are returned with every observation.", "schema": {"type": "string"}, "required": true, "advanced": false, "choices": [{"value": "SELIC_META", "code": "432", "label": "Selic target — % per year", "unit": "pct_year", "frequency": "daily"}, {"value": "SELIC_DIARIA", "code": "11", "label": "Selic daily rate — % per business day", "unit": "pct_day", "frequency": "daily"}, {"value": "CDI", "code": "12", "label": "CDI daily rate — % per business day", "unit": "pct_day", "frequency": "daily"}, {"value": "IGPM", "code": "189", "label": "IGP-M inflation — % per month", "unit": "pct_month", "frequency": "monthly"}, {"value": "INPC", "code": "188", "label": "INPC inflation — % per month", "unit": "pct_month", "frequency": "monthly"}, {"value": "POUPANCA", "code": "25", "label": "Savings return (old rule) — % per anniversary period", "unit": "pct_period", "frequency": "daily"}, {"value": "USDBRL", "code": "1", "label": "US dollar exchange rate — BRL per USD", "unit": "brl_per_usd", "frequency": "daily"}, {"value": "EURBRL", "code": "21619", "label": "Euro exchange rate — BRL per EUR", "unit": "brl_per_eur", "frequency": "daily"}, {"value": "PIB", "code": "4380", "label": "Monthly GDP — BRL millions", "unit": "brl_million", "frequency": "monthly"}, {"value": "DBGG_PIB", "code": "13762", "label": "Gross government debt — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}, {"value": "NFSP_PRIMARIO_12M", "code": "5793", "label": "Primary borrowing requirement (12 months) — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}, {"value": "NFSP_NOMINAL_12M", "code": "5727", "label": "Nominal borrowing requirement (12 months) — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}, {"value": "DLSP_PIB", "code": "4513", "label": "Net public-sector debt — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}], "example": "CDI"}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
 
 [Request and response schema](/api-docs/v2/specs/macro-series.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/macro/series?series=CDI'
+```
+
+</Accordion>
 
 <Accordion title="Series codes and units">
 
@@ -31,3 +37,5 @@ import { SeriesQuery } from "/snippets/series-query.jsx";
 - `DLSP_PIB`: Net public-sector debt — % of GDP.
 
 </Accordion>
+
+[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

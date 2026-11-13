@@ -2,9 +2,22 @@
 title: "Listed universe"
 description: "The research universe: one row per ticker+ISIN pair of listed shares and units."
 keywords: ["search", "universe", "API", "MCP"]
-openapi: "api-docs/v2/specs/search-universe.json GET /search/universe"
 ---
 
-The research universe: one row per ticker+ISIN pair of listed shares and units.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "search", "kind": "universe", "path": "/search/universe", "method": "GET", "title": "Listed universe", "group": "Find identifiers", "description": "The research universe: one row per ticker+ISIN pair of listed shares and units.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "as_of", "target": "as_of", "description": "Only ticker–ISIN pairs observed on this date, including inactive listings.", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/search-universe.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/search/universe'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

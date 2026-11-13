@@ -2,9 +2,25 @@
 title: "Debenture fund marks"
 description: "13 month-ends of median fund marks (CDA block 4) per debenture ticker; marks, not trades."
 keywords: ["portfolio", "debenture_returns", "API", "MCP"]
-openapi: "api-docs/v2/specs/portfolio-debenture_returns.json POST /portfolio/debenture-returns"
 ---
 
-13 month-ends of median fund marks (CDA block 4) per debenture ticker; marks, not trades.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "portfolio", "kind": "debenture_returns", "path": "/portfolio/debenture-returns", "method": "POST", "title": "Debenture fund marks", "group": "Portfolio analysis", "description": "13 month-ends of median fund marks (CDA block 4) per debenture ticker; marks, not trades.", "parameters": [{"name": "month", "target": "month", "description": "Any date in the requested month.", "schema": {"type": "string", "format": "date"}, "required": true, "advanced": true}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "max_monthly_drop_pct", "target": "max_monthly_drop_pct", "description": "Flag monthly unit-price drops exceeding this percentage.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}], "body": [{"name": "tickers", "target": "id", "description": "Trading symbols.", "schema": {"name": "id", "items": "string", "default": null, "default_doc": "none: required by every kind except resolve", "doc": "The list: fund CNPJs (fees, fee_peers, lookthrough, movement, fund_terms; resolve: the CNPJ each line prints, parallel to names), instrument codes (instruments), filed ANBIMA class labels (equivalents) or debenture tickers (debenture_returns). Null entries are allowed where the function takes them."}}]}} />
+
+[Request and response schema](/api-docs/v2/specs/portfolio-debenture_returns.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request POST 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/portfolio/debenture-returns' \
+  --header 'Content-Type: application/json' \
+  --header "Authorization: Bearer $SILO_TOKEN" \
+  --data '{"tickers": []}'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

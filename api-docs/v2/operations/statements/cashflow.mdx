@@ -1,10 +1,23 @@
 ---
 title: "Cash flow statements"
-description: "One row per filed period, with period_months."
+description: "Reported cash flows by filing period, including the length of each period."
 keywords: ["statements", "cashflow", "API", "MCP"]
-openapi: "api-docs/v2/specs/statements-cashflow.json GET /statements/cashflow"
 ---
 
-One row per filed period, with period_months.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "statements", "kind": "cashflow", "path": "/statements/cashflow", "method": "GET", "title": "Cash flow statements", "group": "Financial statements", "description": "Reported cash flows by filing period, including the length of each period.", "parameters": [{"name": "period", "target": "period", "description": "Quarterly or annual filings.", "schema": {"type": "string", "enum": ["both", "quarterly", "annual"], "default": "both"}, "required": false, "advanced": true}, {"name": "scope", "target": "scope", "description": "Consolidated or individual filings; never combined.", "schema": {"type": "string", "enum": ["consolidated", "individual"], "default": "consolidated"}, "required": false, "advanced": true}, {"name": "identifier", "target": "id", "description": "Company ticker or CNPJ.", "schema": {"type": "string"}, "required": false, "advanced": false, "example": "PETR4"}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "as_of", "target": "as_of", "description": "Use only filings received by this date.", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/statements-cashflow.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/statements/cashflow?identifier=PETR4'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

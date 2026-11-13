@@ -2,9 +2,22 @@
 title: "Metric coverage"
 description: "(): a (family, metric) pair absent here is one the family never files, not late data."
 keywords: ["coverage", "metrics", "API", "MCP"]
-openapi: "api-docs/v2/specs/coverage-metrics.json GET /coverage/metrics"
 ---
 
-(): a (family, metric) pair absent here is one the family never files, not late data.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "coverage", "kind": "metrics", "path": "/coverage/metrics", "method": "GET", "title": "Metric coverage", "group": "Data coverage", "description": "(): a (family, metric) pair absent here is one the family never files, not late data.", "parameters": [{"name": "dataset", "target": "dataset", "description": "Comma-separated dataset names, such as quotes.", "schema": {"type": "string", "default": "all"}, "required": false, "advanced": true}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/coverage-metrics.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/coverage/metrics'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

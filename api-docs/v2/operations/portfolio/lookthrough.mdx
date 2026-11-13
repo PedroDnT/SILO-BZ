@@ -2,9 +2,25 @@
 title: "Portfolio look-through"
 description: "One CDA month, holdings followed through fund quotas up to max_depth levels."
 keywords: ["portfolio", "lookthrough", "API", "MCP"]
-openapi: "api-docs/v2/specs/portfolio-lookthrough.json POST /portfolio/lookthrough"
 ---
 
-One CDA month, holdings followed through fund quotas up to max_depth levels.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "portfolio", "kind": "lookthrough", "path": "/portfolio/lookthrough", "method": "POST", "title": "Portfolio look-through", "group": "Portfolio analysis", "description": "One CDA month, holdings followed through fund quotas up to max_depth levels.", "parameters": [{"name": "month", "target": "month", "description": "Any date in the requested month.", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": true}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "max_depth", "target": "max_depth", "description": "Fund ownership levels to traverse (1–6).", "schema": {"type": "integer", "minimum": 0, "default": 4}, "required": false, "advanced": true}], "body": [{"name": "cnpjs", "target": "id", "description": "Fund CNPJs (14 digits each).", "schema": {"name": "id", "items": "string", "default": null, "default_doc": "none: required by every kind except resolve", "doc": "The list: fund CNPJs (fees, fee_peers, lookthrough, movement, fund_terms; resolve: the CNPJ each line prints, parallel to names), instrument codes (instruments), filed ANBIMA class labels (equivalents) or debenture tickers (debenture_returns). Null entries are allowed where the function takes them."}}]}} />
+
+[Request and response schema](/api-docs/v2/specs/portfolio-lookthrough.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request POST 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/portfolio/lookthrough' \
+  --header 'Content-Type: application/json' \
+  --header "Authorization: Bearer $SILO_TOKEN" \
+  --data '{"cnpjs": []}'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

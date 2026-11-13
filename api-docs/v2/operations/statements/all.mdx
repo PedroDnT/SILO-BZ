@@ -1,10 +1,23 @@
 ---
 title: "As-filed line items"
-description: "Every line, one row per account, latest stored version."
+description: "Original filed statement line items, with account labels and amounts."
 keywords: ["statements", "all", "API", "MCP"]
-openapi: "api-docs/v2/specs/statements-all.json GET /statements/all"
 ---
 
-Every line, one row per account, latest stored version.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "statements", "kind": "all", "path": "/statements/all", "method": "GET", "title": "As-filed line items", "group": "Financial statements", "description": "Original filed statement line items, with account labels and amounts.", "parameters": [{"name": "period", "target": "period", "description": "Quarterly or annual filings.", "schema": {"type": "string", "enum": ["both", "quarterly", "annual"], "default": "both"}, "required": false, "advanced": true}, {"name": "scope", "target": "scope", "description": "Consolidated or individual filings; never combined.", "schema": {"type": "string", "enum": ["consolidated", "individual"], "default": "consolidated"}, "required": false, "advanced": true}, {"name": "identifier", "target": "id", "description": "Company ticker or CNPJ.", "schema": {"type": "string"}, "required": false, "advanced": false, "example": "PETR4"}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "as_of", "target": "as_of", "description": "Use only filings received by this date.", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": true}, {"name": "account_code", "target": "account_code", "description": "Exact filed account code. Codes can mean different things across sectors.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/statements-all.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/statements/all?identifier=PETR4'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

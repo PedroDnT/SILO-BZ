@@ -2,9 +2,22 @@
 title: "Resolve an identifier"
 description: "Resolve a name or id across companies, funds and tickers."
 keywords: ["search", "any", "API", "MCP"]
-openapi: "api-docs/v2/specs/search-any.json GET /search/any"
 ---
 
-Resolve a name or id across companies, funds and tickers.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "search", "kind": "any", "path": "/search/any", "method": "GET", "title": "Resolve an identifier", "group": "Find identifiers", "description": "Resolve a name or id across companies, funds and tickers.", "parameters": [{"name": "q", "target": "q", "description": "Ticker, identifier or name to find.", "schema": {"type": "string"}, "required": false, "advanced": false, "example": "PETR4"}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/search-any.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/search/any?q=PETR4'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

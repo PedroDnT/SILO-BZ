@@ -2,9 +2,22 @@
 title: "Dormant trend"
 description: "Dormant_funds counted at every month-end: funds filing, empty shells, parked capital and its NAV."
 keywords: ["screens", "dormant_trend", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-dormant_trend.json GET /screens/dormant-trend"
 ---
 
-Dormant_funds counted at every month-end: funds filing, empty shells, parked capital and its NAV.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "screens", "kind": "dormant_trend", "path": "/screens/dormant-trend", "method": "GET", "title": "Dormant trend", "group": "Research screens", "description": "Dormant_funds counted at every month-end: funds filing, empty shells, parked capital and its NAV.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "lookback_months", "target": "lookback_months", "description": "Trailing window, in months.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "history_months", "target": "history_months", "description": "Number of month-ends to return (1–60).", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/screens-dormant_trend.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/dormant-trend'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

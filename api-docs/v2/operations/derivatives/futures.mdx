@@ -2,9 +2,22 @@
 title: "Futures history"
 description: "One DI1, DOL or WDO contract through time, oldest first."
 keywords: ["derivatives", "futures", "API", "MCP"]
-openapi: "api-docs/v2/specs/derivatives-futures.json GET /derivatives/futures"
 ---
 
-One DI1, DOL or WDO contract through time, oldest first.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "derivatives", "kind": "futures", "path": "/derivatives/futures", "method": "GET", "title": "Futures history", "group": "Options and futures", "description": "One DI1, DOL or WDO contract through time, oldest first.", "parameters": [{"name": "ticker", "target": "id", "description": "Trading symbol.", "schema": {"type": "string"}, "required": true, "advanced": false}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/derivatives-futures.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/derivatives/futures'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

@@ -2,9 +2,22 @@
 title: "Captive vehicles"
 description: "FIIs whose NAV peaked above min_aum while the quotaholder count never reached max_investors."
 keywords: ["screens", "captive_vehicles", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-captive_vehicles.json GET /screens/captive-vehicles"
 ---
 
-FIIs whose NAV peaked above min_aum while the quotaholder count never reached max_investors.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "screens", "kind": "captive_vehicles", "path": "/screens/captive-vehicles", "method": "GET", "title": "Captive vehicles", "group": "Research screens", "description": "FIIs whose NAV peaked above min_aum while the quotaholder count never reached max_investors.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "lookback_months", "target": "lookback_months", "description": "Trailing window, in months.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_aum", "target": "min_aum", "description": "Minimum net asset value, in BRL.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}, {"name": "max_investors", "target": "max_investors", "description": "Flag funds whose minimum investor count is below this threshold.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/screens-captive_vehicles.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/captive-vehicles'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

@@ -2,9 +2,22 @@
 title: "Published curve vertices"
 description: "(a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published)."
 keywords: ["curves", "vertices", "API", "MCP"]
-openapi: "api-docs/v2/specs/curves-vertices.json GET /curves/vertices"
 ---
 
-(a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published).
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "curves", "kind": "vertices", "path": "/curves/vertices", "method": "GET", "title": "Published curve vertices", "group": "Interest rate curves", "description": "(a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published).", "parameters": [{"name": "curve", "target": "curve", "description": "Yield curve code.", "schema": {"type": "string", "enum": ["PRE", "DOC", "DPL"], "default": "PRE"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "date", "target": "date", "description": "Session date. Omit for the latest available session.", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/curves-vertices.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/curves/vertices'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

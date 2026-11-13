@@ -39,7 +39,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "Every line, one row per account, latest stored version.",
+        "description": "Original filed statement line items, with account labels and amounts.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/all"
         },

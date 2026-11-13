@@ -2,9 +2,22 @@
 title: "Evergreen aging"
 description: "FIDCs whose receivables overdue more than 1080 days stay a large, nearly constant share of delinquency."
 keywords: ["screens", "evergreen_aging", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-evergreen_aging.json GET /screens/evergreen-aging"
 ---
 
-FIDCs whose receivables overdue more than 1080 days stay a large, nearly constant share of delinquency.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "screens", "kind": "evergreen_aging", "path": "/screens/evergreen-aging", "method": "GET", "title": "Evergreen aging", "group": "Research screens", "description": "FIDCs whose receivables overdue more than 1080 days stay a large, nearly constant share of delinquency.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "lookback_months", "target": "lookback_months", "description": "Trailing window, in months.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_longtail_pct", "target": "min_longtail_pct", "description": "Minimum share overdue more than 1,080 days (%).", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}, {"name": "max_variation_pp", "target": "max_variation_pp", "description": "Maximum change in that share, in percentage points.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/screens-evergreen_aging.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/evergreen-aging'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

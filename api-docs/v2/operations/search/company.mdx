@@ -2,9 +2,22 @@
 title: "Find companies"
 description: "The company rows (id_type cd_cvm) of the lookup answer; truncated still says when more than 20 entries matched."
 keywords: ["search", "company", "API", "MCP"]
-openapi: "api-docs/v2/specs/search-company.json GET /search/company"
 ---
 
-The company rows (id_type cd_cvm) of the lookup answer; truncated still says when more than 20 entries matched.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "search", "kind": "company", "path": "/search/company", "method": "GET", "title": "Find companies", "group": "Find identifiers", "description": "The company rows (id_type cd_cvm) of the lookup answer; truncated still says when more than 20 entries matched.", "parameters": [{"name": "q", "target": "q", "description": "Ticker, identifier or name to find.", "schema": {"type": "string"}, "required": false, "advanced": false, "example": "PETR4"}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/search-company.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/search/company?q=PETR4'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

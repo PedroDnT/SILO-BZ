@@ -2,9 +2,22 @@
 title: "Latest closing price"
 description: "Latest available closing price for a trading symbol, without adjustments."
 keywords: ["prices", "latest", "API", "MCP"]
-openapi: "api-docs/v2/specs/prices-latest.json GET /prices/latest"
 ---
 
-Latest available closing price for a trading symbol, without adjustments.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "prices", "kind": "latest", "path": "/prices/latest", "method": "GET", "title": "Latest closing price", "group": "Stock prices", "description": "Latest available closing price for a trading symbol, without adjustments.", "parameters": [{"name": "ticker", "target": "id", "description": "Trading symbol.", "schema": {"type": "string"}, "required": false, "advanced": false, "example": "PETR4"}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "board", "target": "board", "description": "Trading board code. Omit to use the default.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "fields", "target": "fields", "description": "core returns essential columns; all includes every published column.", "schema": {"type": "string", "enum": ["core", "all"], "default": "core"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/prices-latest.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/prices/latest?ticker=PETR4'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

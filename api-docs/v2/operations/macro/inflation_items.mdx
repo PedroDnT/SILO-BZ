@@ -2,9 +2,22 @@
 title: "Inflation components"
 description: "Published's IPCA tree (weight, monthly change, contribution, year-to-date and 12-month change), 3 years by default."
 keywords: ["macro", "inflation_items", "API", "MCP"]
-openapi: "api-docs/v2/specs/macro-inflation_items.json GET /macro/inflation-items"
 ---
 
-Published's IPCA tree (weight, monthly change, contribution, year-to-date and 12-month change), 3 years by default.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "macro", "kind": "inflation_items", "path": "/macro/inflation-items", "method": "GET", "title": "Inflation components", "group": "Macroeconomics", "description": "Published's IPCA tree (weight, monthly change, contribution, year-to-date and 12-month change), 3 years by default.", "parameters": [{"name": "item", "target": "id", "description": "Inflation item code.", "schema": {"type": "string"}, "required": false, "advanced": false}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/macro-inflation_items.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/macro/inflation-items'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

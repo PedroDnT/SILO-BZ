@@ -200,7 +200,7 @@
             ]
           },
           {
-            "group": "REST reference",
+            "group": "Compatibility reference",
             "openapi": "api-docs/v2/openapi.json"
           }
         ]
@@ -283,7 +283,7 @@
     "links": [
       {
         "label": "Data API",
-        "href": "/api-docs/v2/reference/index"
+        "href": "/api-docs/v2/endpoints"
       },
       {
         "label": "GitHub",

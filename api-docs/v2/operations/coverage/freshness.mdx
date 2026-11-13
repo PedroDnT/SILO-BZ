@@ -2,9 +2,22 @@
 title: "Dataset freshness"
 description: "(); the source's as_of is returned as data_through (in v2, as_of means point in time)."
 keywords: ["coverage", "freshness", "API", "MCP"]
-openapi: "api-docs/v2/specs/coverage-freshness.json GET /coverage/freshness"
 ---
 
-(); the source's as_of is returned as data_through (in v2, as_of means point in time).
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "coverage", "kind": "freshness", "path": "/coverage/freshness", "method": "GET", "title": "Dataset freshness", "group": "Data coverage", "description": "(); the source's as_of is returned as data_through (in v2, as_of means point in time).", "parameters": [{"name": "dataset", "target": "dataset", "description": "Comma-separated dataset names, such as quotes.", "schema": {"type": "string", "default": "all"}, "required": false, "advanced": true}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/coverage-freshness.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/coverage/freshness'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

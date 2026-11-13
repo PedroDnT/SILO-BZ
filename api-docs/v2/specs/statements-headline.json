@@ -39,7 +39,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "Headline figures per filed period.",
+        "description": "Headline financial figures from company filings.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/headline"
         },

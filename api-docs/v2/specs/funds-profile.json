@@ -39,7 +39,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "One row per family the CNPJ files under.",
+        "description": "Fund registration details, grouped by fund family.",
         "x-mint": {
           "href": "/api-docs/v2/operations/funds/profile"
         },

@@ -39,7 +39,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "Every stored version of one statement (hidden statement, default DRE), with filing metadata.",
+        "description": "Compare the filed versions of a company statement.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/versions"
         },

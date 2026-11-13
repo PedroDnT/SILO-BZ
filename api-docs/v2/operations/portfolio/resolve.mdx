@@ -2,9 +2,25 @@
 title: "Resolve portfolio entries"
 description: "Up to 5 ranked candidate funds per statement line (a printed CNPJ wins, then an ETF ticker, an exact name, a trigram match)."
 keywords: ["portfolio", "resolve", "API", "MCP"]
-openapi: "api-docs/v2/specs/portfolio-resolve.json POST /portfolio/resolve"
 ---
 
-Up to 5 ranked candidate funds per statement line (a printed CNPJ wins, then an ETF ticker, an exact name, a trigram match).
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "portfolio", "kind": "resolve", "path": "/portfolio/resolve", "method": "POST", "title": "Resolve portfolio entries", "group": "Portfolio analysis", "description": "Up to 5 ranked candidate funds per statement line (a printed CNPJ wins, then an ETF ticker, an exact name, a trigram match).", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": [{"name": "cnpjs", "target": "id", "description": "Fund CNPJs (14 digits each).", "schema": {"name": "id", "items": "string", "default": null, "default_doc": "none: required by every kind except resolve", "doc": "The list: fund CNPJs (fees, fee_peers, lookthrough, movement, fund_terms; resolve: the CNPJ each line prints, parallel to names), instrument codes (instruments), filed ANBIMA class labels (equivalents) or debenture tickers (debenture_returns). Null entries are allowed where the function takes them."}}, {"name": "names", "target": "names", "description": "Fund names as printed, one per statement line.", "schema": {"name": "names", "items": "string", "default": null, "default_doc": "none: required by resolve", "doc": "resolve: one statement line each, the fund name as printed."}}, {"name": "quotas", "target": "quotas", "description": "Printed quota values, aligned with names.", "schema": {"name": "quotas", "items": "number", "default": null, "default_doc": "none", "doc": "resolve: the quota value each line prints, parallel to names, for the tie-break."}}, {"name": "quota_dates", "target": "quota_dates", "description": "Quota dates, aligned with names.", "schema": {"name": "quota_dates", "items": "date", "default": null, "default_doc": "none", "doc": "resolve: the date each quota refers to, parallel to names."}}]}} />
+
+[Request and response schema](/api-docs/v2/specs/portfolio-resolve.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request POST 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/portfolio/resolve' \
+  --header 'Content-Type: application/json' \
+  --header "Authorization: Bearer $SILO_TOKEN" \
+  --data '{"cnpjs": [], "names": [], "quotas": [], "quota_dates": []}'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

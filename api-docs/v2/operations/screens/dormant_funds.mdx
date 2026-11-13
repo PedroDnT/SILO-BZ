@@ -2,9 +2,22 @@
 title: "Dormant funds"
 description: "FI classes that filed every month of the window with zero subscriptions and zero redemptions (empty_shell, parked_capital)."
 keywords: ["screens", "dormant_funds", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-dormant_funds.json GET /screens/dormant-funds"
 ---
 
-FI classes that filed every month of the window with zero subscriptions and zero redemptions (empty_shell, parked_capital).
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "screens", "kind": "dormant_funds", "path": "/screens/dormant-funds", "method": "GET", "title": "Dormant funds", "group": "Research screens", "description": "FI classes that filed every month of the window with zero subscriptions and zero redemptions (empty_shell, parked_capital).", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "lookback_months", "target": "lookback_months", "description": "Trailing window, in months.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_nav", "target": "min_nav", "description": "Minimum net asset value, in BRL.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}, {"name": "dormancy", "target": "dormancy", "description": "Filter by dormancy category.", "schema": {"type": "string", "enum": ["all", "empty_shell", "parked_capital"], "default": "all"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/screens-dormant_funds.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/dormant-funds'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

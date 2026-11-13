@@ -2,9 +2,22 @@
 title: "Available screens"
 description: "Available research screens and their selection thresholds."
 keywords: ["screens", "list", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-list.json GET /screens/list"
 ---
 
-Available research screens and their selection thresholds.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "screens", "kind": "list", "path": "/screens/list", "method": "GET", "title": "Available screens", "group": "Research screens", "description": "Available research screens and their selection thresholds.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/screens-list.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/list'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

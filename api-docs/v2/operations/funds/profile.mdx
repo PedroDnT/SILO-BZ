@@ -1,10 +1,23 @@
 ---
 title: "Fund profiles"
-description: "One row per family the CNPJ files under."
+description: "Fund registration details, grouped by fund family."
 keywords: ["funds", "profile", "API", "MCP"]
-openapi: "api-docs/v2/specs/funds-profile.json GET /funds/profile"
 ---
 
-One row per family the CNPJ files under.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "funds", "kind": "profile", "path": "/funds/profile", "method": "GET", "title": "Fund profiles", "group": "Funds and holdings", "description": "Fund registration details, grouped by fund family.", "parameters": [{"name": "family", "target": "family", "description": "Fund family.", "schema": {"type": "string", "enum": ["all", "fi", "fidc", "fii", "fip", "fiagro"], "default": "all"}, "required": false, "advanced": true}, {"name": "cnpj", "target": "id", "description": "Fund CNPJ (14 digits).", "schema": {"type": "string"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "status", "target": "status", "description": "Exact registration status.", "schema": {"type": "string", "default": "all"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/funds-profile.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/funds/profile'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

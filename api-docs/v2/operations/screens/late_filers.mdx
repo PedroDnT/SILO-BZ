@@ -2,9 +2,22 @@
 title: "Late filers"
 description: "FIIs and FIDCs whose monthly informe reached published at least min_days_late days after the cited deadline, in at least min_late months."
 keywords: ["screens", "late_filers", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-late_filers.json GET /screens/late-filers"
 ---
 
-FIIs and FIDCs whose monthly informe reached published at least min_days_late days after the cited deadline, in at least min_late months.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "screens", "kind": "late_filers", "path": "/screens/late-filers", "method": "GET", "title": "Late filers", "group": "Research screens", "description": "FIIs and FIDCs whose monthly informe reached published at least min_days_late days after the cited deadline, in at least min_late months.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "date", "target": "date", "description": "Window end date.", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "months", "target": "months", "description": "Window length (1–36 months).", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_days_late", "target": "min_days_late", "description": "Days beyond the filing deadline to count as late (1–90).", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_late", "target": "min_late", "description": "Minimum late months in the window.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "family", "target": "family", "description": "Fund family.", "schema": {"type": "string", "enum": ["all", "fi", "fidc", "fii", "fiagro"], "default": "all"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/screens-late_filers.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/late-filers'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

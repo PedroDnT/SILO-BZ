@@ -39,7 +39,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "One row per filed period, with period_months.",
+        "description": "Reported income by filing period, including the length of each period.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/income"
         },

@@ -2,9 +2,22 @@
 title: "Zombie growth"
 description: "FIDCs with delinquency above min_delinq_pct of NAV while NAV stays above min_aum, in one aging month."
 keywords: ["screens", "zombie_growth", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-zombie_growth.json GET /screens/zombie-growth"
 ---
 
-FIDCs with delinquency above min_delinq_pct of NAV while NAV stays above min_aum, in one aging month.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "screens", "kind": "zombie_growth", "path": "/screens/zombie-growth", "method": "GET", "title": "Zombie growth", "group": "Research screens", "description": "FIDCs with delinquency above min_delinq_pct of NAV while NAV stays above min_aum, in one aging month.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "date", "target": "date", "description": "Aging month-end.", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "min_aum", "target": "min_aum", "description": "Minimum net asset value, in BRL.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_delinq_pct", "target": "min_delinq_pct", "description": "Minimum delinquency as a percentage of net asset value.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/screens-zombie_growth.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/zombie-growth'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

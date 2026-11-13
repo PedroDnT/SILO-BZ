@@ -2,9 +2,22 @@
 title: "Inflation history"
 description: "The IPCA set by month with acc_12m, 3 years by default."
 keywords: ["macro", "inflation", "API", "MCP"]
-openapi: "api-docs/v2/specs/macro-inflation.json GET /macro/inflation"
 ---
 
-The IPCA set by month with acc_12m, 3 years by default.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "macro", "kind": "inflation", "path": "/macro/inflation", "method": "GET", "title": "Inflation history", "group": "Macroeconomics", "description": "The IPCA set by month with acc_12m, 3 years by default.", "parameters": [{"name": "series", "target": "id", "description": "Economic series.", "schema": {"type": "string"}, "required": false, "advanced": false}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "family", "target": "family", "description": "Inflation family.", "schema": {"type": "string", "enum": ["all", "headline", "core", "classification", "diffusion", "group"], "default": "all"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/macro-inflation.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/macro/inflation'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

@@ -179,8 +179,8 @@ async function handle(
     }
   }
   // Hosted Edge requests have an internal HTTP URL without /functions/v1.
-  const pageBase = operation && !("error" in cfg)
-    ? `${cfg.restUrl.replace(/\/rest\/v1$/, "")}/functions/v1/silo-api/v2${operation.path}`
+  const pageBase = !("error" in cfg)
+    ? `${cfg.restUrl.replace(/\/rest\/v1$/, "")}/functions/v1/silo-api/v2${operation?.path ?? "/" + resource.name}`
     : `${url.origin}${url.pathname}`;
   parsed.paging = { cursor, q: Object.fromEntries(query.entries()), base: pageBase, body: digest };
   if ("error" in cfg) throw new ApiError(503, "unavailable", `silo-api is misconfigured: ${cfg.error}`);

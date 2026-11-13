@@ -2,9 +2,22 @@
 title: "Overdue securit"
 description: "CRI, CRA and other series past their filed maturity whose newest filing still reports a non-terminal status."
 keywords: ["screens", "overdue_securit", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-overdue_securit.json GET /screens/overdue-securit"
 ---
 
-CRI, CRA and other series past their filed maturity whose newest filing still reports a non-terminal status.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "screens", "kind": "overdue_securit", "path": "/screens/overdue-securit", "method": "GET", "title": "Overdue securit", "group": "Research screens", "description": "CRI, CRA and other series past their filed maturity whose newest filing still reports a non-terminal status.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "min_volume", "target": "min_volume", "description": "Minimum paid-in volume, in BRL.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/screens-overdue_securit.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/overdue-securit'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

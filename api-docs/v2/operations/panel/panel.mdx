@@ -2,9 +2,22 @@
 title: "Cross-asset panel"
 description: "Long rows (id, id_type, asset_class, date, metric, value, source), 3 years back from to by default, paged with the function's p_after cursor."
 keywords: ["panel", "panel", "API", "MCP"]
-openapi: "api-docs/v2/specs/panel-panel.json GET /panel/panel"
 ---
 
-Long rows (id, id_type, asset_class, date, metric, value, source), 3 years back from to by default, paged with the function's p_after cursor.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "panel", "kind": "panel", "path": "/panel/panel", "method": "GET", "title": "Cross-asset panel", "group": "Cross-asset data", "description": "Long rows (id, id_type, asset_class, date, metric, value, source), 3 years back from to by default, paged with the function's p_after cursor.", "parameters": [{"name": "metric", "target": "metric", "description": "Comma-separated metric names from the catalog.", "schema": {"type": "string", "default": "auto"}, "required": false, "advanced": true}, {"name": "freq", "target": "freq", "description": "Daily observations or the last observation of each month.", "schema": {"type": "string", "enum": ["month", "day"], "default": "month"}, "required": false, "advanced": true}, {"name": "family", "target": "family", "description": "Fund family. auto includes every family the CNPJ files under.", "schema": {"type": "string", "enum": ["auto", "fi", "fidc", "fii", "fip", "fiagro"], "default": "auto"}, "required": false, "advanced": true}, {"name": "identifiers", "target": "id", "description": "Comma-separated identifiers.", "schema": {"type": "string"}, "required": false, "advanced": false}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "min_nav", "target": "min_nav", "description": "Universe filter: minimum latest net asset value, in BRL.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_months", "target": "min_months", "description": "Universe filter: minimum observations of the first metric.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/panel-panel.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/panel/panel'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

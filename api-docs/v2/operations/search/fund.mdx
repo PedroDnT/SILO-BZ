@@ -2,9 +2,22 @@
 title: "Find funds"
 description: "Fund name or CNPJ search, largest latest NAV first."
 keywords: ["search", "fund", "API", "MCP"]
-openapi: "api-docs/v2/specs/search-fund.json GET /search/fund"
 ---
 
-Fund name or CNPJ search, largest latest NAV first.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "search", "kind": "fund", "path": "/search/fund", "method": "GET", "title": "Find funds", "group": "Find identifiers", "description": "Fund name or CNPJ search, largest latest NAV first.", "parameters": [{"name": "q", "target": "q", "description": "Ticker, identifier or name to find.", "schema": {"type": "string"}, "required": false, "advanced": false, "example": "PETR4"}, {"name": "family", "target": "family", "description": "Fund family.", "schema": {"type": "string", "enum": ["all", "fi", "fidc", "fii", "fip", "fiagro"], "default": "all"}, "required": false, "advanced": true}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/search-fund.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/search/fund?q=PETR4'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

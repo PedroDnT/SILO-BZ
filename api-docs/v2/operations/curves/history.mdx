@@ -2,9 +2,22 @@
 title: "Yield curve history"
 description: "One fixed vertex through time, oldest first."
 keywords: ["curves", "history", "API", "MCP"]
-openapi: "api-docs/v2/specs/curves-history.json GET /curves/history"
 ---
 
-One fixed vertex through time, oldest first.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "curves", "kind": "history", "path": "/curves/history", "method": "GET", "title": "Yield curve history", "group": "Interest rate curves", "description": "One fixed vertex through time, oldest first.", "parameters": [{"name": "curve", "target": "curve", "description": "Yield curve code.", "schema": {"type": "string", "enum": ["PRE", "DOC", "DPL"], "default": "PRE"}, "required": false, "advanced": false}, {"name": "tenor", "target": "tenor", "description": "Fixed vertex tenor in calendar days.", "schema": {"type": "integer", "minimum": 0, "default": 360}, "required": false, "advanced": true}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/curves-history.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/curves/history'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

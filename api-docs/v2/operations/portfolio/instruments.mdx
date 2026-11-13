@@ -2,9 +2,25 @@
 title: "Resolve credit instruments"
 description: "CRA, CRI and debenture codes matched to their series, one line per code."
 keywords: ["portfolio", "instruments", "API", "MCP"]
-openapi: "api-docs/v2/specs/portfolio-instruments.json POST /portfolio/instruments"
 ---
 
-CRA, CRI and debenture codes matched to their series, one line per code.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "portfolio", "kind": "instruments", "path": "/portfolio/instruments", "method": "POST", "title": "Resolve credit instruments", "group": "Portfolio analysis", "description": "CRA, CRI and debenture codes matched to their series, one line per code.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": [{"name": "codes", "target": "id", "description": "Instrument codes.", "schema": {"name": "id", "items": "string", "default": null, "default_doc": "none: required by every kind except resolve", "doc": "The list: fund CNPJs (fees, fee_peers, lookthrough, movement, fund_terms; resolve: the CNPJ each line prints, parallel to names), instrument codes (instruments), filed ANBIMA class labels (equivalents) or debenture tickers (debenture_returns). Null entries are allowed where the function takes them."}}]}} />
+
+[Request and response schema](/api-docs/v2/specs/portfolio-instruments.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request POST 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/portfolio/instruments' \
+  --header 'Content-Type: application/json' \
+  --header "Authorization: Bearer $SILO_TOKEN" \
+  --data '{"codes": []}'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

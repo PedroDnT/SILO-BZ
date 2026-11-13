@@ -108,7 +108,7 @@ def test_mintlify_navigation_covers_all_v2_operations():
     assert (v2["tab"], v1["tab"]) == ("SILO v2", "API v1")
     groups = {g["group"]: g for g in v2["groups"]}
     assert groups["Get started"]["pages"][:2] == ["index", "api-docs/v2/quickstart"]
-    ref = groups["REST reference"]
+    ref = groups["Compatibility reference"]
     assert ref["openapi"] == "api-docs/v2/openapi.json"
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
     tags = [tag["name"] for tag in spec["tags"]]

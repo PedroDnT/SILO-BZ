@@ -683,7 +683,7 @@
     "method": "GET",
     "title": "As-filed line items",
     "group": "Financial statements",
-    "description": "Every line, one row per account, latest stored version.",
+    "description": "Original filed statement line items, with account labels and amounts.",
     "parameters": [
       {
         "name": "period",
@@ -801,7 +801,7 @@
     "method": "GET",
     "title": "Income statements",
     "group": "Financial statements",
-    "description": "One row per filed period, with period_months.",
+    "description": "Reported income by filing period, including the length of each period.",
     "parameters": [
       {
         "name": "period",
@@ -909,7 +909,7 @@
     "method": "GET",
     "title": "Balance sheets",
     "group": "Financial statements",
-    "description": "One row per filed date.",
+    "description": "Reported assets, liabilities and equity by filing period.",
     "parameters": [
       {
         "name": "period",
@@ -1017,7 +1017,7 @@
     "method": "GET",
     "title": "Cash flow statements",
     "group": "Financial statements",
-    "description": "One row per filed period, with period_months.",
+    "description": "Reported cash flows by filing period, including the length of each period.",
     "parameters": [
       {
         "name": "period",
@@ -1125,7 +1125,7 @@
     "method": "GET",
     "title": "Headline financials",
     "group": "Financial statements",
-    "description": "Headline figures per filed period.",
+    "description": "Headline financial figures from company filings.",
     "parameters": [
       {
         "name": "period",
@@ -1233,7 +1233,7 @@
     "method": "GET",
     "title": "Filing version history",
     "group": "Financial statements",
-    "description": "Every stored version of one statement (hidden statement, default DRE), with filing metadata.",
+    "description": "Compare the filed versions of a company statement.",
     "parameters": [
       {
         "name": "period",
@@ -1361,7 +1361,7 @@
     "method": "GET",
     "title": "Fund profiles",
     "group": "Funds and holdings",
-    "description": "One row per family the CNPJ files under.",
+    "description": "Fund registration details, grouped by fund family.",
     "parameters": [
       {
         "name": "family",
@@ -4920,7 +4920,7 @@
     "method": "POST",
     "title": "Disclosed and estimated fees",
     "group": "Portfolio analysis",
-    "description": "The disclosed fee and the fee estimated from the balancete, never mixed.",
+    "description": "Disclosed fees and estimates from accounting records, shown separately.",
     "parameters": [
       {
         "name": "month",

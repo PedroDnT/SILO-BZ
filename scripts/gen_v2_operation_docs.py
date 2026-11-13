@@ -52,24 +52,30 @@ def artifacts():
 title: {json.dumps(title)}
 description: {json.dumps(detail)}
 keywords: [{json.dumps(name)}, {json.dumps(kind)}, "API", "MCP"]
-openapi: "{spec_path} {method.upper()} {path}"
 ---
 
-{detail}
 
-[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
 '''
+        page = files[f"{slug}.mdx"]
+        page += '\nimport { OperationQuery } from "/snippets/operation-query.jsx";\n\n'
+        page += '<OperationQuery operation={' + json.dumps(definition, ensure_ascii=False) + '} />\n'
+        page += f'\n[Request and response schema](/{spec_path})\n'
+        page += '\n<Accordion title="Code example">\n\n'
+        sample = {p["name"]: str(p["example"]) for p in definition["parameters"] if "example" in p}
+        query = "&".join(f"{k}={v}" for k, v in sample.items())
+        request_url = base["servers"][0]["url"] + path + ("?" + query if query else "")
+        page += f"```bash\ncurl --request {method.upper()} '{request_url}'"
+        if definition["body"]:
+            example_body = json.dumps({p["name"]: [] for p in definition["body"]})
+            page += " \\\n  --header 'Content-Type: application/json' \\\n  --header \"Authorization: Bearer $SILO_TOKEN\" \\\n  --data '" + example_body + "'"
+        page += '\n```\n\n</Accordion>\n'
         if path == "/macro/series":
             choices = next(p["choices"] for p in definition["parameters"] if p["name"] == "series")
-            page = files[f"{slug}.mdx"]
-            page = re.sub(r'openapi: [^\n]+\n', "", page)
-            page = page.replace(detail + "\n\n", "`GET /macro/series`\n\n", 1)
-            page += '\nimport { SeriesQuery } from "/snippets/series-query.jsx";\n\n'
-            page += '<SeriesQuery choices={' + json.dumps(choices, ensure_ascii=False) + '} />\n'
-            page += '\n[Request and response schema](/api-docs/v2/specs/macro-series.json)\n\n<Accordion title="Series codes and units">\n\n'
+            page += '\n<Accordion title="Series codes and units">\n\n'
             page += "\n".join(f"- `{c['value']}`: {c['label']}." for c in choices)
             page += '\n\n</Accordion>\n'
-            files[f"{slug}.mdx"] = page
+        page += "\n[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)\n"
+        files[f"{slug}.mdx"] = page
         group = next((g for g in groups if g["group"] == definition["group"]), None)
         if group is None:
             group = {"group": definition["group"], "expanded": False, "pages": []}
@@ -98,9 +104,9 @@ These pages expose the existing API; they do not add data coverage.
   <Card title="Inflation" icon="chart-column" href="/api-docs/v2/operations/macro/inflation">Read inflation history and components.</Card>
 </Columns>
 
-Use the search button to find an operation by name. Open **Try it**, check its
-parameters, and select **Send**. Switch between cURL, Python, and JavaScript in the
-code panel. Read [authentication](/api-docs/v2/authentication) before adding a key.
+Choose an operation, enter its main fields, and select **Get data**.
+Optional filters and credentials are under **Advanced options**.
+Read [authentication](/api-docs/v2/authentication) before adding a key.
 
 ## All operations
 

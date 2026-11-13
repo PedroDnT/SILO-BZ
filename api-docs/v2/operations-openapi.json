@@ -983,7 +983,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "Every line, one row per account, latest stored version.",
+        "description": "Original filed statement line items, with account labels and amounts.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/all"
         },
@@ -1127,7 +1127,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "One row per filed period, with period_months.",
+        "description": "Reported income by filing period, including the length of each period.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/income"
         },
@@ -1262,7 +1262,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "One row per filed date.",
+        "description": "Reported assets, liabilities and equity by filing period.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/balance"
         },
@@ -1397,7 +1397,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "One row per filed period, with period_months.",
+        "description": "Reported cash flows by filing period, including the length of each period.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/cashflow"
         },
@@ -1532,7 +1532,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "Headline figures per filed period.",
+        "description": "Headline financial figures from company filings.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/headline"
         },
@@ -1667,7 +1667,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "Every stored version of one statement (hidden statement, default DRE), with filing metadata.",
+        "description": "Compare the filed versions of a company statement.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/versions"
         },
@@ -1821,7 +1821,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "One row per family the CNPJ files under.",
+        "description": "Fund registration details, grouped by fund family.",
         "x-mint": {
           "href": "/api-docs/v2/operations/funds/profile"
         },
@@ -6780,7 +6780,7 @@
         "tags": [
           "Research"
         ],
-        "description": "The disclosed fee and the fee estimated from the balancete, never mixed.",
+        "description": "Disclosed fees and estimates from accounting records, shown separately.",
         "x-mint": {
           "href": "/api-docs/v2/operations/portfolio/fees"
         },

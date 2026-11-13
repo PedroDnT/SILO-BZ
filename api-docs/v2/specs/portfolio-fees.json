@@ -39,7 +39,7 @@
         "tags": [
           "Research"
         ],
-        "description": "The disclosed fee and the fee estimated from the balancete, never mixed.",
+        "description": "Disclosed fees and estimates from accounting records, shown separately.",
         "x-mint": {
           "href": "/api-docs/v2/operations/portfolio/fees"
         },

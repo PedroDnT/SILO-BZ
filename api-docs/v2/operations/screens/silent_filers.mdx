@@ -2,9 +2,22 @@
 title: "Silent filers"
 description: "Funds published still lists as active whose last periodic informe is min_silent_months to max_silent_months behind their family."
 keywords: ["screens", "silent_filers", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-silent_filers.json GET /screens/silent-filers"
 ---
 
-Funds published still lists as active whose last periodic informe is min_silent_months to max_silent_months behind their family.
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "screens", "kind": "silent_filers", "path": "/screens/silent-filers", "method": "GET", "title": "Silent filers", "group": "Research screens", "description": "Funds published still lists as active whose last periodic informe is min_silent_months to max_silent_months behind their family.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "min_silent_months", "target": "min_silent_months", "description": "Minimum complete months without a filing.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "max_silent_months", "target": "max_silent_months", "description": "Maximum complete months without a filing.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "family", "target": "family", "description": "Fund family.", "schema": {"type": "string", "enum": ["all", "fi", "fidc", "fii", "fiagro"], "default": "all"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/screens-silent_filers.json)
+
+<Accordion title="Code example">
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/silent-filers'
+```
+
+</Accordion>
 
 [Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
