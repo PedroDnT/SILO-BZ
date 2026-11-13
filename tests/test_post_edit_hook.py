@@ -11,7 +11,11 @@ written. The 90 s hook timeout was also under the suite's 85 s. Pinned here:
 * a relative path is classified as before;
 * a .py outside the four directories compiles only;
 * a path outside the checkout is ignored;
-* the hook's timeout in settings.json leaves the suite room to finish.
+* the hook's timeout in settings.json leaves the suite room to finish;
+* every hook command in settings.json runs its script through
+  `${CLAUDE_PROJECT_DIR}`, so a session that has `cd`-ed elsewhere (say
+  `dashboard/`) still finds it (#1110: the post-edit hook was relative and
+  exited 127 there).
 """
 from __future__ import annotations
 
@@ -81,3 +85,35 @@ def test_hook_timeout_leaves_the_suite_room():
     ]
     assert len(hooks) == 1
     assert hooks[0]["timeout"] >= 2 * SUITE_SECONDS_MEASURED
+
+
+def _hook_commands(settings: dict) -> list[str]:
+    return [
+        h["command"]
+        for groups in settings["hooks"].values()
+        for group in groups
+        for h in group["hooks"]
+        if h.get("type") == "command"
+    ]
+
+
+def test_every_hook_command_is_anchored_on_the_project_dir():
+    commands = _hook_commands(json.loads(SETTINGS.read_text()))
+    assert commands
+    for command in commands:
+        assert command.startswith('bash "${CLAUDE_PROJECT_DIR}/.claude/hooks/'), command
+        script = command.split("${CLAUDE_PROJECT_DIR}/", 1)[1].rstrip('"')
+        assert (ROOT / script).is_file(), command
+
+
+def test_post_edit_hook_runs_from_another_directory(tmp_path):
+    """The settings.json command itself, run from outside the checkout root."""
+    (command,) = [c for c in _hook_commands(json.loads(SETTINGS.read_text())) if "post-edit.sh" in c]
+    payload = json.dumps({"tool_input": {"file_path": str(ROOT / "src/store/pg_client.py")}})
+    env = {**os.environ, "POST_EDIT_DRY_RUN": "1", "CLAUDE_PROJECT_DIR": str(ROOT)}
+    out = subprocess.run(
+        ["bash", "-c", command], input=payload, text=True, capture_output=True,
+        cwd=ROOT / "dashboard", env=env, check=False,
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "pytest src/store/pg_client.py"
