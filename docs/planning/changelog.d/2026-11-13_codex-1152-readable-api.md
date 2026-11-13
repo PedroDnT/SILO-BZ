@@ -1,0 +1,1 @@
+| 2026-11-13 | codex/1152-readable-api | Add 74 compatible operation routes with specific inputs, compact metadata, concise playgrounds and bounded pandas/Polars SDK results; preserve legacy resource and MCP contracts. |

@@ -292,6 +292,8 @@ class SiloClient:
 
         self._http = httpx.Client(timeout=timeout, transport=transport, headers=headers)
         self._catalog: Optional[Dict[str, Any]] = None
+        from .v2 import V2Client
+        self.v2 = V2Client(self._http, f"{base}/functions/v1/silo-api/v2")
 
     @property
     def tier(self) -> str:

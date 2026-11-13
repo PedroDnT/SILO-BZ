@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/screens": {
+    "/screens/overdue-securit": {
       "get": {
         "operationId": "v2_screens_overdue_securit",
         "summary": "Overdue securit",
         "tags": [
           "Research"
         ],
-        "description": "Deployed preview. Which funds look odd? Forensic screens: signals, not verdicts.\n\nCRI, CRA and other series past their filed maturity whose newest filing still reports a non-terminal status.\n\nThis playground selects `overdue_securit` on `GET /screens`. See the [full resource reference](/api-docs/v2/reference/screens) for all variants.",
+        "description": "CRI, CRA and other series past their filed maturity whose newest filing still reports a non-terminal status.",
         "x-mint": {
           "href": "/api-docs/v2/operations/screens/overdue_securit"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects overdue securit.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "overdue_securit"
-              ],
-              "default": "overdue_securit"
-            },
-            "example": "overdue_securit"
-          },
-          {
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -72,7 +58,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -81,10 +67,20 @@
             "name": "min_volume",
             "in": "query",
             "required": false,
-            "description": "overdue_securit: paid-in volume floor, BRL. Default: the SQL default (100000).",
+            "description": "Minimum paid-in volume, in BRL.",
             "schema": {
               "type": "number",
               "minimum": 0
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -142,36 +138,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

@@ -220,3 +220,14 @@ release.
 Offline, via `httpx.MockTransport` — see `tests/test_sdk_client.py` in the
 repo root. No network, no fabricated fixtures beyond the documented response
 shapes.
+
+## V2 operations and DataFrames
+
+```python
+with SiloClient() as silo:
+    result = silo.v2.get("macro/series", series="CDI").collect(max_pages=10)
+    df = result.to_pandas()  # or result.to_polars()
+    print(result.meta["tier"])
+```
+
+`SILO_TOKEN` supplies the Bearer credential. Conversion is local and refuses remaining pages or tier-capped results unless `allow_partial=True` is explicit. Dates and identifiers remain strings; decimals retain precision and missing values are not filled. For body operations use `silo.v2.post("portfolio/fees", body={"cnpjs": fund_cnpjs})`.

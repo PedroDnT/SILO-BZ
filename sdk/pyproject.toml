@@ -8,7 +8,7 @@ name = "silo-client"
 # pins them equal. They had drifted to 0.4.0 here against 0.6.0 in the package,
 # so `pip show silo-client` and `silo_client.__version__` named two different
 # releases of the same code and neither could be trusted to identify a build.
-version = "0.9.0"
+version = "0.10.0"
 description = "Thin, honest Python client for the Silo read API (Brazilian public-markets warehouse: CVM funds, B3 COTAHIST, B3 securities lending)."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,4 +30,4 @@ include = ["silo_client*"]
 [tool.setuptools.package-data]
 #: contract.json is what SiloClient.rpc() validates against; without it in
 #: the wheel every function call would fail before it is sent.
-silo_client = ["py.typed", "contract.json"]
+silo_client = ["py.typed", "contract.json", "operations.json"]

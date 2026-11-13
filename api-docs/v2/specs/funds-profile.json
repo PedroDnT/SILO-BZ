@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/funds": {
+    "/funds/profile": {
       "get": {
         "operationId": "v2_funds_profile",
         "summary": "Fund profiles",
         "tags": [
           "Companies and funds"
         ],
-        "description": "Deployed preview. What is this fund and how is it doing? Profile, NAV, holdings, debentures, FII properties.\n\none row per family the CNPJ files under. With no id: the  registry view, ordered by cnpj, paged with order + limit + offset.\n\nThis playground selects `profile` on `GET /funds`. See the [full resource reference](/api-docs/v2/reference/funds) for all variants.",
+        "description": "One row per family the CNPJ files under.",
         "x-mint": {
           "href": "/api-docs/v2/operations/funds/profile"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects fund profiles.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "profile"
-              ],
-              "default": "profile"
-            },
-            "example": "profile"
-          },
-          {
             "name": "family",
             "in": "query",
             "required": false,
-            "description": "One fund family. kind=nav: the series filed under that family (one CNPJ can file under two). With no id: the registry rows of that family. Default: all.",
+            "description": "Fund family.",
             "schema": {
               "type": "string",
               "enum": [
@@ -77,10 +63,10 @@
             }
           },
           {
-            "name": "id",
+            "name": "cnpj",
             "in": "query",
             "required": false,
-            "description": "By kind: profile, nav, holdings, debentures, properties take a 14-digit fund CNPJ (punctuation allowed). Required for kinds nav, properties. Kind holdings: id or holding is required. Kind debentures: id or holding is required. With no id, kind profile reads api.funds (what SILO holds). Default: none.",
+            "description": "Fund CNPJ (14 digits).",
             "schema": {
               "type": "string"
             }
@@ -89,7 +75,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -99,7 +85,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -108,10 +94,20 @@
             "name": "status",
             "in": "query",
             "required": false,
-            "description": "With no id: only registry rows whose status is this, exactly as CVM publishes it (e.g. EM FUNCIONAMENTO NORMAL). Default: all.",
+            "description": "Exact registration status.",
             "schema": {
               "type": "string",
               "default": "all"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -164,36 +160,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

@@ -13,7 +13,7 @@ No authenticated Financial Datasets request was executed.
 
 | Reference capability | SILO equivalent | Decision |
 | --- | --- | --- |
-| Task-specific endpoint pages | 74 kinds within 14 v2 resources | Generate 74 named pages and request-schema projections; retain real HTTP paths |
+| Task-specific endpoint pages | 74 kinds within 14 v2 resources | Provide explicit operation routes, task-specific inputs and 74 named pages |
 | Historical prices and snapshot | prices history/latest/session/index/forward | Separate navigation; latest is a closing price, not realtime |
 | Income, balance, cash flow, as-reported | statements income/balance/cashflow/all/versions/headline | Separate pages; preserve accounting and filing semantics |
 | Tickers and company lookup | search any/company/universe | Expose discovery before data reads |
@@ -41,10 +41,9 @@ data and service gaps above stay explicit; they are not hidden behind empty endp
 ## Generation and acceptance
 
 Run `python -m scripts.gen_v2_operation_docs` after the base OpenAPI generator.
-The projection specs are documentation-only subsets: same server, route, method,
-security and response contract; one kind pinned per page. No new runtime endpoint.
+The operation specs and SDK contract derive from `supabase/functions/silo-api/operations.json`, also imported by the gateway. Existing resource routes retain their full contract; new operation routes use named inputs and compact metadata.
 Offline checks reject drift and navigation omissions. Browser checks must verify
-kind prefill, code sample changes, actual response, and mobile layout before release.
+named inputs, actual responses, series labels and mobile layout before release.
 
 ## Verification
 

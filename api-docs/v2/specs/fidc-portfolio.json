@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/fidc": {
+    "/fidc/portfolio": {
       "get": {
         "operationId": "v2_fidc_portfolio",
         "summary": "Receivables portfolio",
         "tags": [
           "Companies and funds"
         ],
-        "description": "Deployed preview. What is inside this FIDC? Portfolio, tranches, aging, cedentes, sacados.\n\n, newest first. Paged by date windows. With no id: the FIDC registry, ordered by cnpj.\n\nThis playground selects `portfolio` on `GET /fidc`. See the [full resource reference](/api-docs/v2/reference/fidc) for all variants.",
+        "description": ", newest first.",
         "x-mint": {
           "href": "/api-docs/v2/operations/fidc/portfolio"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects receivables portfolio.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "portfolio"
-              ],
-              "default": "portfolio"
-            },
-            "example": "portfolio"
-          },
-          {
-            "name": "id",
+            "name": "cnpj",
             "in": "query",
             "required": false,
-            "description": "By kind: portfolio, tranches, aging, cedentes, sacados take a FIDC's 14-digit fund CNPJ (punctuation allowed). Required for kinds tranches, aging, sacados. Kind cedentes: id or cedente is required. With no id, kind portfolio reads api.funds (what SILO holds). Default: none.",
+            "description": "Fund CNPJ (14 digits).",
             "schema": {
               "type": "string"
             }
@@ -71,7 +57,7 @@
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "description": "Start date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -81,7 +67,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "description": "End date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -91,7 +77,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -101,7 +87,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -110,7 +96,7 @@
             "name": "item",
             "in": "query",
             "required": false,
-            "description": "kind=portfolio: one part of the book, matched against the row's kind column: sector (tab II), scr_debtor or scr_operation (tab X ladders), tax_debt. Default: all.",
+            "description": "Receivables portfolio category.",
             "schema": {
               "type": "string",
               "enum": [
@@ -121,6 +107,16 @@
                 "tax_debt"
               ],
               "default": "all"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -173,36 +169,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

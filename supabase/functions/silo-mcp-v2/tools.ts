@@ -21,6 +21,7 @@
 //
 // Spec: docs/planning/API_V2.md (#1052, #1060).
 
+import { OPERATIONS } from "../silo-api/operations.ts";
 import { ApiError } from "../silo-api/errors.ts";
 import { acceptedParams } from "../silo-api/params.ts";
 import { type BodySpec, type ParamSpec, REGISTRY, type ResourceSpec, SHARED_NAMES } from "../silo-api/registry.ts";
@@ -113,10 +114,10 @@ function firstSentence(s: string): string {
 function describe(r: ResourceSpec, hidden: ParamSpec[]): string {
   const parts: string[] = [r.summary, `Example: ${r.example}`];
   const kinds = Object.entries(r.kinds ?? {});
-  if (kinds.length > 1) parts.push(`Kinds:\n${kinds.map(([n, k]) => `- ${n}: ${firstSentence(k.doc)}.`).join("\n")}`);
+  if (kinds.length > 1) parts.push(`Kinds:\n${kinds.map(([n, k]) => `- ${n}: ${(OPERATIONS.find(o => o.resource === r.name && o.kind === n)?.description ?? firstSentence(k.doc))}.`).join("\n")}`);
   if (r.window_months) parts.push(`With no from, a dated kind reads the last ${r.window_months} months to \`to\`.`);
   if (hidden.length) {
-    parts.push(`Hidden parameters, in options: ${hidden.map((p) => `${p.name} (default ${defaultText(p)})`).join("; ")}.`);
+    parts.push(`Optional filters in options: ${hidden.map((p) => `${p.name} (default ${defaultText(p)})`).join("; ")}.`);
   }
   if (hidden.some((p) => p.name === "fields")) {
     parts.push("fields defaults to core (concise rows); options.fields=all is the detailed form, every column the endpoint publishes.");
@@ -145,7 +146,7 @@ export function buildTool(r: ResourceSpec): V2Tool {
   if (hidden.length) {
     properties.options = {
       type: "object",
-      description: `Hidden parameters of ${r.name}. Leave it out for every default.`,
+      description: `Optional filters for ${r.name}. Omit to use defaults.`,
       properties: Object.fromEntries(hidden.map((p) => [p.name, paramSchema(p)])),
       additionalProperties: false,
     };

@@ -22,83 +22,85 @@ The REST API and MCP v2 are live in preview. Anonymous data calls need no key. T
 - [v2 authentication](https://octo-98895abd.mintlify.site/api-docs/v2/authentication.md): Anonymous, user-session and revocable integration-key access.
 - [v2 pagination and errors](https://octo-98895abd.mintlify.site/api-docs/v2/responses.md): Complete, partial, empty and failed responses.
 
+- [Python DataFrames](https://octo-98895abd.mintlify.site/api-docs/v2/python.md): pandas, Polars and explicit bounded pagination.
+
 <!-- BEGIN V2 OPERATIONS -->
 ## v2 operations
 
-- [Resolve an identifier](https://octo-98895abd.mintlify.site/api-docs/v2/operations/search/any.md): `GET /search` with `kind=any`.
-- [Find companies](https://octo-98895abd.mintlify.site/api-docs/v2/operations/search/company.md): `GET /search` with `kind=company`.
-- [Find funds](https://octo-98895abd.mintlify.site/api-docs/v2/operations/search/fund.md): `GET /search` with `kind=fund`.
-- [Listed universe](https://octo-98895abd.mintlify.site/api-docs/v2/operations/search/universe.md): `GET /search` with `kind=universe`.
-- [Historical stock prices](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/history.md): `GET /prices` with `kind=history`.
-- [Latest closing price](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/latest.md): `GET /prices` with `kind=latest`.
-- [Market session](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/session.md): `GET /prices` with `kind=session`.
-- [Index history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/index.md): `GET /prices` with `kind=index`.
-- [Forward prices](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/forward.md): `GET /prices` with `kind=forward`.
-- [As-filed line items](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/all.md): `GET /statements` with `kind=all`.
-- [Income statements](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/income.md): `GET /statements` with `kind=income`.
-- [Balance sheets](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/balance.md): `GET /statements` with `kind=balance`.
-- [Cash flow statements](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/cashflow.md): `GET /statements` with `kind=cashflow`.
-- [Headline financials](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/headline.md): `GET /statements` with `kind=headline`.
-- [Filing version history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/versions.md): `GET /statements` with `kind=versions`.
-- [Fund profiles](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/profile.md): `GET /funds` with `kind=profile`.
-- [NAV and flows](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/nav.md): `GET /funds` with `kind=nav`.
-- [Equity holdings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/holdings.md): `GET /funds` with `kind=holdings`.
-- [Debenture holdings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/debentures.md): `GET /funds` with `kind=debentures`.
-- [Property holdings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/properties.md): `GET /funds` with `kind=properties`.
-- [Receivables portfolio](https://octo-98895abd.mintlify.site/api-docs/v2/operations/fidc/portfolio.md): `GET /fidc` with `kind=portfolio`.
-- [Tranche performance](https://octo-98895abd.mintlify.site/api-docs/v2/operations/fidc/tranches.md): `GET /fidc` with `kind=tranches`.
-- [Receivables aging](https://octo-98895abd.mintlify.site/api-docs/v2/operations/fidc/aging.md): `GET /fidc` with `kind=aging`.
-- [Originator concentration](https://octo-98895abd.mintlify.site/api-docs/v2/operations/fidc/cedentes.md): `GET /fidc` with `kind=cedentes`.
-- [Debtor concentration](https://octo-98895abd.mintlify.site/api-docs/v2/operations/fidc/sacados.md): `GET /fidc` with `kind=sacados`.
-- [Option chain](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/chain.md): `GET /derivatives` with `kind=chain`.
-- [Option price history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/history.md): `GET /derivatives` with `kind=history`.
-- [Option exercises](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/exercises.md): `GET /derivatives` with `kind=exercises`.
-- [Termo contracts](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/termo.md): `GET /derivatives` with `kind=termo`.
-- [Futures history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/futures.md): `GET /derivatives` with `kind=futures`.
-- [Futures curve](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/futures_curve.md): `GET /derivatives` with `kind=futures_curve`.
-- [DI settlement rates](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/di_settlement.md): `GET /derivatives` with `kind=di_settlement`.
-- [Latest yield curve](https://octo-98895abd.mintlify.site/api-docs/v2/operations/curves/snapshot.md): `GET /curves` with `kind=snapshot`.
-- [Yield curve history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/curves/history.md): `GET /curves` with `kind=history`.
-- [Published curve vertices](https://octo-98895abd.mintlify.site/api-docs/v2/operations/curves/vertices.md): `GET /curves` with `kind=vertices`.
-- [Economic series](https://octo-98895abd.mintlify.site/api-docs/v2/operations/macro/series.md): `GET /macro` with `kind=series`.
-- [Inflation history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/macro/inflation.md): `GET /macro` with `kind=inflation`.
-- [Inflation components](https://octo-98895abd.mintlify.site/api-docs/v2/operations/macro/inflation_items.md): `GET /macro` with `kind=inflation_items`.
-- [Exchange rates](https://octo-98895abd.mintlify.site/api-docs/v2/operations/macro/fx.md): `GET /macro` with `kind=fx`.
-- [Forecast revisions](https://octo-98895abd.mintlify.site/api-docs/v2/operations/macro/expectations.md): `GET /macro` with `kind=expectations`.
-- [Short interest](https://octo-98895abd.mintlify.site/api-docs/v2/operations/positioning/short_interest.md): `GET /positioning` with `kind=short_interest`.
-- [Short by sector](https://octo-98895abd.mintlify.site/api-docs/v2/operations/positioning/short_by_sector.md): `GET /positioning` with `kind=short_by_sector`.
-- [Lending](https://octo-98895abd.mintlify.site/api-docs/v2/operations/positioning/lending.md): `GET /positioning` with `kind=lending`.
-- [Lending brokers](https://octo-98895abd.mintlify.site/api-docs/v2/operations/positioning/lending_brokers.md): `GET /positioning` with `kind=lending_brokers`.
-- [Investor flow](https://octo-98895abd.mintlify.site/api-docs/v2/operations/positioning/investor_flow.md): `GET /positioning` with `kind=investor_flow`.
-- [Company filings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/company.md): `GET /events` with `kind=company`.
-- [Fund documents](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/fund.md): `GET /events` with `kind=fund`.
-- [Restated filings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/restatements.md): `GET /events` with `kind=restatements`.
-- [Restatement changes](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/restatement_diff.md): `GET /events` with `kind=restatement_diff`.
-- [Judicial recovery filings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/judicial_recovery.md): `GET /events` with `kind=judicial_recovery`.
-- [Available screens](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/list.md): `GET /screens` with `kind=list`.
-- [Captive vehicles](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/captive_vehicles.md): `GET /screens` with `kind=captive_vehicles`.
-- [Delinquency drivers](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/delinquency_drivers.md): `GET /screens` with `kind=delinquency_drivers`.
-- [Dormant funds](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/dormant_funds.md): `GET /screens` with `kind=dormant_funds`.
-- [Dormant trend](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/dormant_trend.md): `GET /screens` with `kind=dormant_trend`.
-- [Evergreen aging](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/evergreen_aging.md): `GET /screens` with `kind=evergreen_aging`.
-- [Late filers](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/late_filers.md): `GET /screens` with `kind=late_filers`.
-- [Overdue securit](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/overdue_securit.md): `GET /screens` with `kind=overdue_securit`.
-- [Restatements](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/restatements.md): `GET /screens` with `kind=restatements`.
-- [Silent filers](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/silent_filers.md): `GET /screens` with `kind=silent_filers`.
-- [Zombie growth](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/zombie_growth.md): `GET /screens` with `kind=zombie_growth`.
-- [Cross-asset panel](https://octo-98895abd.mintlify.site/api-docs/v2/operations/panel/panel.md): `GET /panel`.
-- [Resolve portfolio entries](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/resolve.md): `POST /portfolio` with `kind=resolve`.
-- [Disclosed and estimated fees](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/fees.md): `POST /portfolio` with `kind=fees`.
-- [Fee peer comparison](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/fee_peers.md): `POST /portfolio` with `kind=fee_peers`.
-- [Portfolio look-through](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/lookthrough.md): `POST /portfolio` with `kind=lookthrough`.
-- [Monthly return comparison](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/movement.md): `POST /portfolio` with `kind=movement`.
-- [Resolve credit instruments](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/instruments.md): `POST /portfolio` with `kind=instruments`.
-- [Fund redemption terms](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/fund_terms.md): `POST /portfolio` with `kind=fund_terms`.
-- [ETF equivalents](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/equivalents.md): `POST /portfolio` with `kind=equivalents`.
-- [Debenture fund marks](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/debenture_returns.md): `POST /portfolio` with `kind=debenture_returns`.
-- [Dataset freshness](https://octo-98895abd.mintlify.site/api-docs/v2/operations/coverage/freshness.md): `GET /coverage` with `kind=freshness`.
-- [Metric coverage](https://octo-98895abd.mintlify.site/api-docs/v2/operations/coverage/metrics.md): `GET /coverage` with `kind=metrics`.
-- [Data dictionary](https://octo-98895abd.mintlify.site/api-docs/v2/operations/coverage/catalog.md): `GET /coverage` with `kind=catalog`.
+- [Resolve an identifier](https://octo-98895abd.mintlify.site/api-docs/v2/operations/search/any.md): `GET /search/any`.
+- [Find companies](https://octo-98895abd.mintlify.site/api-docs/v2/operations/search/company.md): `GET /search/company`.
+- [Find funds](https://octo-98895abd.mintlify.site/api-docs/v2/operations/search/fund.md): `GET /search/fund`.
+- [Listed universe](https://octo-98895abd.mintlify.site/api-docs/v2/operations/search/universe.md): `GET /search/universe`.
+- [Historical stock prices](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/history.md): `GET /prices/history`.
+- [Latest closing price](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/latest.md): `GET /prices/latest`.
+- [Market session](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/session.md): `GET /prices/session`.
+- [Index history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/index.md): `GET /prices/index`.
+- [Forward prices](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/forward.md): `GET /prices/forward`.
+- [As-filed line items](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/all.md): `GET /statements/all`.
+- [Income statements](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/income.md): `GET /statements/income`.
+- [Balance sheets](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/balance.md): `GET /statements/balance`.
+- [Cash flow statements](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/cashflow.md): `GET /statements/cashflow`.
+- [Headline financials](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/headline.md): `GET /statements/headline`.
+- [Filing version history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/versions.md): `GET /statements/versions`.
+- [Fund profiles](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/profile.md): `GET /funds/profile`.
+- [NAV and flows](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/nav.md): `GET /funds/nav`.
+- [Equity holdings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/holdings.md): `GET /funds/holdings`.
+- [Debenture holdings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/debentures.md): `GET /funds/debentures`.
+- [Property holdings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/properties.md): `GET /funds/properties`.
+- [Receivables portfolio](https://octo-98895abd.mintlify.site/api-docs/v2/operations/fidc/portfolio.md): `GET /fidc/portfolio`.
+- [Tranche performance](https://octo-98895abd.mintlify.site/api-docs/v2/operations/fidc/tranches.md): `GET /fidc/tranches`.
+- [Receivables aging](https://octo-98895abd.mintlify.site/api-docs/v2/operations/fidc/aging.md): `GET /fidc/aging`.
+- [Originator concentration](https://octo-98895abd.mintlify.site/api-docs/v2/operations/fidc/cedentes.md): `GET /fidc/cedentes`.
+- [Debtor concentration](https://octo-98895abd.mintlify.site/api-docs/v2/operations/fidc/sacados.md): `GET /fidc/sacados`.
+- [Option chain](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/chain.md): `GET /derivatives/chain`.
+- [Option price history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/history.md): `GET /derivatives/history`.
+- [Option exercises](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/exercises.md): `GET /derivatives/exercises`.
+- [Termo contracts](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/termo.md): `GET /derivatives/termo`.
+- [Futures history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/futures.md): `GET /derivatives/futures`.
+- [Futures curve](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/futures_curve.md): `GET /derivatives/futures-curve`.
+- [DI settlement rates](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/di_settlement.md): `GET /derivatives/di-settlement`.
+- [Latest yield curve](https://octo-98895abd.mintlify.site/api-docs/v2/operations/curves/snapshot.md): `GET /curves/snapshot`.
+- [Yield curve history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/curves/history.md): `GET /curves/history`.
+- [Published curve vertices](https://octo-98895abd.mintlify.site/api-docs/v2/operations/curves/vertices.md): `GET /curves/vertices`.
+- [Economic series](https://octo-98895abd.mintlify.site/api-docs/v2/operations/macro/series.md): `GET /macro/series`.
+- [Inflation history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/macro/inflation.md): `GET /macro/inflation`.
+- [Inflation components](https://octo-98895abd.mintlify.site/api-docs/v2/operations/macro/inflation_items.md): `GET /macro/inflation-items`.
+- [Exchange rates](https://octo-98895abd.mintlify.site/api-docs/v2/operations/macro/fx.md): `GET /macro/fx`.
+- [Forecast revisions](https://octo-98895abd.mintlify.site/api-docs/v2/operations/macro/expectations.md): `GET /macro/expectations`.
+- [Short interest](https://octo-98895abd.mintlify.site/api-docs/v2/operations/positioning/short_interest.md): `GET /positioning/short-interest`.
+- [Short by sector](https://octo-98895abd.mintlify.site/api-docs/v2/operations/positioning/short_by_sector.md): `GET /positioning/short-by-sector`.
+- [Lending](https://octo-98895abd.mintlify.site/api-docs/v2/operations/positioning/lending.md): `GET /positioning/lending`.
+- [Lending brokers](https://octo-98895abd.mintlify.site/api-docs/v2/operations/positioning/lending_brokers.md): `GET /positioning/lending-brokers`.
+- [Investor flow](https://octo-98895abd.mintlify.site/api-docs/v2/operations/positioning/investor_flow.md): `GET /positioning/investor-flow`.
+- [Company filings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/company.md): `GET /events/company`.
+- [Fund documents](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/fund.md): `GET /events/fund`.
+- [Restated filings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/restatements.md): `GET /events/restatements`.
+- [Restatement changes](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/restatement_diff.md): `GET /events/restatement-diff`.
+- [Judicial recovery filings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/judicial_recovery.md): `GET /events/judicial-recovery`.
+- [Available screens](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/list.md): `GET /screens/list`.
+- [Captive vehicles](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/captive_vehicles.md): `GET /screens/captive-vehicles`.
+- [Delinquency drivers](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/delinquency_drivers.md): `GET /screens/delinquency-drivers`.
+- [Dormant funds](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/dormant_funds.md): `GET /screens/dormant-funds`.
+- [Dormant trend](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/dormant_trend.md): `GET /screens/dormant-trend`.
+- [Evergreen aging](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/evergreen_aging.md): `GET /screens/evergreen-aging`.
+- [Late filers](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/late_filers.md): `GET /screens/late-filers`.
+- [Overdue securit](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/overdue_securit.md): `GET /screens/overdue-securit`.
+- [Restatements](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/restatements.md): `GET /screens/restatements`.
+- [Silent filers](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/silent_filers.md): `GET /screens/silent-filers`.
+- [Zombie growth](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/zombie_growth.md): `GET /screens/zombie-growth`.
+- [Cross-asset panel](https://octo-98895abd.mintlify.site/api-docs/v2/operations/panel/panel.md): `GET /panel/panel`.
+- [Resolve portfolio entries](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/resolve.md): `POST /portfolio/resolve`.
+- [Disclosed and estimated fees](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/fees.md): `POST /portfolio/fees`.
+- [Fee peer comparison](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/fee_peers.md): `POST /portfolio/fee-peers`.
+- [Portfolio look-through](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/lookthrough.md): `POST /portfolio/lookthrough`.
+- [Monthly return comparison](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/movement.md): `POST /portfolio/movement`.
+- [Resolve credit instruments](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/instruments.md): `POST /portfolio/instruments`.
+- [Fund redemption terms](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/fund_terms.md): `POST /portfolio/fund-terms`.
+- [ETF equivalents](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/equivalents.md): `POST /portfolio/equivalents`.
+- [Debenture fund marks](https://octo-98895abd.mintlify.site/api-docs/v2/operations/portfolio/debenture_returns.md): `POST /portfolio/debenture-returns`.
+- [Dataset freshness](https://octo-98895abd.mintlify.site/api-docs/v2/operations/coverage/freshness.md): `GET /coverage/freshness`.
+- [Metric coverage](https://octo-98895abd.mintlify.site/api-docs/v2/operations/coverage/metrics.md): `GET /coverage/metrics`.
+- [Data dictionary](https://octo-98895abd.mintlify.site/api-docs/v2/operations/coverage/catalog.md): `GET /coverage/catalog`.
 <!-- END V2 OPERATIONS -->
 
 ## Existing v1 integrations

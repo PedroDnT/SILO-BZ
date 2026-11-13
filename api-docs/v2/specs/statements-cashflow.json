@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/statements": {
+    "/statements/cashflow": {
       "get": {
         "operationId": "v2_statements_cashflow",
         "summary": "Cash flow statements",
         "tags": [
           "Companies and funds"
         ],
-        "description": "Deployed preview. What did the company file? Income, balance sheet, cash flow, headline figures and every stored version.\n\none row per filed period, with period_months.\n\nThis playground selects `cashflow` on `GET /statements`. See the [full resource reference](/api-docs/v2/reference/statements) for all variants.",
+        "description": "One row per filed period, with period_months.",
         "x-mint": {
           "href": "/api-docs/v2/operations/statements/cashflow"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects cash flow statements.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "cashflow"
-              ],
-              "default": "cashflow"
-            },
-            "example": "cashflow"
-          },
-          {
             "name": "period",
             "in": "query",
             "required": false,
-            "description": "quarterly: ITR filings. annual: DFP filings. A quarterly filing holds the 3-month and the year-to-date figure; period_months on the row says which. Never add the two. Default: both.",
+            "description": "Quarterly or annual filings.",
             "schema": {
               "type": "string",
               "enum": [
@@ -77,7 +63,7 @@
             "name": "scope",
             "in": "query",
             "required": false,
-            "description": "Consolidated and individual are separate filings of the same period; they are never merged. Default: consolidated.",
+            "description": "Consolidated or individual filings; never combined.",
             "schema": {
               "type": "string",
               "enum": [
@@ -88,10 +74,10 @@
             }
           },
           {
-            "name": "id",
+            "name": "identifier",
             "in": "query",
             "required": false,
-            "description": "By kind: all, income, balance, cashflow, headline, versions take a listed company's ticker, 14-digit CNPJ or CVM code. With no id, kinds all, income, balance, cashflow, headline, versions read api.research_universe (what SILO holds). Default: none.",
+            "description": "Company ticker or CNPJ.",
             "schema": {
               "type": "string"
             },
@@ -101,7 +87,7 @@
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "description": "Start date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -111,7 +97,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "description": "End date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -121,7 +107,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -131,7 +117,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -140,10 +126,20 @@
             "name": "as_of",
             "in": "query",
             "required": false,
-            "description": "Point in time: only documents CVM received before this date, at the highest version known then. Not for kind versions. Default: none: the latest stored version of every document, which is NOT point in time.",
+            "description": "Use only filings received by this date.",
             "schema": {
               "type": "string",
               "format": "date"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -196,36 +192,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

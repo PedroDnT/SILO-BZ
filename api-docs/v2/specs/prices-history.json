@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/prices": {
+    "/prices/history": {
       "get": {
         "operationId": "v2_prices_history",
         "summary": "Historical stock prices",
         "tags": [
           "Markets and macro"
         ],
-        "description": "Deployed preview. What did it trade at? Daily history (split-adjusted by default), latest quote, sessions, indices, B3 FORWARD prints.\n\none ticker, oldest first, 1 year to the latest session by default, paged with the function's p_after cursor. With no id: the research universe (the tickers held).\n\nThis playground selects `history` on `GET /prices`. See the [full resource reference](/api-docs/v2/reference/prices) for all variants.",
+        "description": "Historical prices for a trading symbol, with optional split adjustment.",
         "x-mint": {
           "href": "/api-docs/v2/operations/prices/history"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects historical stock prices.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "history"
-              ],
-              "default": "history"
-            },
-            "example": "history"
-          },
-          {
             "name": "freq",
             "in": "query",
             "required": false,
-            "description": "kind history, index, forward. month: the last session of each month, selected from the daily rows (no interpolation; a month with no session has no row). Default: day.",
+            "description": "Observation frequency.",
             "schema": {
               "type": "string",
               "enum": [
@@ -76,7 +62,7 @@
             "name": "adjust",
             "in": "query",
             "required": false,
-            "description": "kind history. split: close_adj (splits, groupings, bonus shares; no dividends). none: the raw close as traded. Every row carries adjusted (true or false); the other kinds are never adjusted. Default: split.",
+            "description": "Price adjustment: split-adjusted or unadjusted.",
             "schema": {
               "type": "string",
               "enum": [
@@ -87,10 +73,10 @@
             }
           },
           {
-            "name": "id",
+            "name": "ticker",
             "in": "query",
             "required": false,
-            "description": "By kind: history, latest take a B3 ticker (PETR4); session takes a B3 ticker (none: every ticker of the session); index takes a B3 index code (IBOV, IFIX, ...); forward takes a B3 FORWARD-segment ticker. With no id, kinds history, latest read api.research_universe (what SILO holds). Default: none.",
+            "description": "Trading symbol.",
             "schema": {
               "type": "string"
             },
@@ -100,7 +86,7 @@
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "description": "Start date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -110,7 +96,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "description": "End date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -120,7 +106,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -130,7 +116,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -139,7 +125,7 @@
             "name": "board",
             "in": "query",
             "required": false,
-            "description": "kind history, latest, session. A BDI board code (02 is the standard lot). Default: all boards: the series follows the ISIN across boards.",
+            "description": "Trading board code. Omit to use the default.",
             "schema": {
               "type": "string"
             }
@@ -148,7 +134,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "core: a short set (history: ticker, trade_date, close_adj or close, isin). all: every column the endpoint publishes. index and forward publish few columns, so core is all of them. Default: core.",
+            "description": "core returns essential columns; all includes every published column.",
             "schema": {
               "type": "string",
               "enum": [
@@ -156,6 +142,16 @@
                 "all"
               ],
               "default": "core"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -208,36 +204,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

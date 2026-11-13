@@ -32,46 +32,33 @@
     }
   ],
   "paths": {
-    "/prices": {
+    "/prices/session": {
       "get": {
         "operationId": "v2_prices_session",
         "summary": "Market session",
         "tags": [
           "Markets and macro"
         ],
-        "description": "Deployed preview. What did it trade at? Daily history (split-adjusted by default), latest quote, sessions, indices, B3 FORWARD prints.\n\nOne session's quotes from one price view (raw, adjusted false). Paged with order + limit + offset; the default session is pinned in the cursor.\n\nThis playground selects `session` on `GET /prices`. See the [full resource reference](/api-docs/v2/reference/prices) for all variants.",
+        "description": "One session's quotes from one price view (raw, adjusted false).",
         "x-mint": {
           "href": "/api-docs/v2/operations/prices/session"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects market session.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "session"
-              ],
-              "default": "session"
-            },
-            "example": "session"
-          },
-          {
-            "name": "id",
+            "name": "ticker",
             "in": "query",
             "required": false,
-            "description": "By kind: history, latest take a B3 ticker (PETR4); session takes a B3 ticker (none: every ticker of the session); index takes a B3 index code (IBOV, IFIX, ...); forward takes a B3 FORWARD-segment ticker. With no id, kinds history, latest read api.research_universe (what SILO holds). Default: none.",
+            "description": "Trading symbol.",
             "schema": {
               "type": "string"
-            }
+            },
+            "example": "PETR4"
           },
           {
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -81,7 +68,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -90,7 +77,7 @@
             "name": "board",
             "in": "query",
             "required": false,
-            "description": "kind history, latest, session. A BDI board code (02 is the standard lot). Default: all boards: the series follows the ISIN across boards.",
+            "description": "Trading board code. Omit to use the default.",
             "schema": {
               "type": "string"
             }
@@ -99,7 +86,7 @@
             "name": "asset_class",
             "in": "query",
             "required": false,
-            "description": "kind session. all: api.quotes (standard lot, tpmerc 010). Each class reads its own view (equities, bdrs, units, fund_quotas, cash_securities: standard, odd and block lots, with lot on the row; auctions: tpmerc 017), with every column it publishes. Default: all.",
+            "description": "Instrument class.",
             "schema": {
               "type": "string",
               "enum": [
@@ -118,7 +105,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "core: a short set (history: ticker, trade_date, close_adj or close, isin). all: every column the endpoint publishes. index and forward publish few columns, so core is all of them. Default: core.",
+            "description": "core returns essential columns; all includes every published column.",
             "schema": {
               "type": "string",
               "enum": [
@@ -132,10 +119,20 @@
             "name": "date",
             "in": "query",
             "required": false,
-            "description": "kind session. The session date, YYYY-MM-DD. Default: the latest session in the 14 days to today that matches the other filters.",
+            "description": "Observation date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -188,36 +185,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

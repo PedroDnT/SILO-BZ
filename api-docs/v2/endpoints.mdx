@@ -6,7 +6,7 @@ icon: "compass"
 ---
 
 **Deployed preview.** Browse 74 operations across 14 REST resources. Each operation
-has a dedicated page and a playground with its `kind` already selected.
+has a dedicated route with task-specific inputs.
 These pages expose the existing API; they do not add data coverage.
 
 <Columns cols={2}>
@@ -22,77 +22,77 @@ code panel. Read [authentication](/api-docs/v2/authentication) before adding a k
 
 ## All operations
 
-- [Resolve an identifier](/api-docs/v2/operations/search/any): `GET /search` with `kind=any`.
-- [Find companies](/api-docs/v2/operations/search/company): `GET /search` with `kind=company`.
-- [Find funds](/api-docs/v2/operations/search/fund): `GET /search` with `kind=fund`.
-- [Listed universe](/api-docs/v2/operations/search/universe): `GET /search` with `kind=universe`.
-- [Historical stock prices](/api-docs/v2/operations/prices/history): `GET /prices` with `kind=history`.
-- [Latest closing price](/api-docs/v2/operations/prices/latest): `GET /prices` with `kind=latest`.
-- [Market session](/api-docs/v2/operations/prices/session): `GET /prices` with `kind=session`.
-- [Index history](/api-docs/v2/operations/prices/index): `GET /prices` with `kind=index`.
-- [Forward prices](/api-docs/v2/operations/prices/forward): `GET /prices` with `kind=forward`.
-- [As-filed line items](/api-docs/v2/operations/statements/all): `GET /statements` with `kind=all`.
-- [Income statements](/api-docs/v2/operations/statements/income): `GET /statements` with `kind=income`.
-- [Balance sheets](/api-docs/v2/operations/statements/balance): `GET /statements` with `kind=balance`.
-- [Cash flow statements](/api-docs/v2/operations/statements/cashflow): `GET /statements` with `kind=cashflow`.
-- [Headline financials](/api-docs/v2/operations/statements/headline): `GET /statements` with `kind=headline`.
-- [Filing version history](/api-docs/v2/operations/statements/versions): `GET /statements` with `kind=versions`.
-- [Fund profiles](/api-docs/v2/operations/funds/profile): `GET /funds` with `kind=profile`.
-- [NAV and flows](/api-docs/v2/operations/funds/nav): `GET /funds` with `kind=nav`.
-- [Equity holdings](/api-docs/v2/operations/funds/holdings): `GET /funds` with `kind=holdings`.
-- [Debenture holdings](/api-docs/v2/operations/funds/debentures): `GET /funds` with `kind=debentures`.
-- [Property holdings](/api-docs/v2/operations/funds/properties): `GET /funds` with `kind=properties`.
-- [Receivables portfolio](/api-docs/v2/operations/fidc/portfolio): `GET /fidc` with `kind=portfolio`.
-- [Tranche performance](/api-docs/v2/operations/fidc/tranches): `GET /fidc` with `kind=tranches`.
-- [Receivables aging](/api-docs/v2/operations/fidc/aging): `GET /fidc` with `kind=aging`.
-- [Originator concentration](/api-docs/v2/operations/fidc/cedentes): `GET /fidc` with `kind=cedentes`.
-- [Debtor concentration](/api-docs/v2/operations/fidc/sacados): `GET /fidc` with `kind=sacados`.
-- [Option chain](/api-docs/v2/operations/derivatives/chain): `GET /derivatives` with `kind=chain`.
-- [Option price history](/api-docs/v2/operations/derivatives/history): `GET /derivatives` with `kind=history`.
-- [Option exercises](/api-docs/v2/operations/derivatives/exercises): `GET /derivatives` with `kind=exercises`.
-- [Termo contracts](/api-docs/v2/operations/derivatives/termo): `GET /derivatives` with `kind=termo`.
-- [Futures history](/api-docs/v2/operations/derivatives/futures): `GET /derivatives` with `kind=futures`.
-- [Futures curve](/api-docs/v2/operations/derivatives/futures_curve): `GET /derivatives` with `kind=futures_curve`.
-- [DI settlement rates](/api-docs/v2/operations/derivatives/di_settlement): `GET /derivatives` with `kind=di_settlement`.
-- [Latest yield curve](/api-docs/v2/operations/curves/snapshot): `GET /curves` with `kind=snapshot`.
-- [Yield curve history](/api-docs/v2/operations/curves/history): `GET /curves` with `kind=history`.
-- [Published curve vertices](/api-docs/v2/operations/curves/vertices): `GET /curves` with `kind=vertices`.
-- [Economic series](/api-docs/v2/operations/macro/series): `GET /macro` with `kind=series`.
-- [Inflation history](/api-docs/v2/operations/macro/inflation): `GET /macro` with `kind=inflation`.
-- [Inflation components](/api-docs/v2/operations/macro/inflation_items): `GET /macro` with `kind=inflation_items`.
-- [Exchange rates](/api-docs/v2/operations/macro/fx): `GET /macro` with `kind=fx`.
-- [Forecast revisions](/api-docs/v2/operations/macro/expectations): `GET /macro` with `kind=expectations`.
-- [Short interest](/api-docs/v2/operations/positioning/short_interest): `GET /positioning` with `kind=short_interest`.
-- [Short by sector](/api-docs/v2/operations/positioning/short_by_sector): `GET /positioning` with `kind=short_by_sector`.
-- [Lending](/api-docs/v2/operations/positioning/lending): `GET /positioning` with `kind=lending`.
-- [Lending brokers](/api-docs/v2/operations/positioning/lending_brokers): `GET /positioning` with `kind=lending_brokers`.
-- [Investor flow](/api-docs/v2/operations/positioning/investor_flow): `GET /positioning` with `kind=investor_flow`.
-- [Company filings](/api-docs/v2/operations/events/company): `GET /events` with `kind=company`.
-- [Fund documents](/api-docs/v2/operations/events/fund): `GET /events` with `kind=fund`.
-- [Restated filings](/api-docs/v2/operations/events/restatements): `GET /events` with `kind=restatements`.
-- [Restatement changes](/api-docs/v2/operations/events/restatement_diff): `GET /events` with `kind=restatement_diff`.
-- [Judicial recovery filings](/api-docs/v2/operations/events/judicial_recovery): `GET /events` with `kind=judicial_recovery`.
-- [Available screens](/api-docs/v2/operations/screens/list): `GET /screens` with `kind=list`.
-- [Captive vehicles](/api-docs/v2/operations/screens/captive_vehicles): `GET /screens` with `kind=captive_vehicles`.
-- [Delinquency drivers](/api-docs/v2/operations/screens/delinquency_drivers): `GET /screens` with `kind=delinquency_drivers`.
-- [Dormant funds](/api-docs/v2/operations/screens/dormant_funds): `GET /screens` with `kind=dormant_funds`.
-- [Dormant trend](/api-docs/v2/operations/screens/dormant_trend): `GET /screens` with `kind=dormant_trend`.
-- [Evergreen aging](/api-docs/v2/operations/screens/evergreen_aging): `GET /screens` with `kind=evergreen_aging`.
-- [Late filers](/api-docs/v2/operations/screens/late_filers): `GET /screens` with `kind=late_filers`.
-- [Overdue securit](/api-docs/v2/operations/screens/overdue_securit): `GET /screens` with `kind=overdue_securit`.
-- [Restatements](/api-docs/v2/operations/screens/restatements): `GET /screens` with `kind=restatements`.
-- [Silent filers](/api-docs/v2/operations/screens/silent_filers): `GET /screens` with `kind=silent_filers`.
-- [Zombie growth](/api-docs/v2/operations/screens/zombie_growth): `GET /screens` with `kind=zombie_growth`.
-- [Cross-asset panel](/api-docs/v2/operations/panel/panel): `GET /panel`.
-- [Resolve portfolio entries](/api-docs/v2/operations/portfolio/resolve): `POST /portfolio` with `kind=resolve`.
-- [Disclosed and estimated fees](/api-docs/v2/operations/portfolio/fees): `POST /portfolio` with `kind=fees`.
-- [Fee peer comparison](/api-docs/v2/operations/portfolio/fee_peers): `POST /portfolio` with `kind=fee_peers`.
-- [Portfolio look-through](/api-docs/v2/operations/portfolio/lookthrough): `POST /portfolio` with `kind=lookthrough`.
-- [Monthly return comparison](/api-docs/v2/operations/portfolio/movement): `POST /portfolio` with `kind=movement`.
-- [Resolve credit instruments](/api-docs/v2/operations/portfolio/instruments): `POST /portfolio` with `kind=instruments`.
-- [Fund redemption terms](/api-docs/v2/operations/portfolio/fund_terms): `POST /portfolio` with `kind=fund_terms`.
-- [ETF equivalents](/api-docs/v2/operations/portfolio/equivalents): `POST /portfolio` with `kind=equivalents`.
-- [Debenture fund marks](/api-docs/v2/operations/portfolio/debenture_returns): `POST /portfolio` with `kind=debenture_returns`.
-- [Dataset freshness](/api-docs/v2/operations/coverage/freshness): `GET /coverage` with `kind=freshness`.
-- [Metric coverage](/api-docs/v2/operations/coverage/metrics): `GET /coverage` with `kind=metrics`.
-- [Data dictionary](/api-docs/v2/operations/coverage/catalog): `GET /coverage` with `kind=catalog`.
+- [Resolve an identifier](/api-docs/v2/operations/search/any): `GET /search/any`.
+- [Find companies](/api-docs/v2/operations/search/company): `GET /search/company`.
+- [Find funds](/api-docs/v2/operations/search/fund): `GET /search/fund`.
+- [Listed universe](/api-docs/v2/operations/search/universe): `GET /search/universe`.
+- [Historical stock prices](/api-docs/v2/operations/prices/history): `GET /prices/history`.
+- [Latest closing price](/api-docs/v2/operations/prices/latest): `GET /prices/latest`.
+- [Market session](/api-docs/v2/operations/prices/session): `GET /prices/session`.
+- [Index history](/api-docs/v2/operations/prices/index): `GET /prices/index`.
+- [Forward prices](/api-docs/v2/operations/prices/forward): `GET /prices/forward`.
+- [As-filed line items](/api-docs/v2/operations/statements/all): `GET /statements/all`.
+- [Income statements](/api-docs/v2/operations/statements/income): `GET /statements/income`.
+- [Balance sheets](/api-docs/v2/operations/statements/balance): `GET /statements/balance`.
+- [Cash flow statements](/api-docs/v2/operations/statements/cashflow): `GET /statements/cashflow`.
+- [Headline financials](/api-docs/v2/operations/statements/headline): `GET /statements/headline`.
+- [Filing version history](/api-docs/v2/operations/statements/versions): `GET /statements/versions`.
+- [Fund profiles](/api-docs/v2/operations/funds/profile): `GET /funds/profile`.
+- [NAV and flows](/api-docs/v2/operations/funds/nav): `GET /funds/nav`.
+- [Equity holdings](/api-docs/v2/operations/funds/holdings): `GET /funds/holdings`.
+- [Debenture holdings](/api-docs/v2/operations/funds/debentures): `GET /funds/debentures`.
+- [Property holdings](/api-docs/v2/operations/funds/properties): `GET /funds/properties`.
+- [Receivables portfolio](/api-docs/v2/operations/fidc/portfolio): `GET /fidc/portfolio`.
+- [Tranche performance](/api-docs/v2/operations/fidc/tranches): `GET /fidc/tranches`.
+- [Receivables aging](/api-docs/v2/operations/fidc/aging): `GET /fidc/aging`.
+- [Originator concentration](/api-docs/v2/operations/fidc/cedentes): `GET /fidc/cedentes`.
+- [Debtor concentration](/api-docs/v2/operations/fidc/sacados): `GET /fidc/sacados`.
+- [Option chain](/api-docs/v2/operations/derivatives/chain): `GET /derivatives/chain`.
+- [Option price history](/api-docs/v2/operations/derivatives/history): `GET /derivatives/history`.
+- [Option exercises](/api-docs/v2/operations/derivatives/exercises): `GET /derivatives/exercises`.
+- [Termo contracts](/api-docs/v2/operations/derivatives/termo): `GET /derivatives/termo`.
+- [Futures history](/api-docs/v2/operations/derivatives/futures): `GET /derivatives/futures`.
+- [Futures curve](/api-docs/v2/operations/derivatives/futures_curve): `GET /derivatives/futures-curve`.
+- [DI settlement rates](/api-docs/v2/operations/derivatives/di_settlement): `GET /derivatives/di-settlement`.
+- [Latest yield curve](/api-docs/v2/operations/curves/snapshot): `GET /curves/snapshot`.
+- [Yield curve history](/api-docs/v2/operations/curves/history): `GET /curves/history`.
+- [Published curve vertices](/api-docs/v2/operations/curves/vertices): `GET /curves/vertices`.
+- [Economic series](/api-docs/v2/operations/macro/series): `GET /macro/series`.
+- [Inflation history](/api-docs/v2/operations/macro/inflation): `GET /macro/inflation`.
+- [Inflation components](/api-docs/v2/operations/macro/inflation_items): `GET /macro/inflation-items`.
+- [Exchange rates](/api-docs/v2/operations/macro/fx): `GET /macro/fx`.
+- [Forecast revisions](/api-docs/v2/operations/macro/expectations): `GET /macro/expectations`.
+- [Short interest](/api-docs/v2/operations/positioning/short_interest): `GET /positioning/short-interest`.
+- [Short by sector](/api-docs/v2/operations/positioning/short_by_sector): `GET /positioning/short-by-sector`.
+- [Lending](/api-docs/v2/operations/positioning/lending): `GET /positioning/lending`.
+- [Lending brokers](/api-docs/v2/operations/positioning/lending_brokers): `GET /positioning/lending-brokers`.
+- [Investor flow](/api-docs/v2/operations/positioning/investor_flow): `GET /positioning/investor-flow`.
+- [Company filings](/api-docs/v2/operations/events/company): `GET /events/company`.
+- [Fund documents](/api-docs/v2/operations/events/fund): `GET /events/fund`.
+- [Restated filings](/api-docs/v2/operations/events/restatements): `GET /events/restatements`.
+- [Restatement changes](/api-docs/v2/operations/events/restatement_diff): `GET /events/restatement-diff`.
+- [Judicial recovery filings](/api-docs/v2/operations/events/judicial_recovery): `GET /events/judicial-recovery`.
+- [Available screens](/api-docs/v2/operations/screens/list): `GET /screens/list`.
+- [Captive vehicles](/api-docs/v2/operations/screens/captive_vehicles): `GET /screens/captive-vehicles`.
+- [Delinquency drivers](/api-docs/v2/operations/screens/delinquency_drivers): `GET /screens/delinquency-drivers`.
+- [Dormant funds](/api-docs/v2/operations/screens/dormant_funds): `GET /screens/dormant-funds`.
+- [Dormant trend](/api-docs/v2/operations/screens/dormant_trend): `GET /screens/dormant-trend`.
+- [Evergreen aging](/api-docs/v2/operations/screens/evergreen_aging): `GET /screens/evergreen-aging`.
+- [Late filers](/api-docs/v2/operations/screens/late_filers): `GET /screens/late-filers`.
+- [Overdue securit](/api-docs/v2/operations/screens/overdue_securit): `GET /screens/overdue-securit`.
+- [Restatements](/api-docs/v2/operations/screens/restatements): `GET /screens/restatements`.
+- [Silent filers](/api-docs/v2/operations/screens/silent_filers): `GET /screens/silent-filers`.
+- [Zombie growth](/api-docs/v2/operations/screens/zombie_growth): `GET /screens/zombie-growth`.
+- [Cross-asset panel](/api-docs/v2/operations/panel/panel): `GET /panel/panel`.
+- [Resolve portfolio entries](/api-docs/v2/operations/portfolio/resolve): `POST /portfolio/resolve`.
+- [Disclosed and estimated fees](/api-docs/v2/operations/portfolio/fees): `POST /portfolio/fees`.
+- [Fee peer comparison](/api-docs/v2/operations/portfolio/fee_peers): `POST /portfolio/fee-peers`.
+- [Portfolio look-through](/api-docs/v2/operations/portfolio/lookthrough): `POST /portfolio/lookthrough`.
+- [Monthly return comparison](/api-docs/v2/operations/portfolio/movement): `POST /portfolio/movement`.
+- [Resolve credit instruments](/api-docs/v2/operations/portfolio/instruments): `POST /portfolio/instruments`.
+- [Fund redemption terms](/api-docs/v2/operations/portfolio/fund_terms): `POST /portfolio/fund-terms`.
+- [ETF equivalents](/api-docs/v2/operations/portfolio/equivalents): `POST /portfolio/equivalents`.
+- [Debenture fund marks](/api-docs/v2/operations/portfolio/debenture_returns): `POST /portfolio/debenture-returns`.
+- [Dataset freshness](/api-docs/v2/operations/coverage/freshness): `GET /coverage/freshness`.
+- [Metric coverage](/api-docs/v2/operations/coverage/metrics): `GET /coverage/metrics`.
+- [Data dictionary](/api-docs/v2/operations/coverage/catalog): `GET /coverage/catalog`.

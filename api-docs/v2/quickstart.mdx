@@ -15,9 +15,9 @@ Resolve PETR4 to the listing you mean, check the quotes dataset's coverage, and 
 ```bash cURL
 SILO_V2="https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
 
-curl -fsS --get "$SILO_V2/search" --data-urlencode "q=PETR4"
-curl -fsS --get "$SILO_V2/coverage" --data-urlencode "dataset=quotes"
-curl -fsS --get "$SILO_V2/prices" --data-urlencode "id=PETR4" --data-urlencode "kind=latest"
+curl -fsS --get "$SILO_V2/search/any" --data-urlencode "q=PETR4"
+curl -fsS --get "$SILO_V2/coverage/freshness" --data-urlencode "dataset=quotes"
+curl -fsS --get "$SILO_V2/prices/latest" --data-urlencode "ticker=PETR4"
 ```
 
 ```python Python
@@ -28,9 +28,9 @@ from urllib.request import urlopen
 base = "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
 
 for resource, params in (
-    ("search", {"q": "PETR4"}),
-    ("coverage", {"dataset": "quotes"}),
-    ("prices", {"id": "PETR4", "kind": "latest"}),
+    ("search/any", {"q": "PETR4"}),
+    ("coverage/freshness", {"dataset": "quotes"}),
+    ("prices/latest", {"ticker": "PETR4"}),
 ):
     with urlopen(f"{base}/{resource}?{urlencode(params)}", timeout=20) as response:
         print(json.load(response))
@@ -38,10 +38,12 @@ for resource, params in (
 
 </CodeGroup>
 
+For pandas or Polars, use the [Python client](/api-docs/v2/python).
+
 ## Read the response
 
 - Use `data[].trade_date` and `data[].close` for the observed date and raw closing price. Daily history can adjust for splits and excludes dividends.
-- Compare the period you need with coverage's `data_through` and `complete_through`. Record `meta.request` and `meta.endpoint` so the query can be reproduced.
+- Compare the period you need with coverage's `data_through` and `complete_through`. Save the request URL; use `details=true` when you need the applied defaults and diagnostic metadata.
 - Follow `next_page_url` for remaining pages. For paged POST requests, resend the original body unchanged. `meta.tier_cap_reached` marks a partial result even when no next page remains.
 - An empty `data` array represents no matching rows. A `null` field represents a missing or inapplicable observation. For errors, inspect `error.code` and `error.message`. Narrow an `over_limit` query and honor `Retry-After` on HTTP 429.
 
@@ -51,4 +53,4 @@ If you received a 60-day integration key, use it as `Authorization: Bearer <inte
 
 For signed-in access, use [SILO sign-in](https://silo-bz-deloslabs.vercel.app/signin.html) and configure the user access token as `Authorization: Bearer <access token>`. Keep it in a secret store. Verify `meta.tier` on a data call. `screens` and `portfolio` require signed-in access. Pro is granted separately.
 
-Open the [REST reference](/api-docs/v2/reference/index) to try a request. Leave the Bearer field blank for anonymous calls, even if the playground labels the field as required. The live resource index is at the base URL. Append `?help=all` to a resource to see its accepted parameters and defaults. To use the same data from an agent, follow the [MCP setup](/api-docs/v2/mcp).
+Open the [operation directory](/api-docs/v2/endpoints) to try a request. Leave the Bearer field blank for anonymous calls, even if the playground labels the field as required. The live resource index is at the base URL. Append `?help=all` to a resource to see its accepted parameters and defaults. To use the same data from an agent, follow the [MCP setup](/api-docs/v2/mcp).

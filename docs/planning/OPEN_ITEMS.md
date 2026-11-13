@@ -15,7 +15,7 @@ that a failure or rollout gate is still current; verify their linked issues.
 
 ## API documentation discovery (#1150)
 
-The [reference comparison](API_DOCS_REFERENCE_MAP.md) distinguishes existing v2 operations from missing products. Operation-level Mintlify navigation and playground projections are in review; no runtime routes or datasets added. Publication verification is pending.
+The [reference comparison](API_DOCS_REFERENCE_MAP.md) distinguishes existing v2 operations from missing products. PR #1151 published all 74 operation pages. Follow-up #1152 adds compatible explicit routes, compact responses, a labelled series selector and Python DataFrames. Runtime rollout and publication verification are tracked in that issue.
 
 ## Known good as of 2026-10-06
 

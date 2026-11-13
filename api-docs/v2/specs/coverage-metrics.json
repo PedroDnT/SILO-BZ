@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/coverage": {
+    "/coverage/metrics": {
       "get": {
         "operationId": "v2_coverage_metrics",
         "summary": "Metric coverage",
         "tags": [
           "Discovery"
         ],
-        "description": "Deployed preview. How fresh is each dataset, which metrics each family files, and the whole read contract.\n\na (family, metric) pair absent here is one the family never files, not late data.\n\nThis playground selects `metrics` on `GET /coverage`. See the [full resource reference](/api-docs/v2/reference/coverage) for all variants.",
+        "description": "(): a (family, metric) pair absent here is one the family never files, not late data.",
         "x-mint": {
           "href": "/api-docs/v2/operations/coverage/metrics"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects metric coverage.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "metrics"
-              ],
-              "default": "metrics"
-            },
-            "example": "metrics"
-          },
-          {
             "name": "dataset",
             "in": "query",
             "required": false,
-            "description": "Comma-separated. kind=freshness: dataset names (funds_fidc, quotes, ...). kind=metrics: fund families (fi, fidc, ...). A name no row carries is refused, with the known names. Comma-separated list. Default: all.",
+            "description": "Comma-separated dataset names, such as quotes.",
             "schema": {
               "type": "string",
               "default": "all"
@@ -72,7 +58,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -82,9 +68,19 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -137,36 +133,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

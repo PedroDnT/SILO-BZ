@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/derivatives": {
+    "/derivatives/termo": {
       "get": {
         "operationId": "v2_derivatives_termo",
         "summary": "Termo contracts",
         "tags": [
           "Markets and macro"
         ],
-        "description": "Deployed preview. Options, termo and futures: chains, histories, exercises, the DI1 settlement.\n\none termo code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.\n\nThis playground selects `termo` on `GET /derivatives`. See the [full resource reference](/api-docs/v2/reference/derivatives) for all variants.",
+        "description": "One termo code's daily quotes, oldest first.",
         "x-mint": {
           "href": "/api-docs/v2/operations/derivatives/termo"
         },
         "parameters": [
           {
-            "name": "kind",
+            "name": "ticker",
             "in": "query",
             "required": true,
-            "description": "Selects termo contracts.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "termo"
-              ],
-              "default": "termo"
-            },
-            "example": "termo"
-          },
-          {
-            "name": "id",
-            "in": "query",
-            "required": true,
-            "description": "By kind: chain, exercises take an option prefix, at least 3 characters (PETR); history takes one option code (codneg); termo takes one termo code (codneg); futures takes one outright futures contract (DI1F27, DOLF27); futures_curve takes a futures root, DI1, DOL or WDO (none: DI1); di_settlement takes one DI1 contract (none: every contract). Required for kinds chain, history, exercises, termo, futures. Default: none.",
+            "description": "Trading symbol.",
             "schema": {
               "type": "string"
             }
@@ -71,7 +57,7 @@
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "description": "Start date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -81,7 +67,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "description": "End date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -91,7 +77,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -101,9 +87,19 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -156,36 +152,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

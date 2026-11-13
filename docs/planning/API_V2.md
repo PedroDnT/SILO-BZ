@@ -40,6 +40,10 @@ cheaper model and an enforced 70,000-token input cap per request, a full
 access also remains unverified because the configured database connection
 was refused. #1061 tracks these remaining rollout gates.
 
+## Compatible operation routes (#1152)
+
+Owner-approved follow-up: `/v2/{resource}/{operation}` selects the operation without `kind`, using specific identifier names. `operations.json` defines these names for gateway, documentation and SDK. Legacy resource paths, parameter defaults, responses and 14 MCP names are preserved. Operation responses omit routing diagnostics unless `details=true`; units, provenance, warnings, tier caps and continuation links remain visible. The SDK collects pages only explicitly, and converts locally to pandas/Polars.
+
 ## Why
 
 The public API has 85 paths (18 views, 67 functions), 245 function arguments

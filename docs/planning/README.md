@@ -2,7 +2,7 @@
 
 ## Live
 
-API docs: [reference comparison and operation map](API_DOCS_REFERENCE_MAP.md) tracks #1150, exposing the existing 74 v2 operations through dedicated playgrounds.
+API docs: [reference comparison and operation map](API_DOCS_REFERENCE_MAP.md) tracks #1150 and #1152: 74 operation routes, concise playgrounds and Python DataFrames.
 
 Agent automation: #1077 and #1078 add Codex issue replies and the shared Builder
 queue. Live validation and weekly activation remain open in #1079; the existing

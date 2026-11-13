@@ -32,14 +32,14 @@
     }
   ],
   "paths": {
-    "/panel": {
+    "/panel/panel": {
       "get": {
         "operationId": "v2_panel_panel",
         "summary": "Cross-asset panel",
         "tags": [
           "Research"
         ],
-        "description": "Deployed preview. A clean (id, date, metric, value) table across families.\n\nlong rows (id, id_type, asset_class, date, metric, value, source), 3 years back from to by default, paged with the function's p_after cursor.\n\nThis playground selects `panel` on `GET /panel`. See the [full resource reference](/api-docs/v2/reference/panel) for all variants.",
+        "description": "Long rows (id, id_type, asset_class, date, metric, value, source), 3 years back from to by default, paged with the function's p_after cursor.",
         "x-mint": {
           "href": "/api-docs/v2/operations/panel/panel"
         },
@@ -48,7 +48,7 @@
             "name": "metric",
             "in": "query",
             "required": false,
-            "description": "Comma-separated catalog metric names (close, close_adj, close_return, volume, nav, delinquency, ...). auto: each id's family default, as api.panel with no p_metrics (close_adj for shares and units, close for other tickers, settlement_rate for futures, nav for funds). Comma-separated list. Default: auto.",
+            "description": "Comma-separated metric names from the catalog.",
             "schema": {
               "type": "string",
               "default": "auto"
@@ -58,7 +58,7 @@
             "name": "freq",
             "in": "query",
             "required": false,
-            "description": "month: the last session of each month for tickers, the filed month for funds. day: tickers and futures only (funds file monthly). Default: month.",
+            "description": "Daily observations or the last observation of each month.",
             "schema": {
               "type": "string",
               "enum": [
@@ -72,7 +72,7 @@
             "name": "family",
             "in": "query",
             "required": false,
-            "description": "auto: every family a CNPJ files under (a CNPJ filing as fi and fidc yields one row per family). One family narrows the fund rows to it; with no id it walks that family (universe mode). Default: auto.",
+            "description": "Fund family. auto includes every family the CNPJ files under.",
             "schema": {
               "type": "string",
               "enum": [
@@ -87,10 +87,10 @@
             }
           },
           {
-            "name": "id",
+            "name": "identifiers",
             "in": "query",
             "required": false,
-            "description": "The id is a comma-separated list of tickers, fund CNPJs, option or termo tickers and futures codes, up to the tier's id ceiling. Default: none.",
+            "description": "Comma-separated identifiers.",
             "schema": {
               "type": "string"
             }
@@ -99,7 +99,7 @@
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "description": "Start date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -109,7 +109,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "description": "End date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -119,7 +119,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -129,7 +129,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -138,7 +138,7 @@
             "name": "min_nav",
             "in": "query",
             "required": false,
-            "description": "Universe mode only: keep funds whose latest NAV in the window is at least this, BRL. Default: none: no floor.",
+            "description": "Universe filter: minimum latest net asset value, in BRL.",
             "schema": {
               "type": "number",
               "minimum": 0
@@ -148,10 +148,20 @@
             "name": "min_months",
             "in": "query",
             "required": false,
-            "description": "Universe mode only: keep funds with at least this many observations of the first metric. Default: none: no floor.",
+            "description": "Universe filter: minimum observations of the first metric.",
             "schema": {
               "type": "integer",
               "minimum": 0
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -204,36 +214,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

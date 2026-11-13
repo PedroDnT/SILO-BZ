@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/screens": {
+    "/screens/zombie-growth": {
       "get": {
         "operationId": "v2_screens_zombie_growth",
         "summary": "Zombie growth",
         "tags": [
           "Research"
         ],
-        "description": "Deployed preview. Which funds look odd? Forensic screens: signals, not verdicts.\n\nFIDCs with delinquency above min_delinq_pct of NAV while NAV stays above min_aum, in one aging month.\n\nThis playground selects `zombie_growth` on `GET /screens`. See the [full resource reference](/api-docs/v2/reference/screens) for all variants.",
+        "description": "FIDCs with delinquency above min_delinq_pct of NAV while NAV stays above min_aum, in one aging month.",
         "x-mint": {
           "href": "/api-docs/v2/operations/screens/zombie_growth"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects zombie growth.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "zombie_growth"
-              ],
-              "default": "zombie_growth"
-            },
-            "example": "zombie_growth"
-          },
-          {
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -72,7 +58,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -81,7 +67,7 @@
             "name": "date",
             "in": "query",
             "required": false,
-            "description": "zombie_growth: the aging month-end (p_period). delinquency_drivers, restatements, late_filers: the window end (p_end). Default: the screen's own: zombie_growth the latest aging month; delinquency_drivers the latest complete FIDC month; restatements today; late_filers the newest month whose deadline has passed.",
+            "description": "Aging month-end.",
             "schema": {
               "type": "string",
               "format": "date"
@@ -91,7 +77,7 @@
             "name": "min_aum",
             "in": "query",
             "required": false,
-            "description": "zombie_growth, captive_vehicles: the NAV floor, BRL. Default: the screen's SQL default: zombie_growth 1000000, captive_vehicles 50000000 (BRL).",
+            "description": "Minimum net asset value, in BRL.",
             "schema": {
               "type": "number",
               "minimum": 0
@@ -101,10 +87,20 @@
             "name": "min_delinq_pct",
             "in": "query",
             "required": false,
-            "description": "zombie_growth: delinquency floor, percent of NAV, 0..100. Default: the SQL default (5).",
+            "description": "Minimum delinquency as a percentage of net asset value.",
             "schema": {
               "type": "number",
               "minimum": 0
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -162,36 +158,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

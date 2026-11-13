@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/macro": {
+    "/macro/fx": {
       "get": {
         "operationId": "v2_macro_fx",
         "summary": "Exchange rates",
         "tags": [
           "Markets and macro"
         ],
-        "description": "Deployed preview. Macro series, inflation and its item tree, PTAX, Focus expectations.\n\none currency's PTAX, BRL per one unit, as published. currency=all reads the  view, every currency at once.\n\nThis playground selects `fx` on `GET /macro`. See the [full resource reference](/api-docs/v2/reference/macro) for all variants.",
+        "description": "One currency's PTAX, BRL per one unit, as published.",
         "x-mint": {
           "href": "/api-docs/v2/operations/macro/fx"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects exchange rates.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "fx"
-              ],
-              "default": "fx"
-            },
-            "example": "fx"
-          },
-          {
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "description": "Start date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -72,7 +58,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "description": "End date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -82,7 +68,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -92,7 +78,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -101,10 +87,20 @@
             "name": "currency",
             "in": "query",
             "required": false,
-            "description": "kind fx: an ISO code held (USD, EUR, GBP, JPY, ARS). all: every currency, from the api.ptax_daily view (paged with order + limit + offset). Default: USD.",
+            "description": "Currency code, such as USD or EUR. Use all for every currency.",
             "schema": {
               "type": "string",
               "default": "USD"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -157,36 +153,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

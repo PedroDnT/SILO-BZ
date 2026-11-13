@@ -14,3 +14,5 @@ read pagination and errors, and connect an authenticated agent.
 Owner requested the discoverability and interactive onboarding of Financial Datasets.
 Preserve SILO's English documentation, theme, existing URLs and deployed-preview status.
 Do not infer dataset parity from similar page titles. No DNS or paid benchmark changes.
+
+Operation routes use meaningful inputs and compact metadata. Prefer `/macro/series?series=CDI` and `/prices/latest?ticker=PETR4`. Do not expose kind on their playgrounds. Legacy resource routes and MCP still use kind/id. Python v2 results convert locally to pandas/Polars and refuse partial data by default.

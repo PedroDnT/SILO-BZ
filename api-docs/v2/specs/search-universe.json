@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/search": {
+    "/search/universe": {
       "get": {
         "operationId": "v2_search_universe",
         "summary": "Listed universe",
         "tags": [
           "Discovery"
         ],
-        "description": "Deployed preview. What is this name or id? Companies, funds and listed shares, with their stable ids (CNPJ, ISIN).\n\nThe research universe: one row per ticker+ISIN pair of listed shares and units.\n\nThis playground selects `universe` on `GET /search`. See the [full resource reference](/api-docs/v2/reference/search) for all variants.",
+        "description": "The research universe: one row per ticker+ISIN pair of listed shares and units.",
         "x-mint": {
           "href": "/api-docs/v2/operations/search/universe"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects listed universe.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "universe"
-              ],
-              "default": "universe"
-            },
-            "example": "universe"
-          },
-          {
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -72,7 +58,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -81,10 +67,20 @@
             "name": "as_of",
             "in": "query",
             "required": false,
-            "description": "kind=universe (or an empty q): only the ticker+ISIN pairs whose first_observed <= as_of <= last_observed, dead names included. Survivorship-free. Default: none: every pair the tape has seen.",
+            "description": "Only ticker–ISIN pairs observed on this date, including inactive listings.",
             "schema": {
               "type": "string",
               "format": "date"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -137,36 +133,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

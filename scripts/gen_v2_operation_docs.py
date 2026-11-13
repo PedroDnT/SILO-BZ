@@ -1,9 +1,7 @@
-"""Generate task-specific playgrounds from the v2 registry; no new API routes.
+"""Generate operation playgrounds and SDK contract from the shared operation definitions.
 
 Run after gen_openapi_v2.py. --check checks every generated artifact and navigation.
-Each projection keeps the actual HTTP path and pins kind in its request schema.
-Separate specs are necessary because OpenAPI cannot describe two GET /prices
-operations and Mintlify cannot apply different overlays to the same source.
+The gateway reads the same definitions. Published documentation URLs stay stable.
 """
 from __future__ import annotations
 
@@ -15,167 +13,73 @@ from pathlib import Path
 
 from scripts.gen_openapi_v2 import ROOT, build, load_registry, load_error_codes
 
-GROUPS = {
-    "search": "Find identifiers", "prices": "Stock prices",
-    "statements": "Financial statements", "funds": "Funds and holdings",
-    "fidc": "Receivables funds", "derivatives": "Options and futures",
-    "curves": "Interest rate curves", "macro": "Macroeconomics",
-    "positioning": "Market positioning", "events": "Filings and events",
-    "screens": "Research screens", "panel": "Cross-asset data",
-    "portfolio": "Portfolio analysis", "coverage": "Data coverage",
-}
-TITLES = {
-    "prices/history": "Historical stock prices", "prices/latest": "Latest closing price",
-    "prices/session": "Market session", "prices/index": "Index history",
-    "prices/forward": "Forward prices", "statements/all": "As-filed line items",
-    "statements/income": "Income statements", "statements/balance": "Balance sheets",
-    "statements/cashflow": "Cash flow statements", "statements/headline": "Headline financials",
-    "statements/versions": "Filing version history", "search/any": "Resolve an identifier",
-    "search/company": "Find companies", "search/fund": "Find funds",
-    "search/universe": "Listed universe", "macro/series": "Economic series",
-    "macro/inflation": "Inflation history", "macro/inflation_items": "Inflation components",
-    "macro/fx": "Exchange rates", "macro/expectations": "Forecast revisions",
-    "coverage/freshness": "Dataset freshness", "coverage/metrics": "Metric coverage",
-    "coverage/catalog": "Data dictionary", "panel/panel": "Cross-asset panel",
-    "funds/profile": "Fund profiles", "funds/nav": "NAV and flows",
-    "funds/holdings": "Equity holdings", "funds/debentures": "Debenture holdings",
-    "funds/properties": "Property holdings", "fidc/portfolio": "Receivables portfolio",
-    "fidc/tranches": "Tranche performance", "fidc/aging": "Receivables aging",
-    "fidc/cedentes": "Originator concentration", "fidc/sacados": "Debtor concentration",
-    "derivatives/chain": "Option chain", "derivatives/history": "Option price history",
-    "derivatives/exercises": "Option exercises", "derivatives/termo": "Termo contracts",
-    "derivatives/futures": "Futures history", "derivatives/futures_curve": "Futures curve",
-    "derivatives/di_settlement": "DI settlement rates",
-    "curves/snapshot": "Latest yield curve", "curves/history": "Yield curve history",
-    "curves/vertices": "Published curve vertices", "events/company": "Company filings",
-    "events/fund": "Fund documents", "events/restatements": "Restated filings",
-    "events/restatement_diff": "Restatement changes", "events/judicial_recovery": "Judicial recovery filings",
-    "screens/list": "Available screens", "portfolio/resolve": "Resolve portfolio entries",
-    "portfolio/fees": "Disclosed and estimated fees", "portfolio/fee_peers": "Fee peer comparison",
-    "portfolio/lookthrough": "Portfolio look-through", "portfolio/movement": "Monthly return comparison",
-    "portfolio/instruments": "Resolve credit instruments", "portfolio/fund_terms": "Fund redemption terms",
-    "portfolio/equivalents": "ETF equivalents", "portfolio/debenture_returns": "Debenture fund marks",
-}
-
-OPTIONAL_DESCRIPTIONS = {
-    "limit": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
-    "cursor": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
-    "from": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
-    "to": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
-}
-
-
 def artifacts():
     registry = load_registry()
     base = build(registry, load_error_codes())
-    files = {}
-    groups = []
-    links = []
-    for resource in registry["resources"]:
-        name = resource["name"]
-        method = resource.get("method", "GET").lower()
-        pages = []
-        for kind, plan in resource["kinds"].items():
-            key = f"{name}/{kind}"
-            title = TITLES.get(key, kind.replace("_", " ").capitalize())
-            slug = f"api-docs/v2/operations/{key}"
-            spec_path = f"api-docs/v2/specs/{name}-{kind}.json"
-            spec = copy.deepcopy(base)
-            op = spec["paths"][f"/{name}"][method]
-            spec["paths"] = {f"/{name}": {method: op}}
-            op["operationId"] = f"v2_{name}_{kind}"
-            op["summary"] = title
-            op["x-mint"] = {"href": f"/{slug}"}
-            detail = re.sub(r"api\.[a-z_]+(?:\(\))?:?", "", plan["doc"]).strip()
-            detail = re.sub(r"\b(B3|BACEN|BCB|IBGE|CVM|ANBIMA|FNET|SGS)\b", "source", detail)
-            op["description"] = (
-                f"Deployed preview. {resource['summary']}\n\n"
-                f"{detail}\n\n"
-                f"This playground selects `{kind}` on `{method.upper()} /{name}`. "
-                f"See the [full resource reference](/api-docs/v2/reference/{name}) for all variants."
-            )
-            used = {"kind", "cursor", "limit"} | set(plan.get("args", {})) | set(plan.get("uses", []))
-            used |= {f["parameter"] for f in plan.get("filters", [])}
-            if plan.get("view_by"):
-                used.add(plan["view_by"]["parameter"])
-            if plan.get("when_empty"):
-                used.add(plan["when_empty"]["parameter"])
-                used |= set(plan["when_empty"]["plan"].get("args", {}))
-            op["parameters"] = [p for p in op["parameters"] if p["name"] in used]
-            required = plan.get("require_one_of", [])
-            for param in op["parameters"]:
-                param.pop("example", None)
-                if param["name"] == "kind":
-                    param.update(required=True, example=kind, description=f"Selects {title.lower()}.")
-                    param["schema"] = {"type": "string", "enum": [kind], "default": kind}
-                elif param["name"] in required and len(required) == 1:
-                    param["required"] = True
-                if not param.get("required"):
-                    param["description"] = OPTIONAL_DESCRIPTIONS.get(
-                        param["name"], param["description"].removeprefix("Hidden parameter (`?help=all` lists it). ")
-                    )
-                    if name == "curves" and param["name"] == "date":
-                        param["description"] = "Session date (YYYY-MM-DD). Defaults to the latest held session" + (
-                            " within the last 14 days." if kind == "vertices" else "."
-                        )
-                # A resource example can name a ticker where another kind needs a
-                # fund, index or document id. Never reuse that example blindly.
-            if (name == "prices" and kind in {"history", "latest"}) or name == "statements":
-                next(p for p in op["parameters"] if p["name"] == "id")["example"] = "PETR4"
-            if name == "search" and kind in {"any", "company"}:
-                next(p for p in op["parameters"] if p["name"] == "q")["example"] = "PETR4"
-            if name == "portfolio" and kind != "resolve":
-                media = op["requestBody"]["content"]["application/json"]
-                media.pop("example", None)
-                media["schema"]["required"] = ["id"]
-            if name == "portfolio" and kind == "resolve":
-                op["requestBody"]["content"]["application/json"]["schema"]["required"] = ["names"]
-            files[spec_path] = json.dumps(spec, indent=2, ensure_ascii=False) + "\n"
-            requirement = ""
-            if required:
-                requirement = "Supply " + " or ".join(f"`{p}`" for p in required) + ". "
-            description = f"Query {title.lower()} through SILO REST and MCP v2."
-            files[f"{slug}.mdx"] = f'''---
+    definitions = json.loads((ROOT / "supabase/functions/silo-api/operations.json").read_text())
+    files, groups, links = {}, [], []
+    all_paths = {}
+    for definition in definitions:
+        name, kind = definition["resource"], definition["kind"]
+        method, path = definition["method"].lower(), definition["path"]
+        title, detail = definition["title"], definition["description"]
+        slug = f"api-docs/v2/operations/{name}/{kind}"
+        spec_path = f"api-docs/v2/specs/{name}-{kind}.json"
+        spec = copy.deepcopy(base)
+        op = spec["paths"][f"/{name}"][method]
+        spec["paths"] = {path: {method: op}}
+        op.update(operationId=f"v2_{name}_{kind}", summary=title, description=detail)
+        op["x-mint"] = {"href": f"/{slug}"}
+        op["parameters"] = [
+            {"name": p["name"], "in": "query", "required": p["required"],
+             "description": p["description"], "schema": p["schema"],
+             **({"example": p["example"]} if "example" in p else {})}
+            for p in definition["parameters"]
+        ] + [{"name": "details", "in": "query", "required": False,
+              "description": "Include request diagnostics.", "schema": {"type": "boolean", "default": False}}]
+        if definition["body"]:
+            old = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
+            props = {b["name"]: {**old[b["target"]], "description": b["description"]} for b in definition["body"]}
+            required = ["names"] if kind == "resolve" else [b["name"] for b in definition["body"] if b["target"] == "id"]
+            op["requestBody"]["content"]["application/json"] = {"schema": {"type": "object", "properties": props, "required": required, "additionalProperties": False}}
+        meta = spec["components"]["schemas"]["Envelope"]["properties"]["meta"]
+        meta["required"] = ["tier"]
+        for key in ["resource", "kind", "request", "endpoint", "id_known"]:
+            meta.get("properties", {}).pop(key, None)
+        files[spec_path] = json.dumps(spec, indent=2, ensure_ascii=False) + "\n"
+        all_paths[path] = {method: op}
+        files[f"{slug}.mdx"] = f'''---
 title: {json.dumps(title)}
-description: {json.dumps(description)}
+description: {json.dumps(detail)}
 keywords: [{json.dumps(name)}, {json.dumps(kind)}, "API", "MCP"]
-openapi: "{spec_path} {method.upper()} /{name}"
+openapi: "{spec_path} {method.upper()} {path}"
 ---
 
-**Deployed preview.** {detail[0].upper() + detail[1:]}
+{detail}
 
-{requirement}Open **Try it**, review the inputs, and select **Send** to query the deployed API.
-The `kind` field is preset to `{kind}`. This is a view of the existing `/{name}` resource, not a new route.
-
-<Note>
-  Anonymous calls need no credential except on screens and portfolio, which require signed-in access.
-  With a Pro credential, verify `meta.tier` is `pro` in the actual response.
-</Note>
-
-## Before you query
-
-Resolve identifiers with [search](/api-docs/v2/reference/search), then check
-[coverage](/api-docs/v2/reference/coverage). Dates and identifiers must match the
-selected operation; expand the parameter descriptions below for its accepted values.
-
-## Use from an agent
-
-Call `silo_{name}` over [MCP v2](/api-docs/v2/mcp){f' with `kind: "{kind}"`' if name != 'panel' else ''}.
-Main arguments stay at the top level; advanced REST parameters go inside `options`.
-Use the same identifier and date window as the REST request.
-
-## Read the result
-
-Inspect `data`, `meta.request`, `meta.tier`, and `next_page_url`.
-Follow every page before treating a result as complete. `meta.tier_cap_reached`
-means partial data; a missing next page does not override it. Empty results and
-`null` are not zero. An error is not a data result.
-
-See [pagination and errors](/api-docs/v2/responses) for a complete reading checklist.
+[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
 '''
-            pages.append(slug)
-            links.append(f"- [{title}](/{slug}): `{method.upper()} /{name}`" + (f" with `kind={kind}`." if name != "panel" else "."))
-        groups.append({"group": GROUPS[name], "expanded": False, "pages": pages})
+        if path == "/macro/series":
+            choices = next(p["choices"] for p in definition["parameters"] if p["name"] == "series")
+            page = files[f"{slug}.mdx"]
+            page = re.sub(r'openapi: [^\n]+\n', "", page)
+            page = page.replace(detail + "\n\n", "`GET /macro/series`\n\n", 1)
+            page += '\nimport { SeriesQuery } from "/snippets/series-query.jsx";\n\n'
+            page += '<SeriesQuery choices={' + json.dumps(choices, ensure_ascii=False) + '} />\n'
+            page += '\n[Request and response schema](/api-docs/v2/specs/macro-series.json)\n\n<Accordion title="Series codes and units">\n\n'
+            page += "\n".join(f"- `{c['value']}`: {c['label']}." for c in choices)
+            page += '\n\n</Accordion>\n'
+            files[f"{slug}.mdx"] = page
+        group = next((g for g in groups if g["group"] == definition["group"]), None)
+        if group is None:
+            group = {"group": definition["group"], "expanded": False, "pages": []}
+            groups.append(group)
+        group["pages"].append(slug)
+        links.append(f"- [{title}](/{slug}): `{method.upper()} {path}`.")
+    combined = copy.deepcopy(spec)
+    combined["paths"] = all_paths
+    files["api-docs/v2/operations-openapi.json"] = json.dumps(combined, indent=2, ensure_ascii=False) + "\n"
+    files["sdk/silo_client/operations.json"] = json.dumps(definitions, indent=2, ensure_ascii=False) + "\n"
     files["api-docs/v2/endpoints.mdx"] = '''---
 title: "Explore the API"
 description: "Find a task, open its preconfigured playground, and query Brazilian financial data."
@@ -184,7 +88,7 @@ icon: "compass"
 ---
 
 **Deployed preview.** Browse 74 operations across 14 REST resources. Each operation
-has a dedicated page and a playground with its `kind` already selected.
+has a dedicated route with task-specific inputs.
 These pages expose the existing API; they do not add data coverage.
 
 <Columns cols={2}>
