@@ -1,0 +1,278 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SILO API v2 (deployed preview)",
+    "version": "v2",
+    "description": "The v2 gateway over SILO's schema `api`: 14 resources, five shared parameters, one envelope and one error object. Generated from supabase/functions/silo-api/registry.ts by scripts/gen_openapi_v2.py; do not edit by hand. Deployed preview. The v2 gateway is live; v1 remains available."
+  },
+  "servers": [
+    {
+      "url": "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2",
+      "description": "The silo-api Edge Function (deployed preview)."
+    }
+  ],
+  "security": [
+    {},
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Discovery"
+    },
+    {
+      "name": "Markets and macro"
+    },
+    {
+      "name": "Companies and funds"
+    },
+    {
+      "name": "Research"
+    }
+  ],
+  "paths": {
+    "/funds": {
+      "get": {
+        "operationId": "v2_funds_properties",
+        "summary": "Property holdings",
+        "tags": [
+          "Companies and funds"
+        ],
+        "description": "Deployed preview. What is this fund and how is it doing? Profile, NAV, holdings, debentures, FII properties.\n\nan FII's properties, every filed version, newest first.\n\nThis playground selects `properties` on `GET /funds`. See the [full resource reference](/api-docs/v2/reference/funds) for all variants.",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/funds/properties"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "description": "Selects property holdings.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "properties"
+              ],
+              "default": "properties"
+            },
+            "example": "properties"
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "description": "By kind: profile, nav, holdings, debentures, properties take a 14-digit fund CNPJ (punctuation allowed). Required for kinds nav, properties. Kind holdings: id or holding is required. Kind debentures: id or holding is required. With no id, kind profile reads api.funds (what SILO holds). Default: none.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SILO user access token for authenticated data requests."
+      }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {},
+            "description": "Always a list. Rows as the endpoint returned them; null stays null."
+          },
+          "meta": {
+            "type": "object",
+            "required": [
+              "resource",
+              "kind",
+              "request",
+              "id_known"
+            ],
+            "properties": {
+              "resource": {
+                "type": "string"
+              },
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "request": {
+                "type": "object",
+                "description": "Every parameter the resource takes, with the default applied."
+              },
+              "id_known": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Whether SILO holds the id; null when the call names none."
+              },
+              "endpoint": {
+                "type": "string",
+                "description": "The data endpoint that answered."
+              },
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "anonymous",
+                  "signed_in",
+                  "pro"
+                ]
+              },
+              "tier_cap_reached": {
+                "type": "boolean",
+                "description": "True when the result is partial because of the tier cap."
+              }
+            },
+            "additionalProperties": true
+          },
+          "next_page_url": {
+            "type": "string",
+            "description": "Present only when more rows remain. It carries one opaque cursor."
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "target",
+              "innererror"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "bad_request",
+                  "unknown_parameter",
+                  "unknown_id",
+                  "unauthorized",
+                  "forbidden_for_tier",
+                  "over_limit",
+                  "rate_limited",
+                  "timeout",
+                  "unavailable",
+                  "internal"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "target": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "innererror": {
+                "type": "object",
+                "properties": {
+                  "sqlstate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "hint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "details": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

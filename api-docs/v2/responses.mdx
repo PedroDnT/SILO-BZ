@@ -1,0 +1,53 @@
+---
+title: "Pagination and errors"
+description: "Distinguish a complete result, a partial page, missing data, and a failed query."
+keywords: ["pagination", "errors", "null", "tier", "response"]
+icon: "arrows-rotate"
+---
+
+**Deployed preview.** All v2 data operations return an envelope with `data` and
+`meta`. Inspect the actual response in the playground after selecting **Send**;
+schema placeholders are not market observations.
+
+<AccordionGroup>
+  <Accordion title="More pages: next_page_url">
+    Request the returned URL unchanged, using the same Authorization header.
+    For POST requests, resend the original body. The opaque cursor preserves the
+    original filters. Do not append a new identifier or date range to a cursor.
+  </Accordion>
+  <Accordion title="Partial result: meta.tier_cap_reached">
+    A true flag means the tier ceiling truncated the available result, even if
+    there is no next page. Report the limitation or narrow the query. Increasing
+    `limit` does not bypass your tier ceiling.
+  </Accordion>
+  <Accordion title="No rows or a null field">
+    An empty `data` array means there are no matching rows for this request.
+    A `null` field is missing or inapplicable, not zero. Check the identifier,
+    period, family and coverage before drawing a conclusion about absence.
+  </Accordion>
+  <Accordion title="Authentication or permission failure">
+    `unauthorized` means the credential was not accepted. `forbidden_for_tier`
+    means the caller cannot use that operation. Do not silently retry anonymously
+    when the task requires Pro. Verify `meta.tier: pro` on successful responses.
+  </Accordion>
+  <Accordion title="Query limit, timeout or unavailable data">
+    For `over_limit`, narrow the date range or other filters and read the error's
+    hint. For HTTP 429, honor `Retry-After`. A timeout or unavailable response
+    provides no evidence about the requested financial result.
+  </Accordion>
+</AccordionGroup>
+
+## Record the evidence
+
+Keep `meta.request`, the returned dates, `meta.endpoint`, `meta.tier`, pagination
+state and retrieval time with your analysis. Query [dataset freshness](/api-docs/v2/operations/coverage/freshness)
+before saying a value is current. Use the [research guide](/api-docs/v2/researchers)
+for point-in-time comparisons.
+
+## Error contract
+
+An error response has `error.code`, `error.message`, `error.target`, and
+`error.innererror`. Read the message and hint before changing the request.
+The [full resource reference](/api-docs/v2/reference/index) lists the machine-readable
+schema. Never turn a failed request into a zero, an empty successful result or an
+estimated observation.

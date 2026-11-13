@@ -13,6 +13,10 @@ Current API v2 rollout and agent activation are in item 27. Older dated
 measurements and proposal sections below are historical context, not proof
 that a failure or rollout gate is still current; verify their linked issues.
 
+## API documentation discovery (#1150)
+
+The [reference comparison](API_DOCS_REFERENCE_MAP.md) distinguishes existing v2 operations from missing products. Operation-level Mintlify navigation and playground projections are in review; no runtime routes or datasets added. Publication verification is pending.
+
 ## Known good as of 2026-10-06
 
 | Surface              | State                                                                                                                                           |

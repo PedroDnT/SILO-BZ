@@ -15,7 +15,9 @@
             "group": "Get started",
             "pages": [
               "index",
-              "api-docs/v2/quickstart"
+              "api-docs/v2/quickstart",
+              "api-docs/v2/endpoints",
+              "api-docs/v2/authentication"
             ]
           },
           {
@@ -28,8 +30,172 @@
           {
             "group": "Guides",
             "pages": [
+              "api-docs/v2/responses",
               "api-docs/v2/cheatsheet",
               "api-docs/v2/researchers"
+            ]
+          },
+          {
+            "group": "Browse operations",
+            "pages": [
+              {
+                "group": "Find identifiers",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/search/any",
+                  "api-docs/v2/operations/search/company",
+                  "api-docs/v2/operations/search/fund",
+                  "api-docs/v2/operations/search/universe"
+                ]
+              },
+              {
+                "group": "Stock prices",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/prices/history",
+                  "api-docs/v2/operations/prices/latest",
+                  "api-docs/v2/operations/prices/session",
+                  "api-docs/v2/operations/prices/index",
+                  "api-docs/v2/operations/prices/forward"
+                ]
+              },
+              {
+                "group": "Financial statements",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/statements/all",
+                  "api-docs/v2/operations/statements/income",
+                  "api-docs/v2/operations/statements/balance",
+                  "api-docs/v2/operations/statements/cashflow",
+                  "api-docs/v2/operations/statements/headline",
+                  "api-docs/v2/operations/statements/versions"
+                ]
+              },
+              {
+                "group": "Funds and holdings",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/funds/profile",
+                  "api-docs/v2/operations/funds/nav",
+                  "api-docs/v2/operations/funds/holdings",
+                  "api-docs/v2/operations/funds/debentures",
+                  "api-docs/v2/operations/funds/properties"
+                ]
+              },
+              {
+                "group": "Receivables funds",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/fidc/portfolio",
+                  "api-docs/v2/operations/fidc/tranches",
+                  "api-docs/v2/operations/fidc/aging",
+                  "api-docs/v2/operations/fidc/cedentes",
+                  "api-docs/v2/operations/fidc/sacados"
+                ]
+              },
+              {
+                "group": "Options and futures",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/derivatives/chain",
+                  "api-docs/v2/operations/derivatives/history",
+                  "api-docs/v2/operations/derivatives/exercises",
+                  "api-docs/v2/operations/derivatives/termo",
+                  "api-docs/v2/operations/derivatives/futures",
+                  "api-docs/v2/operations/derivatives/futures_curve",
+                  "api-docs/v2/operations/derivatives/di_settlement"
+                ]
+              },
+              {
+                "group": "Interest rate curves",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/curves/snapshot",
+                  "api-docs/v2/operations/curves/history",
+                  "api-docs/v2/operations/curves/vertices"
+                ]
+              },
+              {
+                "group": "Macroeconomics",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/macro/series",
+                  "api-docs/v2/operations/macro/inflation",
+                  "api-docs/v2/operations/macro/inflation_items",
+                  "api-docs/v2/operations/macro/fx",
+                  "api-docs/v2/operations/macro/expectations"
+                ]
+              },
+              {
+                "group": "Market positioning",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/positioning/short_interest",
+                  "api-docs/v2/operations/positioning/short_by_sector",
+                  "api-docs/v2/operations/positioning/lending",
+                  "api-docs/v2/operations/positioning/lending_brokers",
+                  "api-docs/v2/operations/positioning/investor_flow"
+                ]
+              },
+              {
+                "group": "Filings and events",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/events/company",
+                  "api-docs/v2/operations/events/fund",
+                  "api-docs/v2/operations/events/restatements",
+                  "api-docs/v2/operations/events/restatement_diff",
+                  "api-docs/v2/operations/events/judicial_recovery"
+                ]
+              },
+              {
+                "group": "Research screens",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/screens/list",
+                  "api-docs/v2/operations/screens/captive_vehicles",
+                  "api-docs/v2/operations/screens/delinquency_drivers",
+                  "api-docs/v2/operations/screens/dormant_funds",
+                  "api-docs/v2/operations/screens/dormant_trend",
+                  "api-docs/v2/operations/screens/evergreen_aging",
+                  "api-docs/v2/operations/screens/late_filers",
+                  "api-docs/v2/operations/screens/overdue_securit",
+                  "api-docs/v2/operations/screens/restatements",
+                  "api-docs/v2/operations/screens/silent_filers",
+                  "api-docs/v2/operations/screens/zombie_growth"
+                ]
+              },
+              {
+                "group": "Cross-asset data",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/panel/panel"
+                ]
+              },
+              {
+                "group": "Portfolio analysis",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/portfolio/resolve",
+                  "api-docs/v2/operations/portfolio/fees",
+                  "api-docs/v2/operations/portfolio/fee_peers",
+                  "api-docs/v2/operations/portfolio/lookthrough",
+                  "api-docs/v2/operations/portfolio/movement",
+                  "api-docs/v2/operations/portfolio/instruments",
+                  "api-docs/v2/operations/portfolio/fund_terms",
+                  "api-docs/v2/operations/portfolio/equivalents",
+                  "api-docs/v2/operations/portfolio/debenture_returns"
+                ]
+              },
+              {
+                "group": "Data coverage",
+                "expanded": false,
+                "pages": [
+                  "api-docs/v2/operations/coverage/freshness",
+                  "api-docs/v2/operations/coverage/metrics",
+                  "api-docs/v2/operations/coverage/catalog"
+                ]
+              }
             ]
           },
           {
@@ -138,5 +304,21 @@
       "source": "/api-docs/universe",
       "destination": "/api-docs/lookup"
     }
-  ]
+  ],
+  "api": {
+    "playground": {
+      "display": "interactive",
+      "proxy": false
+    },
+    "examples": {
+      "languages": [
+        "bash",
+        "python",
+        "javascript"
+      ],
+      "prefill": true,
+      "autogenerate": true
+    },
+    "optional": "expanded"
+  }
 }

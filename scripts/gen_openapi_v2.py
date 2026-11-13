@@ -173,7 +173,8 @@ def _description(resource: dict) -> str:
     if resource.get("window_months"):
         parts.append(f"With no `from`, a dated kind reads the last {resource['window_months']} months to `to`.")
     for note in resource.get("notes") or []:
-        parts.append(note)
+        # Notes contain placeholders such as <name>, not MDX components.
+        parts.append(note.replace("<", "&lt;").replace(">", "&gt;"))
     parts.append(f"`GET /v2/{resource['name']}?help` describes the main parameters, `?help=all` adds the hidden ones.")
     return "\n\n".join(parts)
 

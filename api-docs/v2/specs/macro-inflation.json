@@ -1,0 +1,300 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SILO API v2 (deployed preview)",
+    "version": "v2",
+    "description": "The v2 gateway over SILO's schema `api`: 14 resources, five shared parameters, one envelope and one error object. Generated from supabase/functions/silo-api/registry.ts by scripts/gen_openapi_v2.py; do not edit by hand. Deployed preview. The v2 gateway is live; v1 remains available."
+  },
+  "servers": [
+    {
+      "url": "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2",
+      "description": "The silo-api Edge Function (deployed preview)."
+    }
+  ],
+  "security": [
+    {},
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Discovery"
+    },
+    {
+      "name": "Markets and macro"
+    },
+    {
+      "name": "Companies and funds"
+    },
+    {
+      "name": "Research"
+    }
+  ],
+  "paths": {
+    "/macro": {
+      "get": {
+        "operationId": "v2_macro_inflation",
+        "summary": "Inflation history",
+        "tags": [
+          "Markets and macro"
+        ],
+        "description": "Deployed preview. Macro series, inflation and its item tree, PTAX, Focus expectations.\n\nthe IPCA set by month with acc_12m, 3 years by default. Refuses above 1000 rows: pin id or family, or narrow from.\n\nThis playground selects `inflation` on `GET /macro`. See the [full resource reference](/api-docs/v2/reference/macro) for all variants.",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/macro/inflation"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "description": "Selects inflation history.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inflation"
+              ],
+              "default": "inflation"
+            },
+            "example": "inflation"
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "By kind: series takes an SGS series label or code (SELIC_META, CDI, IGPM, 432); inflation takes one series label (IPCA, IPCA_CORE_EX0, ...; none: every series); inflation_items takes an IBGE structure number or SIDRA item code (none: the groups); expectations takes a Focus indicator (IPCA, Selic, ...; none: every indicator). Required for kind series. Kind fx takes no id. Default: none.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind inflation: headline, core, classification, diffusion or group (all: every family). kind expectations: the Focus survey, annual (the default), monthly, selic (COPOM meetings) or inflation_12m. Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "headline",
+                "core",
+                "classification",
+                "diffusion",
+                "group",
+                "annual",
+                "monthly",
+                "selic",
+                "inflation_12m"
+              ],
+              "default": "all"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SILO user access token for authenticated data requests."
+      }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {},
+            "description": "Always a list. Rows as the endpoint returned them; null stays null."
+          },
+          "meta": {
+            "type": "object",
+            "required": [
+              "resource",
+              "kind",
+              "request",
+              "id_known"
+            ],
+            "properties": {
+              "resource": {
+                "type": "string"
+              },
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "request": {
+                "type": "object",
+                "description": "Every parameter the resource takes, with the default applied."
+              },
+              "id_known": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Whether SILO holds the id; null when the call names none."
+              },
+              "endpoint": {
+                "type": "string",
+                "description": "The data endpoint that answered."
+              },
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "anonymous",
+                  "signed_in",
+                  "pro"
+                ]
+              },
+              "tier_cap_reached": {
+                "type": "boolean",
+                "description": "True when the result is partial because of the tier cap."
+              }
+            },
+            "additionalProperties": true
+          },
+          "next_page_url": {
+            "type": "string",
+            "description": "Present only when more rows remain. It carries one opaque cursor."
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "target",
+              "innererror"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "bad_request",
+                  "unknown_parameter",
+                  "unknown_id",
+                  "unauthorized",
+                  "forbidden_for_tier",
+                  "over_limit",
+                  "rate_limited",
+                  "timeout",
+                  "unavailable",
+                  "internal"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "target": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "innererror": {
+                "type": "object",
+                "properties": {
+                  "sqlstate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "hint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "details": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

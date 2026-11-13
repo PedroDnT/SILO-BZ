@@ -62,3 +62,7 @@ run the gateway in process) exist but are not deployed.
 
 Deeper: [README](../../README.md), [API](../reference/API.md),
 [data modeling](../reference/DATA_MODELING.md).
+
+The Mintlify v2 reference generates operation-specific playground projections from
+the existing registry with `scripts/gen_v2_operation_docs.py`. These share the
+real routes, security and envelope; they do not create runtime API endpoints.

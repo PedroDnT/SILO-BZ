@@ -1,0 +1,311 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SILO API v2 (deployed preview)",
+    "version": "v2",
+    "description": "The v2 gateway over SILO's schema `api`: 14 resources, five shared parameters, one envelope and one error object. Generated from supabase/functions/silo-api/registry.ts by scripts/gen_openapi_v2.py; do not edit by hand. Deployed preview. The v2 gateway is live; v1 remains available."
+  },
+  "servers": [
+    {
+      "url": "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2",
+      "description": "The silo-api Edge Function (deployed preview)."
+    }
+  ],
+  "security": [
+    {},
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Discovery"
+    },
+    {
+      "name": "Markets and macro"
+    },
+    {
+      "name": "Companies and funds"
+    },
+    {
+      "name": "Research"
+    }
+  ],
+  "paths": {
+    "/screens": {
+      "get": {
+        "operationId": "v2_screens_late_filers",
+        "summary": "Late filers",
+        "tags": [
+          "Research"
+        ],
+        "description": "Deployed preview. Which funds look odd? Forensic screens: signals, not verdicts.\n\nFIIs and FIDCs whose monthly informe reached source at least min_days_late days after the cited deadline, in at least min_late months.\n\nThis playground selects `late_filers` on `GET /screens`. See the [full resource reference](/api-docs/v2/reference/screens) for all variants.",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/screens/late_filers"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "description": "Selects late filers.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "late_filers"
+              ],
+              "default": "late_filers"
+            },
+            "example": "late_filers"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). zombie_growth: the aging month-end (p_period). delinquency_drivers, restatements, late_filers: the window end (p_end). Default: the screen's own: zombie_growth the latest aging month; delinquency_drivers the latest complete FIDC month; restatements today; late_filers the newest month whose deadline has passed.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "months",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). delinquency_drivers (2..24), restatements, late_filers (1..36): the window length in months. Default: the screen's SQL default (12).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_days_late",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). late_filers: days past the cited deadline that count as late, 1..90. Default: the SQL default (5).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "min_late",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). late_filers: late months a fund needs in the window. Default: the SQL default (2).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). late_filers (fii, fidc) and silent_filers (fi, fidc, fii, fiagro): keep one family (an output filter). Default: all.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "fi",
+                "fidc",
+                "fii",
+                "fiagro"
+              ],
+              "default": "all"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SILO user access token for authenticated data requests."
+      }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {},
+            "description": "Always a list. Rows as the endpoint returned them; null stays null."
+          },
+          "meta": {
+            "type": "object",
+            "required": [
+              "resource",
+              "kind",
+              "request",
+              "id_known"
+            ],
+            "properties": {
+              "resource": {
+                "type": "string"
+              },
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "request": {
+                "type": "object",
+                "description": "Every parameter the resource takes, with the default applied."
+              },
+              "id_known": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Whether SILO holds the id; null when the call names none."
+              },
+              "endpoint": {
+                "type": "string",
+                "description": "The data endpoint that answered."
+              },
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "anonymous",
+                  "signed_in",
+                  "pro"
+                ]
+              },
+              "tier_cap_reached": {
+                "type": "boolean",
+                "description": "True when the result is partial because of the tier cap."
+              }
+            },
+            "additionalProperties": true
+          },
+          "next_page_url": {
+            "type": "string",
+            "description": "Present only when more rows remain. It carries one opaque cursor."
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "target",
+              "innererror"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "bad_request",
+                  "unknown_parameter",
+                  "unknown_id",
+                  "unauthorized",
+                  "forbidden_for_tier",
+                  "over_limit",
+                  "rate_limited",
+                  "timeout",
+                  "unavailable",
+                  "internal"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "target": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "innererror": {
+                "type": "object",
+                "properties": {
+                  "sqlstate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "hint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "details": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

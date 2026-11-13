@@ -1,0 +1,37 @@
+---
+title: "Restatement changes"
+description: "Query restatement changes through SILO REST and MCP v2."
+keywords: ["events", "restatement_diff", "API", "MCP"]
+openapi: "api-docs/v2/specs/events-restatement_diff.json GET /events"
+---
+
+**Deployed preview.** One row per field that changed between a restated document and its predecessor (the FIDC informe mensal for now).
+
+Supply `id`. Open **Try it**, review the inputs, and select **Send** to query the deployed API.
+The `kind` field is preset to `restatement_diff`. This is a view of the existing `/events` resource, not a new route.
+
+<Note>
+  Anonymous calls need no credential except on screens and portfolio, which require signed-in access.
+  With a Pro credential, verify `meta.tier` is `pro` in the actual response.
+</Note>
+
+## Before you query
+
+Resolve identifiers with [search](/api-docs/v2/reference/search), then check
+[coverage](/api-docs/v2/reference/coverage). Dates and identifiers must match the
+selected operation; expand the parameter descriptions below for its accepted values.
+
+## Use from an agent
+
+Call `silo_events` over [MCP v2](/api-docs/v2/mcp) with `kind: "restatement_diff"`.
+Main arguments stay at the top level; advanced REST parameters go inside `options`.
+Use the same identifier and date window as the REST request.
+
+## Read the result
+
+Inspect `data`, `meta.request`, `meta.tier`, and `next_page_url`.
+Follow every page before treating a result as complete. `meta.tier_cap_reached`
+means partial data; a missing next page does not override it. Empty results and
+`null` are not zero. An error is not a data result.
+
+See [pagination and errors](/api-docs/v2/responses) for a complete reading checklist.
