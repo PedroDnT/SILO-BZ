@@ -91,6 +91,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "instrument_type": "cra_mensal",
+                      "securitizer_cnpj": "10753164000143",
+                      "instrument_code": "BRECOACRA1K5",
+                      "maturity": "2017-11-07",
+                      "status": "Em atraso"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

@@ -2,8 +2,21 @@
 title: "Published curve vertices"
 description: "(a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published)."
 keywords: ["curves", "vertices", "API", "MCP"]
+openapi: "api-docs/v2/specs/curves-vertices.json GET /curves/vertices"
 ---
 
+
+
+## Overview
+
+(a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published).
+
+
+## Coverage
+
+Coverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.
+
+## Try the API
 
 
 import { OperationQuery } from "/snippets/operation-query.jsx";
@@ -12,12 +25,46 @@ import { OperationQuery } from "/snippets/operation-query.jsx";
 
 [Request and response schema](/api-docs/v2/specs/curves-vertices.json)
 
-<Accordion title="Code example">
+## Example
 
 ```bash
-curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/curves/vertices'
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/curves/vertices?limit=1' \
+  --header "Authorization: Bearer $SILO_TOKEN"
 ```
+
+## Example response
+
+Successful response from a Pro request on 2026-11-13. This excerpt omits fields and pagination links.
+
+```json
+{
+  "data": [
+    {
+      "trade_date": "2026-11-12",
+      "curve": "PRE",
+      "business_days": 1,
+      "calendar_days": 1,
+      "rate_pct": 13.65
+    }
+  ],
+  "meta": {
+    "tier": "pro"
+  }
+}
+```
+
+## FAQ
+
+<Accordion title="How do I check for more results?">
+
+When present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).
 
 </Accordion>
 
-[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
+<Accordion title="Can an agent use this data?">
+
+Yes. Connect an agent through the [MCP server](/api-docs/v2/mcp).
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python)

@@ -93,6 +93,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -110,6 +119,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "reference_month": "2023-12-01",
+                      "item_code": 7170,
+                      "item_number": "1",
+                      "item_name": "Alimentação e bebidas",
+                      "level": 1
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -124,7 +147,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

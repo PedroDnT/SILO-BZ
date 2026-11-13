@@ -122,6 +122,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -153,7 +162,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

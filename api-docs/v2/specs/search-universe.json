@@ -74,6 +74,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -91,6 +100,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "ticker": "AALR3",
+                      "isin": "BRAALRACNOR6",
+                      "instrument_type": "equity",
+                      "cnpj": "42771949000135",
+                      "cnpj_basis": "fca_ticker"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -105,7 +128,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

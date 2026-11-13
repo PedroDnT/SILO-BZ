@@ -2,8 +2,21 @@
 title: "Delinquency drivers"
 description: "FIDC delinquency, first vs last observation in BRL and in points of NAV, the move classified (driver)."
 keywords: ["screens", "delinquency_drivers", "API", "MCP"]
+openapi: "api-docs/v2/specs/screens-delinquency_drivers.json GET /screens/delinquency-drivers"
 ---
 
+
+
+## Overview
+
+FIDC delinquency, first vs last observation in BRL and in points of NAV, the move classified (driver).
+
+
+## Coverage
+
+Coverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.
+
+## Try the API
 
 
 import { OperationQuery } from "/snippets/operation-query.jsx";
@@ -12,12 +25,37 @@ import { OperationQuery } from "/snippets/operation-query.jsx";
 
 [Request and response schema](/api-docs/v2/specs/screens-delinquency_drivers.json)
 
-<Accordion title="Code example">
+## Example
 
 ```bash
-curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/delinquency-drivers'
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/delinquency-drivers?limit=1' \
+  --header "Authorization: Bearer $SILO_TOKEN"
 ```
+
+## Example response
+
+Error response (HTTP 400) from a Pro request on 2026-11-13. This excerpt omits fields and pagination links.
+
+```json
+{
+  "error": {
+    "code": "over_limit"
+  }
+}
+```
+
+## FAQ
+
+<Accordion title="How do I check for more results?">
+
+When present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).
 
 </Accordion>
 
-[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
+<Accordion title="Can an agent use this data?">
+
+Yes. Connect an agent through the [MCP server](/api-docs/v2/mcp).
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python)

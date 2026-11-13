@@ -39,7 +39,7 @@
         "tags": [
           "Discovery"
         ],
-        "description": "(): metrics, constraints, limits, applicability, regime breaks, screens.",
+        "description": "Explore available datasets, metrics, constraints, and screens.",
         "x-mint": {
           "href": "/api-docs/v2/operations/coverage/catalog"
         },
@@ -64,6 +64,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -81,6 +90,18 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "kind": "catalog",
+                      "version": 83,
+                      "primitive": "panel"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -95,7 +116,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

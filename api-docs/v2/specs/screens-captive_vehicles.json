@@ -111,6 +111,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cnpj": "31962875000106",
+                      "fund_name": "PROLOGIS BRAZIL LOGISTICS VENTURE FUNDO DE INVESTIMENTO IMOBILIÁRIO DE RESPONSABILIDADE LIMITADA",
+                      "latest_period": "2026-09-01",
+                      "max_nav_mm": 8219.33391302,
+                      "min_quotaholders": 2
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

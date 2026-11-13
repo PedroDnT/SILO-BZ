@@ -138,6 +138,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cnpj": "37828802000102",
+                      "fund_family": "fidc",
+                      "fund_name": "AZURE FI EM COTAS DE FUNDOS DE INVESTIMENTO EM DIREITOS  CREDITÓRIOS - RESPONSABILIDADE LIMITADA",
+                      "window_from": "2025-10-01",
+                      "window_to": "2026-09-01"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

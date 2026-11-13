@@ -81,6 +81,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "kind": "late_filers",
+                      "summary": "FIIs and FIDCs whose monthly informe reached FNET at least min_days_late days after the cited deadline, in at least min_late months.",
+                      "family": "fii, fidc (FNET)",
+                      "endpoint": "api.screen_late_filers",
+                      "call": "/v2/screens?kind=late_filers"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

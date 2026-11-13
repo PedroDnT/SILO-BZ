@@ -104,6 +104,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -121,6 +130,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cd_cvm": "9512",
+                      "cnpj": "33000167000101",
+                      "company": "PETRÓLEO BRASILEIRO S.A. - PETROBRAS",
+                      "ticker": "PETR4",
+                      "delivery_date": "2026-11-04"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -135,7 +158,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

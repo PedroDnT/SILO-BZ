@@ -91,6 +91,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cnpj": "33000167000101",
+                      "classe_anbima": null,
+                      "fundo_cotas": null,
+                      "tp_fundo_classe": null,
+                      "taxa_adm": null
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

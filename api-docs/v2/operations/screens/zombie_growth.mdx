@@ -2,8 +2,21 @@
 title: "Zombie growth"
 description: "FIDCs with delinquency above min_delinq_pct of NAV while NAV stays above min_aum, in one aging month."
 keywords: ["screens", "zombie_growth", "API", "MCP"]
+openapi: "api-docs/v2/specs/screens-zombie_growth.json GET /screens/zombie-growth"
 ---
 
+
+
+## Overview
+
+FIDCs with delinquency above min_delinq_pct of NAV while NAV stays above min_aum, in one aging month.
+
+
+## Coverage
+
+Coverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.
+
+## Try the API
 
 
 import { OperationQuery } from "/snippets/operation-query.jsx";
@@ -12,12 +25,46 @@ import { OperationQuery } from "/snippets/operation-query.jsx";
 
 [Request and response schema](/api-docs/v2/specs/screens-zombie_growth.json)
 
-<Accordion title="Code example">
+## Example
 
 ```bash
-curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/zombie-growth'
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/zombie-growth?limit=1' \
+  --header "Authorization: Bearer $SILO_TOKEN"
 ```
+
+## Example response
+
+Successful response from a Pro request on 2026-11-13. This excerpt omits fields and pagination links.
+
+```json
+{
+  "data": [
+    {
+      "cnpj": "52258255000152",
+      "fund_name": "BINVEST FUNDO DE INVESTIMENTO EM DIREITOS CREDITÓRIOS RESPONSABILIDADE LIMITADA",
+      "period": "2026-10-31",
+      "nav_mm": 477.1533919,
+      "delinquency_pct": 6.2
+    }
+  ],
+  "meta": {
+    "tier": "pro"
+  }
+}
+```
+
+## FAQ
+
+<Accordion title="How do I check for more results?">
+
+When present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).
 
 </Accordion>
 
-[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
+<Accordion title="Can an agent use this data?">
+
+Yes. Connect an agent through the [MCP server](/api-docs/v2/mcp).
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python)

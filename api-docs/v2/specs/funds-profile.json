@@ -101,6 +101,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -118,6 +127,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cnpj": "00017024000153",
+                      "entity_type": "fi",
+                      "fund_name": "FIF - CLASSE DE INVESTIMENTO   RENDA FIXA EXPONENCIAL - RESP LIMITADA",
+                      "status": "Em Funcionamento Normal",
+                      "fund_class": "Classes de Cotas de Fundos FIF"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -132,7 +155,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

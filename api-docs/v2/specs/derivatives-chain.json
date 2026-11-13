@@ -93,6 +93,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -110,6 +119,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "codneg": "PETRW386W2",
+                      "side": "put",
+                      "strike": 38.61,
+                      "expiry": "2026-11-13",
+                      "trade_date": "2026-11-12"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -124,7 +147,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

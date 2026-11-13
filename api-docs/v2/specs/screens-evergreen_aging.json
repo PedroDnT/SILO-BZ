@@ -111,6 +111,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cnpj": "12778706000168",
+                      "fund_name": "FUNDO DE INVESTIMENTO EM DIREITOS CREDITÓRIOS - BRASILFACTORS CRÉDITO CORPORATIVO",
+                      "months_observed": 11,
+                      "min_longtail_pct": 100,
+                      "max_longtail_pct": 100
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

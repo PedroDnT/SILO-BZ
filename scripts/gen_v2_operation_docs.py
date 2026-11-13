@@ -10,6 +10,7 @@ import copy
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlencode
 
 from scripts.gen_openapi_v2 import ROOT, build, load_registry, load_error_codes
 
@@ -17,12 +18,18 @@ def artifacts():
     registry = load_registry()
     base = build(registry, load_error_codes())
     definitions = json.loads((ROOT / "supabase/functions/silo-api/operations.json").read_text())
+    snapshots = json.loads((ROOT / "api-docs/v2/examples/operation-responses.json").read_text())
     files, groups, links = {}, [], []
     all_paths = {}
     for definition in definitions:
         name, kind = definition["resource"], definition["kind"]
         method, path = definition["method"].lower(), definition["path"]
         title, detail = definition["title"], definition["description"]
+        detail = {
+            "/coverage/freshness": "Find the latest available data date for each dataset.",
+            "/coverage/metrics": "Check which metrics each fund family reports.",
+            "/coverage/catalog": "Explore available datasets, metrics, constraints, and screens.",
+        }.get(path, detail)
         slug = f"api-docs/v2/operations/{name}/{kind}"
         spec_path = f"api-docs/v2/specs/{name}-{kind}.json"
         spec = copy.deepcopy(base)
@@ -30,12 +37,20 @@ def artifacts():
         spec["paths"] = {path: {method: op}}
         op.update(operationId=f"v2_{name}_{kind}", summary=title, description=detail)
         op["x-mint"] = {"href": f"/{slug}"}
+        snapshot = snapshots[path]
+        if snapshot["status"] == 200:
+            op["responses"]["200"]["content"]["application/json"]["example"] = snapshot["excerpt"]
+        # An optional HTTP header keeps Mintlify from labelling public access required.
+        if name not in {"portfolio", "screens"}:
+            op["security"] = []
         op["parameters"] = [
             {"name": p["name"], "in": "query", "required": p["required"],
              "description": p["description"], "schema": p["schema"],
              **({"example": p["example"]} if "example" in p else {})}
             for p in definition["parameters"]
-        ] + [{"name": "details", "in": "query", "required": False,
+        ] + ([{"name": "Authorization", "in": "header", "required": False,
+               "description": "Optional Bearer token for signed-in or Pro access.",
+               "schema": {"type": "string"}}] if name not in {"portfolio", "screens"} else []) + [{"name": "details", "in": "query", "required": False,
               "description": "Include request diagnostics.", "schema": {"type": "boolean", "default": False}}]
         if definition["body"]:
             old = op["requestBody"]["content"]["application/json"]["schema"]["properties"]
@@ -52,29 +67,37 @@ def artifacts():
 title: {json.dumps(title)}
 description: {json.dumps(detail)}
 keywords: [{json.dumps(name)}, {json.dumps(kind)}, "API", "MCP"]
+openapi: "{spec_path} {method.upper()} {path}"
 ---
 
 
 '''
         page = files[f"{slug}.mdx"]
+        page += '\n## Overview\n\n' + detail + '\n\n'
+        page += '\n## Coverage\n\nCoverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.\n'
+        page += '\n## Try the API\n\n'
         page += '\nimport { OperationQuery } from "/snippets/operation-query.jsx";\n\n'
         page += '<OperationQuery operation={' + json.dumps(definition, ensure_ascii=False) + '} />\n'
         page += f'\n[Request and response schema](/{spec_path})\n'
-        page += '\n<Accordion title="Code example">\n\n'
-        sample = {p["name"]: str(p["example"]) for p in definition["parameters"] if "example" in p}
-        query = "&".join(f"{k}={v}" for k, v in sample.items())
+        page += '\n## Example\n\n'
+        sample = snapshot["params"]
+        query = urlencode(sample)
         request_url = base["servers"][0]["url"] + path + ("?" + query if query else "")
-        page += f"```bash\ncurl --request {method.upper()} '{request_url}'"
+        page += f"```bash\ncurl --request {method.upper()} '{request_url}' \\\n  --header \"Authorization: Bearer $SILO_TOKEN\""
         if definition["body"]:
-            example_body = json.dumps({p["name"]: [] for p in definition["body"]})
-            page += " \\\n  --header 'Content-Type: application/json' \\\n  --header \"Authorization: Bearer $SILO_TOKEN\" \\\n  --data '" + example_body + "'"
-        page += '\n```\n\n</Accordion>\n'
+            example_body = json.dumps(snapshot["body"], ensure_ascii=False)
+            page += " \\\n  --header 'Content-Type: application/json' \\\n  --data '" + example_body + "'"
+        page += '\n```\n'
         if path == "/macro/series":
             choices = next(p["choices"] for p in definition["parameters"] if p["name"] == "series")
             page += '\n<Accordion title="Series codes and units">\n\n'
             page += "\n".join(f"- `{c['value']}`: {c['label']}." for c in choices)
             page += '\n\n</Accordion>\n'
-        page += "\n[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)\n"
+        status = snapshot["status"]
+        label = "Successful response" if status == 200 else f"Error response (HTTP {status})"
+        page += f"\n## Example response\n\n{label} from a Pro request on 2026-11-13. This excerpt omits fields and pagination links.\n\n```json\n"
+        page += json.dumps(snapshot["excerpt"], indent=2, ensure_ascii=False) + "\n```\n"
+        page += '\n## FAQ\n\n<Accordion title="How do I check for more results?">\n\nWhen present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).\n\n</Accordion>\n\n<Accordion title="Can an agent use this data?">\n\nYes. Connect an agent through the [MCP server](/api-docs/v2/mcp).\n\n</Accordion>\n\n[Python DataFrames](/api-docs/v2/python)\n'
         files[f"{slug}.mdx"] = page
         group = next((g for g in groups if g["group"] == definition["group"]), None)
         if group is None:

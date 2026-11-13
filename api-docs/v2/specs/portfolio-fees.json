@@ -91,6 +91,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cnpj": "33000167000101",
+                      "fund_name": null,
+                      "month": null,
+                      "nav": null,
+                      "adm_fee_flow": null
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

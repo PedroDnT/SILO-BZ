@@ -30,5 +30,13 @@ def test_generated_sdk_contract_and_openapi_cover_all_operations():
     assert set(spec['paths'])=={o['path'] for o in OPS}
     for op in OPS:
         operation=spec['paths'][op['path']][op['method'].lower()]
-        assert {p['name'] for p in operation['parameters']}=={p['name'] for p in op['parameters']}|{'details'}
+        query={p['name'] for p in operation['parameters'] if p['in']=='query'}
+        assert query=={p['name'] for p in op['parameters']}|{'details'}
+        headers=[p for p in operation['parameters'] if p['in']=='header' and p['name']=='Authorization']
+        if op['resource'] in {'portfolio','screens'}:
+            assert operation['security']==[{'bearerAuth':[]}]
+            assert not headers
+        else:
+            assert operation['security']==[]
+            assert len(headers)==1 and headers[0]['required'] is False
         assert not {'kind','id'} & {p['name'] for p in operation['parameters']}

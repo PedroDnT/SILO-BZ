@@ -93,6 +93,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -110,6 +119,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "codneg": "PETRK282E",
+                      "trade_date": "2025-11-18",
+                      "side": "call",
+                      "strike": 27.72,
+                      "expiry": "2025-11-21"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -124,7 +147,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

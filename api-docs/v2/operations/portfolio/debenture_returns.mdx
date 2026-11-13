@@ -2,8 +2,21 @@
 title: "Debenture fund marks"
 description: "13 month-ends of median fund marks (CDA block 4) per debenture ticker; marks, not trades."
 keywords: ["portfolio", "debenture_returns", "API", "MCP"]
+openapi: "api-docs/v2/specs/portfolio-debenture_returns.json POST /portfolio/debenture-returns"
 ---
 
+
+
+## Overview
+
+13 month-ends of median fund marks (CDA block 4) per debenture ticker; marks, not trades.
+
+
+## Coverage
+
+Coverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.
+
+## Try the API
 
 
 import { OperationQuery } from "/snippets/operation-query.jsx";
@@ -12,15 +25,48 @@ import { OperationQuery } from "/snippets/operation-query.jsx";
 
 [Request and response schema](/api-docs/v2/specs/portfolio-debenture_returns.json)
 
-<Accordion title="Code example">
+## Example
 
 ```bash
-curl --request POST 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/portfolio/debenture-returns' \
-  --header 'Content-Type: application/json' \
+curl --request POST 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/portfolio/debenture-returns?limit=1&month=2026-08-31' \
   --header "Authorization: Bearer $SILO_TOKEN" \
-  --data '{"tickers": []}'
+  --header 'Content-Type: application/json' \
+  --data '{"tickers": ["VALE18"]}'
 ```
+
+## Example response
+
+Successful response from a Pro request on 2026-11-13. This excerpt omits fields and pagination links.
+
+```json
+{
+  "data": [
+    {
+      "line_no": 1,
+      "input_ticker": "VALE18",
+      "ticker": "VALE18",
+      "month": "2025-08-01",
+      "n_fundos": 0
+    }
+  ],
+  "meta": {
+    "tier": "pro"
+  }
+}
+```
+
+## FAQ
+
+<Accordion title="How do I check for more results?">
+
+When present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).
 
 </Accordion>
 
-[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
+<Accordion title="Can an agent use this data?">
+
+Yes. Connect an agent through the [MCP server](/api-docs/v2/mcp).
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python)

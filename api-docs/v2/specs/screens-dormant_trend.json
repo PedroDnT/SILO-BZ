@@ -101,6 +101,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "period": "2023-11-01",
+                      "funds_filing": 25768,
+                      "empty_shells": 6,
+                      "parked_capital": 9064,
+                      "parked_nav": 1068438692424.36
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

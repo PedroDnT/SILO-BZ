@@ -94,6 +94,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -111,6 +120,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "reference_date": "2025-11-13",
+                      "currency": "USD",
+                      "buy_rate": 5.2814,
+                      "sell_rate": 5.282,
+                      "unit": "brl_per_usd"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -125,7 +148,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },

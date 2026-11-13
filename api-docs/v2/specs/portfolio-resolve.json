@@ -81,6 +81,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "line_no": 1,
+                      "input_name": "ITAU RF",
+                      "candidate_cnpj": "11858554000140",
+                      "candidate_name": "ITAÚ RF MIX CRED PRIV FIF DA CLASSE DE INVESTIMENTO EM COTAS RESP LIMITADA",
+                      "matched_name": "ITAÚ RF MIX CRED PRIV FIF DA CLASSE DE INVESTIMENTO EM COTAS RESP LIMITADA"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }

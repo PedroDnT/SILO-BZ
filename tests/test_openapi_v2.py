@@ -132,8 +132,12 @@ def test_operation_playgrounds_preserve_auth_and_use_explicit_routes():
         route, methods = next(iter(spec["paths"].items()))
         method, operation = next(iter(methods.items()))
         original = base["paths"]["/" + route.split("/")[1]][method]
-        assert operation.get("security") == original.get("security")
-        assert operation["responses"] == original["responses"]
+        if original.get("security"):
+            assert operation["security"] == original["security"]
+        else:
+            assert operation["security"] == []
+            assert any(p["name"] == "Authorization" and not p["required"] for p in operation["parameters"])
+        assert operation["responses"]["default"] == original["responses"]["default"]
         assert operation["x-mint"]["href"].lstrip("/") in pages
         assert all(p["name"] not in {"id", "kind"} for p in operation["parameters"])
     assert len(pages) == sum(len(r["kinds"]) for r in _gen().load_registry()["resources"])

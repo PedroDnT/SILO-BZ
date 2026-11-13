@@ -39,7 +39,7 @@
         "tags": [
           "Discovery"
         ],
-        "description": "(): a (family, metric) pair absent here is one the family never files, not late data.",
+        "description": "Check which metrics each fund family reports.",
         "x-mint": {
           "href": "/api-docs/v2/operations/coverage/metrics"
         },
@@ -74,6 +74,15 @@
             }
           },
           {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "details",
             "in": "query",
             "required": false,
@@ -91,6 +100,20 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "entity_type": "fi",
+                      "metric": "inflows",
+                      "first_period": "2019-01-01",
+                      "last_period": "2026-11-01",
+                      "filed_rows": 2128919
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
                 }
               }
             }
@@ -105,7 +128,8 @@
               }
             }
           }
-        }
+        },
+        "security": []
       }
     }
   },
