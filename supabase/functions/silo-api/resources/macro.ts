@@ -49,6 +49,9 @@ function prepare(kind: string, values: Record<string, Value>): Record<string, Va
     }
     horizon = todayUtcMinus3().slice(0, 4);
   }
+  if (survey === "annual" && !/^\d{4}$/.test(String(horizon))) {
+    throw new ApiError(400, "bad_request", "Annual expectations take one target year (YYYY) per call. from and to select survey dates.", "horizon");
+  }
   return { ...values, family: survey, horizon };
 }
 

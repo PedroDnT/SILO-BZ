@@ -368,7 +368,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nWhat did the company file? Income, balance sheet, cash flow, headline figures and every stored version.\n\nExample: `/v2/statements?id=PETR4&kind=income`\n\nKinds:\n\n- `all`: api.financials: every line, one row per account, latest stored version. Paged by date windows. With no id (every kind): the research universe, whose cnpj links a ticker to its filer.\n- `income`: api.income_statements: one row per filed period, with period_months.\n- `balance`: api.balance_sheets: one row per filed date. A balance sheet is a point in time, so the source has no period_months.\n- `cashflow`: api.cash_flow_statements: one row per filed period, with period_months.\n- `headline`: api.company_financials: headline figures per filed period. The function takes no p_doc_type, so period is a selection on the rows' doc_type.\n- `versions`: api.financial_statement_history: every stored version of one statement (hidden statement, default DRE), with filing metadata. No as_of: it already shows every version.\n\nWith no `from`, a dated kind reads the last 60 months to `to`.\n\n`GET /v2/statements?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nWhat did the company file? Income, balance sheet, cash flow, headline figures and every stored version.\n\nExample: `/v2/statements?id=PETR4&kind=income`\n\nKinds:\n\n- `all`: api.financials: every line, one row per account, latest stored version. Paged by date windows. With no id (every kind): the research universe, whose cnpj links a ticker to its filer.\n- `income`: api.income_statements: one row per filed period, with period_months.\n- `balance`: api.balance_sheets: one row per filed date. A balance sheet is a point in time, so the source has no period_months.\n- `cashflow`: api.cash_flow_statements: one row per filed period, with period_months.\n- `headline`: api.company_financials: headline figures per filed period. The function takes no p_doc_type, so period is a selection on the rows' doc_type.\n- `versions`: api.financial_statement_history: every stored version of one statement (hidden statement, default DRE), with filing metadata. No as_of: it already shows every version.\n\nWith no `from`, a dated kind reads the last 60 months to `to`.\n\nFor account-code comparisons use kind=all and read account_code with the filed account_name for each issuer.\n\nFor restatements use kind=versions, bound filing dates, and select the statement and account_code to retain matching account rows with version and period spans.\n\n`GET /v2/statements?help` describes the main parameters, `?help=all` adds the hidden ones.",
         "x-mint": {
           "href": "/api-docs/v2/reference/statements"
         },
@@ -478,6 +478,15 @@
             "schema": {
               "type": "string",
               "format": "date"
+            }
+          },
+          {
+            "name": "account_code",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). For all or versions: exact filed account code. Check its filed label before comparing issuers. Omit for every line. Default: none: return all accounts.",
+            "schema": {
+              "type": "string"
             }
           },
           {
@@ -1175,7 +1184,7 @@
             "name": "horizon",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). kind expectations: the target horizon exactly as BACEN publishes it: a year (2027) for annual, MM/YYYY for monthly, a COPOM meeting (R6/2028) for selic. Default: family annual: the current year (UTC-3); every other survey needs one.",
+            "description": "Hidden parameter (`?help=all` lists it). kind expectations: one target horizon per call. Use a single YYYY for annual, MM/YYYY for monthly, or a meeting code such as R6/2028 for selic. from and to filter survey dates, not target dates. Default: family annual: the current year (UTC-3); every other survey needs one.",
             "schema": {
               "type": "string"
             }

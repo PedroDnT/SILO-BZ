@@ -696,7 +696,7 @@ Deno.test("statements defaults: financials, consolidated, every period, 5 years 
   assert(calls[0].url.endsWith("/rpc/financials"));
   assertEquals(body(calls[0]), { p_id: "PETR4", p_from: Y5, p_scope: "con" });
   assertEquals(json.data, rows, "rows as filed: period_months stays");
-  assertEquals(json.meta.request, { kind: "all", period: "both", scope: "consolidated", as_of: null, statement: "DRE", id: "PETR4", from: Y5, to: null, limit: 10 });
+  assertEquals(json.meta.request, { kind: "all", period: "both", scope: "consolidated", as_of: null, account_code: null, statement: "DRE", id: "PETR4", from: Y5, to: null, limit: 10 });
 });
 
 Deno.test("statements maps period, scope and as_of to the SQL codes", async () => {
@@ -1632,4 +1632,18 @@ Deno.test("retryAfter: seconds to the next minute, 1..60", () => {
   assertEquals(retryAfter(Date.UTC(2026, 10, 4, 0, 30, 0)), 60);
   assertEquals(retryAfter(Date.UTC(2026, 10, 4, 0, 30, 59, 900)), 1);
   assertEquals(retryAfter(NOW), 45);
+});
+
+Deno.test("filing account selection preserves matching versions and an absent account returns no rows", async () => {
+  const rows = [
+    { account_code: "3.11", version: 1, value: 10 },
+    { account_code: "3.11", version: 2, value: 20 },
+    { account_code: "3.01", version: 2, value: 30 },
+  ];
+  const route = "/v2/statements?id=PETR4&kind=versions&from=2024-03-31&to=2024-03-31&account_code=";
+  assertEquals((await get(route + "3.11", 200, JSON.stringify(rows))).json.data, rows.slice(0, 2));
+  assertEquals((await get(route + "3.99", 200, JSON.stringify(rows))).json.data, []);
+  const malformed = await get("/v2/macro?kind=expectations&family=annual&horizon=2024,2025", 400);
+  assertEquals(malformed.json.error.target, "horizon");
+  assertEquals(malformed.calls.length, 0);
 });
