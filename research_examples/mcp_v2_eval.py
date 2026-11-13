@@ -91,7 +91,15 @@ INSTRUCTIONS = baseline.INSTRUCTIONS.replace(
     "Start with the SILO catalog, then inspect the available public tools.",
     "The tools supplied here are the live MCP v2 schemas. Start with the SILO "
     "catalog using silo_coverage with kind=catalog, then inspect the available public tools.",
-)
+) + """
+Use the catalog to choose evidence. For issuer-specific claims, retrieve actual
+filed rows and cite them. Prefer narrow dates, a small page and relevant account
+filters; follow cursors before claiming completeness. For forecasts, distinguish
+survey dates from target horizons and use matched survey windows. Check arithmetic
+and group membership before reporting. If the data cannot identify a causal
+effect, state the missing design and finish early. Give a bounded final answer
+within the available calls, without asking for permission to continue.
+"""
 # Evaluator-only availability probes. Never include these arguments in model input.
 PROBES = (
     ("silo_statements", {"id": "PETR4", "kind": "versions", "from": "2024-03-31", "to": "2024-03-31", "limit": 1}),
@@ -123,8 +131,9 @@ def envelope(result: CallToolResult, *, catalog: bool = False) -> dict[str, Any]
 class BoundedMCP(MCPServerStreamableHttp):
     """Use the installed MCP transport, adding only evaluation bounds and evidence."""
 
-    def __init__(self, *, require_pro: bool = False) -> None:
+    def __init__(self, *, require_pro: bool = False, data_call_limit: int = baseline.MAX_DATA_CALLS) -> None:
         self.require_pro = require_pro
+        self.data_call_limit = data_call_limit
         self.tier_failed = False
         token = os.environ.get("SILO_INTEGRATION_KEY" if require_pro else "SILO_USER_JWT", "")
         if require_pro and not token:
@@ -165,7 +174,7 @@ class BoundedMCP(MCPServerStreamableHttp):
             if tool_name != "silo_coverage":
                 if not self.catalog_seen:
                     raise ValueError("Read silo_coverage with kind=catalog before substantive data")
-                if self.data_calls >= baseline.MAX_DATA_CALLS:
+                if self.data_calls >= self.data_call_limit:
                     raise ValueError("Data-call cap reached; synthesize the evidence already collected")
                 self.data_calls += 1
             # Anonymous access allows ten calls/minute. Keep one shared cadence across cases.
@@ -189,6 +198,8 @@ class BoundedMCP(MCPServerStreamableHttp):
             event["error_type"] = type(exc).__name__
             event["tool_error"] = True
             message = str(exc) if isinstance(exc, (ValueError, baseline.ToolResultLimitError)) else "MCP request failed"
+            if isinstance(exc, baseline.ToolResultLimitError):
+                message += ". Retry with a smaller limit or narrower date window."
             event["error_detail"] = message
             return CallToolResult(content=[TextContent(type="text", text=json.dumps({"error": {"code": type(exc).__name__, "message": message}}))], isError=True)
         finally:
@@ -278,9 +289,12 @@ async def run(args, selected, ledger) -> int:
     compare_baseline([])  # Validate evaluator-only baseline evidence before any paid request.
     pro = getattr(args, "pro", False)
     model = PRO_MODEL if pro else baseline.MODEL
+    follow_up = getattr(args, "follow_up", False)
+    data_call_limit = 8 if follow_up else baseline.MAX_DATA_CALLS
+    instructions = INSTRUCTIONS.replace("five substantive data calls", "eight substantive data calls") if follow_up else INSTRUCTIONS
     reserve = case_reserve(pro)
     ledger_path = getattr(args, "spend_ledger", None) or baseline.SPEND_LEDGER
-    async with (BoundedMCP(require_pro=True) if pro else BoundedMCP()) as server:
+    async with (BoundedMCP(require_pro=True, data_call_limit=data_call_limit) if pro else BoundedMCP()) as server:
         report = await preflight(server)
         print(json.dumps(report, indent=2))
         if report["status"] != "passed" or not args.run:
@@ -312,7 +326,7 @@ async def run(args, selected, ledger) -> int:
                 raise ValueError("Existing Pro evaluation record and ledger do not agree")
             selected = [case for case in selected if case["id"] not in recorded_ids]
             record.update(previous, preflight=report, run_note="")
-        record["limits"] = {"data_calls": baseline.MAX_DATA_CALLS, "data_rows": baseline.MAX_DATA_ROWS,
+        record["limits"] = {"data_calls": data_call_limit, "data_rows": baseline.MAX_DATA_ROWS,
                             "data_characters": baseline.MAX_TOOL_CHARS, "catalog_characters": MAX_CATALOG_CHARS}
         for case in selected:
             if ledger["estimated_usd"] + reserve > args.budget_usd:
@@ -323,10 +337,11 @@ async def run(args, selected, ledger) -> int:
                 break
             server.reset_case()
             hooks = ProUsageHooks() if pro else baseline.UsageHooks()
-            agent = Agent(name="SILO research analyst", model=model, instructions=INSTRUCTIONS,
+            agent = Agent(name="SILO research analyst", model=model, instructions=instructions,
                           mcp_servers=[server], mcp_config={"convert_schemas_to_strict": False},
                           model_settings=ModelSettings(max_tokens=baseline.MAX_OUTPUT_TOKENS,
-                                                       parallel_tool_calls=False, verbosity="low"))
+                                                       parallel_tool_calls=False, verbosity="low",
+                                                       reasoning={"effort": "low"} if follow_up else None))
             item: dict[str, Any] = {"id": case["id"], "question": case["question"], "status": "error"}
             cap = ProInputCap(client, server.manifest) if pro else baseline.InputCapFilter()
             started = time.monotonic()
@@ -378,10 +393,13 @@ def main(argv=None) -> int:
     mode.add_argument("--run", action="store_true", help="Paid model requests only after live MCP preflight passes")
     parser.add_argument("--case-id", action="append")
     parser.add_argument("--pro", action="store_true", help="Require the integration key and run GPT-5 mini at 120k input tokens")
+    parser.add_argument("--follow-up", action="store_true", help="Use eight data calls and low reasoning for a targeted Pro rerun")
     parser.add_argument("--spend-ledger", type=Path, help="Reconciled cumulative ledger for the Pro run")
     parser.add_argument("--budget-usd", type=float, default=baseline.DEFAULT_BUDGET_USD)
     args = parser.parse_args(argv)
     try:
+        if args.follow_up and (not args.pro or not args.case_id):
+            parser.error("--follow-up requires --pro and explicit --case-id selections")
         cases = baseline.load_cases()
         if args.pro and (not args.spend_ledger or args.budget_usd > 10):
             parser.error("Pro requires a reconciled --spend-ledger and --budget-usd of at most 10")

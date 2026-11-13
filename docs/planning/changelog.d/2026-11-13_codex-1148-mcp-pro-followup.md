@@ -1,0 +1,1 @@
+| 2026-11-13 | codex/1148-mcp-pro-followup | Add an exact account filter for filed statement lines and versions, clarify forecast horizons and bounded evidence, and prepare the four-case Pro follow-up (#1148). |

@@ -401,6 +401,10 @@ export const REGISTRY: Registry = {
       "example": "/v2/statements?id=PETR4&kind=income",
       "shared": ["id", "from", "to", "limit"],
       "window_months": 60,
+      "notes": [
+        "For account-code comparisons use kind=all and read account_code with the filed account_name for each issuer.",
+        "For restatements use kind=versions, bound filing dates, and select the statement and account_code to retain matching account rows with version and period spans."
+      ],
       "parameters": [
         {
           "name": "kind",
@@ -438,6 +442,15 @@ export const REGISTRY: Registry = {
           "doc": "Point in time: only documents CVM received before this date, at the highest version known then. Not for kind versions."
         },
         {
+          "name": "account_code",
+          "visibility": "hidden",
+          "type": "string",
+          "default": null,
+          "default_doc": "none: return all accounts",
+          "sql_values": {},
+          "doc": "For all or versions: exact filed account code. Check its filed label before comparing issuers. Omit for every line."
+        },
+        {
           "name": "statement",
           "visibility": "hidden",
           "type": "enum",
@@ -452,6 +465,7 @@ export const REGISTRY: Registry = {
           "endpoint": "financials",
           "paging": { "method": "date_window", "order": "desc" },
           "args": { "id": "p_id", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope", "as_of": "p_as_of" },
+          "filters": [{ "parameter": "account_code", "op": "in", "column": "account_code", "map": {} }],
           "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
         },
         "income": {
@@ -488,6 +502,7 @@ export const REGISTRY: Registry = {
           "endpoint": "financial_statement_history",
           "paging": { "method": "date_window", "order": "desc" },
           "args": { "id": "p_id", "statement": "p_statement", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope" },
+          "filters": [{ "parameter": "account_code", "op": "in", "column": "account_code", "map": {} }],
           "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
         }
       }
@@ -980,7 +995,7 @@ export const REGISTRY: Registry = {
           "type": "string",
           "default": null,
           "default_doc": "family annual: the current year (UTC-3); every other survey needs one",
-          "doc": "kind expectations: the target horizon exactly as BACEN publishes it: a year (2027) for annual, MM/YYYY for monthly, a COPOM meeting (R6/2028) for selic."
+          "doc": "kind expectations: one target horizon per call. Use a single YYYY for annual, MM/YYYY for monthly, or a meeting code such as R6/2028 for selic. from and to filter survey dates, not target dates."
         }
       ],
       "kinds": {
