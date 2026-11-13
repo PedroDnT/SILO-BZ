@@ -54,3 +54,13 @@ kind prefill, code sample changes, actual response, and mobile layout before rel
 - Direct browser CORS preflight accepts GET and Authorization. No credential was entered in the browser.
 - Public production publication and all-operation live execution remain unverified. No paid evaluation was run.
 - The native response schema still has generic row types for many resources. Dataset-specific response contracts remain a documented gap; generated placeholders are not observed data.
+
+## Existing v1 functions without a v2 registry mapping
+
+Static comparison against the committed v1 OpenAPI also found five data functions
+not named in the v2 registry: `anbima_classes`, `class_return_distribution`,
+`credit_market_history`, `credit_implied_rate`, and `portfolio_credit_returns`.
+This establishes a contract migration gap, not current production availability.
+`my_tier` and `rate_hit` are internal authentication/rate-limit helpers, not missing
+user data operations. The five functions need bounded request/pagination adapters
+and live coverage checks before being advertised as v2 operations.
