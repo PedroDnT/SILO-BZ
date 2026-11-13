@@ -47,6 +47,8 @@ for resource, params in (
 
 ## Authenticate and discover resources
 
+If you received a 60-day integration key, use it as `Authorization: Bearer <integration key>`. Store it as a client secret. For an integration granted Pro, a successful data call reports `meta.tier: pro`. An expired or revoked key returns HTTP 401. Contact the issuer for rotation.
+
 For signed-in access, use [SILO sign-in](https://silo-bz-deloslabs.vercel.app/signin.html) and configure the user access token as `Authorization: Bearer <access token>`. Keep it in a secret store. Verify `meta.tier` on a data call. `screens` and `portfolio` require signed-in access. Pro is granted separately.
 
 Open the [REST reference](/api-docs/v2/reference/index) to try a request. Leave the Bearer field blank for anonymous calls, even if the playground labels the field as required. The live resource index is at the base URL. Append `?help=all` to a resource to see its accepted parameters and defaults. To use the same data from an agent, follow the [MCP setup](/api-docs/v2/mcp).

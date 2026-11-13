@@ -16,6 +16,8 @@ description: >
 
 ## Credentials
 
+If the owner provides a 60-day SILO integration key through a secret store, configure it as a Bearer credential on the same REST or data MCP URL. Verify `meta.tier: pro` on a data call when Pro is required. On `unauthorized`, check expiry or ask the issuer to rotate it.
+
 Anonymous access works without a key and has lower ceilings. For authenticated access, ask the user to sign in at [SILO sign-in](https://silo-bz-deloslabs.vercel.app/signin.html) and configure their Supabase Auth user access token as `Authorization: Bearer <access token>` in the REST or MCP client. Send it only to the SILO function URLs above. Keep it out of prompts, logs, URLs and committed configuration. An expired or invalid bearer is rejected on data calls. Ask for a fresh token if authentication fails, and check `meta.tier` to confirm the access level when a call succeeds. Pro access is granted separately.
 
 The following **public publishable key** is retained for legacy v1 clients and compatibility checks. For v1 it goes in the `apikey` header. The v2 gateway does not need it.
