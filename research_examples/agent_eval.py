@@ -245,8 +245,8 @@ def record_cap_refusal(item: dict[str, Any], exc: ContextCapExceeded) -> None:
     item["error_detail"] = str(exc)[:500]
 
 
-def load_spend_ledger() -> dict[str, Any]:
-    ledger = json.loads(SPEND_LEDGER.read_text())
+def load_spend_ledger(path: Path | None = None) -> dict[str, Any]:
+    ledger = json.loads((path or SPEND_LEDGER).read_text())
     costs = [entry["estimated_usd"] for entry in ledger["entries"]]
     total = ledger["estimated_usd"]
     if (any(type(cost) not in (int, float) or not math.isfinite(cost) or cost < 0 for cost in costs)

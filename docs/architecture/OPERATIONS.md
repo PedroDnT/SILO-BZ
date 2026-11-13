@@ -63,9 +63,7 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 
 - `scripts/verify_pipeline.py`: manual; ✗ exits 1.
 - All issuers' B3 events once: `mode=b3-corporate-events-full`.
-- DB Health checks matview lag on `fact_fund_monthly` only; the others share
-  its apply and go stale with it.
+- DB Health checks lag on `fact_fund_monthly`. The other views share its apply.
 - `codex.yml`: issue replies; Builder gated (#1079). [Registry](../planning/AGENTS.md).
 
-See [database maintenance](../reference/DATABASE_MAINTENANCE.md),
-[Supabase operations](../reference/supabase_operations.md).
+[Maintenance](../reference/DATABASE_MAINTENANCE.md) · [Supabase](../reference/supabase_operations.md) · [V2 keys](../reference/SILO_V2_INTEGRATION.md)

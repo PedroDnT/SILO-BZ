@@ -10,12 +10,11 @@ read out of the REGISTRY block of ``supabase/functions/silo-api/registry.ts``
 ``errors.ts``. No Deno, no database. ``tests/test_openapi_v2.py`` fails when the
 committed file differs from what this script emits.
 
-The file feeds the Mintlify API playground of the "v2 endpoints (preview)"
+The file feeds the Mintlify API playground of the REST reference
 group in ``docs.json`` (#1060). Main parameters are enums with their defaults;
 hidden parameters are marked in their description. The server is the
-``silo-api`` function base, and the public publishable key is prefilled in the
-playground's ``apikey`` field with Mintlify's ``x-default`` extension. The
-gateway is a deployed preview; agent evaluation and v1 retirement remain pending.
+``silo-api`` function base, and anonymous requests need no credentials. The
+gateway is a deployed preview; v1 remains available.
 """
 
 from __future__ import annotations
@@ -35,10 +34,7 @@ ID_DOCS_TS = ROOT / "supabase" / "functions" / "silo-mcp-v2" / "id_docs.ts"
 OUT = ROOT / "api-docs" / "v2" / "openapi.json"
 
 SERVER = "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
-# The public publishable key, the same one api-docs/quickstart.mdx prints. It
-# identifies the project, not a person, and maps to the anon role.
-PUBLISHABLE_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
-PREVIEW = "Deployed preview. The v2 gateway is live; agent evaluation and v1 retirement are pending."
+PREVIEW = "Deployed preview. The v2 gateway is live; v1 remains available."
 
 
 def load_registry() -> dict:
@@ -216,14 +212,25 @@ def _id_parameter(param: dict, resource: dict, phrases: dict[str, str]) -> dict:
     return {**param, "description": f"{doc} Default: none."} if doc else param
 
 
+RESOURCE_GROUPS = {
+    "Discovery": ("index", "search", "coverage"),
+    "Markets and macro": ("prices", "derivatives", "curves", "macro", "positioning"),
+    "Companies and funds": ("statements", "events", "funds", "fidc"),
+    "Research": ("screens", "panel", "portfolio"),
+}
+
+
 def build(registry: dict, error_codes: list[str]) -> dict:
     phrases = load_id_docs()
+    tags = {resource: group for group, resources in RESOURCE_GROUPS.items() for resource in resources}
     paths: dict = {
         "/": {
             "get": {
                 "operationId": "v2_index",
-                "summary": "v2 index",
-                "description": f"<Warning>{PREVIEW}</Warning>\n\nThe {len(registry['resources'])} resources, one line each, with an example call.",
+                "summary": "Resource index",
+                "tags": [tags["index"]],
+                "description": f"{PREVIEW} Browse {len(registry['resources'])} resources with an example call for each.",
+                "security": [],
                 "x-mint": {"href": "/api-docs/v2/reference/index"},
                 "responses": _responses(),
             }
@@ -239,12 +246,15 @@ def build(registry: dict, error_codes: list[str]) -> dict:
         hidden = [p for p in own if p["visibility"] == "hidden"]
         op = {
             "operationId": f"v2_{r['name']}",
-            "summary": f"v2 {r['name']}",
+            "summary": r["name"].capitalize(),
+            "tags": [tags[r["name"]]],
             "description": _description(r),
             "x-mint": {"href": f"/api-docs/v2/reference/{r['name']}"},
             "parameters": [_id_parameter(_parameter(p, examples), r, phrases) for p in main + shared + hidden],
             "responses": _responses(),
         }
+        if r["name"] in {"screens", "portfolio"}:
+            op["security"] = [{"bearerAuth": []}]
         if r.get("method") == "POST":
             op["requestBody"] = _body(r)
         paths[f"/{r['name']}"] = {(r.get("method") or "GET").lower(): op}
@@ -261,22 +271,15 @@ def build(registry: dict, error_codes: list[str]) -> dict:
             ),
         },
         "servers": [{"url": SERVER, "description": "The silo-api Edge Function (deployed preview)."}],
-        "security": [{"apikey": []}, {"apikey": [], "bearerAuth": []}],
+        "security": [{}, {"bearerAuth": []}],
+        "tags": [{"name": group} for group in RESOURCE_GROUPS],
         "paths": paths,
         "components": {
             "securitySchemes": {
-                "apikey": {
-                    "type": "apiKey",
-                    "in": "header",
-                    "name": "apikey",
-                    "description": "The public publishable key. It identifies the project, not you, and is the anonymous tier.",
-                    "x-default": PUBLISHABLE_KEY,
-                },
                 "bearerAuth": {
                     "type": "http",
                     "scheme": "bearer",
-                    "bearerFormat": "JWT",
-                    "description": "Optional. A user JWT from Supabase Auth, for the signed-in tier. Never a secret key.",
+                    "description": "SILO user access token for authenticated data requests.",
                 },
             },
             "schemas": {
@@ -293,7 +296,9 @@ def build(registry: dict, error_codes: list[str]) -> dict:
                                 "kind": {"type": ["string", "null"]},
                                 "request": {"type": "object", "description": "Every parameter the resource takes, with the default applied."},
                                 "id_known": {"type": ["boolean", "null"], "description": "Whether SILO holds the id; null when the call names none."},
-                                "endpoint": {"type": "string", "description": "The api.* endpoint that answered."},
+                                "endpoint": {"type": "string", "description": "The data endpoint that answered."},
+                                "tier": {"type": "string", "enum": ["anonymous", "signed_in", "pro"]},
+                                "tier_cap_reached": {"type": "boolean", "description": "True when the result is partial because of the tier cap."},
                             },
                             "additionalProperties": True,
                         },

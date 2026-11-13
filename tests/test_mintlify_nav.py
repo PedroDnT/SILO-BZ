@@ -23,10 +23,11 @@ def _ignored_prefixes() -> list[str]:
 
 
 def _nav_groups() -> list[dict]:
-    return json.loads((ROOT / "docs.json").read_text())["navigation"]["groups"]
+    tabs = json.loads((ROOT / "docs.json").read_text())["navigation"]["tabs"]
+    return [group for tab in tabs for group in tab["groups"]]
 
 
-def _nav_pages() -> list[str]:
+def nav_pages() -> list[str]:
     pages: list[str] = []
     for group in _nav_groups():
         pages.extend(group.get("pages") or [])
@@ -55,7 +56,7 @@ def test_every_nav_page_is_a_real_mintlify_file():
     ignored = _ignored_prefixes()
     missing = []
     ignored_hits = []
-    for page in _nav_pages():
+    for page in nav_pages():
         if any(page == p or page.startswith(p + "/") for p in ignored):
             ignored_hits.append(page)
             continue

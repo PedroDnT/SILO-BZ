@@ -118,3 +118,22 @@ attributed to the v1/v2 transport alone.
 [Bounded existing-data audit](debenture_equity/README.md): render a single-capture
 read-only SELECT for Supabase MCP, then generate a table offline from the returned
 JSON. Commercial/legal names remain candidates; this does not run a backtest.
+
+### Pro comparison at 120,000 input tokens
+
+Use the existing 12 cases with `gpt-5-mini` for comparison with the historical v1
+and previous Pro runs. Pass the reconciled cumulative ledger as an absolute path.
+Provide `SILO_INTEGRATION_KEY` in the process environment from a local secret
+store. The preflight requires `meta.tier: pro` on every data probe.
+
+```bash
+python -m research_examples.mcp_v2_eval --pro --budget-usd 10 --spend-ledger "$SILO_EVAL_LEDGER" --preflight
+python -m research_examples.mcp_v2_eval --pro --budget-usd 10 --spend-ledger "$SILO_EVAL_LEDGER" --run
+```
+
+The Pro profile counts model input before each request, keeps the 12-turn and
+2,000-output-token limits, and reserves US$0.51 per case. Run one evaluator per
+ledger. An interrupted charge keeps its reserve. If the ledger and result file
+disagree after an interruption, reconcile them before retrying. Completed
+attempts are skipped on resume. The Pro profile writes its own result and review
+files. Grade the answers against the saved rubric and both earlier 2/12 runs.

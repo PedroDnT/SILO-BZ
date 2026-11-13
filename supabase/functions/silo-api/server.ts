@@ -33,6 +33,7 @@ import { type BridgeConfig, callerBearer, type CallContext, configFromEnv, type 
 import { REGISTRY, RESOURCES_BY_NAME, type ResourceSpec } from "./registry.ts";
 import { enforceRate, type Gate, postgresGate } from "./tier.ts";
 import { coverage } from "./resources/coverage.ts";
+import { integrationKey, integrationSession } from "./integration.ts";
 import { events } from "./resources/events.ts";
 import { fidc } from "./resources/fidc.ts";
 import { funds } from "./resources/funds.ts";
@@ -121,6 +122,7 @@ async function handle(
   fetchImpl: FetchLike,
   gate: Gate,
   now: () => number,
+  resolveIntegration: ReturnType<typeof integrationSession>,
 ): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (req.method !== "GET" && req.method !== "POST") throw new ApiError(405, "bad_request", `${req.method} is not served; v2 is GET, and POST for portfolio.`);
@@ -172,8 +174,13 @@ async function handle(
   }
   parsed.paging = { cursor, q: Object.fromEntries(query.entries()), base: `${url.origin}${url.pathname}`, body: digest };
   if ("error" in cfg) throw new ApiError(503, "unavailable", `silo-api is misconfigured: ${cfg.error}`);
-  const bearer = callerBearer(req.headers.get("authorization"), cfg);
+  const presented = callerBearer(req.headers.get("authorization"), cfg);
+  const integration = integrationKey(presented);
+  const bearer = integration ? await resolveIntegration(presented, cfg) : presented;
   const tier: Tier = await gate.tier({ cfg, fetchImpl, bearer });
+  if (integration && tier !== "pro") {
+    throw new ApiError(403, "forbidden_for_tier", "The integration identity does not have Pro access.", "Authorization");
+  }
   gateTier(resource, tier);
   const ctx: CallContext = { cfg, fetchImpl, bearer, tier, now };
   const rate = await enforceRate(gate, ctx, tier, req.headers, now);
@@ -196,12 +203,14 @@ function gateTier(resource: ResourceSpec, tier: Tier): void {
 
 export function makeHandler(deps: ServerDeps = {}): (req: Request) => Promise<Response> {
   const fetchImpl: FetchLike = deps.fetchImpl ?? ((input, init) => fetch(input, init));
-  const cfg = configFromEnv(deps.env ?? ((name) => Deno.env.get(name)));
+  const env = deps.env ?? ((name: string) => Deno.env.get(name));
+  const cfg = configFromEnv(env);
   const now = deps.now ?? (() => Date.now());
   const gate = deps.gate ?? postgresGate(now);
+  const resolveIntegration = integrationSession(env, fetchImpl, now);
   return async (req: Request) => {
     try {
-      return await handle(req, cfg, fetchImpl, gate, now);
+      return await handle(req, cfg, fetchImpl, gate, now, resolveIntegration);
     } catch (e) {
       if (e instanceof ApiError) return errorResponse(e);
       return errorResponse(new ApiError(500, "internal", `Unexpected gateway error: ${e instanceof Error ? e.message : String(e)}`));

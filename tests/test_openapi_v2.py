@@ -72,13 +72,15 @@ def test_id_is_described_per_resource_not_with_the_generic_sentence():
     assert "14-digit fund CNPJ" in funds["description"] and "ticker" not in funds["description"]
 
 
-def test_server_and_prefilled_public_key():
+def test_server_and_credential_requirements():
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
     assert spec["openapi"] == "3.1.0"
     assert spec["servers"][0]["url"] == "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2"
-    key = spec["components"]["securitySchemes"]["apikey"]
-    assert key["in"] == "header" and key["name"] == "apikey"
-    assert key["x-default"].startswith("sb_publishable_"), "only the public key is prefilled"
+    assert spec["security"] == [{}, {"bearerAuth": []}]
+    assert spec["components"]["securitySchemes"]["bearerAuth"]["scheme"] == "bearer"
+    assert spec["paths"]["/"]["get"]["security"] == []
+    for path, method in (("/screens", "get"), ("/portfolio", "post")):
+        assert spec["paths"][path][method]["security"] == [{"bearerAuth": []}]
 
 
 def test_cheatsheet_names_every_resource_and_main_default():
@@ -100,8 +102,15 @@ def test_every_v2_page_says_deployed_preview():
         assert "Deployed preview" in page.read_text(encoding="utf-8"), page.name
 
 
-def test_docs_json_points_the_v2_group_at_the_spec():
+def test_mintlify_navigation_covers_all_v2_operations():
     docs = json.loads((ROOT / "docs.json").read_text(encoding="utf-8"))
-    groups = {g["group"]: g for g in docs["navigation"]["groups"]}
-    assert groups["v2 endpoints (preview)"]["openapi"] == "api-docs/v2/openapi.json"
-    assert groups["v2 (preview)"]["pages"] == ["api-docs/v2/quickstart", "api-docs/v2/cheatsheet", "api-docs/v2/researchers"]
+    v2, v1 = docs["navigation"]["tabs"]
+    assert (v2["tab"], v1["tab"]) == ("SILO v2", "API v1")
+    groups = {g["group"]: g for g in v2["groups"]}
+    assert groups["Get started"]["pages"] == ["index", "api-docs/v2/quickstart"]
+    ref = groups["REST reference"]
+    assert ref["openapi"] == "api-docs/v2/openapi.json"
+    spec = json.loads(SPEC.read_text(encoding="utf-8"))
+    tags = [tag["name"] for tag in spec["tags"]]
+    assert tags == ["Discovery", "Markets and macro", "Companies and funds", "Research"]
+    assert all(op["tags"][0] in tags for methods in spec["paths"].values() for op in methods.values())

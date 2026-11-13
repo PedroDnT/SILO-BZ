@@ -2,96 +2,113 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "SILO",
-  "description": "Public read API for Brazilian public financial data. Schema api over PostgREST.",
+  "description": "Read-only REST API and MCP server for Brazilian financial data.",
   "colors": {
     "primary": "#16A34A"
   },
   "navigation": {
-    "groups": [
+    "tabs": [
       {
-        "group": "Overview",
-        "pages": ["index"]
-      },
-      {
-        "group": "Data",
-        "icon": "database",
-        "pages": [
-          "api-docs/data-inventory",
-          "api-docs/market-coverage",
-          "api-docs/known-limitations"
+        "tab": "SILO v2",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "index",
+              "api-docs/v2/quickstart"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "api-docs/v2/mcp",
+              "api-docs/v2/agents"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "api-docs/v2/cheatsheet",
+              "api-docs/v2/researchers"
+            ]
+          },
+          {
+            "group": "REST reference",
+            "openapi": "api-docs/v2/openapi.json"
+          }
         ]
       },
       {
-        "group": "Get started",
-        "icon": "rocket",
-        "pages": [
-          "api-docs/quickstart",
-          "api-docs/sdk",
-          "api-docs/agents",
-          "api-docs/mcp",
-          "api-docs/conventions"
+        "tab": "API v1",
+        "groups": [
+          {
+            "group": "Data",
+            "icon": "database",
+            "pages": [
+              "api-docs/data-inventory",
+              "api-docs/market-coverage",
+              "api-docs/known-limitations"
+            ]
+          },
+          {
+            "group": "Get started",
+            "icon": "rocket",
+            "pages": [
+              "api-docs/quickstart",
+              "api-docs/sdk",
+              "api-docs/agents",
+              "api-docs/mcp",
+              "api-docs/conventions"
+            ]
+          },
+          {
+            "group": "Guides",
+            "icon": "map",
+            "pages": [
+              "api-docs/guides/first-screen",
+              "api-docs/guides/pagination",
+              "api-docs/guides/fundamentals",
+              "api-docs/guides/research",
+              "api-docs/spreadsheets"
+            ]
+          },
+          {
+            "group": "API reference",
+            "icon": "code",
+            "pages": [
+              "api-docs/quotes",
+              "api-docs/instruments",
+              "api-docs/options",
+              "api-docs/termo",
+              "api-docs/lending",
+              "api-docs/flows",
+              "api-docs/funds",
+              "api-docs/financials",
+              "api-docs/company-events",
+              "api-docs/holdings",
+              "api-docs/fidc",
+              "api-docs/fidc-structure",
+              "api-docs/fnet-documents",
+              "api-docs/screens",
+              "api-docs/filing-screens",
+              "api-docs/anbima",
+              "api-docs/credit",
+              "api-docs/portfolio",
+              "api-docs/inflation",
+              "api-docs/macro",
+              "api-docs/rates",
+              "api-docs/panel",
+              "api-docs/lookup",
+              "api-docs/coverage",
+              "api-docs/cotahist-dictionary"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "icon": "terminal",
+            "openapi": "openapi.json"
+          }
         ]
-      },
-      {
-        "group": "Guides",
-        "icon": "map",
-        "pages": [
-          "api-docs/guides/first-screen",
-          "api-docs/guides/pagination",
-          "api-docs/guides/fundamentals",
-          "api-docs/guides/research",
-          "api-docs/spreadsheets"
-        ]
-      },
-      {
-        "group": "API reference",
-        "icon": "code",
-        "pages": [
-          "api-docs/quotes",
-          "api-docs/instruments",
-          "api-docs/options",
-          "api-docs/termo",
-          "api-docs/lending",
-          "api-docs/flows",
-          "api-docs/funds",
-          "api-docs/financials",
-          "api-docs/company-events",
-          "api-docs/holdings",
-          "api-docs/fidc",
-          "api-docs/fidc-structure",
-          "api-docs/fnet-documents",
-          "api-docs/screens",
-          "api-docs/filing-screens",
-          "api-docs/anbima",
-          "api-docs/credit",
-          "api-docs/portfolio",
-          "api-docs/inflation",
-          "api-docs/macro",
-          "api-docs/rates",
-          "api-docs/panel",
-          "api-docs/lookup",
-          "api-docs/coverage",
-          "api-docs/cotahist-dictionary"
-        ]
-      },
-      {
-        "group": "Endpoints",
-        "icon": "terminal",
-        "openapi": "openapi.json"
-      },
-      {
-        "group": "v2 (preview)",
-        "icon": "flask",
-        "pages": [
-          "api-docs/v2/quickstart",
-          "api-docs/v2/cheatsheet",
-          "api-docs/v2/researchers"
-        ]
-      },
-      {
-        "group": "v2 endpoints (preview)",
-        "icon": "terminal",
-        "openapi": "api-docs/v2/openapi.json"
       }
     ]
   },
@@ -99,7 +116,7 @@
     "links": [
       {
         "label": "Data API",
-        "href": "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/"
+        "href": "/api-docs/v2/reference/index"
       },
       {
         "label": "GitHub",

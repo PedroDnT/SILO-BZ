@@ -16,6 +16,8 @@ description: >
 
 ## Credentials
 
+If the owner provides a 60-day SILO integration key through a secret store, configure it as a Bearer credential on the same REST or data MCP URL. Verify `meta.tier: pro` on a data call when Pro is required. On `unauthorized`, check expiry or ask the issuer to rotate it.
+
 Anonymous access works without a key and has lower ceilings. For authenticated access, ask the user to sign in at [SILO sign-in](https://silo-bz-deloslabs.vercel.app/signin.html) and configure their Supabase Auth user access token as `Authorization: Bearer <access token>` in the REST or MCP client. Send it only to the SILO function URLs above. Keep it out of prompts, logs, URLs and committed configuration. An expired or invalid bearer is rejected on data calls. Ask for a fresh token if authentication fails, and check `meta.tier` to confirm the access level when a call succeeds. Pro access is granted separately.
 
 The following **public publishable key** is retained for legacy v1 clients and compatibility checks. For v1 it goes in the `apikey` header. The v2 gateway does not need it.
@@ -27,8 +29,8 @@ apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 ## Answer a research question
 
 1. **Resolve the entity.** Use `silo_search` for names and identifiers. Check the match and the resource's accepted identifier type. Preserve uncertainty if the input is ambiguous.
-2. **Check coverage.** Use `silo_coverage` with the relevant dataset before claiming freshness, and compare the requested window with `data_through` and `complete_through`. Check metric applicability before interpreting a missing field. For point-in-time queries, check whether the resource supports `as_of`.
-3. **Fetch and continue.** Select the resource and `kind`, inspect the applied parameters in `meta.request`, then follow all relevant pages within the task's scope. In REST follow `next_page_url`; in MCP extract its `cursor` and pass it alone to the same tool. A tier cap makes a result partial. For `over_limit`, narrow the request using the error guidance. For `429`, respect `Retry-After` when supplied. If a first result is empty, check the identifier, coverage, date window and related resource before concluding that the answer is unavailable.
+2. **Check coverage.** Use `silo_coverage` with a dataset list such as `{"dataset":["quotes"]}` before claiming freshness, and compare the requested window with `data_through` and `complete_through`. Check metric applicability before interpreting a missing field. For point-in-time queries, check whether the resource supports `as_of`.
+3. **Fetch and continue.** Select the resource and `kind`, inspect the applied parameters in `meta.request`, then follow all relevant pages within the task's scope. In REST follow `next_page_url`; in MCP extract its `cursor` and pass it to the same tool. For a POST continuation, include the original body unchanged. A tier cap makes a result partial. For `over_limit`, narrow the request using the error guidance. For `429`, respect `Retry-After` when supplied. If a first result is empty, check the identifier, coverage, date window and related resource before concluding that the answer is unavailable.
 4. **Calculate and cite.** Compute ratios, ranks and other derived results locally. State units, period and adjustments. Preserve nulls and gaps, and never invent an observation or an identifier match. Cite the request or tool arguments, the source and retrieval date, and available provenance such as `meta.endpoint`, `landed_at` or a source document link. If evidence is still incomplete, say what you checked and what prevents an answer.
 
 For research conventions, see the [v2 researcher guide](https://octo-98895abd.mintlify.site/api-docs/v2/researchers.md). For existing PostgREST integrations, see the [v1 quickstart](https://octo-98895abd.mintlify.site/api-docs/quickstart.md).

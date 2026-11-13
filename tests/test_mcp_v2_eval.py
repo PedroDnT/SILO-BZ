@@ -325,3 +325,9 @@ async def test_cap_refusal_stops_the_case_without_answer_or_reserve_and_continue
         assert "cost_basis" not in case
     assert result["run_note"] == ""
     assert {row["v2_technical_classification"] for row in result["baseline_comparison"]} == {"context_cap_reached"}
+
+
+def test_pro_budget_and_baseline_rates():
+    assert v2.case_reserve(True) == 0.51
+    assert 3.453166 + 12 * v2.case_reserve(True) == pytest.approx(9.573166)
+    assert v2.pro_cost(1_000_000, 1_000_000) == pytest.approx(2.25)
