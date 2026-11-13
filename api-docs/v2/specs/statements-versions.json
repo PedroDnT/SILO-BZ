@@ -1,0 +1,337 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SILO API v2 (deployed preview)",
+    "version": "v2",
+    "description": "The v2 gateway over SILO's schema `api`: 14 resources, five shared parameters, one envelope and one error object. Generated from supabase/functions/silo-api/registry.ts by scripts/gen_openapi_v2.py; do not edit by hand. Deployed preview. The v2 gateway is live; v1 remains available."
+  },
+  "servers": [
+    {
+      "url": "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2",
+      "description": "The silo-api Edge Function (deployed preview)."
+    }
+  ],
+  "security": [
+    {},
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Discovery"
+    },
+    {
+      "name": "Markets and macro"
+    },
+    {
+      "name": "Companies and funds"
+    },
+    {
+      "name": "Research"
+    }
+  ],
+  "paths": {
+    "/statements": {
+      "get": {
+        "operationId": "v2_statements_versions",
+        "summary": "Filing version history",
+        "tags": [
+          "Companies and funds"
+        ],
+        "description": "Deployed preview. What did the company file? Income, balance sheet, cash flow, headline figures and every stored version.\n\nevery stored version of one statement (hidden statement, default DRE), with filing metadata. No as_of: it already shows every version.\n\nThis playground selects `versions` on `GET /statements`. See the [full resource reference](/api-docs/v2/reference/statements) for all variants.",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/statements/versions"
+        },
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "description": "Selects filing version history.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "versions"
+              ],
+              "default": "versions"
+            },
+            "example": "versions"
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "description": "quarterly: ITR filings. annual: DFP filings. A quarterly filing holds the 3-month and the year-to-date figure; period_months on the row says which. Never add the two. Default: both.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "both",
+                "quarterly",
+                "annual"
+              ],
+              "default": "both"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "description": "Consolidated and individual are separate filings of the same period; they are never merged. Default: consolidated.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "consolidated",
+                "individual"
+              ],
+              "default": "consolidated"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "description": "By kind: all, income, balance, cashflow, headline, versions take a listed company's ticker, 14-digit CNPJ or CVM code. With no id, kinds all, income, balance, cashflow, headline, versions read api.research_universe (what SILO holds). Default: none.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR4"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "account_code",
+            "in": "query",
+            "required": false,
+            "description": "For all or versions: exact filed account code. Check its filed label before comparing issuers. Omit for every line. Default: none: return all accounts.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "statement",
+            "in": "query",
+            "required": false,
+            "description": "kind versions: the one statement to read (DRE income, BPA assets, BPP liabilities and equity, DFC_MD or DFC_MI cash flow, DMPL, DRA, DVA). Default: DRE.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRE",
+                "BPA",
+                "BPP",
+                "DFC_MD",
+                "DFC_MI",
+                "DMPL",
+                "DRA",
+                "DVA"
+              ],
+              "default": "DRE"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SILO user access token for authenticated data requests."
+      }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {},
+            "description": "Always a list. Rows as the endpoint returned them; null stays null."
+          },
+          "meta": {
+            "type": "object",
+            "required": [
+              "resource",
+              "kind",
+              "request",
+              "id_known"
+            ],
+            "properties": {
+              "resource": {
+                "type": "string"
+              },
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "request": {
+                "type": "object",
+                "description": "Every parameter the resource takes, with the default applied."
+              },
+              "id_known": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Whether SILO holds the id; null when the call names none."
+              },
+              "endpoint": {
+                "type": "string",
+                "description": "The data endpoint that answered."
+              },
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "anonymous",
+                  "signed_in",
+                  "pro"
+                ]
+              },
+              "tier_cap_reached": {
+                "type": "boolean",
+                "description": "True when the result is partial because of the tier cap."
+              }
+            },
+            "additionalProperties": true
+          },
+          "next_page_url": {
+            "type": "string",
+            "description": "Present only when more rows remain. It carries one opaque cursor."
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "target",
+              "innererror"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "bad_request",
+                  "unknown_parameter",
+                  "unknown_id",
+                  "unauthorized",
+                  "forbidden_for_tier",
+                  "over_limit",
+                  "rate_limited",
+                  "timeout",
+                  "unavailable",
+                  "internal"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "target": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "innererror": {
+                "type": "object",
+                "properties": {
+                  "sqlstate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "hint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "details": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

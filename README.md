@@ -10,7 +10,7 @@ It is built for financial accountability, not for choosing investments: there is
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Dashboard   | [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/) (rebuilt every Monday after the ingest; the page header says when) |
 | Read API    | `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/` (schema `api`, anon key, open read)                                               |
-| Caller docs | [`scalar/`](scalar/) — researcher-facing guides on Scalar; `api-docs/` is the operator archive                                        |
+| Caller docs | [Mintlify](https://octo-98895abd.mintlify.site/) — v2 REST/MCP guides and interactive operations; `scalar/` is a separate documentation tree                                        |
 | For agents  | [`skill.md`](skill.md), [`llms.txt`](llms.txt)                                                                                        |
 
 ## The five rules

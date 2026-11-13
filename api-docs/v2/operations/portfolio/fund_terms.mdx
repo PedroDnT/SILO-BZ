@@ -1,0 +1,37 @@
+---
+title: "Fund redemption terms"
+description: "Query fund redemption terms through SILO REST and MCP v2."
+keywords: ["portfolio", "fund_terms", "API", "MCP"]
+openapi: "api-docs/v2/specs/portfolio-fund_terms.json POST /portfolio"
+---
+
+**Deployed preview.** Manager, administrator and redemption terms as filed, one line per CNPJ.
+
+Open **Try it**, review the inputs, and select **Send** to query the deployed API.
+The `kind` field is preset to `fund_terms`. This is a view of the existing `/portfolio` resource, not a new route.
+
+<Note>
+  Anonymous calls need no credential except on screens and portfolio, which require signed-in access.
+  With a Pro credential, verify `meta.tier` is `pro` in the actual response.
+</Note>
+
+## Before you query
+
+Resolve identifiers with [search](/api-docs/v2/reference/search), then check
+[coverage](/api-docs/v2/reference/coverage). Dates and identifiers must match the
+selected operation; expand the parameter descriptions below for its accepted values.
+
+## Use from an agent
+
+Call `silo_portfolio` over [MCP v2](/api-docs/v2/mcp) with `kind: "fund_terms"`.
+Main arguments stay at the top level; advanced REST parameters go inside `options`.
+Use the same identifier and date window as the REST request.
+
+## Read the result
+
+Inspect `data`, `meta.request`, `meta.tier`, and `next_page_url`.
+Follow every page before treating a result as complete. `meta.tier_cap_reached`
+means partial data; a missing next page does not override it. Empty results and
+`null` are not zero. An error is not a data result.
+
+See [pagination and errors](/api-docs/v2/responses) for a complete reading checklist.

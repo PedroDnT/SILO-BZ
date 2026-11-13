@@ -1,0 +1,50 @@
+---
+title: "Authentication"
+description: "Choose anonymous access, a user session, or a revocable integration key for REST and MCP."
+keywords: ["Bearer", "Pro", "authentication", "integration key"]
+icon: "key"
+---
+
+**Deployed preview.** REST and MCP v2 accept the same Bearer credential.
+Start anonymously to explore public data. Screens and portfolio require signed-in access.
+
+<Tabs>
+  <Tab title="Anonymous">
+    Leave Authorization blank in the playground. No account or key is needed for
+    public data. A successful data request reports `meta.tier: anonymous`.
+  </Tab>
+  <Tab title="Integration key">
+    If you received a revocable 60-day integration key, send it as
+    `Authorization: Bearer <integration key>`. Keep it in your environment or secret
+    store. An expired or revoked key returns HTTP 401. Ask its issuer for rotation.
+    For a key granted Pro, check `meta.tier: pro` on a successful data response.
+  </Tab>
+  <Tab title="User session">
+    Use [SILO sign-in](https://silo-bz-deloslabs.vercel.app/signin.html) to obtain
+    a user access token, then send it as a Bearer credential. A signed-in identity
+    does not automatically have Pro access. Check the returned `meta.tier`.
+  </Tab>
+</Tabs>
+
+## Make an authenticated call
+
+Set `SILO_TOKEN` locally without committing it. The following example references
+the environment variable; it does not embed a credential in source code.
+
+```bash
+curl --fail-with-body --get \
+  'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/prices' \
+  --header "Authorization: Bearer $SILO_TOKEN" \
+  --data-urlencode 'id=PETR4' \
+  --data-urlencode 'kind=latest'
+```
+
+## Use the playground
+
+Open an [operation](/api-docs/v2/endpoints), select **Try it**, and expand
+Authorization if you need authenticated access. Send only a SILO credential.
+The interactive playground sends requests directly to the SILO API.
+Do not include a token in a URL or share a generated code sample containing one.
+
+For agents, configure the same header on the [MCP connection](/api-docs/v2/mcp).
+HTTP success alone does not establish Pro: inspect `meta.tier`.
