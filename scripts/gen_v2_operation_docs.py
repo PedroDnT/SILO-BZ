@@ -57,6 +57,13 @@ TITLES = {
     "portfolio/equivalents": "ETF equivalents", "portfolio/debenture_returns": "Debenture fund marks",
 }
 
+OPTIONAL_DESCRIPTIONS = {
+    "limit": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+    "cursor": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+    "from": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+    "to": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+}
+
 
 def artifacts():
     registry = load_registry()
@@ -103,6 +110,14 @@ def artifacts():
                     param["schema"] = {"type": "string", "enum": [kind], "default": kind}
                 elif param["name"] in required and len(required) == 1:
                     param["required"] = True
+                if not param.get("required"):
+                    param["description"] = OPTIONAL_DESCRIPTIONS.get(
+                        param["name"], param["description"].removeprefix("Hidden parameter (`?help=all` lists it). ")
+                    )
+                    if name == "curves" and param["name"] == "date":
+                        param["description"] = "Session date (YYYY-MM-DD). Defaults to the latest held session" + (
+                            " within the last 14 days." if kind == "vertices" else "."
+                        )
                 # A resource example can name a ticker where another kind needs a
                 # fund, index or document id. Never reuse that example blindly.
             if (name == "prices" and kind in {"history", "latest"}) or name == "statements":

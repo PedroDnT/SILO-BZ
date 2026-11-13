@@ -72,7 +72,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -82,7 +82,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
             "schema": {
               "type": "string"
             }
@@ -91,7 +91,7 @@
             "name": "max_monthly_drop_pct",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). debenture_returns: a monthly PU drop beyond this is flagged queda_pu_possivel_evento. Default: none: every decrease is flagged limite_pendente (the threshold is the owner's to set).",
+            "description": "debenture_returns: a monthly PU drop beyond this is flagged queda_pu_possivel_evento. Default: none: every decrease is flagged limite_pendente (the threshold is the owner's to set).",
             "schema": {
               "type": "number",
               "minimum": 0

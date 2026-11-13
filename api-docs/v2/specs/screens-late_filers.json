@@ -62,7 +62,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -72,7 +72,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
             "schema": {
               "type": "string"
             }
@@ -81,7 +81,7 @@
             "name": "date",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). zombie_growth: the aging month-end (p_period). delinquency_drivers, restatements, late_filers: the window end (p_end). Default: the screen's own: zombie_growth the latest aging month; delinquency_drivers the latest complete FIDC month; restatements today; late_filers the newest month whose deadline has passed.",
+            "description": "zombie_growth: the aging month-end (p_period). delinquency_drivers, restatements, late_filers: the window end (p_end). Default: the screen's own: zombie_growth the latest aging month; delinquency_drivers the latest complete FIDC month; restatements today; late_filers the newest month whose deadline has passed.",
             "schema": {
               "type": "string",
               "format": "date"
@@ -91,7 +91,7 @@
             "name": "months",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). delinquency_drivers (2..24), restatements, late_filers (1..36): the window length in months. Default: the screen's SQL default (12).",
+            "description": "delinquency_drivers (2..24), restatements, late_filers (1..36): the window length in months. Default: the screen's SQL default (12).",
             "schema": {
               "type": "integer",
               "minimum": 0
@@ -101,7 +101,7 @@
             "name": "min_days_late",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). late_filers: days past the cited deadline that count as late, 1..90. Default: the SQL default (5).",
+            "description": "late_filers: days past the cited deadline that count as late, 1..90. Default: the SQL default (5).",
             "schema": {
               "type": "integer",
               "minimum": 0
@@ -111,7 +111,7 @@
             "name": "min_late",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). late_filers: late months a fund needs in the window. Default: the SQL default (2).",
+            "description": "late_filers: late months a fund needs in the window. Default: the SQL default (2).",
             "schema": {
               "type": "integer",
               "minimum": 0
@@ -121,7 +121,7 @@
             "name": "family",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). late_filers (fii, fidc) and silent_filers (fi, fidc, fii, fiagro): keep one family (an output filter). Default: all.",
+            "description": "late_filers (fii, fidc) and silent_filers (fi, fidc, fii, fiagro): keep one family (an output filter). Default: all.",
             "schema": {
               "type": "string",
               "enum": [

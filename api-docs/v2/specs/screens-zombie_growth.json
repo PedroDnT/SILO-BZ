@@ -62,7 +62,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -72,7 +72,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
             "schema": {
               "type": "string"
             }
@@ -81,7 +81,7 @@
             "name": "date",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). zombie_growth: the aging month-end (p_period). delinquency_drivers, restatements, late_filers: the window end (p_end). Default: the screen's own: zombie_growth the latest aging month; delinquency_drivers the latest complete FIDC month; restatements today; late_filers the newest month whose deadline has passed.",
+            "description": "zombie_growth: the aging month-end (p_period). delinquency_drivers, restatements, late_filers: the window end (p_end). Default: the screen's own: zombie_growth the latest aging month; delinquency_drivers the latest complete FIDC month; restatements today; late_filers the newest month whose deadline has passed.",
             "schema": {
               "type": "string",
               "format": "date"
@@ -91,7 +91,7 @@
             "name": "min_aum",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). zombie_growth, captive_vehicles: the NAV floor, BRL. Default: the screen's SQL default: zombie_growth 1000000, captive_vehicles 50000000 (BRL).",
+            "description": "zombie_growth, captive_vehicles: the NAV floor, BRL. Default: the screen's SQL default: zombie_growth 1000000, captive_vehicles 50000000 (BRL).",
             "schema": {
               "type": "number",
               "minimum": 0
@@ -101,7 +101,7 @@
             "name": "min_delinq_pct",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). zombie_growth: delinquency floor, percent of NAV, 0..100. Default: the SQL default (5).",
+            "description": "zombie_growth: delinquency floor, percent of NAV, 0..100. Default: the SQL default (5).",
             "schema": {
               "type": "number",
               "minimum": 0

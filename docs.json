@@ -319,6 +319,6 @@
       "prefill": true,
       "autogenerate": true
     },
-    "optional": "expanded"
+    "optional": "collapsed"
   }
 }

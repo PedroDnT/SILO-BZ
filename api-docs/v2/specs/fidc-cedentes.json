@@ -71,7 +71,7 @@
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "First date of the window, YYYY-MM-DD. Default: the resource's default window, counted back from to.",
+            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
             "schema": {
               "type": "string",
               "format": "date"
@@ -81,7 +81,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "Last date of the window, YYYY-MM-DD. Default: the latest complete period, from coverage.",
+            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
             "schema": {
               "type": "string",
               "format": "date"
@@ -91,7 +91,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "The page size. More rows than one page come through next_page_url, never cut silently; a call stops at the tier's rows-per-call cap with meta.tier_cap_reached. Default: the tier's page maximum (10 anonymous, 100 signed in); a larger value is coerced to it.",
+            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -101,7 +101,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "The opaque cursor from a previous next_page_url. It carries every other parameter: send it alone (another parameter with a different value is bad_request). Default: none: the first page.",
+            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
             "schema": {
               "type": "string"
             }
@@ -110,7 +110,7 @@
             "name": "cedente",
             "in": "query",
             "required": false,
-            "description": "Hidden parameter (`?help=all` lists it). kind=cedentes, instead of id: the funds that buy from this originator (CPF or CNPJ, or a listed ticker or CVM code). Default: all.",
+            "description": "kind=cedentes, instead of id: the funds that buy from this originator (CPF or CNPJ, or a listed ticker or CVM code). Default: all.",
             "schema": {
               "type": "string",
               "default": "all"
