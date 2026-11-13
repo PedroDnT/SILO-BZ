@@ -1,0 +1,39 @@
+---
+title: "Python: pandas and Polars"
+description: "Read a series and convert it locally to a DataFrame."
+---
+
+**Deployed preview.**
+
+Install the SDK from the repository release containing operation routes:
+
+```bash
+pip install 'silo-client @ git+https://github.com/PedroDnT/SILO-BZ.git#subdirectory=sdk'
+```
+
+```python
+from silo_client import SiloClient
+
+with SiloClient() as silo:  # reads SILO_TOKEN when set
+    result = silo.v2.get("macro/series", series="CDI")
+    result = result.collect(max_pages=10)
+    df = result.to_pandas()  # or result.to_polars()
+    print(result.meta["tier"])
+```
+
+`collect` makes additional requests, up to the supplied page count including the first page.
+A failed page raises an error. A tier cap or remaining page makes the result incomplete:
+DataFrame conversion refuses it unless you explicitly pass `allow_partial=True`.
+
+Conversion itself makes no requests. Identifiers stay strings, missing values stay null,
+and JSON decimals retain their precision. No values are filled or annualized.
+Inspect `result.meta` for units-related warnings and access limits; units returned in rows remain columns.
+
+For operations with a request body:
+
+```python
+result = silo.v2.post("portfolio/fees", body={"cnpjs": fund_cnpjs})
+```
+
+Existing SDK methods retain their original behavior. See the [operation directory](/api-docs/v2/endpoints)
+for routes and the [response guide](/api-docs/v2/responses) for pagination and errors.

@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/macro": {
+    "/macro/expectations": {
       "get": {
         "operationId": "v2_macro_expectations",
         "summary": "Forecast revisions",
         "tags": [
           "Markets and macro"
         ],
-        "description": "Deployed preview. Macro series, inflation and its item tree, PTAX, Focus expectations.\n\none survey and horizon across survey dates (the weekly revision path), median, mean and standard deviation. Refuses above 1000 rows.\n\nThis playground selects `expectations` on `GET /macro`. See the [full resource reference](/api-docs/v2/reference/macro) for all variants.",
+        "description": "One survey and horizon across survey dates (the weekly revision path), median, mean and standard deviation.",
         "x-mint": {
           "href": "/api-docs/v2/operations/macro/expectations"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects forecast revisions.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "expectations"
-              ],
-              "default": "expectations"
-            },
-            "example": "expectations"
-          },
-          {
-            "name": "id",
+            "name": "indicator",
             "in": "query",
             "required": false,
-            "description": "By kind: series takes an SGS series label or code (SELIC_META, CDI, IGPM, 432); inflation takes one series label (IPCA, IPCA_CORE_EX0, ...; none: every series); inflation_items takes an IBGE structure number or SIDRA item code (none: the groups); expectations takes a Focus indicator (IPCA, Selic, ...; none: every indicator). Required for kind series. Kind fx takes no id. Default: none.",
+            "description": "Forecast indicator.",
             "schema": {
               "type": "string"
             }
@@ -71,7 +57,7 @@
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "description": "Start date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -81,7 +67,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "description": "End date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -91,7 +77,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -101,7 +87,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -110,31 +96,35 @@
             "name": "family",
             "in": "query",
             "required": false,
-            "description": "kind inflation: headline, core, classification, diffusion or group (all: every family). kind expectations: the Focus survey, annual (the default), monthly, selic (COPOM meetings) or inflation_12m. Default: all.",
+            "description": "Survey frequency.",
             "schema": {
               "type": "string",
               "enum": [
-                "all",
-                "headline",
-                "core",
-                "classification",
-                "diffusion",
-                "group",
                 "annual",
                 "monthly",
                 "selic",
                 "inflation_12m"
               ],
-              "default": "all"
+              "default": "annual"
             }
           },
           {
             "name": "horizon",
             "in": "query",
             "required": false,
-            "description": "kind expectations: one target horizon per call. Use a single YYYY for annual, MM/YYYY for monthly, or a meeting code such as R6/2028 for selic. from and to filter survey dates, not target dates. Default: family annual: the current year (UTC-3); every other survey needs one.",
+            "description": "Target year (YYYY), month (MM/YYYY), or policy meeting code for the chosen survey.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -187,36 +177,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

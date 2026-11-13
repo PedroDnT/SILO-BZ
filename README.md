@@ -139,3 +139,5 @@ pytest tests/ -v                   # all offline (DB and HTTP mocked)
 Open work, known defects and pending operator actions are in [docs/planning/OPEN_ITEMS.md](docs/planning/OPEN_ITEMS.md) (index: [docs/planning/README.md](docs/planning/README.md)).
 Build-out history is in [docs/planning/CHANGELOG.md](docs/planning/CHANGELOG.md).
 The serving roadmap is [docs/planning/SERVING.md](docs/planning/SERVING.md).
+
+The v2 operation reference provides explicit routes such as `/macro/series?series=CDI`. The Python SDK adds `silo.v2` results with local pandas/Polars conversion and explicit bounded pagination; existing SDK methods and resource routes remain compatible.

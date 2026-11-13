@@ -1,37 +1,23 @@
 ---
 title: "Lending brokers"
-description: "Query lending brokers through SILO REST and MCP v2."
+description: "(a GET view): per broker, quantity lent, borrowed and net, and how much it crossed its own clients, newest first."
 keywords: ["positioning", "lending_brokers", "API", "MCP"]
-openapi: "api-docs/v2/specs/positioning-lending_brokers.json GET /positioning"
 ---
 
-**Deployed preview.** (a GET view): per broker, quantity lent, borrowed and net, and how much it crossed its own clients, newest first.
 
-Open **Try it**, review the inputs, and select **Send** to query the deployed API.
-The `kind` field is preset to `lending_brokers`. This is a view of the existing `/positioning` resource, not a new route.
 
-<Note>
-  Anonymous calls need no credential except on screens and portfolio, which require signed-in access.
-  With a Pro credential, verify `meta.tier` is `pro` in the actual response.
-</Note>
+import { OperationQuery } from "/snippets/operation-query.jsx";
 
-## Before you query
+<OperationQuery operation={{"resource": "positioning", "kind": "lending_brokers", "path": "/positioning/lending-brokers", "method": "GET", "title": "Lending brokers", "group": "Market positioning", "description": "(a GET view): per broker, quantity lent, borrowed and net, and how much it crossed its own clients, newest first.", "parameters": [{"name": "ticker", "target": "id", "description": "Trading symbol.", "schema": {"type": "string"}, "required": false, "advanced": false}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
 
-Resolve identifiers with [search](/api-docs/v2/reference/search), then check
-[coverage](/api-docs/v2/reference/coverage). Dates and identifiers must match the
-selected operation; expand the parameter descriptions below for its accepted values.
+[Request and response schema](/api-docs/v2/specs/positioning-lending_brokers.json)
 
-## Use from an agent
+<Accordion title="Code example">
 
-Call `silo_positioning` over [MCP v2](/api-docs/v2/mcp) with `kind: "lending_brokers"`.
-Main arguments stay at the top level; advanced REST parameters go inside `options`.
-Use the same identifier and date window as the REST request.
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/positioning/lending-brokers'
+```
 
-## Read the result
+</Accordion>
 
-Inspect `data`, `meta.request`, `meta.tier`, and `next_page_url`.
-Follow every page before treating a result as complete. `meta.tier_cap_reached`
-means partial data; a missing next page does not override it. Empty results and
-`null` are not zero. An error is not a data result.
-
-See [pagination and errors](/api-docs/v2/responses) for a complete reading checklist.
+[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

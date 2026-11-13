@@ -1,37 +1,41 @@
 ---
 title: "Economic series"
-description: "Query economic series through SILO REST and MCP v2."
+description: "Historical observations for one economic series, with dates and units."
 keywords: ["macro", "series", "API", "MCP"]
-openapi: "api-docs/v2/specs/macro-series.json GET /macro"
 ---
 
-**Deployed preview.** One source series by label or code, oldest first. Refuses above 1000 rows: narrow from/to.
 
-Supply `id`. Open **Try it**, review the inputs, and select **Send** to query the deployed API.
-The `kind` field is preset to `series`. This is a view of the existing `/macro` resource, not a new route.
 
-<Note>
-  Anonymous calls need no credential except on screens and portfolio, which require signed-in access.
-  With a Pro credential, verify `meta.tier` is `pro` in the actual response.
-</Note>
+import { OperationQuery } from "/snippets/operation-query.jsx";
 
-## Before you query
+<OperationQuery operation={{"resource": "macro", "kind": "series", "path": "/macro/series", "method": "GET", "title": "Economic series", "group": "Macroeconomics", "description": "Historical observations for one economic series, with dates and units.", "parameters": [{"name": "series", "target": "id", "description": "Choose an economic series. Units are returned with every observation.", "schema": {"type": "string"}, "required": true, "advanced": false, "choices": [{"value": "SELIC_META", "code": "432", "label": "Selic target — % per year", "unit": "pct_year", "frequency": "daily"}, {"value": "SELIC_DIARIA", "code": "11", "label": "Selic daily rate — % per business day", "unit": "pct_day", "frequency": "daily"}, {"value": "CDI", "code": "12", "label": "CDI daily rate — % per business day", "unit": "pct_day", "frequency": "daily"}, {"value": "IGPM", "code": "189", "label": "IGP-M inflation — % per month", "unit": "pct_month", "frequency": "monthly"}, {"value": "INPC", "code": "188", "label": "INPC inflation — % per month", "unit": "pct_month", "frequency": "monthly"}, {"value": "POUPANCA", "code": "25", "label": "Savings return (old rule) — % per anniversary period", "unit": "pct_period", "frequency": "daily"}, {"value": "USDBRL", "code": "1", "label": "US dollar exchange rate — BRL per USD", "unit": "brl_per_usd", "frequency": "daily"}, {"value": "EURBRL", "code": "21619", "label": "Euro exchange rate — BRL per EUR", "unit": "brl_per_eur", "frequency": "daily"}, {"value": "PIB", "code": "4380", "label": "Monthly GDP — BRL millions", "unit": "brl_million", "frequency": "monthly"}, {"value": "DBGG_PIB", "code": "13762", "label": "Gross government debt — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}, {"value": "NFSP_PRIMARIO_12M", "code": "5793", "label": "Primary borrowing requirement (12 months) — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}, {"value": "NFSP_NOMINAL_12M", "code": "5727", "label": "Nominal borrowing requirement (12 months) — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}, {"value": "DLSP_PIB", "code": "4513", "label": "Net public-sector debt — % of GDP", "unit": "pct_gdp", "frequency": "monthly"}], "example": "CDI"}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
 
-Resolve identifiers with [search](/api-docs/v2/reference/search), then check
-[coverage](/api-docs/v2/reference/coverage). Dates and identifiers must match the
-selected operation; expand the parameter descriptions below for its accepted values.
+[Request and response schema](/api-docs/v2/specs/macro-series.json)
 
-## Use from an agent
+<Accordion title="Code example">
 
-Call `silo_macro` over [MCP v2](/api-docs/v2/mcp) with `kind: "series"`.
-Main arguments stay at the top level; advanced REST parameters go inside `options`.
-Use the same identifier and date window as the REST request.
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/macro/series?series=CDI'
+```
 
-## Read the result
+</Accordion>
 
-Inspect `data`, `meta.request`, `meta.tier`, and `next_page_url`.
-Follow every page before treating a result as complete. `meta.tier_cap_reached`
-means partial data; a missing next page does not override it. Empty results and
-`null` are not zero. An error is not a data result.
+<Accordion title="Series codes and units">
 
-See [pagination and errors](/api-docs/v2/responses) for a complete reading checklist.
+- `SELIC_META`: Selic target — % per year.
+- `SELIC_DIARIA`: Selic daily rate — % per business day.
+- `CDI`: CDI daily rate — % per business day.
+- `IGPM`: IGP-M inflation — % per month.
+- `INPC`: INPC inflation — % per month.
+- `POUPANCA`: Savings return (old rule) — % per anniversary period.
+- `USDBRL`: US dollar exchange rate — BRL per USD.
+- `EURBRL`: Euro exchange rate — BRL per EUR.
+- `PIB`: Monthly GDP — BRL millions.
+- `DBGG_PIB`: Gross government debt — % of GDP.
+- `NFSP_PRIMARIO_12M`: Primary borrowing requirement (12 months) — % of GDP.
+- `NFSP_NOMINAL_12M`: Nominal borrowing requirement (12 months) — % of GDP.
+- `DLSP_PIB`: Net public-sector debt — % of GDP.
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

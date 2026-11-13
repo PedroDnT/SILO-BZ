@@ -1,37 +1,26 @@
 ---
 title: "Resolve credit instruments"
-description: "Query resolve credit instruments through SILO REST and MCP v2."
+description: "CRA, CRI and debenture codes matched to their series, one line per code."
 keywords: ["portfolio", "instruments", "API", "MCP"]
-openapi: "api-docs/v2/specs/portfolio-instruments.json POST /portfolio"
 ---
 
-**Deployed preview.** CRA, CRI and debenture codes matched to their series, one line per code.
 
-Open **Try it**, review the inputs, and select **Send** to query the deployed API.
-The `kind` field is preset to `instruments`. This is a view of the existing `/portfolio` resource, not a new route.
 
-<Note>
-  Anonymous calls need no credential except on screens and portfolio, which require signed-in access.
-  With a Pro credential, verify `meta.tier` is `pro` in the actual response.
-</Note>
+import { OperationQuery } from "/snippets/operation-query.jsx";
 
-## Before you query
+<OperationQuery operation={{"resource": "portfolio", "kind": "instruments", "path": "/portfolio/instruments", "method": "POST", "title": "Resolve credit instruments", "group": "Portfolio analysis", "description": "CRA, CRI and debenture codes matched to their series, one line per code.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": [{"name": "codes", "target": "id", "description": "Instrument codes.", "schema": {"name": "id", "items": "string", "default": null, "default_doc": "none: required by every kind except resolve", "doc": "The list: fund CNPJs (fees, fee_peers, lookthrough, movement, fund_terms; resolve: the CNPJ each line prints, parallel to names), instrument codes (instruments), filed ANBIMA class labels (equivalents) or debenture tickers (debenture_returns). Null entries are allowed where the function takes them."}}]}} />
 
-Resolve identifiers with [search](/api-docs/v2/reference/search), then check
-[coverage](/api-docs/v2/reference/coverage). Dates and identifiers must match the
-selected operation; expand the parameter descriptions below for its accepted values.
+[Request and response schema](/api-docs/v2/specs/portfolio-instruments.json)
 
-## Use from an agent
+<Accordion title="Code example">
 
-Call `silo_portfolio` over [MCP v2](/api-docs/v2/mcp) with `kind: "instruments"`.
-Main arguments stay at the top level; advanced REST parameters go inside `options`.
-Use the same identifier and date window as the REST request.
+```bash
+curl --request POST 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/portfolio/instruments' \
+  --header 'Content-Type: application/json' \
+  --header "Authorization: Bearer $SILO_TOKEN" \
+  --data '{"codes": []}'
+```
 
-## Read the result
+</Accordion>
 
-Inspect `data`, `meta.request`, `meta.tier`, and `next_page_url`.
-Follow every page before treating a result as complete. `meta.tier_cap_reached`
-means partial data; a missing next page does not override it. Empty results and
-`null` are not zero. An error is not a data result.
-
-See [pagination and errors](/api-docs/v2/responses) for a complete reading checklist.
+[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

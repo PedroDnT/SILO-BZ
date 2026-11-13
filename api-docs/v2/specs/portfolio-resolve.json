@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/portfolio": {
+    "/portfolio/resolve": {
       "post": {
         "operationId": "v2_portfolio_resolve",
         "summary": "Resolve portfolio entries",
         "tags": [
           "Research"
         ],
-        "description": "Deployed preview. Diagnose a portfolio: resolve statement lines, fees, look-through, movement (POST).\n\nup to 5 ranked candidate funds per statement line (a printed CNPJ wins, then an ETF ticker, an exact name, a trigram match).\n\nThis playground selects `resolve` on `POST /portfolio`. See the [full resource reference](/api-docs/v2/reference/portfolio) for all variants.",
+        "description": "Up to 5 ranked candidate funds per statement line (a printed CNPJ wins, then an ETF ticker, an exact name, a trigram match).",
         "x-mint": {
           "href": "/api-docs/v2/operations/portfolio/resolve"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects resolve portfolio entries.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "resolve"
-              ],
-              "default": "resolve"
-            },
-            "example": "resolve"
-          },
-          {
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -72,9 +58,19 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -113,7 +109,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "id": {
+                  "cnpjs": {
                     "type": "array",
                     "items": {
                       "type": [
@@ -121,7 +117,7 @@
                         "null"
                       ]
                     },
-                    "description": "The list: fund CNPJs (fees, fee_peers, lookthrough, movement, fund_terms; resolve: the CNPJ each line prints, parallel to names), instrument codes (instruments), filed ANBIMA class labels (equivalents) or debenture tickers (debenture_returns). Null entries are allowed where the function takes them. Default: none: required by every kind except resolve."
+                    "description": "Fund CNPJs (14 digits each)."
                   },
                   "names": {
                     "type": "array",
@@ -131,7 +127,7 @@
                         "null"
                       ]
                     },
-                    "description": "resolve: one statement line each, the fund name as printed. Default: none: required by resolve."
+                    "description": "Fund names as printed, one per statement line."
                   },
                   "quotas": {
                     "type": "array",
@@ -141,7 +137,7 @@
                         "null"
                       ]
                     },
-                    "description": "resolve: the quota value each line prints, parallel to names, for the tie-break. Default: none."
+                    "description": "Printed quota values, aligned with names."
                   },
                   "quota_dates": {
                     "type": "array",
@@ -152,18 +148,13 @@
                       ],
                       "format": "date"
                     },
-                    "description": "resolve: the date each quota refers to, parallel to names. Default: none."
+                    "description": "Quota dates, aligned with names."
                   }
                 },
-                "additionalProperties": false,
                 "required": [
                   "names"
-                ]
-              },
-              "example": {
-                "names": [
-                  "ITAU RF DI"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -195,36 +186,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

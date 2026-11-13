@@ -24,6 +24,7 @@
 // minute is rate_limited (429, Retry-After). Index and ?help read no data and are not
 // counted. Both calls fail closed (unavailable).
 
+import { OPERATIONS_BY_PATH, operationQuery, operationBody, operationResponse } from "./operations.ts";
 import { ApiError } from "./errors.ts";
 import { HIGHER_TIER, type Tier, TIERS } from "./config.ts";
 import { CORS, type Envelope, envelope, errorResponse, json } from "./envelope.ts";
@@ -128,7 +129,11 @@ async function handle(
   if (req.method !== "GET" && req.method !== "POST") throw new ApiError(405, "bad_request", `${req.method} is not served; v2 is GET, and POST for portfolio.`);
 
   const url = new URL(req.url);
-  const route = routeOf(url.pathname);
+  const operationPath = url.pathname.replace(/^\/functions\/v1/, "").replace(/^\/silo-api/, "").replace(/\/+$/, "").replace(/^\/v2/, "");
+  const operation = OPERATIONS_BY_PATH.get(operationPath);
+  const route = operation?.resource ?? routeOf(url.pathname);
+  const details = url.searchParams.get("details") === "true";
+  const inputQuery = operation ? operationQuery(operation, url.searchParams) : url.searchParams;
   if (route === null) throw new ApiError(404, "bad_request", `No such path ${url.pathname}. Start at /v2/.`, "path");
   if (route === "") {
     if (req.method !== "GET") throw new ApiError(405, "bad_request", `${req.method} /v2/ is not served; use GET.`, "method");
@@ -159,20 +164,25 @@ async function handle(
   }
 
   // A cursor fixes every parameter of the walk; its own are parsed like a fresh request.
-  const token = url.searchParams.get("cursor");
+  const token = inputQuery.get("cursor");
   const cursor = token === null ? null : decodeCursor(token, resource.name);
-  const query = cursor ? cursorQuery(url.searchParams, cursor) : url.searchParams;
+  const query = cursor ? cursorQuery(inputQuery, cursor) : inputQuery;
   const parsed = parseQuery(resource, query);
   let digest: string | undefined;
   if (method === "POST") {
-    const text = await req.text();
+    const rawBody = await req.text();
+    const text = operation ? operationBody(operation, rawBody) : rawBody;
     parsed.body = parseBody(resource, text);
     digest = bodyDigest(text);
     if (cursor && cursor.b !== digest) {
       throw new ApiError(400, "bad_request", "A cursor on POST needs the same body as the first page; this body differs. Send it unchanged, or start again without cursor.", "body");
     }
   }
-  parsed.paging = { cursor, q: Object.fromEntries(query.entries()), base: `${url.origin}${url.pathname}`, body: digest };
+  // Hosted Edge requests have an internal HTTP URL without /functions/v1.
+  const pageBase = !("error" in cfg)
+    ? `${cfg.restUrl.replace(/\/rest\/v1$/, "")}/functions/v1/silo-api/v2${operation?.path ?? "/" + resource.name}`
+    : `${url.origin}${url.pathname}`;
+  parsed.paging = { cursor, q: Object.fromEntries(query.entries()), base: pageBase, body: digest };
   if ("error" in cfg) throw new ApiError(503, "unavailable", `silo-api is misconfigured: ${cfg.error}`);
   const presented = callerBearer(req.headers.get("authorization"), cfg);
   const integration = integrationKey(presented);
@@ -185,7 +195,8 @@ async function handle(
   const ctx: CallContext = { cfg, fetchImpl, bearer, tier, now };
   const rate = await enforceRate(gate, ctx, tier, req.headers, now);
   const body = await HANDLERS[resource.name](parsed, ctx);
-  return json(200, body, { "RateLimit-Limit": String(rate.limit), "RateLimit-Remaining": String(rate.remaining) });
+  if (operation && details && body.next_page_url) body.next_page_url += "&details=true";
+  return json(200, operation ? operationResponse(body, details) : body, { "RateLimit-Limit": String(rate.limit), "RateLimit-Remaining": String(rate.remaining) });
 }
 
 /** screens and portfolio by tier (config.ts). ?help stays open to every tier. */

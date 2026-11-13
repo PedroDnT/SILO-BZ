@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/screens": {
+    "/screens/delinquency-drivers": {
       "get": {
         "operationId": "v2_screens_delinquency_drivers",
         "summary": "Delinquency drivers",
         "tags": [
           "Research"
         ],
-        "description": "Deployed preview. Which funds look odd? Forensic screens: signals, not verdicts.\n\nFIDC delinquency, first vs last observation in BRL and in points of NAV, the move classified (driver). No window before 2025-01.\n\nThis playground selects `delinquency_drivers` on `GET /screens`. See the [full resource reference](/api-docs/v2/reference/screens) for all variants.",
+        "description": "FIDC delinquency, first vs last observation in BRL and in points of NAV, the move classified (driver).",
         "x-mint": {
           "href": "/api-docs/v2/operations/screens/delinquency_drivers"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects delinquency drivers.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "delinquency_drivers"
-              ],
-              "default": "delinquency_drivers"
-            },
-            "example": "delinquency_drivers"
-          },
-          {
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -72,7 +58,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -81,7 +67,7 @@
             "name": "date",
             "in": "query",
             "required": false,
-            "description": "zombie_growth: the aging month-end (p_period). delinquency_drivers, restatements, late_filers: the window end (p_end). Default: the screen's own: zombie_growth the latest aging month; delinquency_drivers the latest complete FIDC month; restatements today; late_filers the newest month whose deadline has passed.",
+            "description": "Window end date.",
             "schema": {
               "type": "string",
               "format": "date"
@@ -91,7 +77,7 @@
             "name": "months",
             "in": "query",
             "required": false,
-            "description": "delinquency_drivers (2..24), restatements, late_filers (1..36): the window length in months. Default: the screen's SQL default (12).",
+            "description": "Window length (2–24 months).",
             "schema": {
               "type": "integer",
               "minimum": 0
@@ -101,7 +87,7 @@
             "name": "min_months",
             "in": "query",
             "required": false,
-            "description": "delinquency_drivers: observations a fund needs, 2..months. Default: the SQL default (6).",
+            "description": "Minimum observations required.",
             "schema": {
               "type": "integer",
               "minimum": 0
@@ -111,7 +97,7 @@
             "name": "min_delta_brl",
             "in": "query",
             "required": false,
-            "description": "delinquency_drivers: the up/down threshold on delinquency, BRL. Default: the SQL default (1000000).",
+            "description": "Minimum delinquency change, in BRL.",
             "schema": {
               "type": "number",
               "minimum": 0
@@ -121,7 +107,7 @@
             "name": "min_delta_pp",
             "in": "query",
             "required": false,
-            "description": "delinquency_drivers: the up/down threshold on the rate, percentage points. Default: the SQL default (1.0).",
+            "description": "Minimum delinquency rate change, in percentage points.",
             "schema": {
               "type": "number",
               "minimum": 0
@@ -131,7 +117,7 @@
             "name": "driver",
             "in": "query",
             "required": false,
-            "description": "delinquency_drivers: keep one class of move (an output filter). Default: all.",
+            "description": "Filter by movement category.",
             "schema": {
               "type": "string",
               "enum": [
@@ -143,6 +129,16 @@
                 "stable"
               ],
               "default": "all"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -200,36 +196,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

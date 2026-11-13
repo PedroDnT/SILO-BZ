@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/screens": {
+    "/screens/silent-filers": {
       "get": {
         "operationId": "v2_screens_silent_filers",
         "summary": "Silent filers",
         "tags": [
           "Research"
         ],
-        "description": "Deployed preview. Which funds look odd? Forensic screens: signals, not verdicts.\n\nFunds source still lists as active whose last periodic informe is min_silent_months to max_silent_months behind their family.\n\nThis playground selects `silent_filers` on `GET /screens`. See the [full resource reference](/api-docs/v2/reference/screens) for all variants.",
+        "description": "Funds published still lists as active whose last periodic informe is min_silent_months to max_silent_months behind their family.",
         "x-mint": {
           "href": "/api-docs/v2/operations/screens/silent_filers"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects silent filers.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "silent_filers"
-              ],
-              "default": "silent_filers"
-            },
-            "example": "silent_filers"
-          },
-          {
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -72,7 +58,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -81,7 +67,7 @@
             "name": "min_silent_months",
             "in": "query",
             "required": false,
-            "description": "silent_filers: complete months with no filing, 1..120. Default: the SQL default (3).",
+            "description": "Minimum complete months without a filing.",
             "schema": {
               "type": "integer",
               "minimum": 0
@@ -91,7 +77,7 @@
             "name": "max_silent_months",
             "in": "query",
             "required": false,
-            "description": "silent_filers: and at most this many, up to 240. Default: the SQL default (24).",
+            "description": "Maximum complete months without a filing.",
             "schema": {
               "type": "integer",
               "minimum": 0
@@ -101,7 +87,7 @@
             "name": "family",
             "in": "query",
             "required": false,
-            "description": "late_filers (fii, fidc) and silent_filers (fi, fidc, fii, fiagro): keep one family (an output filter). Default: all.",
+            "description": "Fund family.",
             "schema": {
               "type": "string",
               "enum": [
@@ -112,6 +98,16 @@
                 "fiagro"
               ],
               "default": "all"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -169,36 +165,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

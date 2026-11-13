@@ -1,37 +1,23 @@
 ---
 title: "Delinquency drivers"
-description: "Query delinquency drivers through SILO REST and MCP v2."
+description: "FIDC delinquency, first vs last observation in BRL and in points of NAV, the move classified (driver)."
 keywords: ["screens", "delinquency_drivers", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-delinquency_drivers.json GET /screens"
 ---
 
-**Deployed preview.** FIDC delinquency, first vs last observation in BRL and in points of NAV, the move classified (driver). No window before 2025-01.
 
-Open **Try it**, review the inputs, and select **Send** to query the deployed API.
-The `kind` field is preset to `delinquency_drivers`. This is a view of the existing `/screens` resource, not a new route.
 
-<Note>
-  Anonymous calls need no credential except on screens and portfolio, which require signed-in access.
-  With a Pro credential, verify `meta.tier` is `pro` in the actual response.
-</Note>
+import { OperationQuery } from "/snippets/operation-query.jsx";
 
-## Before you query
+<OperationQuery operation={{"resource": "screens", "kind": "delinquency_drivers", "path": "/screens/delinquency-drivers", "method": "GET", "title": "Delinquency drivers", "group": "Research screens", "description": "FIDC delinquency, first vs last observation in BRL and in points of NAV, the move classified (driver).", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "date", "target": "date", "description": "Window end date.", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "months", "target": "months", "description": "Window length (2–24 months).", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_months", "target": "min_months", "description": "Minimum observations required.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_delta_brl", "target": "min_delta_brl", "description": "Minimum delinquency change, in BRL.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_delta_pp", "target": "min_delta_pp", "description": "Minimum delinquency rate change, in percentage points.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}, {"name": "driver", "target": "driver", "description": "Filter by movement category.", "schema": {"type": "string", "enum": ["all", "consistent_worsening", "value_up_rate_masked", "denominator_only", "improvement", "stable"], "default": "all"}, "required": false, "advanced": true}], "body": []}} />
 
-Resolve identifiers with [search](/api-docs/v2/reference/search), then check
-[coverage](/api-docs/v2/reference/coverage). Dates and identifiers must match the
-selected operation; expand the parameter descriptions below for its accepted values.
+[Request and response schema](/api-docs/v2/specs/screens-delinquency_drivers.json)
 
-## Use from an agent
+<Accordion title="Code example">
 
-Call `silo_screens` over [MCP v2](/api-docs/v2/mcp) with `kind: "delinquency_drivers"`.
-Main arguments stay at the top level; advanced REST parameters go inside `options`.
-Use the same identifier and date window as the REST request.
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/delinquency-drivers'
+```
 
-## Read the result
+</Accordion>
 
-Inspect `data`, `meta.request`, `meta.tier`, and `next_page_url`.
-Follow every page before treating a result as complete. `meta.tier_cap_reached`
-means partial data; a missing next page does not override it. Empty results and
-`null` are not zero. An error is not a data result.
-
-See [pagination and errors](/api-docs/v2/responses) for a complete reading checklist.
+[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

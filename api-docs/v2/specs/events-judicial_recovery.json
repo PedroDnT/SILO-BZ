@@ -32,56 +32,43 @@
     }
   ],
   "paths": {
-    "/events": {
+    "/events/judicial-recovery": {
       "get": {
         "operationId": "v2_events_judicial_recovery",
         "summary": "Judicial recovery filings",
         "tags": [
           "Companies and funds"
         ],
-        "description": "Deployed preview. What was filed or restated? Company IPE filings, fund documents, restatements, judicial recovery.\n\njudicial recovery (recuperacao judicial) filings of listed companies, newest first.\n\nThis playground selects `judicial_recovery` on `GET /events`. See the [full resource reference](/api-docs/v2/reference/events) for all variants.",
+        "description": "Judicial recovery (recuperacao judicial) filings of listed companies, newest first.",
         "x-mint": {
           "href": "/api-docs/v2/operations/events/judicial_recovery"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects judicial recovery filings.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "judicial_recovery"
-              ],
-              "default": "judicial_recovery"
-            },
-            "example": "judicial_recovery"
-          },
-          {
             "name": "category",
             "in": "query",
             "required": false,
-            "description": "One label, matched exactly as the source labels it. kind=company: the IPE categoria (e.g. Fato Relevante). kind=fund and restatement_diff: the FNET tipo_documento. kind=judicial_recovery: the CVM Tipo (accented as published). Default: all.",
+            "description": "Exact document category.",
             "schema": {
               "type": "string",
               "default": "all"
             }
           },
           {
-            "name": "id",
+            "name": "identifier",
             "in": "query",
             "required": false,
-            "description": "By kind: company takes a listed company's ticker, 14-digit CNPJ or CVM code; fund, restatement_diff take a 14-digit fund CNPJ (punctuation allowed); restatements takes a 14-digit fund CNPJ (punctuation allowed; none: every fund's); judicial_recovery takes a listed company's ticker, 14-digit CNPJ or CVM code (none: every company's). Required for kinds company, fund, restatement_diff. Default: none.",
+            "description": "Company ticker or CNPJ.",
             "schema": {
               "type": "string"
-            }
+            },
+            "example": "PETR4"
           },
           {
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "description": "Start date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -91,7 +78,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "description": "End date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -101,7 +88,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -111,9 +98,19 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -166,36 +163,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

@@ -1,37 +1,23 @@
 ---
 title: "Forward prices"
-description: "Query forward prices through SILO REST and MCP v2."
+description: "One FORWARD-segment ticker; last_price is the close, ref_price is never a trade."
 keywords: ["prices", "forward", "API", "MCP"]
-openapi: "api-docs/v2/specs/prices-forward.json GET /prices"
 ---
 
-**Deployed preview.** One FORWARD-segment ticker; last_price is the close, ref_price is never a trade.
 
-Open **Try it**, review the inputs, and select **Send** to query the deployed API.
-The `kind` field is preset to `forward`. This is a view of the existing `/prices` resource, not a new route.
 
-<Note>
-  Anonymous calls need no credential except on screens and portfolio, which require signed-in access.
-  With a Pro credential, verify `meta.tier` is `pro` in the actual response.
-</Note>
+import { OperationQuery } from "/snippets/operation-query.jsx";
 
-## Before you query
+<OperationQuery operation={{"resource": "prices", "kind": "forward", "path": "/prices/forward", "method": "GET", "title": "Forward prices", "group": "Stock prices", "description": "One FORWARD-segment ticker; last_price is the close, ref_price is never a trade.", "parameters": [{"name": "freq", "target": "freq", "description": "Observation frequency.", "schema": {"type": "string", "enum": ["day", "month"], "default": "day"}, "required": false, "advanced": true}, {"name": "ticker", "target": "id", "description": "Trading symbol.", "schema": {"type": "string"}, "required": false, "advanced": false, "example": "PETR4"}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "fields", "target": "fields", "description": "core returns essential columns; all includes every published column.", "schema": {"type": "string", "enum": ["core", "all"], "default": "core"}, "required": false, "advanced": true}], "body": []}} />
 
-Resolve identifiers with [search](/api-docs/v2/reference/search), then check
-[coverage](/api-docs/v2/reference/coverage). Dates and identifiers must match the
-selected operation; expand the parameter descriptions below for its accepted values.
+[Request and response schema](/api-docs/v2/specs/prices-forward.json)
 
-## Use from an agent
+<Accordion title="Code example">
 
-Call `silo_prices` over [MCP v2](/api-docs/v2/mcp) with `kind: "forward"`.
-Main arguments stay at the top level; advanced REST parameters go inside `options`.
-Use the same identifier and date window as the REST request.
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/prices/forward?ticker=PETR4'
+```
 
-## Read the result
+</Accordion>
 
-Inspect `data`, `meta.request`, `meta.tier`, and `next_page_url`.
-Follow every page before treating a result as complete. `meta.tier_cap_reached`
-means partial data; a missing next page does not override it. Empty results and
-`null` are not zero. An error is not a data result.
-
-See [pagination and errors](/api-docs/v2/responses) for a complete reading checklist.
+[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

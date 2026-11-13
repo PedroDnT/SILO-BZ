@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/curves": {
+    "/curves/history": {
       "get": {
         "operationId": "v2_curves_history",
         "summary": "Yield curve history",
         "tags": [
           "Markets and macro"
         ],
-        "description": "Deployed preview. What does the rate curve look like? B3 reference curves, their history and vertices.\n\none fixed vertex through time, oldest first. Refuses above 1000 rows: narrow from/to.\n\nThis playground selects `history` on `GET /curves`. See the [full resource reference](/api-docs/v2/reference/curves) for all variants.",
+        "description": "One fixed vertex through time, oldest first.",
         "x-mint": {
           "href": "/api-docs/v2/operations/curves/history"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects yield curve history.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "history"
-              ],
-              "default": "history"
-            },
-            "example": "history"
-          },
-          {
             "name": "curve",
             "in": "query",
             "required": false,
-            "description": "PRE: DI x pre. DOC: the clean onshore dollar coupon. DPL: the clean IPCA coupon (a real rate). Default: PRE.",
+            "description": "Yield curve code.",
             "schema": {
               "type": "string",
               "enum": [
@@ -77,7 +63,7 @@
             "name": "tenor",
             "in": "query",
             "required": false,
-            "description": "kind history: the nominal tenor of one of B3's fixed vertices, in CALENDAR days (B3's vertex_code: 1, 30, 60, 90, ... 360, 720, ... 10800). 360 is the one-year vertex. Any other tenor is refused with the list, never interpolated. Default: 360.",
+            "description": "Fixed vertex tenor in calendar days.",
             "schema": {
               "type": "integer",
               "minimum": 0,
@@ -88,7 +74,7 @@
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "description": "Start date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -98,7 +84,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "description": "End date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -108,7 +94,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -118,9 +104,19 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -173,36 +169,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

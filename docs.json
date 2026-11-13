@@ -17,7 +17,8 @@
               "index",
               "api-docs/v2/quickstart",
               "api-docs/v2/endpoints",
-              "api-docs/v2/authentication"
+              "api-docs/v2/authentication",
+              "api-docs/v2/python"
             ]
           },
           {
@@ -199,7 +200,7 @@
             ]
           },
           {
-            "group": "REST reference",
+            "group": "Compatibility reference",
             "openapi": "api-docs/v2/openapi.json"
           }
         ]
@@ -282,7 +283,7 @@
     "links": [
       {
         "label": "Data API",
-        "href": "/api-docs/v2/reference/index"
+        "href": "/api-docs/v2/endpoints"
       },
       {
         "label": "GitHub",

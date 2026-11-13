@@ -1,37 +1,23 @@
 ---
 title: "Futures curve"
-description: "Query futures curve through SILO REST and MCP v2."
+description: "Every contract of a root (id, default DI1) on one session, nearest first."
 keywords: ["derivatives", "futures_curve", "API", "MCP"]
-openapi: "api-docs/v2/specs/derivatives-futures_curve.json GET /derivatives"
 ---
 
-**Deployed preview.** Every contract of a root (id, default DI1) on one session, nearest first.
 
-Open **Try it**, review the inputs, and select **Send** to query the deployed API.
-The `kind` field is preset to `futures_curve`. This is a view of the existing `/derivatives` resource, not a new route.
 
-<Note>
-  Anonymous calls need no credential except on screens and portfolio, which require signed-in access.
-  With a Pro credential, verify `meta.tier` is `pro` in the actual response.
-</Note>
+import { OperationQuery } from "/snippets/operation-query.jsx";
 
-## Before you query
+<OperationQuery operation={{"resource": "derivatives", "kind": "futures_curve", "path": "/derivatives/futures-curve", "method": "GET", "title": "Futures curve", "group": "Options and futures", "description": "Every contract of a root (id, default DI1) on one session, nearest first.", "parameters": [{"name": "date", "target": "date", "description": "Observation date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "root", "target": "id", "description": "Futures contract root.", "schema": {"type": "string"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
 
-Resolve identifiers with [search](/api-docs/v2/reference/search), then check
-[coverage](/api-docs/v2/reference/coverage). Dates and identifiers must match the
-selected operation; expand the parameter descriptions below for its accepted values.
+[Request and response schema](/api-docs/v2/specs/derivatives-futures_curve.json)
 
-## Use from an agent
+<Accordion title="Code example">
 
-Call `silo_derivatives` over [MCP v2](/api-docs/v2/mcp) with `kind: "futures_curve"`.
-Main arguments stay at the top level; advanced REST parameters go inside `options`.
-Use the same identifier and date window as the REST request.
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/derivatives/futures-curve'
+```
 
-## Read the result
+</Accordion>
 
-Inspect `data`, `meta.request`, `meta.tier`, and `next_page_url`.
-Follow every page before treating a result as complete. `meta.tier_cap_reached`
-means partial data; a missing next page does not override it. Empty results and
-`null` are not zero. An error is not a data result.
-
-See [pagination and errors](/api-docs/v2/responses) for a complete reading checklist.
+[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)

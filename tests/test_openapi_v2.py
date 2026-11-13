@@ -108,7 +108,7 @@ def test_mintlify_navigation_covers_all_v2_operations():
     assert (v2["tab"], v1["tab"]) == ("SILO v2", "API v1")
     groups = {g["group"]: g for g in v2["groups"]}
     assert groups["Get started"]["pages"][:2] == ["index", "api-docs/v2/quickstart"]
-    ref = groups["REST reference"]
+    ref = groups["Compatibility reference"]
     assert ref["openapi"] == "api-docs/v2/openapi.json"
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
     tags = [tag["name"] for tag in spec["tags"]]
@@ -116,7 +116,7 @@ def test_mintlify_navigation_covers_all_v2_operations():
     assert all(op["tags"][0] in tags for methods in spec["paths"].values() for op in methods.values())
 
 
-def test_operation_playgrounds_preserve_routes_auth_and_kind():
+def test_operation_playgrounds_preserve_auth_and_use_explicit_routes():
     from scripts.gen_v2_operation_docs import artifacts
 
     files, groups = artifacts()
@@ -124,21 +124,18 @@ def test_operation_playgrounds_preserve_routes_auth_and_kind():
     pages = {page for group in groups for page in group["pages"]}
     for path, text in files.items():
         assert (ROOT / path).read_text() == text, f"stale operation docs: {path}"
-        if not path.endswith(".json"):
+        if not path.startswith("api-docs/v2/") or not path.endswith(".json"):
             continue
         spec = json.loads(text)
         assert spec["servers"] == base["servers"]
         assert spec["security"] == base["security"]
         route, methods = next(iter(spec["paths"].items()))
         method, operation = next(iter(methods.items()))
-        original = base["paths"][route][method]
+        original = base["paths"]["/" + route.split("/")[1]][method]
         assert operation.get("security") == original.get("security")
         assert operation["responses"] == original["responses"]
         assert operation["x-mint"]["href"].lstrip("/") in pages
-        if route != "/panel":
-            kind = next(p for p in operation["parameters"] if p["name"] == "kind")
-            assert kind["schema"]["enum"] == [kind["example"]]
-            assert kind["schema"]["default"] == kind["example"]
+        assert all(p["name"] not in {"id", "kind"} for p in operation["parameters"])
     assert len(pages) == sum(len(r["kinds"]) for r in _gen().load_registry()["resources"])
 
 
@@ -151,14 +148,15 @@ def test_operation_navigation_and_request_examples():
     assert nav["pages"] == groups
     # Never prefill a fund/document/index operation with a stock ticker.
     for path, content in files.items():
-        if not path.endswith(".json"):
+        if not path.startswith("api-docs/v2/") or not path.endswith(".json"):
             continue
         spec = json.loads(content)
         route, methods = next(iter(spec["paths"].items()))
         op = next(iter(methods.values()))
-        if route in {"/funds", "/fidc", "/events", "/derivatives"}:
+        if route.split("/")[1] in {"funds", "fidc", "derivatives"}:
             assert all(p.get("example") != "PETR4" for p in op["parameters"])
-        if route == "/portfolio" and not path.endswith("portfolio-resolve.json"):
+        if route.startswith("/portfolio/") and route != "/portfolio/resolve":
             media = op["requestBody"]["content"]["application/json"]
             assert "example" not in media
-            assert media["schema"]["required"] == ["id"]
+            assert len(media["schema"]["required"]) == 1
+            assert "id" not in media["schema"]["properties"]

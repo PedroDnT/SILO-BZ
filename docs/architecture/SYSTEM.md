@@ -58,7 +58,7 @@ it read-only. Four infrastructures, four products.
    a POST cursor (MCP too) needs the first page's body.
 
 `webapp/` is not deployed. The v2 REST/MCP preview is live.
-`scripts/gen_v2_operation_docs.py` generates playgrounds, not runtime routes.
+Shared operation definitions drive routes, playgrounds and the Python v2 client.
 
 Deeper: [README](../../README.md), [API](../reference/API.md),
 [data modeling](../reference/DATA_MODELING.md).

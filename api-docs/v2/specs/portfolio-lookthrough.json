@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/portfolio": {
+    "/portfolio/lookthrough": {
       "post": {
         "operationId": "v2_portfolio_lookthrough",
         "summary": "Portfolio look-through",
         "tags": [
           "Research"
         ],
-        "description": "Deployed preview. Diagnose a portfolio: resolve statement lines, fees, look-through, movement (POST).\n\none CDA month, holdings followed through fund quotas up to max_depth levels.\n\nThis playground selects `lookthrough` on `POST /portfolio`. See the [full resource reference](/api-docs/v2/reference/portfolio) for all variants.",
+        "description": "One CDA month, holdings followed through fund quotas up to max_depth levels.",
         "x-mint": {
           "href": "/api-docs/v2/operations/portfolio/lookthrough"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects portfolio look-through.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "lookthrough"
-              ],
-              "default": "lookthrough"
-            },
-            "example": "lookthrough"
-          },
-          {
             "name": "month",
             "in": "query",
             "required": false,
-            "description": "Any day of the month. fees, lookthrough, movement: the month read. debenture_returns: the window's last month. Default: the latest complete month, as each function defines it (fees: each fund's newest balancete; lookthrough: the last complete CDA month; movement: the last complete FI month). debenture_returns has no default month and needs one.",
+            "description": "Any date in the requested month.",
             "schema": {
               "type": "string",
               "format": "date"
@@ -72,7 +58,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -82,7 +68,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -91,11 +77,21 @@
             "name": "max_depth",
             "in": "query",
             "required": false,
-            "description": "lookthrough: fund-quota levels looked through, 1..6 (the SQL default is 4). Default: 4.",
+            "description": "Fund ownership levels to traverse (1–6).",
             "schema": {
               "type": "integer",
               "minimum": 0,
               "default": 4
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -134,7 +130,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "id": {
+                  "cnpjs": {
                     "type": "array",
                     "items": {
                       "type": [
@@ -142,44 +138,13 @@
                         "null"
                       ]
                     },
-                    "description": "The list: fund CNPJs (fees, fee_peers, lookthrough, movement, fund_terms; resolve: the CNPJ each line prints, parallel to names), instrument codes (instruments), filed ANBIMA class labels (equivalents) or debenture tickers (debenture_returns). Null entries are allowed where the function takes them. Default: none: required by every kind except resolve."
-                  },
-                  "names": {
-                    "type": "array",
-                    "items": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "description": "resolve: one statement line each, the fund name as printed. Default: none: required by resolve."
-                  },
-                  "quotas": {
-                    "type": "array",
-                    "items": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
-                    "description": "resolve: the quota value each line prints, parallel to names, for the tie-break. Default: none."
-                  },
-                  "quota_dates": {
-                    "type": "array",
-                    "items": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "format": "date"
-                    },
-                    "description": "resolve: the date each quota refers to, parallel to names. Default: none."
+                    "description": "Fund CNPJs (14 digits each)."
                   }
                 },
-                "additionalProperties": false,
                 "required": [
-                  "id"
-                ]
+                  "cnpjs"
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -211,36 +176,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

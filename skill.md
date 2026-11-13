@@ -14,6 +14,12 @@ description: >
 2. If using REST, start at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2`. The index lists available resources. `GET /<resource>?help=all`, relative to that base, lists parameters, defaults and supported kinds. For metric definitions and applicability, use `GET /coverage?kind=catalog` or `silo_coverage({"kind":"catalog"})`. Use the gateway's help and tool schemas for v2 request parameters and defaults.
 3. Try `silo_search({"q":"petrobras"})` or `GET /search?q=petrobras` without a credential. Choose the identifier that matches the intended entity before fetching its data.
 
+## Clear REST routes and Python
+
+Prefer operation routes: `GET /macro/series?series=CDI`, `GET /prices/latest?ticker=PETR4`, or `GET /statements/income?identifier=PETR4`. See the [operation directory](https://octo-98895abd.mintlify.site/api-docs/v2/endpoints.md) for all 74 routes. These return compact metadata; request `details=true` for applied parameters. Existing resource routes and the 14 MCP tools keep their current arguments and responses.
+
+In Python, use `silo.v2.get("macro/series", series="CDI")`, explicitly collect with `max_pages`, then call `to_pandas()` or `to_polars()`. Conversion refuses incomplete results by default and makes no network calls.
+
 ## Credentials
 
 If the owner provides a 60-day SILO integration key through a secret store, configure it as a Bearer credential on the same REST or data MCP URL. Verify `meta.tier: pro` on a data call when Pro is required. On `unauthorized`, check expiry or ask the issuer to rotate it.

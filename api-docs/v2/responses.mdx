@@ -51,3 +51,9 @@ An error response has `error.code`, `error.message`, `error.target`, and
 The [full resource reference](/api-docs/v2/reference/index) lists the machine-readable
 schema. Never turn a failed request into a zero, an empty successful result or an
 estimated observation.
+
+## Operation routes
+
+Routes such as `/macro/series?series=CDI` return `data`, essential `meta` and, when more rows remain, `next_page_url`.
+Use `details=true` to include the applied request and diagnostic fields. Follow the returned URL unchanged.
+The original resource routes and MCP tools keep their existing full response. Units, warnings, nulls and tier limits are retained in both forms.

@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/screens": {
+    "/screens/dormant-trend": {
       "get": {
         "operationId": "v2_screens_dormant_trend",
         "summary": "Dormant trend",
         "tags": [
           "Research"
         ],
-        "description": "Deployed preview. Which funds look odd? Forensic screens: signals, not verdicts.\n\ndormant_funds counted at every month-end: funds filing, empty shells, parked capital and its NAV.\n\nThis playground selects `dormant_trend` on `GET /screens`. See the [full resource reference](/api-docs/v2/reference/screens) for all variants.",
+        "description": "Dormant_funds counted at every month-end: funds filing, empty shells, parked capital and its NAV.",
         "x-mint": {
           "href": "/api-docs/v2/operations/screens/dormant_trend"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects dormant trend.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "dormant_trend"
-              ],
-              "default": "dormant_trend"
-            },
-            "example": "dormant_trend"
-          },
-          {
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -72,7 +58,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -81,7 +67,7 @@
             "name": "lookback_months",
             "in": "query",
             "required": false,
-            "description": "captive_vehicles, evergreen_aging, dormant_funds, dormant_trend: the trailing window in months. Default: the screen's SQL default: captive_vehicles 3, evergreen_aging 12, dormant_funds 3, dormant_trend 3.",
+            "description": "Trailing window, in months.",
             "schema": {
               "type": "integer",
               "minimum": 0
@@ -91,10 +77,20 @@
             "name": "history_months",
             "in": "query",
             "required": false,
-            "description": "dormant_trend: month-ends emitted, 1..60. Default: the SQL default (36).",
+            "description": "Number of month-ends to return (1–60).",
             "schema": {
               "type": "integer",
               "minimum": 0
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -152,36 +148,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

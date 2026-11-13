@@ -32,37 +32,23 @@
     }
   ],
   "paths": {
-    "/macro": {
+    "/macro/inflation": {
       "get": {
         "operationId": "v2_macro_inflation",
         "summary": "Inflation history",
         "tags": [
           "Markets and macro"
         ],
-        "description": "Deployed preview. Macro series, inflation and its item tree, PTAX, Focus expectations.\n\nthe IPCA set by month with acc_12m, 3 years by default. Refuses above 1000 rows: pin id or family, or narrow from.\n\nThis playground selects `inflation` on `GET /macro`. See the [full resource reference](/api-docs/v2/reference/macro) for all variants.",
+        "description": "The IPCA set by month with acc_12m, 3 years by default.",
         "x-mint": {
           "href": "/api-docs/v2/operations/macro/inflation"
         },
         "parameters": [
           {
-            "name": "kind",
-            "in": "query",
-            "required": true,
-            "description": "Selects inflation history.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "inflation"
-              ],
-              "default": "inflation"
-            },
-            "example": "inflation"
-          },
-          {
-            "name": "id",
+            "name": "series",
             "in": "query",
             "required": false,
-            "description": "By kind: series takes an SGS series label or code (SELIC_META, CDI, IGPM, 432); inflation takes one series label (IPCA, IPCA_CORE_EX0, ...; none: every series); inflation_items takes an IBGE structure number or SIDRA item code (none: the groups); expectations takes a Focus indicator (IPCA, Selic, ...; none: every indicator). Required for kind series. Kind fx takes no id. Default: none.",
+            "description": "Economic series.",
             "schema": {
               "type": "string"
             }
@@ -71,7 +57,7 @@
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "Start date (YYYY-MM-DD). Omit to use this resource's default window.",
+            "description": "Start date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -81,7 +67,7 @@
             "name": "to",
             "in": "query",
             "required": false,
-            "description": "End date (YYYY-MM-DD). Omit to use the latest complete period.",
+            "description": "End date (YYYY-MM-DD).",
             "schema": {
               "type": "string",
               "format": "date"
@@ -91,7 +77,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Rows per page, capped by your tier. Check next_page_url and meta.tier_cap_reached for incomplete results.",
+            "description": "Rows per page, subject to your tier.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -101,7 +87,7 @@
             "name": "cursor",
             "in": "query",
             "required": false,
-            "description": "Cursor from next_page_url. Send it alone; it preserves the original filters.",
+            "description": "Cursor from the next page URL.",
             "schema": {
               "type": "string"
             }
@@ -110,7 +96,7 @@
             "name": "family",
             "in": "query",
             "required": false,
-            "description": "kind inflation: headline, core, classification, diffusion or group (all: every family). kind expectations: the Focus survey, annual (the default), monthly, selic (COPOM meetings) or inflation_12m. Default: all.",
+            "description": "Inflation family.",
             "schema": {
               "type": "string",
               "enum": [
@@ -119,13 +105,19 @@
                 "core",
                 "classification",
                 "diffusion",
-                "group",
-                "annual",
-                "monthly",
-                "selic",
-                "inflation_12m"
+                "group"
               ],
               "default": "all"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -178,36 +170,9 @@
           "meta": {
             "type": "object",
             "required": [
-              "resource",
-              "kind",
-              "request",
-              "id_known"
+              "tier"
             ],
             "properties": {
-              "resource": {
-                "type": "string"
-              },
-              "kind": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "request": {
-                "type": "object",
-                "description": "Every parameter the resource takes, with the default applied."
-              },
-              "id_known": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether SILO holds the id; null when the call names none."
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The data endpoint that answered."
-              },
               "tier": {
                 "type": "string",
                 "enum": [

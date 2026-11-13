@@ -1,37 +1,23 @@
 ---
 title: "Evergreen aging"
-description: "Query evergreen aging through SILO REST and MCP v2."
+description: "FIDCs whose receivables overdue more than 1080 days stay a large, nearly constant share of delinquency."
 keywords: ["screens", "evergreen_aging", "API", "MCP"]
-openapi: "api-docs/v2/specs/screens-evergreen_aging.json GET /screens"
 ---
 
-**Deployed preview.** FIDCs whose receivables overdue more than 1080 days stay a large, nearly constant share of delinquency.
 
-Open **Try it**, review the inputs, and select **Send** to query the deployed API.
-The `kind` field is preset to `evergreen_aging`. This is a view of the existing `/screens` resource, not a new route.
 
-<Note>
-  Anonymous calls need no credential except on screens and portfolio, which require signed-in access.
-  With a Pro credential, verify `meta.tier` is `pro` in the actual response.
-</Note>
+import { OperationQuery } from "/snippets/operation-query.jsx";
 
-## Before you query
+<OperationQuery operation={{"resource": "screens", "kind": "evergreen_aging", "path": "/screens/evergreen-aging", "method": "GET", "title": "Evergreen aging", "group": "Research screens", "description": "FIDCs whose receivables overdue more than 1080 days stay a large, nearly constant share of delinquency.", "parameters": [{"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "lookback_months", "target": "lookback_months", "description": "Trailing window, in months.", "schema": {"type": "integer", "minimum": 0}, "required": false, "advanced": true}, {"name": "min_longtail_pct", "target": "min_longtail_pct", "description": "Minimum share overdue more than 1,080 days (%).", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}, {"name": "max_variation_pp", "target": "max_variation_pp", "description": "Maximum change in that share, in percentage points.", "schema": {"type": "number", "minimum": 0}, "required": false, "advanced": true}], "body": []}} />
 
-Resolve identifiers with [search](/api-docs/v2/reference/search), then check
-[coverage](/api-docs/v2/reference/coverage). Dates and identifiers must match the
-selected operation; expand the parameter descriptions below for its accepted values.
+[Request and response schema](/api-docs/v2/specs/screens-evergreen_aging.json)
 
-## Use from an agent
+<Accordion title="Code example">
 
-Call `silo_screens` over [MCP v2](/api-docs/v2/mcp) with `kind: "evergreen_aging"`.
-Main arguments stay at the top level; advanced REST parameters go inside `options`.
-Use the same identifier and date window as the REST request.
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/screens/evergreen-aging'
+```
 
-## Read the result
+</Accordion>
 
-Inspect `data`, `meta.request`, `meta.tier`, and `next_page_url`.
-Follow every page before treating a result as complete. `meta.tier_cap_reached`
-means partial data; a missing next page does not override it. Empty results and
-`null` are not zero. An error is not a data result.
-
-See [pagination and errors](/api-docs/v2/responses) for a complete reading checklist.
+[Python DataFrames](/api-docs/v2/python) · [Pagination and errors](/api-docs/v2/responses) · [Agent setup](/api-docs/v2/mcp)
