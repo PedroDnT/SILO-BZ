@@ -24,13 +24,19 @@ def _ignored_prefixes() -> list[str]:
 
 def _nav_groups() -> list[dict]:
     tabs = json.loads((ROOT / "docs.json").read_text())["navigation"]["tabs"]
-    return [group for tab in tabs for group in tab["groups"]]
+    def descendants(group):
+        yield group
+        for page in group.get("pages", []):
+            if isinstance(page, dict):
+                yield from descendants(page)
+
+    return [nested for tab in tabs for group in tab["groups"] for nested in descendants(group)]
 
 
 def nav_pages() -> list[str]:
     pages: list[str] = []
     for group in _nav_groups():
-        pages.extend(group.get("pages") or [])
+        pages.extend(page for page in group.get("pages", []) if isinstance(page, str))
     return pages
 
 

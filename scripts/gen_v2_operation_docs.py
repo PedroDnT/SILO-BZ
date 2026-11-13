@@ -201,6 +201,15 @@ code panel. Read [authentication](/api-docs/v2/authentication) before adding a k
 ## All operations
 
 ''' + "\n".join(links) + "\n"
+    start, end = "<!-- BEGIN V2 OPERATIONS -->", "<!-- END V2 OPERATIONS -->"
+    entries = [link.replace("](/", "](https://octo-98895abd.mintlify.site/").replace("): `", ".md): `") for link in links]
+    block = start + "\n## v2 operations\n\n" + "\n".join(entries) + "\n" + end
+    index = (ROOT / "llms.txt").read_text()
+    if start in index:
+        index = index[:index.index(start)] + block + index[index.index(end) + len(end):]
+    else:
+        index = index.replace("## Existing v1 integrations", block + "\n\n## Existing v1 integrations")
+    files["llms.txt"] = index
     return files, groups
 
 

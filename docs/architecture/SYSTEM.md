@@ -57,12 +57,8 @@ it read-only. Four infrastructures, four products.
    its walk's first day, so a defaulted window survives midnight;
    a POST cursor (MCP too) needs the first page's body.
 
-`webapp/`, `silo-api` (the v2 gateway) and `silo-mcp-v2` (its 14 MCP tools, which
-run the gateway in process) exist but are not deployed.
+`webapp/` is not deployed. The v2 REST/MCP preview is live.
+`scripts/gen_v2_operation_docs.py` generates playgrounds, not runtime routes.
 
 Deeper: [README](../../README.md), [API](../reference/API.md),
 [data modeling](../reference/DATA_MODELING.md).
-
-The Mintlify v2 reference generates operation-specific playground projections from
-the existing registry with `scripts/gen_v2_operation_docs.py`. These share the
-real routes, security and envelope; they do not create runtime API endpoints.
