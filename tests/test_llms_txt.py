@@ -19,9 +19,10 @@ published site.
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
+
+from tests.test_mintlify_nav import nav_pages
 
 ROOT = Path(__file__).resolve().parents[1]
 LLMS = ROOT / "llms.txt"
@@ -32,14 +33,6 @@ _PAGE_REF = re.compile(r"mintlify\.site/([A-Za-z0-9_./-]+)\.md")
 
 def _llms_text() -> str:
     return LLMS.read_text()
-
-
-def _nav_pages() -> list[str]:
-    docs = json.loads((ROOT / "docs.json").read_text())
-    pages: list[str] = []
-    for group in docs["navigation"]["groups"]:
-        pages.extend(group.get("pages") or [])
-    return pages
 
 
 def _page_file(page: str) -> Path | None:
@@ -63,7 +56,7 @@ def test_llms_txt_exists_and_has_the_llms_txt_shape():
 
 def test_every_nav_page_is_listed_in_llms_txt():
     listed = _llms_text()
-    missing = [p for p in _nav_pages() if f"/{p}.md" not in listed]
+    missing = [p for p in nav_pages() if f"/{p}.md" not in listed]
     assert not missing, (
         "pages in docs.json navigation that llms.txt does not list "
         "(an agent reading the index never learns they exist): "
@@ -97,7 +90,7 @@ def test_no_published_page_is_unreachable_from_the_navigation():
     agents and stays out of the sidebar on purpose (see the test below), and
     the rest is repository documentation that `.mintignore` excludes.
     """
-    nav = set(_nav_pages())
+    nav = set(nav_pages())
     # docs.json names pages repo-relative and without an extension.
     on_disk = {
         p.relative_to(ROOT).with_suffix("").as_posix()
