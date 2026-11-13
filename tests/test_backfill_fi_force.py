@@ -7,6 +7,7 @@ the gate skipped them, so the only fix could not be applied. fi_force bypasses
 the gate for ONE doc type.
 """
 
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -28,9 +29,27 @@ def test_fi_force_is_a_boolean_input_defaulting_off():
     assert force["default"] is False
 
 
+def _gate():
+    path = BACKFILL.parents[2] / "scripts/backfill_fi_year_gate.py"
+    spec = importlib.util.spec_from_file_location("backfill_fi_year_gate", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def test_force_runs_before_any_skip_and_only_for_one_doc_type():
-    body = BACKFILL.read_text()
-    gate = body[body.index('skip = False\n          requested_doc = "${{ inputs.fi_doc_type }}"'):]
-    force = gate.index('"${{ inputs.fi_force }}" == "true" and requested_doc != "all"')
-    first_skip = gate.index("skip = True")
-    assert force < first_skip, "a SKIP branch runs before the force check"
+    gate = _gate()
+    complete = {
+        "counts": {d: 12 for d in gate.MONTHLY_DOC_TYPES},
+        "yearly_status": "ok",
+        "diario_rows": 3_000_000,
+    }
+    skip, msg = gate.decide(
+        2010, "cda", repair_gaps=False, months="", force=True, coverage=complete
+    )
+    assert not skip and "forced" in msg, "a SKIP branch runs before the force check"
+    # Force never widens to all of FI: a complete year still skips.
+    skip, _ = gate.decide(
+        2024, "all", repair_gaps=False, months="", force=True, coverage=complete
+    )
+    assert skip

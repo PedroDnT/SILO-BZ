@@ -165,60 +165,16 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: Install coverage-query dependency
-        run: pip install psycopg2-binary
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      # scripts/backfill_coverage_snapshot.py marks audit rows still 'running'
+      # 24 hours after they started as error, then prints the ingest log and
+      # data_coverage. Its connection comes from src/store/pg_client.
       - name: Print ingest_log + coverage snapshot
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
-        run: |
-          python3 - <<'PY'
-          import os, sys
-          import psycopg2
-          url = os.environ.get("POSTGRES_URL", "")
-          if not url:
-              print("POSTGRES_URL missing — cannot inspect coverage")
-              sys.exit(0)
-          conn = psycopg2.connect(url, connect_timeout=20)
-          cur = conn.cursor()
-          cur.execute("""
-            UPDATE cvm_ingest_log
-            SET status = 'error',
-                finished_at = COALESCE(finished_at, NOW()),
-                error_msg = CONCAT_WS(
-                  '; ',
-                  NULLIF(error_msg, ''),
-                  'Marked stale by backfill coverage inspection after 24 hours'
-                )
-            WHERE status = 'running'
-              AND started_at < NOW() - INTERVAL '24 hours'
-            RETURNING run_id
-          """)
-          stale = cur.fetchall()
-          conn.commit()
-          print(f"Marked {len(stale)} stale running audit row(s) as error")
-          print("=== cvm_ingest_log by entity / year / status ===")
-          cur.execute("""
-            SELECT entity, COALESCE(doc_type, ''), period_year,
-                   status, COUNT(*), COALESCE(SUM(rows_upserted), 0)
-            FROM cvm_ingest_log
-            GROUP BY 1, 2, 3, 4
-            ORDER BY 1, 2, 3, 4
-          """)
-          print("entity\tdoc_type\tyear\tstatus\tn_runs\trows")
-          for row in cur.fetchall():
-              print("\t".join(str(x) for x in row))
-          print("=== data_coverage last 90 days (api) ===")
-          try:
-              cur.execute("SELECT * FROM data_coverage(NULL, CURRENT_DATE - 90, CURRENT_DATE)")
-              cols = [d[0] for d in cur.description]
-              print("\t".join(cols))
-              for row in cur.fetchall():
-                  print("\t".join(str(x) for x in row))
-          except Exception as e:
-              print("data_coverage unavailable:", e)
-              conn.rollback()
-          conn.close()
-          PY
+        run: python scripts/backfill_coverage_snapshot.py
 
   # FI — one job per year, serialized, and skipped when that year is already complete.
   backfill-fi:
@@ -264,8 +220,12 @@ jobs:
 
       - name: Skip years outside start_year..end_year
         if: ${{ matrix.year < fromJSON(inputs.start_year) || matrix.year > fromJSON(inputs.end_year) }}
+        env:
+          YEAR: ${{ matrix.year }}
+          START_YEAR: ${{ inputs.start_year }}
+          END_YEAR: ${{ inputs.end_year }}
         run: |
-          echo "Skipping FI ${{ matrix.year }} (requested ${{ inputs.start_year }}..${{ inputs.end_year }})"
+          echo "Skipping FI $YEAR (requested $START_YEAR..$END_YEAR)"
           exit 0
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -285,156 +245,20 @@ jobs:
         if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) }}
         run: pip install -r requirements.txt
 
+      # Every dispatch input reaches the script through env, never through
+      # an expression in its source (#1111). The rules (repair, force, ok months,
+      # yearly HIST status) are in scripts/backfill_fi_year_gate.py.
       - name: Skip if year already complete
         id: check
         if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) }}
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
-        run: |
-          python - <<'EOF'
-          import os, sys, traceback
-          try:
-              import psycopg2
-          except ImportError:
-              print("psycopg2 missing; running the year")
-              sys.exit(0)
-
-          def ok_months(cur, doc_type, year):
-              cur.execute("""
-                  SELECT COUNT(DISTINCT period_month)
-                  FROM cvm_ingest_log
-                  WHERE entity='fi' AND doc_type=%s
-                    AND period_year=%s AND status='ok'
-              """, (doc_type, year))
-              return cur.fetchone()[0]
-
-          def yearly_hist_status(cur, doc_type, year):
-              # Pre-2023 CDA holdings (and other yearly HIST files) log
-              # period_month NULL. COUNT(DISTINCT period_month) ignores
-              # NULL, so a finished or unpublished-block year looks like
-              # 0 months and the job re-downloads forever. Latest yearly
-              # row is the ground truth for that archive.
-              cur.execute("""
-                  SELECT status
-                  FROM cvm_ingest_log
-                  WHERE entity='fi' AND doc_type=%s
-                    AND period_year=%s AND period_month IS NULL
-                  ORDER BY finished_at DESC NULLS LAST
-                  LIMIT 1
-              """, (doc_type, year))
-              row = cur.fetchone()
-              return row[0] if row else None
-
-          url = os.environ.get("POSTGRES_URL", "").replace("\n", "").replace(" ", "")
-          year = int("${{ matrix.year }}")
-          if not url:
-              print("POSTGRES_URL missing; running the year")
-              sys.exit(0)
-
-          try:
-              conn = psycopg2.connect(url, connect_timeout=20)
-              with conn.cursor() as cur:
-                  # Gate skip on BOTH inf_diario AND perfil_mensal so a complete
-                  # diario cannot skip the run that fills cvm_fi_perfil.
-                  diario_months = ok_months(cur, "inf_diario", year)
-                  perfil_months = ok_months(cur, "perfil_mensal", year)
-                  balancete_months = ok_months(cur, "balancete", year)
-                  cda_months = ok_months(cur, "cda", year)
-                  cda_acoes_months = ok_months(cur, "cda_acoes", year)
-                  cda_cotas_months = ok_months(cur, "cda_cotas", year)
-                  cda_deb_months = ok_months(cur, "cda_debentures", year)
-                  lamina_months = ok_months(cur, "lamina", year)
-                  yearly_status = None
-                  requested_doc_for_query = "${{ inputs.fi_doc_type }}"
-                  if requested_doc_for_query != "all":
-                      yearly_status = yearly_hist_status(
-                          cur, requested_doc_for_query, year
-                      )
-                  diario_rows = None
-                  if year in (2019, 2020):
-                      cur.execute(f"SELECT COUNT(*) FROM cvm_fi_diario_{year}")
-                      diario_rows = cur.fetchone()[0]
-              conn.close()
-          except Exception:
-              traceback.print_exc()
-              print("Coverage query failed; running the year (fail-open)")
-              sys.exit(0)
-
-          skip = False
-          requested_doc = "${{ inputs.fi_doc_type }}"
-          # A repair run must never be gated on cvm_ingest_log: counting 'ok'
-          # audit months is precisely the signal that was wrong. fi/balancete
-          # 2026-06 carries a fresh 'error' row over 2,178,163 real rows, and
-          # 32 other months carry no 'ok' row at all. --repair-gaps / --months
-          # decide what to fetch by reading the table itself.
-          # No pre-2023 exclusion for holdings blocks 4 and 2: they live in
-          # the same yearly HIST archive as `cda`, from 2005. Block 6
-          # (cda_debentures) is absent from the 2005 archive — sibling
-          # blocks present, BLC_6 never released. That is logged skipped,
-          # not a gap; yearly_hist_status below keeps the job from
-          # re-downloading it. A month repair still cannot reach hist
-          # years — gaps.FI_MONTHLY_TABLES carries that cutoff and says so.
-          if "${{ inputs.fi_repair_gaps }}" == "true" or "${{ inputs.fi_months }}".strip():
-              print(f"RUN: {year} (repair mode — coverage is decided from the table, not the audit log)")
-          elif "${{ inputs.fi_force }}" == "true" and requested_doc != "all":
-              # Coverage says what landed, not whether it landed at the right
-              # grain. After a key fix (migration 49: cvm_fi_cda kept one bond
-              # per fund) every "complete" year is complete and wrong, and only
-              # a re-ingest restores it. Scoped to one doc type so a force can
-              # never re-fetch all of FI.
-              print(f"RUN: {year} {requested_doc} (forced — coverage gate bypassed)")
-          elif requested_doc != "all":
-              counts = {
-                  "inf_diario": diario_months,
-                  "perfil_mensal": perfil_months,
-                  "balancete": balancete_months,
-                  "cda": cda_months,
-                  "cda_acoes": cda_acoes_months,
-                  "cda_cotas": cda_cotas_months,
-                  "cda_debentures": cda_deb_months,
-                  "lamina": lamina_months,
-              }
-              # .get, not []: this runs outside the try/except above, so a doc
-              # type the gate has not learned yet would abort the dispatch
-              # instead of doing the work. Unknown means run the year.
-              # extrato is deliberately absent: its yearly files are re-filed
-              # weekly and logged with no month, so "ok months" says nothing and
-              # the year always runs (about 10 MB; years before 2021 are skipped
-              # inside the ingest).
-              months = counts.get(requested_doc)
-              if months is None:
-                  print(f"RUN: {year} {requested_doc} (no coverage rule — not skipping)")
-              elif months >= 11:
-                  print(f"SKIP: {year} {requested_doc} complete ({months} ok months)")
-                  skip = True
-              elif year <= 2022 and yearly_status in ("ok", "skipped"):
-                  # Yearly HIST archives (inf_diario through 2020, CDA through
-                  # 2022) log period_month NULL. 2023+ is monthly; a stray
-                  # yearly row must not skip an incomplete monthly year.
-                  print(
-                      f"SKIP: {year} {requested_doc} yearly HIST {yearly_status}"
-                  )
-                  skip = True
-              else:
-                  print(f"RUN: {year} {requested_doc} incomplete ({months} ok months)")
-          elif year in (2019, 2020):
-              diario_done = (diario_rows or 0) > 2_000_000
-              perfil_done = perfil_months >= 11
-              if diario_done and perfil_done:
-                  print(f"SKIP: {year} hist complete ({diario_rows} diario rows, {perfil_months} perfil months)")
-                  skip = True
-              else:
-                  print(f"RUN: {year} hist incomplete (diario rows={diario_rows}, perfil months={perfil_months})")
-          else:
-              if diario_months >= 11 and perfil_months >= 11:
-                  print(f"SKIP: {year} complete ({diario_months} diario months, {perfil_months} perfil months)")
-                  skip = True
-              else:
-                  print(f"RUN: {year} incomplete (diario months={diario_months}, perfil months={perfil_months})")
-          if skip:
-              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                  f.write("skip=true\n")
-          EOF
+          YEAR: ${{ matrix.year }}
+          FI_DOC_TYPE: ${{ inputs.fi_doc_type }}
+          FI_REPAIR_GAPS: ${{ inputs.fi_repair_gaps }}
+          FI_FORCE: ${{ inputs.fi_force }}
+          FI_MONTHS: ${{ inputs.fi_months }}
+        run: python scripts/backfill_fi_year_gate.py
 
       - name: Run FI backfill for ${{ matrix.year }}
         if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) && steps.check.outputs.skip != 'true' }}
@@ -447,20 +271,24 @@ jobs:
           # Parallel jobs don't each refresh the ETF matviews; the refresh-etf
           # job below does it once after the whole matrix completes.
           CVM_SKIP_ETF_REFRESH: "1"
+          YEAR: ${{ matrix.year }}
+          FI_DOC_TYPE: ${{ inputs.fi_doc_type }}
+          FI_REPAIR_GAPS: ${{ inputs.fi_repair_gaps }}
+          FI_MONTHS: ${{ inputs.fi_months }}
         run: |
           args=(
             --entity fi
-            --start-year ${{ matrix.year }}
-            --end-year ${{ matrix.year }}
+            --start-year "$YEAR"
+            --end-year "$YEAR"
             --cvm-only
           )
-          if [[ "${{ inputs.fi_doc_type }}" != "all" ]]; then
-            args+=(--doc-type "${{ inputs.fi_doc_type }}")
+          if [[ "$FI_DOC_TYPE" != "all" ]]; then
+            args+=(--doc-type "$FI_DOC_TYPE")
           fi
-          if [[ "${{ inputs.fi_repair_gaps }}" == "true" ]]; then
+          if [[ "$FI_REPAIR_GAPS" == "true" ]]; then
             args+=(--repair-gaps)
           fi
-          if [[ -n "${{ inputs.fi_months }}" ]]; then
+          if [[ -n "$FI_MONTHS" ]]; then
             # This job owns one matrix year, so hand it only the requested
             # months that fall inside that year. A year with none exits 0
             # rather than running an unscoped backfill.
@@ -468,13 +296,13 @@ jobs:
             # the split just created. grep exits 1 on no match, which would
             # abort the step under bash -e, so tolerate it and let the -z
             # check below decide.
-            months=$(printf '%s' "${{ inputs.fi_months }}" | tr ',' '\n' \
-              | tr -d ' \t' | grep "^${{ matrix.year }}-" | paste -sd, - || true)
+            months=$(printf '%s' "$FI_MONTHS" | tr ',' '\n' \
+              | tr -d ' \t' | grep "^$YEAR-" | paste -sd, - || true)
             if [[ -z "$months" ]]; then
-              echo "No requested months fall in ${{ matrix.year }} — nothing to do."
+              echo "No requested months fall in $YEAR — nothing to do."
               exit 0
             fi
-            echo "Repairing ${{ matrix.year }}: $months"
+            echo "Repairing $YEAR: $months"
             args+=(--months "$months")
           fi
           python -m src.pipeline.run_backfill "${args[@]}"
@@ -519,11 +347,14 @@ jobs:
           CVM_INGEST_CONCURRENCY: "6"
           CVM_FI_CONCURRENCY: "3"
           CVM_SKIP_ETF_REFRESH: "1"
+          ENTITY: ${{ matrix.entity }}
+          START_YEAR: ${{ inputs.start_year }}
+          END_YEAR: ${{ inputs.end_year }}
         run: |
           python -m src.pipeline.run_backfill \
-            --entity ${{ matrix.entity }} \
-            --start-year ${{ inputs.start_year }} \
-            --end-year ${{ inputs.end_year }} \
+            --entity "$ENTITY" \
+            --start-year "$START_YEAR" \
+            --end-year "$END_YEAR" \
             --cvm-only
 
   # ETF registry — distinct entity (curated ticker->CNPJ seed enriched from
@@ -766,16 +597,15 @@ jobs:
   # Build the analytical layer (dims, fact matviews, rankings, fraud screens)
   # once the full backfill has populated the base tables — several analytical
   # files smoke-check for data and RAISE on an empty DB, so this must run AFTER
-  # ingest. continue-on-error so a single analytical hiccup doesn't mark an
-  # otherwise-successful multi-hour backfill as failed; the step output stays
-  # visible. Run regardless of individual slice failures (if: always()) so a
-  # partial-but-useful dataset still gets its analytics.
+  # ingest. It runs regardless of individual slice failures (if: always()) so
+  # a partial-but-useful dataset still gets its analytics, and a failed apply
+  # turns the run red: daily_ingest.yml dropped continue-on-error here after
+  # 04_fact_fund_monthly.sql failed silently from 2026-08-30 (#1111).
   apply-analytical:
     name: "Apply analytical layer"
     needs:
       [backfill-fi, backfill-other, backfill-etf, backfill-bacen, backfill-ibge]
     if: ${{ always() && (inputs.bacen_only == true || inputs.entity == 'all' || inputs.ibge == true) && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
-    continue-on-error: true  # one analytical hiccup must not fail a multi-hour backfill that landed
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
