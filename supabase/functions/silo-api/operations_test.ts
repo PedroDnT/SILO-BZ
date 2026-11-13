@@ -64,3 +64,11 @@ Deno.test("explicit routes keep tier gates and errors", async () => {
   const failure=makeHandler({env,gate,fetchImpl:()=>Promise.resolve(Response.json({message:"bad token"},{status:401}))});
   assertEquals((await failure(new Request(base+"/macro/series?series=CDI"))).status,401);
 });
+Deno.test("hosted internal HTTP paths produce public HTTPS operation continuations", async () => {
+  const rows=[{date:"2026-11-11",series:"CDI"},{date:"2026-11-12",series:"CDI"}];
+  const h=makeHandler({env,gate,fetchImpl:()=>Promise.resolve(Response.json(rows))});
+  const r=await h(new Request("http://test.supabase.co/silo-api/v2/macro/series?series=CDI&from=2026-11-11&to=2026-11-12&limit=1"));
+  const b=await r.json();
+  assert(b.next_page_url.startsWith(base+"/macro/series?cursor="));
+  assertEquals((await h(new Request(b.next_page_url))).status,200);
+});

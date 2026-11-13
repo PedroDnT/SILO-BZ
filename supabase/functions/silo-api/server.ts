@@ -178,7 +178,11 @@ async function handle(
       throw new ApiError(400, "bad_request", "A cursor on POST needs the same body as the first page; this body differs. Send it unchanged, or start again without cursor.", "body");
     }
   }
-  parsed.paging = { cursor, q: Object.fromEntries(query.entries()), base: `${url.origin}${url.pathname}`, body: digest };
+  // Hosted Edge requests have an internal HTTP URL without /functions/v1.
+  const pageBase = operation && !("error" in cfg)
+    ? `${cfg.restUrl.replace(/\/rest\/v1$/, "")}/functions/v1/silo-api/v2${operation.path}`
+    : `${url.origin}${url.pathname}`;
+  parsed.paging = { cursor, q: Object.fromEntries(query.entries()), base: pageBase, body: digest };
   if ("error" in cfg) throw new ApiError(503, "unavailable", `silo-api is misconfigured: ${cfg.error}`);
   const presented = callerBearer(req.headers.get("authorization"), cfg);
   const integration = integrationKey(presented);
