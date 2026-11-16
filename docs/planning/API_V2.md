@@ -149,7 +149,7 @@ Main parameters, defaults in brackets.
 | `funds` | `kind` [`profile`; `nav`, `holdings`, `debentures`, `properties`], `family` [all; `fi`, `fidc`, `fii`, `fip`, ...] | 3 years | `holding` [none: reverse lookup by ticker or issuer], `status` [all] | built |
 | `fidc` | `kind` [`portfolio`; `tranches`, `aging`, `cedentes`, `sacados`] | 2 years | `series`, `cedente`, `item` [all] | built |
 | `derivatives` | `kind` [`chain`; `history`, `exercises`, `termo`, `futures`, `futures_nth`, `futures_curve`, `di_settlement`], `date` [latest session] | 1 year | `expiry_from` [today] | built |
-| `curves` | `kind` [`snapshot`; `history`, `vertices`], `curve` [`PRE`; `DOC`, `DPL`], `tenor` [360 calendar days, the one-year fixed vertex, for history] | 1 year | `date` [latest session] | built |
+| `curves` | `kind` [`snapshot`; `history`, `vertices`, `treasury`], `curve` [`PRE`; `DOC`, `DPL`], `tenor` [360 calendar days, the one-year fixed vertex, for history] | 1 year | `date` [latest session] | built |
 | `macro` | `kind` [`series`; `inflation`, `inflation_items`, `fx`, `expectations`] | 1 year; 3 years for inflation | `family`, `currency` [`USD`], `horizon` | built |
 | `positioning` | `kind` [`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`] | 3 months | `sector`, `investor_type` [all] | built |
 | `events` | `kind` [`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`, `dividends`], `category` [all] | 12 months | `family` [all] | built |
@@ -283,7 +283,11 @@ Notes:
   `tenor` is B3's nominal tenor in calendar days (`p_tenor_days`, default 360,
   the one-year fixed vertex), not 252 business days: the SQL takes only a fixed
   vertex and refuses any other tenor with the list, and the gateway never
-  interpolates.
+  interpolates. `treasury` (#1163) calls `treasury_direct`: Tesouro Direto
+  posted rates and prices per title, newest base date first, with hidden
+  `title` and `maturity`. It is Tesouro Nacional open data under ODbL 1.0, the
+  one resource that names its source (owner decision 2026-11-16): every row
+  carries `source` and `licence`.
 - `macro`, as built (#1057): `series` calls `macro_series` (`id` required),
   `inflation` calls `inflation` (`family` -> `p_family`), `inflation_items`
   calls `inflation_items` (with an `id`, `p_level` is NULL so the item is
@@ -518,7 +522,7 @@ The children of #1052 are the authoritative order.
 | `funds` | `funds`, `fund_profile`, `fund_nav`, `fund_holdings`, `fund_debentures`, `fii_property_history` |
 | `fidc` | `fidc_portfolio`, `fidc_tranches`, `fidc_aging`, `fidc_cedentes`, `fidc_sacados` |
 | `derivatives` | `option_chain`, `option_history`, `option_exercises`, `termo_history`, `future_series`, `future_nth_series`, `future_curve`, `di_settlement` |
-| `curves` | `curve`, `curve_history`, `reference_rate` |
+| `curves` | `curve`, `curve_history`, `reference_rate`, `treasury_direct` |
 | `macro` | `macro_series`, `inflation`, `inflation_items`, `ptax`, `ptax_daily`, `focus_expectations` |
 | `positioning` | `short_interest`, `short_interest_by_sector`, `lending_trades`, `lending_participants`, `investor_flow` |
 | `events` | `company_events`, `fund_documents`, `fund_restatements`, `fund_restatement_diff`, `rj_listed_documents` |

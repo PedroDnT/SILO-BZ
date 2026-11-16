@@ -726,6 +726,15 @@
    "required": [
     "p_ticker"
    ]
+  },
+  "treasury_direct": {
+   "params": [
+    "p_from",
+    "p_maturity",
+    "p_title",
+    "p_to"
+   ],
+   "required": []
   }
  }
 }

@@ -146,7 +146,12 @@ def test_baseline_comparison_does_not_score_v2_answers():
     assert v2.MARKDOWN_RESULT != agent_eval.MARKDOWN_RESULT
 
 
-def test_default_budget_check_passes_all_twelve_cases_with_current_ledger(monkeypatch, capsys):
+def test_default_budget_check_passes_all_twelve_cases_with_pre_run_ledger(tmp_path, monkeypatch, capsys):
+    ledger = tmp_path / "eval-spend.json"
+    ledger.write_text(json.dumps({"estimated_usd": 2.164687,
+                                  "entries": [{"run": "pre-run", "case": "L1", "estimated_usd": 2.164687}]}))
+    monkeypatch.setattr(agent_eval, "SPEND_LEDGER", ledger)
+
     def unexpected(*args, **kwargs):
         raise AssertionError("default must not call the network or inspect keys")
 
