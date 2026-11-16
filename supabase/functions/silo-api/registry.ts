@@ -1618,7 +1618,7 @@ export const REGISTRY: Registry = {
           "visibility": "main",
           "type": "list",
           "default": "all",
-          "doc": "Comma-separated. kind=freshness: dataset names (funds_fidc, quotes, ...). kind=metrics: fund families (fi, fidc, ...). A name no row carries is refused, with the known names."
+          "doc": "Comma-separated. kind=freshness: dataset names, e.g. quotes, financials, company_events, funds_fidc, fund_nav, macro_series; the full list is the dataset column of kind=freshness called with dataset left at all. kind=metrics: fund families, e.g. fi, fidc, fii; the full list is the entity_type column of kind=metrics with dataset left at all. A name no row carries is refused as bad_request, the closest names first and then every known name."
         }
       ],
       "kinds": {

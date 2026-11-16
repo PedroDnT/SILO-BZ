@@ -176,6 +176,32 @@ Deno.test("a gateway error is returned verbatim as isError", async () => {
   assertEquals(err.innererror.sqlstate, "22023");
 });
 
+Deno.test("silo_coverage: a guessed dataset name is refused with the closest and the known names (#1177)", async () => {
+  const rows = ["company_events", "financials", "funds_fidc", "quotes"].map((dataset) => ({
+    dataset,
+    as_of: "2026-11-13",
+    complete_through: null,
+    landed_at: null,
+    landed_git_sha: null,
+  }));
+  for (const [guess, near] of [["company_financials", "Closest: financials, company_events."], ["cia", null]] as const) {
+    const stub = stubFetch(200, JSON.stringify(rows));
+    const res = await callTool("silo_coverage", { kind: "freshness", dataset: [guess] }, { env, fetchImpl: stub.impl });
+    assertEquals(res.isError, true);
+    const err = JSON.parse(res.content[0].text).error;
+    assertEquals(err.code, "bad_request");
+    assertEquals(err.target, "dataset");
+    assertStringIncludes(err.message, `no row has dataset ${guess}.`);
+    if (near) assertStringIncludes(err.message, near);
+    else assert(!err.message.includes("Closest"), err.message);
+    assertStringIncludes(err.message, "Known: company_events, financials, funds_fidc, quotes.");
+  }
+  // The schema says where the valid names come from, so a caller need not guess.
+  const dataset = (TOOLS_BY_NAME.get("silo_coverage")!.inputSchema.properties as Record<string, { description: string }>).dataset;
+  assertStringIncludes(dataset.description, "the full list is the dataset column of kind=freshness");
+  assertStringIncludes(dataset.description, "financials");
+});
+
 Deno.test("a bad argument is refused before any request, in the v2 error shape", async () => {
   const stub = stubFetch(200, "[]");
   const misplaced = await callTool("silo_prices", { id: "PETR4", fields: "all" }, { env, fetchImpl: stub.impl });
