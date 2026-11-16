@@ -1553,5 +1553,30 @@
         "tier": "pro"
       }
     }
+  },
+  "/curves/treasury": {
+    "status": 200,
+    "params": {
+      "title": "Tesouro IPCA+",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "base_date": "2026-11-13",
+          "title": "Tesouro IPCA+",
+          "maturity": "2029-05-15",
+          "buy_rate_pct": 7.47,
+          "sell_rate_pct": 7.59,
+          "buy_pu": 3995.96,
+          "sell_pu": 3982.95,
+          "base_pu": 3982.95,
+          "source": "Tesouro Nacional",
+          "licence": "ODbL-1.0"
+        }
+      ]
+    },
+    "caption": "Rows of api.treasury_direct run on the source file of 2026-11-16, before the first deploy; replace with a live response after it. This excerpt omits pagination links."
   }
 }

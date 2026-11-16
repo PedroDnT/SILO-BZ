@@ -40,7 +40,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 86  # v86: api.share_counts, api.free_float (#1161); history in serve.catalog.py.
+KNOWN_CATALOG_VERSION = 87  # v87: api.treasury_direct (#1163); history in serve.catalog.py.
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -1643,6 +1643,22 @@ class SiloClient:
         """
         return self.rpc(
             "future_nth_series", p_root=root, p_rank=rank,
+            p_from=_iso(start), p_to=_iso(end),
+        )
+
+    def treasury_direct(self, title: Optional[str] = None, maturity: Datish = None,
+                        start: Datish = None, end: Datish = None) -> List[Dict[str, Any]]:
+        """Tesouro Direto posted rates and prices per title, newest base date first.
+
+            silo.treasury_direct()                                # every title, newest date
+            silo.treasury_direct("Tesouro IPCA+", "2035-05-15", start="2026-01-01")
+
+        Tesouro Nacional open data under ODbL 1.0: credit Tesouro Nacional when
+        you reuse it. Rates are posted retail quotes in % a year, not trades;
+        a NULL price is a side not on sale. Refuses above 1000 rows.
+        """
+        return self.rpc(
+            "treasury_direct", p_title=title, p_maturity=_iso(maturity),
             p_from=_iso(start), p_to=_iso(end),
         )
 

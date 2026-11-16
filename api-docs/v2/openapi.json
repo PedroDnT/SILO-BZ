@@ -962,7 +962,7 @@
         "tags": [
           "Markets and macro"
         ],
-        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nWhat does the rate curve look like? B3 reference curves, their history and vertices.\n\nExample: `/v2/curves?curve=PRE`\n\nKinds:\n\n- `snapshot`: api.curve: one curve on one session, shortest vertex first, fixed and moving vertices with rate_basis.\n- `history`: api.curve_history: one fixed vertex through time, oldest first. Refuses above 1000 rows: narrow from/to.\n- `vertices`: api.reference_rate (a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published). Paged with order + limit + offset; the default session is pinned in the cursor.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\nPRE and DPL are % a.a. on 252 business days; DOC is % a.a. linear on 360 calendar days, so its vertices under about 30 calendar days are not a rate level. rate_basis rides on every snapshot and history row.\n\nPast the last maturity of the anchoring contract (DI1, DDI, DAP) B3 extrapolates: the long vertices are not prices. Nothing is interpolated: a tenor that is not one of B3's fixed vertices is refused with the list.\n\n`GET /v2/curves?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nWhat does the rate curve look like? B3 reference curves, their history and vertices.\n\nExample: `/v2/curves?curve=PRE`\n\nKinds:\n\n- `snapshot`: api.curve: one curve on one session, shortest vertex first, fixed and moving vertices with rate_basis.\n- `history`: api.curve_history: one fixed vertex through time, oldest first. Refuses above 1000 rows: narrow from/to.\n- `vertices`: api.reference_rate (a GET view): one curve's vertices on one session (business_days, calendar_days, rate_pct as published). Paged with order + limit + offset; the default session is pinned in the cursor.\n- `treasury`: api.treasury_direct: Tesouro Direto posted morning buy and sell rates (% a year, as published) and PU per title, newest base date first. Quotes, not trades; a NULL price is a side not on sale. Every row carries source (Tesouro Nacional) and licence (ODbL-1.0): credit Tesouro Nacional when you reuse it. About 60 titles a base date.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\nPRE and DPL are % a.a. on 252 business days; DOC is % a.a. linear on 360 calendar days, so its vertices under about 30 calendar days are not a rate level. rate_basis rides on every snapshot and history row.\n\nPast the last maturity of the anchoring contract (DI1, DDI, DAP) B3 extrapolates: the long vertices are not prices. Nothing is interpolated: a tenor that is not one of B3's fixed vertices is refused with the list.\n\nkind treasury is Tesouro Nacional open data under the ODbL 1.0 licence, the one resource that names its source: credit Tesouro Nacional, and offer a database derived from it under the same licence. The rates are the platform's posted retail quotes, not trades.\n\n`GET /v2/curves?help` describes the main parameters, `?help=all` adds the hidden ones.",
         "x-mint": {
           "href": "/api-docs/v2/reference/curves"
         },
@@ -971,13 +971,14 @@
             "name": "kind",
             "in": "query",
             "required": false,
-            "description": "snapshot: one curve on one session, every vertex, with its rate basis. history: one fixed vertex through time. vertices: the raw reference-rate rows (api.reference_rate) of one curve on one session. Default: snapshot.",
+            "description": "snapshot: one curve on one session, every vertex, with its rate basis. history: one fixed vertex through time. vertices: the raw reference-rate rows (api.reference_rate) of one curve on one session. treasury: Tesouro Direto posted rates and prices per title, newest base date first (Tesouro Nacional, ODbL). Default: snapshot.",
             "schema": {
               "type": "string",
               "enum": [
                 "snapshot",
                 "history",
-                "vertices"
+                "vertices",
+                "treasury"
               ],
               "default": "snapshot"
             }
@@ -1053,6 +1054,25 @@
             "in": "query",
             "required": false,
             "description": "Hidden parameter (`?help=all` lists it). kind snapshot and vertices: the B3 session, YYYY-MM-DD. Default: the newest session held for the curve (vertices: the newest in the 14 days to today).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "title",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind treasury: one title type as Tesouro Nacional publishes it (Tesouro Selic, Tesouro Prefixado, Tesouro IPCA+, Tesouro IPCA+ com Juros Semestrais, ...); case is ignored, an unknown type is refused with the list. Default: none: every title type.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "maturity",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind treasury: one maturity, YYYY-MM-DD. Default: none: every maturity.",
             "schema": {
               "type": "string",
               "format": "date"
