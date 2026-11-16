@@ -3932,6 +3932,143 @@
         "security": []
       }
     },
+    "/derivatives/futures-nth": {
+      "get": {
+        "operationId": "v2_derivatives_futures_nth",
+        "summary": "Nth futures contract history",
+        "tags": [
+          "Markets and macro"
+        ],
+        "description": "The Nth nearest DI1, DOL or WDO contract through time, oldest first. Each row carries its ticker; nothing is adjusted at a roll.",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/derivatives/futures_nth"
+        },
+        "parameters": [
+          {
+            "name": "root",
+            "in": "query",
+            "required": true,
+            "description": "Futures contract root: DI1, DOL or WDO.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DI1",
+                "DOL",
+                "WDO"
+              ]
+            },
+            "example": "DOL"
+          },
+          {
+            "name": "rank",
+            "in": "query",
+            "required": false,
+            "description": "Which contract by maturity: 1 = the nearest alive, 2 = the next.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "example": 2
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, subject to your tier.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor from the next page URL.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "trade_date": "2026-01-02",
+                      "ticker": "DOLH26",
+                      "contract_month": "2026-03-01",
+                      "settlement_rate": null,
+                      "settlement_price": 5494.3
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/derivatives/futures-curve": {
       "get": {
         "operationId": "v2_derivatives_futures_curve",

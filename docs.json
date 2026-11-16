@@ -103,6 +103,7 @@
                   "api-docs/v2/operations/derivatives/exercises",
                   "api-docs/v2/operations/derivatives/termo",
                   "api-docs/v2/operations/derivatives/futures",
+                  "api-docs/v2/operations/derivatives/futures_nth",
                   "api-docs/v2/operations/derivatives/futures_curve",
                   "api-docs/v2/operations/derivatives/di_settlement"
                 ]

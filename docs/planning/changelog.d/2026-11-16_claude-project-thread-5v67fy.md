@@ -1,0 +1,1 @@
+| 2026-11-16 | claude/project-thread-5v67fy | #1158: serve the Nth nearest DI1, DOL or WDO futures contract through time: `api.future_nth_series` (catalog v84) and API v2 `derivatives?kind=futures_nth&id=DOL&rank=2`. Each row is the published row with its ticker; nothing adjusted or spliced. |
