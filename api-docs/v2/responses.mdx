@@ -46,8 +46,19 @@ for point-in-time comparisons.
 
 ## Error contract
 
-An error response has `error.code`, `error.message`, `error.target`, and
-`error.innererror`. Read the message and hint before changing the request.
+An error response has `error.code`, `error.reason`, `error.message`,
+`error.target`, and `error.innererror`. Branch on `code` and `reason`, then read
+the message and hint before changing the request.
+
+| `code` | `reason` | HTTP | What to do |
+| --- | --- | --- | --- |
+| `over_limit` | `row_cap` | 400 | The answer is over one 1,000-row page. Narrow the window or filters. |
+| `over_limit` | `tier_cap` | 400 | The answer is over your tier ceiling. Narrow the request or sign in. |
+| `over_limit` | `null` | 400 | Another SILO refusal. Read the message and hint. |
+| `unknown_id` | `null` | 404 | SILO does not hold this id. Look it up again with search. |
+| `rate_limited` | `null` | 429 | Wait `Retry-After` seconds. |
+
+Every other code has `reason: null`.
 The [full resource reference](/api-docs/v2/reference/index) lists the machine-readable
 schema. Never turn a failed request into a zero, an empty successful result or an
 estimated observation.

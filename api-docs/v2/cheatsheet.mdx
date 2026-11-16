@@ -57,4 +57,4 @@ MCP v2 (`silo-mcp-v2`, deployed preview) has one tool per resource, named `silo_
 
 ### Errors
 
-One object: `{ "error": { "code", "message", "target", "innererror" } }`. The ten codes are `bad_request`, `unknown_parameter`, `unknown_id`, `unauthorized`, `forbidden_for_tier`, `over_limit`, `rate_limited`, `timeout`, `unavailable` and `internal`.
+One object: `{ "error": { "code", "reason", "message", "target", "innererror" } }`. The ten codes are `bad_request`, `unknown_parameter`, `unknown_id`, `unauthorized`, `forbidden_for_tier`, `over_limit`, `rate_limited`, `timeout`, `unavailable` and `internal`. `reason` is `row_cap` or `tier_cap` on an `over_limit`, and `null` otherwise. An unknown ticker is `unknown_id` (HTTP 404). A 429 sends `Retry-After` in seconds.

@@ -47,7 +47,7 @@ function cutRefusal(endpoint: string, n: number): ApiError {
     "id",
     { sqlstate: null, hint: `api.${endpoint} cuts at a tier ceiling (${c.ceilings.join(", ")}) without refusing.` },
   );
-  e.rowCap = true; // exercises: the date-window walk halves the window and tries again
+  e.reason = "row_cap"; // exercises: the date-window walk halves the window and tries again
   return e;
 }
 

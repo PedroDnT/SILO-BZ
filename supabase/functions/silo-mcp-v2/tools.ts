@@ -184,7 +184,9 @@ export const SERVER_INSTRUCTIONS =
   "Read the JSON in the first text block: data is a list, meta.request records applied parameters, and meta.tier " +
   "shows access. Follow the opaque cursor in next_page_url with the same tool, keeping the original body for POST. " +
   "If meta.tier_cap_reached is true, report a partial result. Keep nulls as missing. Inspect isError before reading data. " +
-  "Narrow over_limit queries; respect rate limits. Cite the observation dates and provenance.";
+  "Branch on error.code and error.reason, not the message: over_limit with reason row_cap means narrow or page, " +
+  "tier_cap means narrow or sign in; unknown_id means look the id up again with silo_search. " +
+  "On rate_limited wait Retry-After seconds. Cite the observation dates and provenance.";
 
 // ---------------------------------------------------------------------------
 // The call: arguments to one gateway request, run in process.
@@ -334,7 +336,10 @@ export async function callTool(name: string, rawArgs: unknown, deps: CallDeps): 
   const req = new Request(`${gatewayBase(deps.env)}${plan.path}`, { method: plan.method, headers, body: plan.body });
   const res = await gateway(req);
   const text = await res.text();
-  const provenance = `provenance: ${plan.method} ${plan.path} (silo-api gateway) · HTTP ${res.status}`;
+  // MCP has no response headers, so a 429's Retry-After rides on the provenance line.
+  const retry = res.headers.get("Retry-After");
+  const provenance = `provenance: ${plan.method} ${plan.path} (silo-api gateway) · HTTP ${res.status}` +
+    (retry ? ` · Retry-After ${retry} s` : "");
   if (!res.ok) return errorResult(text, provenance);
   const content: TextContent[] = [{ type: "text", text }, { type: "text", text: provenance }];
   try {

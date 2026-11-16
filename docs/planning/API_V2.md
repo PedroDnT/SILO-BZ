@@ -345,6 +345,7 @@ uses a secret key.
 ```json
 { "error": {
     "code": "over_limit",
+    "reason": "row_cap",
     "message": "macro_series: refused, this request would return more than 1000 rows. ...",
     "target": null,
     "innererror": { "sqlstate": "22023", "hint": "..." } } }
@@ -403,7 +404,17 @@ uses a secret key.
 Top-level codes (10): `bad_request`, `unknown_parameter`, `unknown_id`,
 `unauthorized`, `forbidden_for_tier`, `over_limit`, `rate_limited`, `timeout`,
 `unavailable`, `internal`. A PostgREST `22023` maps to `over_limit` and keeps
-its message, details and hint verbatim; `57014` maps to `timeout`.
+its message, details and hint verbatim; `57014` maps to `timeout`. A `22023`
+whose details start `reason=unknown_` (quote_history's unknown ticker) is HTTP
+404 `unknown_id`, target `id`, with the same verbatim text.
+
+Every error has `reason`, a stable string an agent branches on instead of the
+message. It is set only on `over_limit`: `row_cap` (the answer is over one
+1,000-row page: narrow or page) or `tier_cap` (over the caller's tier ceiling:
+narrow or sign in); an `over_limit` that is neither, and every other code, has
+`reason: null`. The gateway reads the reason from phrases the SQL's own messages
+fix (`errors.ts`, `overLimitReason`). `rate_limited` (429) sends `Retry-After`
+in seconds; MCP v2 has no headers, so it repeats it on the provenance line.
 
 ## 6. Tiers
 

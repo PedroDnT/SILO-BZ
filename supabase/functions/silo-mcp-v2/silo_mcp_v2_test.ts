@@ -152,6 +152,18 @@ Deno.test("a call runs the gateway: one PostgREST request, the envelope verbatim
   assertStringIncludes(res.content[1].text, "GET /v2/search?q=petrobras");
 });
 
+Deno.test("a 429 is isError with reason null, and its Retry-After is on the provenance line", async () => {
+  const stub = stubFetch(200, "[]");
+  const limited = (input: string, init: RequestInit): Promise<Response> =>
+    String(input).endsWith("/rpc/rate_hit") ? Promise.resolve(new Response("999", { status: 200 })) : stub.impl(input, init);
+  const res = await callTool("silo_search", { q: "petrobras" }, { env, fetchImpl: limited });
+  assertEquals(res.isError, true);
+  const err = JSON.parse(res.content[0].text).error;
+  assertEquals(err.code, "rate_limited");
+  assertEquals(err.reason, null);
+  assert(/· HTTP 429 · Retry-After \d+ s$/.test(res.content[1].text), res.content[1].text);
+});
+
 Deno.test("a gateway error is returned verbatim as isError", async () => {
   const pg = { code: "22023", message: "fidc_portfolio: refused, more than 1000 rows", hint: "pin p_kind", details: null };
   const stub = stubFetch(400, JSON.stringify(pg));
@@ -159,6 +171,7 @@ Deno.test("a gateway error is returned verbatim as isError", async () => {
   assertEquals(res.isError, true);
   const err = JSON.parse(res.content[0].text).error;
   assertEquals(err.code, "over_limit");
+  assertEquals(err.reason, "row_cap");
   assertEquals(err.message, pg.message, "SILO's refusal text is unchanged");
   assertEquals(err.innererror.sqlstate, "22023");
 });

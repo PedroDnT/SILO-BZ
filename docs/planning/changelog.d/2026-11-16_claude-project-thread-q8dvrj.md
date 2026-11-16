@@ -1,0 +1,1 @@
+| 2026-11-16 | claude/project-thread-q8dvrj | API v2 errors carry a stable `reason` (`row_cap`, `tier_cap`, else null) next to `code`; an unknown ticker is 404 `unknown_id`, not `over_limit` (Refs #1118); MCP v2 repeats a 429's `Retry-After` on its provenance line. |

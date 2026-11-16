@@ -211,6 +211,7 @@
             "type": "object",
             "required": [
               "code",
+              "reason",
               "message",
               "target",
               "innererror"
@@ -230,6 +231,18 @@
                   "unavailable",
                   "internal"
                 ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "row_cap",
+                  "tier_cap",
+                  null
+                ],
+                "description": "over_limit only: row_cap (over one 1,000-row page: narrow or page) or tier_cap (over the tier ceiling: narrow or sign in). Null otherwise."
               },
               "message": {
                 "type": "string"
