@@ -1136,12 +1136,13 @@ export const REGISTRY: Registry = {
     {
       "name": "events",
       "status": "built",
-      "summary": "What was filed or restated? Company IPE filings, fund documents, restatements, judicial recovery.",
+      "summary": "What was filed, restated or paid? Company IPE filings, fund documents, restatements, judicial recovery, cash dividends.",
       "example": "/v2/events?id=PETR4",
       "shared": ["id", "from", "to", "limit"],
       "window_months": 12,
       "notes": [
-        "id is a ticker, 14-digit CNPJ or CVM code for kind company and judicial_recovery, and a fund CNPJ for kind fund, restatements and restatement_diff.",
+        "id is a ticker, 14-digit CNPJ or CVM code for kind company and judicial_recovery, a fund CNPJ for kind fund, restatements and restatement_diff, and a B3 ticker for kind dividends.",
+        "kind dividends: dates are last_date_with (the last session with the right), and the default window is 60 months. B3 publishes payment_date only since 2025; earlier rows carry null.",
         "Dates are delivery days. With no to, company and judicial_recovery end today and the fund kinds have no upper bound."
       ],
       "parameters": [
@@ -1154,10 +1155,11 @@ export const REGISTRY: Registry = {
             "fund",
             "restatements",
             "restatement_diff",
-            "judicial_recovery"
+            "judicial_recovery",
+            "dividends"
           ],
           "default": "company",
-          "doc": "company: a listed company's IPE filings (fatos relevantes, comunicados, ...). fund: a fund's FNET documents. restatements: FNET documents re-filed as a new version (with no id: every fund's). restatement_diff: field by field, what changed in a fund's restated documents. judicial_recovery: listed companies' judicial recovery filings (with no id: every company's)."
+          "doc": "company: a listed company's IPE filings (fatos relevantes, comunicados, ...). fund: a fund's FNET documents. restatements: FNET documents re-filed as a new version (with no id: every fund's). restatement_diff: field by field, what changed in a fund's restated documents. judicial_recovery: listed companies' judicial recovery filings (with no id: every company's). dividends: one ticker's cash distributions (dividends, JCP gross of tax, rendimentos) with value per share, ex-date and payment date."
         },
         {
           "name": "category",
@@ -1246,6 +1248,20 @@ export const REGISTRY: Registry = {
             "to": "p_to",
             "category": "p_doc_type"
           }
+        },
+        "dividends": {
+          "doc": "api.dividends: B3's cash distributions for one ticker, newest last_date_with first: value_per_share, approved_on, last_date_with, ex_date (first session after it, tape from 2019), payment_date (B3 supplement, 2025 on; null otherwise), one row per installment. Paged by date windows.",
+          "endpoint": "dividends",
+          "paging": { "method": "date_window", "order": "desc" },
+          "window_months": 60,
+          "args": {
+            "id": "p_ticker",
+            "from": "p_from",
+            "to": "p_to"
+          },
+          "require_one_of": [
+            "id"
+          ]
         }
       }
     },

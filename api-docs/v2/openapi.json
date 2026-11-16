@@ -1344,7 +1344,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nWhat was filed or restated? Company IPE filings, fund documents, restatements, judicial recovery.\n\nExample: `/v2/events?id=PETR4`\n\nKinds:\n\n- `company`: api.company_events: IPE filings, newest first. Paged by date windows.\n- `fund`: api.fund_documents: FNET documents, newest first, each version its own fnet_id. Refuses above 1000 rows: narrow from or pin category.\n- `restatements`: api.fund_restatements: one row per document with versao > 1, with the version it most plausibly replaced and whether SILO diffed the pair.\n- `restatement_diff`: api.fund_restatement_diff: one row per field that changed between a restated document and its predecessor (the FIDC informe mensal for now).\n- `judicial_recovery`: api.rj_listed_documents: judicial recovery (recuperacao judicial) filings of listed companies, newest first.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\nid is a ticker, 14-digit CNPJ or CVM code for kind company and judicial_recovery, and a fund CNPJ for kind fund, restatements and restatement_diff.\n\nDates are delivery days. With no to, company and judicial_recovery end today and the fund kinds have no upper bound.\n\n`GET /v2/events?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nWhat was filed, restated or paid? Company IPE filings, fund documents, restatements, judicial recovery, cash dividends.\n\nExample: `/v2/events?id=PETR4`\n\nKinds:\n\n- `company`: api.company_events: IPE filings, newest first. Paged by date windows.\n- `fund`: api.fund_documents: FNET documents, newest first, each version its own fnet_id. Refuses above 1000 rows: narrow from or pin category.\n- `restatements`: api.fund_restatements: one row per document with versao > 1, with the version it most plausibly replaced and whether SILO diffed the pair.\n- `restatement_diff`: api.fund_restatement_diff: one row per field that changed between a restated document and its predecessor (the FIDC informe mensal for now).\n- `judicial_recovery`: api.rj_listed_documents: judicial recovery (recuperacao judicial) filings of listed companies, newest first.\n- `dividends`: api.dividends: B3's cash distributions for one ticker, newest last_date_with first: value_per_share, approved_on, last_date_with, ex_date (first session after it, tape from 2019), payment_date (B3 supplement, 2025 on; null otherwise), one row per installment. Paged by date windows.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\nid is a ticker, 14-digit CNPJ or CVM code for kind company and judicial_recovery, a fund CNPJ for kind fund, restatements and restatement_diff, and a B3 ticker for kind dividends.\n\nkind dividends: dates are last_date_with (the last session with the right), and the default window is 60 months. B3 publishes payment_date only since 2025; earlier rows carry null.\n\nDates are delivery days. With no to, company and judicial_recovery end today and the fund kinds have no upper bound.\n\n`GET /v2/events?help` describes the main parameters, `?help=all` adds the hidden ones.",
         "x-mint": {
           "href": "/api-docs/v2/reference/events"
         },
@@ -1353,7 +1353,7 @@
             "name": "kind",
             "in": "query",
             "required": false,
-            "description": "company: a listed company's IPE filings (fatos relevantes, comunicados, ...). fund: a fund's FNET documents. restatements: FNET documents re-filed as a new version (with no id: every fund's). restatement_diff: field by field, what changed in a fund's restated documents. judicial_recovery: listed companies' judicial recovery filings (with no id: every company's). Default: company.",
+            "description": "company: a listed company's IPE filings (fatos relevantes, comunicados, ...). fund: a fund's FNET documents. restatements: FNET documents re-filed as a new version (with no id: every fund's). restatement_diff: field by field, what changed in a fund's restated documents. judicial_recovery: listed companies' judicial recovery filings (with no id: every company's). dividends: one ticker's cash distributions (dividends, JCP gross of tax, rendimentos) with value per share, ex-date and payment date. Default: company.",
             "schema": {
               "type": "string",
               "enum": [
@@ -1361,7 +1361,8 @@
                 "fund",
                 "restatements",
                 "restatement_diff",
-                "judicial_recovery"
+                "judicial_recovery",
+                "dividends"
               ],
               "default": "company"
             }
@@ -1380,7 +1381,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "By kind: company takes a listed company's ticker, 14-digit CNPJ or CVM code; fund, restatement_diff take a 14-digit fund CNPJ (punctuation allowed); restatements takes a 14-digit fund CNPJ (punctuation allowed; none: every fund's); judicial_recovery takes a listed company's ticker, 14-digit CNPJ or CVM code (none: every company's). Required for kinds company, fund, restatement_diff. Default: none.",
+            "description": "By kind: company takes a listed company's ticker, 14-digit CNPJ or CVM code; fund, restatement_diff take a 14-digit fund CNPJ (punctuation allowed); restatements takes a 14-digit fund CNPJ (punctuation allowed; none: every fund's); judicial_recovery takes a listed company's ticker, 14-digit CNPJ or CVM code (none: every company's); dividends takes a B3 ticker (PETR4, HGLG11). Required for kinds company, fund, restatement_diff, dividends. Default: none.",
             "schema": {
               "type": "string"
             },

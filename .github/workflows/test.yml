@@ -780,6 +780,13 @@ jobs:
       - name: credit implied rate serving behaves (executed, not just compiled)
         run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/credit_implied_rate_behaviour.sql
 
+      # api.dividends (40_api_dividends.sql, catalog v84, #1157), executed on
+      # synthetic tickers: the share class, installment payment dates, an
+      # ambiguous date left NULL, supplement-only events, the window, the
+      # refusals and the row cap. Rolled back.
+      - name: dividends behaves (executed, not just compiled)
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/dividends_behaviour.sql
+
       - name: identical index replay preserves indexes; required widening still applies
         run: |
           python3 scripts/guard_noop_ddl.py tests/sql/guard_index_replay_behaviour.sql > /tmp/guard-index-test.sql

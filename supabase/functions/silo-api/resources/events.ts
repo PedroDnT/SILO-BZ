@@ -4,7 +4,8 @@
 // fund -> api.fund_documents, restatements -> api.fund_restatements (no id:
 // every fund's; hidden family -> p_tipo_fundo), restatement_diff ->
 // api.fund_restatement_diff, judicial_recovery -> api.rj_listed_documents (no
-// id: every company's). category is the source's own label (p_category,
+// id: every company's), dividends -> api.dividends (id: a B3 ticker, required;
+// default window 60 months). category is the source's own label (p_category,
 // p_tipo or p_doc_type). The fund kinds take a fund CNPJ as id. Default
 // window: 12 months back from `to` (or today, UTC-3).
 

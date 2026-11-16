@@ -270,7 +270,7 @@ ISSUE_1056 = {
     },
     "events": {
         "company": "company_events", "fund": "fund_documents", "restatements": "fund_restatements",
-        "restatement_diff": "fund_restatement_diff", "judicial_recovery": "rj_listed_documents",
+        "restatement_diff": "fund_restatement_diff", "judicial_recovery": "rj_listed_documents", "dividends": "dividends",
     },
 }
 WINDOWS_1056 = {"funds": 36, "fidc": 24, "events": 12}

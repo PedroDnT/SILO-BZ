@@ -39,7 +39,7 @@ At most 3 main parameters per resource, `kind` included. The default is first.
 | `curves` | `kind` (`snapshot`; `history`, `vertices`), `curve` (`PRE`; `DOC`, `DPL`), `tenor` (`360`) | `from`, `to`, `limit` | 12 months |
 | `macro` | `kind` (`series`; `inflation`, `inflation_items`, `fx`, `expectations`) | `id`, `from`, `to`, `limit` | 12 months |
 | `positioning` | `kind` (`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`) | `id`, `from`, `to`, `limit` | 3 months |
-| `events` | `kind` (`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`), `category` (`all`) | `id`, `from`, `to`, `limit` | 12 months |
+| `events` | `kind` (`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`, `dividends`), `category` (`all`) | `id`, `from`, `to`, `limit` | 12 months |
 | `screens` | `kind` (`list`; `captive_vehicles`, `delinquency_drivers`, `dormant_funds`, `dormant_trend`, `evergreen_aging`, `late_filers`, `overdue_securit`, `restatements`, `silent_filers`, `zombie_growth`) | `limit` | none |
 | `panel` | `metric` (`auto`), `freq` (`month`; `day`), `family` (`auto`; `fi`, `fidc`, `fii`, `fip`, `fiagro`) | `id`, `from`, `to`, `limit` | 36 months |
 | `portfolio` (POST) | `kind` (`resolve`; `fees`, `fee_peers`, `lookthrough`, `movement`, `instruments`, `fund_terms`, `equivalents`, `debenture_returns`), `month` (none) | `limit` | none |

@@ -1446,5 +1446,31 @@
         "tier": "pro"
       }
     }
+  },
+  "/events/dividends": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "ticker": "PETR4",
+          "isin": "BRPETRACNPR6",
+          "action": "DIVIDENDO",
+          "approved_on": "2026-08-06",
+          "last_date_with": "2026-08-21",
+          "ex_date": "2026-08-24",
+          "payment_date": "2026-12-21",
+          "value_per_share": 0.47156696,
+          "source": "b3_cash_history"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
   }
 }

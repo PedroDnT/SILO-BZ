@@ -77,6 +77,7 @@ The REST API and MCP v2 are live in preview. Anonymous data calls need no key. T
 - [Restated filings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/restatements.md): `GET /events/restatements`.
 - [Restatement changes](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/restatement_diff.md): `GET /events/restatement-diff`.
 - [Judicial recovery filings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/judicial_recovery.md): `GET /events/judicial-recovery`.
+- [Cash dividends of a ticker](https://octo-98895abd.mintlify.site/api-docs/v2/operations/events/dividends.md): `GET /events/dividends`.
 - [Available screens](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/list.md): `GET /screens/list`.
 - [Captive vehicles](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/captive_vehicles.md): `GET /screens/captive-vehicles`.
 - [Delinquency drivers](https://octo-98895abd.mintlify.site/api-docs/v2/operations/screens/delinquency_drivers.md): `GET /screens/delinquency-drivers`.

@@ -495,6 +495,8 @@ _ORDER: dict[str, str] = {
     "company_events": "newest delivery first",
     # 34_api_rj_listed.sql orders RJ documents newest delivery first.
     "rj_listed_documents": "newest delivery first",
+    # 40_api_dividends.sql orders a ticker's distributions newest first.
+    "dividends": "newest last_date_with first",
     # 27_api_rates.sql: one session's contracts and one session's vertices.
     "future_curve": "nearest maturity first",
     "curve": "shortest vertex first",
@@ -680,7 +682,7 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^anbima_"), "ANBIMA"),
     (re.compile(r"^inflation"), "Inflation"),
     (re.compile(r"^(macro_series|ptax|ptax_daily)$"), "Macro"),
-    (re.compile(r"^(company_events|rj_listed_documents)$"), "Company events"),
+    (re.compile(r"^(company_events|rj_listed_documents|dividends)$"), "Company events"),
     (re.compile(r"^(future_curve|future_series|curve|curve_history|di_settlement|reference_rate)$"), "Rates"),
     (re.compile(r"^(research_universe|index_history)$"), "Research"),
     (re.compile(r"^portfolio_"), "Portfolio"),
@@ -868,12 +870,12 @@ privilege set for which objects exist at all. It is not hand-maintained, and
 
 Reading one for the other is the most expensive mistake on this API.
 
-* **The row cap refuses.** Sixty set-returning functions raise SQLSTATE
+* **The row cap refuses.** Sixty-one set-returning functions raise SQLSTATE
   `22023` when the window they were handed would produce more than 1000 rows.
   Nothing is trimmed, and the error says why and how to fix it (the message,
   plus PostgREST's `details` and `hint`). Five of them (`panel`,
   `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)
-  take a `p_after` cursor so you can walk the series; the other fifty-five ask you to narrow the window. `fund_nav` paging
+  take a `p_after` cursor so you can walk the series; the other fifty-six ask you to narrow the window. `fund_nav` paging
   additionally REQUIRES `p_entity_type` — its cursor is a bare period, which
   is unique only within one family, and CNPJs that file under both `fi` and
   `fidc` in the same month would otherwise be ambiguous.

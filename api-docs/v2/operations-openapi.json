@@ -6366,6 +6366,130 @@
         "security": []
       }
     },
+    "/events/dividends": {
+      "get": {
+        "operationId": "v2_events_dividends",
+        "summary": "Cash dividends of a ticker",
+        "tags": [
+          "Companies and funds"
+        ],
+        "description": "Dividends, JCP and rendimentos of one B3 ticker, newest first: value per share, ex-date and payment date (B3 publishes payment dates since 2025).",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/events/dividends"
+        },
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "query",
+            "required": true,
+            "description": "B3 ticker.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR4"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, subject to your tier.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor from the next page URL.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "ticker": "PETR4",
+                      "isin": "BRPETRACNPR6",
+                      "action": "DIVIDENDO",
+                      "approved_on": "2026-08-06",
+                      "last_date_with": "2026-08-21",
+                      "ex_date": "2026-08-24",
+                      "payment_date": "2026-12-21",
+                      "value_per_share": 0.47156696,
+                      "source": "b3_cash_history"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/screens/list": {
       "get": {
         "operationId": "v2_screens_list",

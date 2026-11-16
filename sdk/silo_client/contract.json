@@ -119,6 +119,16 @@
     "p_tenor_days"
    ]
   },
+  "dividends": {
+   "params": [
+    "p_from",
+    "p_ticker",
+    "p_to"
+   ],
+   "required": [
+    "p_ticker"
+   ]
+  },
   "fidc_aging": {
    "params": [
     "p_cnpj",

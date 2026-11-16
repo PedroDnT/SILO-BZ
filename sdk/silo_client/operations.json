@@ -3931,6 +3931,72 @@
     "body": []
   },
   {
+    "resource": "events",
+    "kind": "dividends",
+    "path": "/events/dividends",
+    "method": "GET",
+    "title": "Cash dividends of a ticker",
+    "group": "Filings and events",
+    "description": "Dividends, JCP and rendimentos of one B3 ticker, newest first: value per share, ex-date and payment date (B3 publishes payment dates since 2025).",
+    "parameters": [
+      {
+        "name": "identifier",
+        "target": "id",
+        "description": "B3 ticker.",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "advanced": false,
+        "example": "PETR4"
+      },
+      {
+        "name": "from",
+        "target": "from",
+        "description": "Start date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "to",
+        "target": "to",
+        "description": "End date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "limit",
+        "target": "limit",
+        "description": "Rows per page, subject to your tier.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "required": false,
+        "advanced": true
+      },
+      {
+        "name": "cursor",
+        "target": "cursor",
+        "description": "Cursor from the next page URL.",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "advanced": true
+      }
+    ],
+    "body": []
+  },
+  {
     "resource": "screens",
     "kind": "list",
     "path": "/screens/list",

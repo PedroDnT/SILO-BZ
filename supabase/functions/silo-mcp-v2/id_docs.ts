@@ -56,6 +56,7 @@ export const ID_DOCS: Record<string, string> = {
   "fund_restatements.p_cnpj": "a 14-digit fund CNPJ (punctuation allowed; none: every fund's)",
   "fund_restatement_diff.p_cnpj": "a 14-digit fund CNPJ (punctuation allowed)",
   "rj_listed_documents.p_id": "a listed company's ticker, 14-digit CNPJ or CVM code (none: every company's)",
+  "dividends.p_ticker": "a B3 ticker (PETR4, HGLG11)",
   "panel.p_ids": "a comma-separated list of tickers, fund CNPJs, option or termo tickers and futures codes, up to the tier's id ceiling"
 };
 // END ID_DOCS

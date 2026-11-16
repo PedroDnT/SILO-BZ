@@ -146,7 +146,8 @@
                   "api-docs/v2/operations/events/fund",
                   "api-docs/v2/operations/events/restatements",
                   "api-docs/v2/operations/events/restatement_diff",
-                  "api-docs/v2/operations/events/judicial_recovery"
+                  "api-docs/v2/operations/events/judicial_recovery",
+                  "api-docs/v2/operations/events/dividends"
                 ]
               },
               {
