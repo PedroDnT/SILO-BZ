@@ -368,7 +368,7 @@
         "tags": [
           "Companies and funds"
         ],
-        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nWhat did the company file? Income, balance sheet, cash flow, headline figures, every stored version, share counts and free float.\n\nExample: `/v2/statements?id=PETR4&kind=income`\n\nKinds:\n\n- `all`: api.financials: every line, one row per account, latest stored version. Paged by date windows. With no id (every kind): the research universe, whose cnpj links a ticker to its filer.\n- `income`: api.income_statements: one row per filed period, with period_months.\n- `balance`: api.balance_sheets: one row per filed date. A balance sheet is a point in time, so the source has no period_months.\n- `cashflow`: api.cash_flow_statements: one row per filed period, with period_months.\n- `headline`: api.company_financials: headline figures per filed period. The function takes no p_doc_type, so period is a selection on the rows' doc_type.\n- `versions`: api.financial_statement_history: every stored version of one statement (hidden statement, default DRE), with filing metadata. No as_of: it already shows every version.\n- `shares`: api.share_counts: issued shares ON / PN / total per filed period, newest first, latest stored version. source cvm_itr / cvm_dfp: quarterly from 2020, with treasury shares. source cvm_fre: yearly from 2010, no treasury count. Per company, not per ticker. Paged by date windows.\n- `free_float`: api.free_float: shares in circulation ON / PN / total with the filed percent and the shareholder counts, yearly from 2010 (FRE), newest first, latest stored version. Per company, not per ticker. Paged by date windows.\n\nWith no `from`, a dated kind reads the last 60 months to `to`.\n\nFor account-code comparisons use kind=all and read account_code with the filed account_name for each issuer.\n\nFor restatements use kind=versions, bound filing dates, and select the statement and account_code to retain matching account rows with version and period spans.\n\n`GET /v2/statements?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nWhat did the company file? Income, balance sheet, cash flow, headline figures, every stored version, share counts, free float and debt issues.\n\nExample: `/v2/statements?id=PETR4&kind=income`\n\nKinds:\n\n- `all`: api.financials: every line, one row per account, latest stored version. Paged by date windows. With no id (every kind): the research universe, whose cnpj links a ticker to its filer.\n- `income`: api.income_statements: one row per filed period, with period_months.\n- `balance`: api.balance_sheets: one row per filed date. A balance sheet is a point in time, so the source has no period_months.\n- `cashflow`: api.cash_flow_statements: one row per filed period, with period_months.\n- `headline`: api.company_financials: headline figures per filed period. The function takes no p_doc_type, so period is a selection on the rows' doc_type.\n- `versions`: api.financial_statement_history: every stored version of one statement (hidden statement, default DRE), with filing metadata. No as_of: it already shows every version.\n- `shares`: api.share_counts: issued shares ON / PN / total per filed period, newest first, latest stored version. source cvm_itr / cvm_dfp: quarterly from 2020, with treasury shares. source cvm_fre: yearly from 2010, no treasury count. Per company, not per ticker. Paged by date windows.\n- `free_float`: api.free_float: shares in circulation ON / PN / total with the filed percent and the shareholder counts, yearly from 2010 (FRE), newest first, latest stored version. Per company, not per ticker. Paged by date windows.\n- `debt_issues`: api.debt_issues: the debt issues (debentures, commercial notes, CRI, CRA, ...) a listed company describes in its FRE, yearly from 2010, newest reference date first, then maturity, latest stored version. One row is one issue as filed, often several series; no ticker or ISIN, so a row does not join to a traded debenture. Listed issuers only. Rate and indexer only in terms_text, free text, never parsed. Per company, not per ticker. Paged by date windows.\n\nWith no `from`, a dated kind reads the last 60 months to `to`.\n\nFor account-code comparisons use kind=all and read account_code with the filed account_name for each issuer.\n\nFor restatements use kind=versions, bound filing dates, and select the statement and account_code to retain matching account rows with version and period spans.\n\n`GET /v2/statements?help` describes the main parameters, `?help=all` adds the hidden ones.",
         "x-mint": {
           "href": "/api-docs/v2/reference/statements"
         },
@@ -377,7 +377,7 @@
             "name": "kind",
             "in": "query",
             "required": false,
-            "description": "all: every filed line, long (api.financials). income, balance, cashflow: the standard lines, wide. headline: revenue, net income, assets, equity, margins (api.company_financials). versions: every stored version of one statement (api.financial_statement_history). shares: issued and treasury share counts (api.share_counts). free_float: shares in circulation and shareholder counts (api.free_float). Default: all.",
+            "description": "all: every filed line, long (api.financials). income, balance, cashflow: the standard lines, wide. headline: revenue, net income, assets, equity, margins (api.company_financials). versions: every stored version of one statement (api.financial_statement_history). shares: issued and treasury share counts (api.share_counts). free_float: shares in circulation and shareholder counts (api.free_float). debt_issues: debentures, commercial notes, CRI, CRA and other debt the company describes in its FRE, listed issuers only, rate as unparsed text (api.debt_issues). Default: all.",
             "schema": {
               "type": "string",
               "enum": [
@@ -388,7 +388,8 @@
                 "headline",
                 "versions",
                 "shares",
-                "free_float"
+                "free_float",
+                "debt_issues"
               ],
               "default": "all"
             },
@@ -427,7 +428,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "By kind: all, income, balance, cashflow, headline, versions, shares, free_float take a listed company's ticker, 14-digit CNPJ or CVM code. Required for kinds shares, free_float. With no id, kinds all, income, balance, cashflow, headline, versions read api.research_universe (what SILO holds). Default: none.",
+            "description": "By kind: all, income, balance, cashflow, headline, versions, shares, free_float, debt_issues take a listed company's ticker, 14-digit CNPJ or CVM code. Required for kinds shares, free_float, debt_issues. With no id, kinds all, income, balance, cashflow, headline, versions read api.research_universe (what SILO holds). Default: none.",
             "schema": {
               "type": "string"
             },

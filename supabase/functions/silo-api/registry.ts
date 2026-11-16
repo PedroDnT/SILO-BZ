@@ -397,7 +397,7 @@ export const REGISTRY: Registry = {
     {
       "name": "statements",
       "status": "built",
-      "summary": "What did the company file? Income, balance sheet, cash flow, headline figures, every stored version, share counts and free float.",
+      "summary": "What did the company file? Income, balance sheet, cash flow, headline figures, every stored version, share counts, free float and debt issues.",
       "example": "/v2/statements?id=PETR4&kind=income",
       "shared": ["id", "from", "to", "limit"],
       "window_months": 60,
@@ -410,9 +410,9 @@ export const REGISTRY: Registry = {
           "name": "kind",
           "visibility": "main",
           "type": "enum",
-          "values": ["all", "income", "balance", "cashflow", "headline", "versions", "shares", "free_float"],
+          "values": ["all", "income", "balance", "cashflow", "headline", "versions", "shares", "free_float", "debt_issues"],
           "default": "all",
-          "doc": "all: every filed line, long (api.financials). income, balance, cashflow: the standard lines, wide. headline: revenue, net income, assets, equity, margins (api.company_financials). versions: every stored version of one statement (api.financial_statement_history). shares: issued and treasury share counts (api.share_counts). free_float: shares in circulation and shareholder counts (api.free_float)."
+          "doc": "all: every filed line, long (api.financials). income, balance, cashflow: the standard lines, wide. headline: revenue, net income, assets, equity, margins (api.company_financials). versions: every stored version of one statement (api.financial_statement_history). shares: issued and treasury share counts (api.share_counts). free_float: shares in circulation and shareholder counts (api.free_float). debt_issues: debentures, commercial notes, CRI, CRA and other debt the company describes in its FRE, listed issuers only, rate as unparsed text (api.debt_issues)."
         },
         {
           "name": "period",
@@ -516,6 +516,14 @@ export const REGISTRY: Registry = {
         "free_float": {
           "doc": "api.free_float: shares in circulation ON / PN / total with the filed percent and the shareholder counts, yearly from 2010 (FRE), newest first, latest stored version. Per company, not per ticker. Paged by date windows.",
           "endpoint": "free_float",
+          "paging": { "method": "date_window", "order": "desc" },
+          "window_months": 240,
+          "args": { "id": "p_id", "from": "p_from", "to": "p_to" },
+          "require_one_of": ["id"]
+        },
+        "debt_issues": {
+          "doc": "api.debt_issues: the debt issues (debentures, commercial notes, CRI, CRA, ...) a listed company describes in its FRE, yearly from 2010, newest reference date first, then maturity, latest stored version. One row is one issue as filed, often several series; no ticker or ISIN, so a row does not join to a traded debenture. Listed issuers only. Rate and indexer only in terms_text, free text, never parsed. Per company, not per ticker. Paged by date windows.",
+          "endpoint": "debt_issues",
           "paging": { "method": "date_window", "order": "desc" },
           "window_months": 240,
           "args": { "id": "p_id", "from": "p_from", "to": "p_to" },

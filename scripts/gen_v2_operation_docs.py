@@ -95,7 +95,9 @@ openapi: "{spec_path} {method.upper()} {path}"
             page += '\n\n</Accordion>\n'
         status = snapshot["status"]
         label = "Successful response" if status == 200 else f"Error response (HTTP {status})"
-        page += f"\n## Example response\n\n{label} from a Pro request on 2026-11-13. This excerpt omits fields and pagination links.\n\n```json\n"
+        # A snapshot taken before its endpoint was deployed says where it came from.
+        origin = snapshot.get("note") or f"{label} from a Pro request on 2026-11-13. This excerpt omits fields and pagination links."
+        page += f"\n## Example response\n\n{origin}\n\n```json\n"
         page += json.dumps(snapshot["excerpt"], indent=2, ensure_ascii=False) + "\n```\n"
         page += '\n## FAQ\n\n<Accordion title="How do I check for more results?">\n\nWhen present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).\n\n</Accordion>\n\n<Accordion title="Can an agent use this data?">\n\nYes. Connect an agent through the [MCP server](/api-docs/v2/mcp).\n\n</Accordion>\n\n[Python DataFrames](/api-docs/v2/python)\n'
         files[f"{slug}.mdx"] = page
@@ -116,7 +118,7 @@ keywords: ["endpoints", "API", "playground", "data"]
 icon: "compass"
 ---
 
-**Deployed preview.** Browse 78 operations across 14 REST resources. Each operation
+**Deployed preview.** Browse 79 operations across 14 REST resources. Each operation
 has a dedicated route with task-specific inputs.
 These pages expose the existing API; they do not add data coverage.
 
