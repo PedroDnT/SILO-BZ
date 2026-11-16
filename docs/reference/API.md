@@ -343,7 +343,7 @@ RENDIMENTO and the other labels B3 publishes. No new fetch. v2:
 ### Share counts and free float of a company (catalog v86)
 
 `api.share_counts(p_id, p_from, p_to)` and `api.free_float(p_id, p_from, p_to)`
-(`41_api_share_counts.sql`, migration 86, #1161) serve a listed company's shares
+(`41_api_share_counts.sql`, migration 87, #1161) serve a listed company's shares
 through time, as filed with CVM. v2: `/v2/statements?kind=shares&id=PETR4` and
 `/v2/statements?kind=free_float&id=PETR4`.
 

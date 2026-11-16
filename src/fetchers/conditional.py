@@ -54,6 +54,7 @@ CONDITIONAL_SLICES: FrozenSet[Tuple[str, str]] = frozenset({
     ("cia_aberta", "dfp_composicao_capital"),
     ("cia_aberta", "fre_capital_social"),
     ("cia_aberta", "fre_distribuicao_capital"),
+    ("cia_aberta", "fre_outro_valor_mobiliario"),
 })
 
 

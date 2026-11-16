@@ -13,12 +13,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Sequence
 
-from src.parsers.mapping import apply_map, assert_map_matches
+from src.parsers.mapping import apply_map, assert_map_matches, row_hash
 from src.parsers.field_maps import cia_company as _company
 from src.parsers.field_maps import cia_event as _event
 from src.parsers.field_maps import cia_account as _account
 from src.parsers.field_maps import cia_filing as _filing
 from src.parsers.field_maps import cia_fca_valor_mobiliario as _ticker
+from src.parsers.field_maps import cia_fre_outro_valor_mobiliario as _fre_ovm
 from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
@@ -214,6 +215,55 @@ def ingest_cia_ticker(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
         _ticker.TABLE,
         records,
         conflict_columns=",".join(_ticker.CONFLICT),
+    )
+
+
+def ingest_cia_fre_outro_valor_mobiliario(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """Parse and upsert FRE "outros valores mobiliários" rows (#1164).
+
+    One row per debt issue (debentures, commercial notes, CRI, ...) of a
+    listed company, every FRE version. The source has no unique row key, so
+    the natural key ends in ``row_hash`` over the source row. Exact repeated
+    rows share a hash and collapse into one; the count is logged. Rows with
+    no CNPJ, reference date, version or document id cannot be keyed and are
+    dropped (never guessed).
+
+    Args:
+        conn      -- _PgClient instance
+        raw_rows  -- rows from CVMFetcher.fetch('cia_aberta',
+                     'fre_outro_valor_mobiliario', year=Y)
+
+    Returns:
+        number of rows upserted
+    """
+    assert_map_matches(
+        raw_rows, _fre_ovm.FIELD_MAP, dataset="cia/fre_outro_valor_mobiliario",
+        required=("cnpj_cia", "data_refer", "versao", "id_documento"),
+    )
+    by_key: Dict[tuple, Dict[str, Any]] = {}
+    dropped = 0
+    for row in raw_rows:
+        typed, residual = apply_map(row, _fre_ovm.FIELD_MAP)
+        if (not typed.get("cnpj_cia") or typed.get("data_refer") is None
+                or typed.get("versao") is None or not typed.get("id_documento")):
+            dropped += 1
+            continue
+        typed["row_hash"] = row_hash(row)
+        typed["raw"] = residual
+        by_key[tuple(typed[c] for c in _fre_ovm.CONFLICT)] = typed
+    repeats = len(raw_rows) - dropped - len(by_key)
+    if dropped or repeats:
+        logger.info(
+            "cia/fre_outro_valor_mobiliario: %d rows without a key dropped, "
+            "%d exact repeats collapsed", dropped, repeats,
+        )
+    if not by_key:
+        return 0
+    return upsert_rows(
+        conn,
+        _fre_ovm.TABLE,
+        list(by_key.values()),
+        conflict_columns=",".join(_fre_ovm.CONFLICT),
     )
 
 

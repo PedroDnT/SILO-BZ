@@ -5,6 +5,7 @@ Fetches:
   - CVM: current month + previous month for all entities
   - BACEN: last ~30 days
   - IBGE: IPCA item tree with weights, previous + current month
+  - Tesouro Direto: posted rates and prices, base dates of the last 30 days
   - ANBIMA: latest monthly boletim, all classes (idempotent — upserts full history)
   - B3 COTAHIST: last 7 calendar days of daily quotation zips (404 → skipped)
 
@@ -27,6 +28,7 @@ from src.pipeline.bacen_pipeline import BacenIngestor
 from src.pipeline.anbima_pipeline import AnbimaIngestor
 from src.pipeline.b3_pipeline import B3Ingestor
 from src.pipeline.ibge_pipeline import IbgeIngestor
+from src.pipeline.tesouro_pipeline import TesouroIngestor
 from src.pipeline import ingest_log
 
 logging.basicConfig(
@@ -148,6 +150,15 @@ async def main() -> None:
     except Exception as exc:
         logger.error("IBGE IPCA daily refresh failed: %s", exc, exc_info=True)
         failures.append(("ibge", exc))
+
+    # Tesouro Direto: one CSV with the whole history; the daily mode upserts
+    # the base dates of the last 30 days (new session, missed days, revisions).
+    try:
+        tesouro_totals = await TesouroIngestor().daily_update()
+        totals.update(tesouro_totals)
+    except Exception as exc:
+        logger.error("Tesouro Direto daily refresh failed: %s", exc, exc_info=True)
+        failures.append(("tesouro", exc))
 
     # FNET (the B3 Fundos.NET document register) is NOT run here. It is its
     # own step in daily_ingest.yml, after the analytical layer and the

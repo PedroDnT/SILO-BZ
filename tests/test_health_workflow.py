@@ -786,6 +786,7 @@ FRESH = {
     "FROM bacen_ptax": "2",
     "FROM bacen_expectativas": "9",
     "FROM ibge_ipca_item_monthly": "47",
+    "FROM tesouro_direto_daily": "3",
     "series_code = 12": "",
 }
 
@@ -800,6 +801,7 @@ def test_fresh_sources_and_no_missed_session_pass():
     ("FROM bacen_ptax", "7"),
     ("FROM bacen_expectativas", "15"),
     ("FROM ibge_ipca_item_monthly", "76"),
+    ("FROM tesouro_direto_daily", "8"),
 ])
 def test_a_stale_source_fails(key, value):
     fail, out = _run_4e_4f({**FRESH, key: value})

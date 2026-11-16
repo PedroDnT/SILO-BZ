@@ -44,6 +44,7 @@ this pipeline reads (`src/fetchers/cvm_config.py:293-367`).
 | `cad`                  | static CSV              | `cia_company`                                             | every daily run                        |
 | `ipe`                  | yearly ZIP, 1 CSV       | `cia_event`                                               | current year daily; 2010+ backfill     |
 | `fca_valor_mobiliario` | 1 member of the FCA ZIP | `cia_ticker`                                              | current year daily; backfill           |
+| `fre_outro_valor_mobiliario` | 1 member of the FRE ZIP | `cvm_fre_outro_valor_mobiliario` (debt issues; rate only as free text) | current year daily; 2010+ backfill |
 | `itr` / `dfp`          | yearly ZIP, 19 CSVs     | `cia_filing` (header) + `cia_account` (16 scoped members) | current year daily; previous year daily, new documents only; **2019+** backfill |
 
 The previous year is read for a DFP filed in January and for a restated

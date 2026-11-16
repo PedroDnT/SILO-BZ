@@ -4,7 +4,7 @@ Source CSV: itr_cia_aberta_composicao_capital_{YYYY}.csv and
             dfp_cia_aberta_composicao_capital_{YYYY}.csv (one member of the
             yearly ITR / DFP ZIP, latin-1, ; delimited). Published from 2020.
 Target:     cia_share_count (UNIQUE NULLS NOT DISTINCT on cnpj_cia, doc_type,
-            dt_refer, versao; migration 86, #1161)
+            dt_refer, versao; migration 87, #1161)
 
 Header (verified live 2026-11-16 against the ITR 2025 and DFP 2025 ZIPs):
     CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;QT_ACAO_ORDIN_CAP_INTEGR;

@@ -146,7 +146,7 @@ def test_backfill_plans_composicao_from_2020_and_fre_from_2010():
 
 def test_schema_and_migration_carry_the_same_named_constraints():
     schema = (ROOT / "src/store/schema.sql").read_text(encoding="utf-8")
-    mig = (ROOT / "src/store/migrations/86_cia_share_counts.sql").read_text(encoding="utf-8")
+    mig = (ROOT / "src/store/migrations/87_cia_share_counts.sql").read_text(encoding="utf-8")
     for name in ("uq_cia_share_count", "uq_cia_fre_capital", "uq_cia_fre_free_float"):
         assert f"CONSTRAINT {name} UNIQUE NULLS NOT DISTINCT" in schema
         assert f"CONSTRAINT {name} UNIQUE NULLS NOT DISTINCT" in mig

@@ -1444,6 +1444,30 @@ CREATE INDEX IF NOT EXISTS idx_ibge_ipca_item_level_month
 CREATE INDEX IF NOT EXISTS idx_ibge_ipca_item_number_month
     ON ibge_ipca_item_monthly (item_number, reference_month DESC);
 
+-- ---------------------------------------------------------------------------
+-- Tesouro Direto: the Treasury's daily posted rates and prices (migration 86)
+-- ---------------------------------------------------------------------------
+-- Grain (tipo_titulo, data_vencimento, data_base). Rates in percent a year as
+-- published (can be negative); PU in R$, NULL where the source prints 0,00
+-- (not on sale). Posted retail quotes, not trades. ODbL licence.
+CREATE TABLE IF NOT EXISTS tesouro_direto_daily (
+    id               BIGSERIAL     PRIMARY KEY,
+    tipo_titulo      TEXT          NOT NULL,
+    data_vencimento  DATE          NOT NULL,
+    data_base        DATE          NOT NULL,
+    taxa_compra      NUMERIC(10,4),
+    taxa_venda       NUMERIC(10,4),
+    pu_compra        NUMERIC(18,6),
+    pu_venda         NUMERIC(18,6),
+    pu_base          NUMERIC(18,6),
+    fetched_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tesouro_direto_daily UNIQUE (tipo_titulo, data_vencimento, data_base)
+);
+CREATE INDEX IF NOT EXISTS idx_tesouro_direto_daily_base
+    ON tesouro_direto_daily (data_base DESC);
+ALTER TABLE tesouro_direto_daily ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON tesouro_direto_daily FROM PUBLIC;
+
 -- B3 Fundos.NET document register with versions (migration 42; contract in
 -- src/fetchers/fnet_fetcher.py).
 -- fnet_document — one row per FNET document id (each version is a new id).
@@ -3551,3 +3575,45 @@ CREATE INDEX IF NOT EXISTS idx_cia_fre_free_float_cnpj_date
 
 COMMENT ON TABLE cia_fre_free_float IS
     'CVM FRE distribuição do capital (2010 on): shares in circulation (the free float: not held by the controller, its related parties, management or treasury), ON / PN / total and percent, with shareholder counts, per form version, as filed. data_refer is the form''s reference date, not a filing date. Served by api.free_float.';
+-- CVM FRE other securities: debt issues of listed companies (#1164; migration 86).
+-- Landing table, no client grant.
+
+CREATE TABLE IF NOT EXISTS cvm_fre_outro_valor_mobiliario (
+    cnpj_cia              TEXT NOT NULL CHECK (cnpj_cia ~ '^\d{14}$'),
+    data_refer            DATE NOT NULL,
+    versao                INT  NOT NULL,
+    id_documento          TEXT NOT NULL,
+    row_hash              TEXT NOT NULL,
+    nome_companhia        TEXT,
+    valor_mobiliario      TEXT,
+    identificacao         TEXT,
+    data_emissao          DATE,
+    data_vencimento       DATE,
+    quantidade            NUMERIC,
+    valor                 NUMERIC,
+    saldo_devedor         NUMERIC,
+    restricao_circulacao  BOOLEAN,
+    conversibilidade      BOOLEAN,
+    resgatavel            BOOLEAN,
+    caracteristicas_divida TEXT,
+    raw                   JSONB NOT NULL DEFAULT '{}'::jsonb,
+    fetched_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_cvm_fre_outro_valor_mobiliario
+        UNIQUE (cnpj_cia, data_refer, versao, id_documento, row_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_cvm_fre_ovm_cnpj
+    ON cvm_fre_outro_valor_mobiliario (cnpj_cia, data_refer DESC, versao DESC);
+COMMENT ON TABLE cvm_fre_outro_valor_mobiliario IS
+    'FRE item "outros valores mobiliários" (fre_cia_aberta_outro_valor_mobiliario_<year>.csv, 2010 on): one row per issue (debentures, commercial notes, CRI, ...) of a listed company, every FRE version, as filed. The file has no unique row key, so row_hash (sha256 of the source row) ends the key. Rate and indexer exist only as free text (caracteristicas_divida); they are not parsed. Landing table, no client grant.';
+ALTER TABLE cvm_fre_outro_valor_mobiliario ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON cvm_fre_outro_valor_mobiliario FROM PUBLIC;
+DO $grants$
+DECLARE role_name TEXT;
+BEGIN
+    FOREACH role_name IN ARRAY ARRAY['anon', 'authenticated', 'silo_api'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
+            EXECUTE format('REVOKE ALL ON cvm_fre_outro_valor_mobiliario FROM %I', role_name);
+        END IF;
+    END LOOP;
+END
+$grants$;

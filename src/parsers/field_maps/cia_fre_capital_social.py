@@ -3,7 +3,7 @@
 Source CSV: fre_cia_aberta_capital_social_{YYYY}.csv (one member of the
             yearly FRE ZIP, latin-1, ; delimited). Published from 2010.
 Target:     cia_fre_capital (UNIQUE NULLS NOT DISTINCT on cnpj_cia,
-            data_refer, versao, id_capital_social; migration 86, #1161)
+            data_refer, versao, id_capital_social; migration 87, #1161)
 
 Header (verified live 2026-11-16 against fre_cia_aberta_2010.zip):
     CNPJ_Companhia;Data_Referencia;Versao;ID_Documento;Nome_Companhia;

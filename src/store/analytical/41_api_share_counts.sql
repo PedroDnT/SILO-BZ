@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 41_api_share_counts.sql
 -- A listed company's share count and free float through time, as filed with
--- CVM (catalog v86, #1161). Migration 86 holds the three landing tables.
+-- CVM (catalog v86, #1161). Migration 87 holds the three landing tables.
 --
 --   api.share_counts  issued (paid-in) shares ON / PN / total, plus treasury
 --                     shares where the form has them, one row per filed
@@ -51,7 +51,7 @@ BEGIN
     IF to_regclass('public.cia_share_count') IS NULL
        OR to_regclass('public.cia_fre_capital') IS NULL
        OR to_regclass('public.cia_fre_free_float') IS NULL THEN
-        RAISE EXCEPTION '41_api_share_counts.sql serves cia_share_count, cia_fre_capital and cia_fre_free_float; apply migration 86 first';
+        RAISE EXCEPTION '41_api_share_counts.sql serves cia_share_count, cia_fre_capital and cia_fre_free_float; apply migration 87 first';
     END IF;
 END
 $guard$;

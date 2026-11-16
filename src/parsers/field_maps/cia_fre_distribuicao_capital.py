@@ -3,7 +3,7 @@
 Source CSV: fre_cia_aberta_distribuicao_capital_{YYYY}.csv (one member of the
             yearly FRE ZIP, latin-1, ; delimited). Published from 2010.
 Target:     cia_fre_free_float (UNIQUE NULLS NOT DISTINCT on cnpj_cia,
-            data_refer, versao; migration 86, #1161)
+            data_refer, versao; migration 87, #1161)
 
 Header (verified live 2026-11-16 against fre_cia_aberta_2010.zip and
 fre_cia_aberta_2025.zip):

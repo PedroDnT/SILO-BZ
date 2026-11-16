@@ -640,7 +640,7 @@ __all__ = [
 # payment date) plus the events only B3's ~12-month supplement lists, with the
 # ex-date from the tape and the supplement's payment date. Capped count +1.
 # v86: #1161. New api.share_counts(p_id, p_from, p_to) and
-# api.free_float(p_id, p_from, p_to) (41_api_share_counts.sql, migration 86):
+# api.free_float(p_id, p_from, p_to) (41_api_share_counts.sql, migration 87):
 # a company's issued and treasury shares (CVM ITR / DFP from 2020, FRE from
 # 2010) and its FRE free float. Capped count +2.
 CATALOG_VERSION = 86

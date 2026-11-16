@@ -1,4 +1,4 @@
--- Migration 86: share counts and the free float of listed companies (#1161).
+-- Migration 87: share counts and the free float of listed companies (#1161).
 -- The same DDL is in schema.sql. Append-only: a change is a new migration.
 
 BEGIN;
