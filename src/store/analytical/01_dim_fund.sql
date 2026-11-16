@@ -17,18 +17,22 @@ SET statement_timeout = '5min';
 -- dim_fund is MATERIALIZED: the FI branch aggregates the full cvm_fi_diario
 -- history and fund_performance_ranking (17) joins it twice, so a plain view cost
 -- minutes per call. It is refreshed after ingest (08_cron_schedules) and rebuilt
--- by the daily apply_analytical re-create. CASCADE drops the dependent
--- classification views (dim_fund_category / dim_administrator / dim_gestor);
--- 13_dim_classification rebuilds them in the same apply pass.
-DO $$
-DECLARE k "char" := (SELECT relkind FROM pg_class WHERE oid = to_regclass('public.dim_fund'));
-BEGIN
-  IF k = 'm' THEN
-    EXECUTE 'DROP MATERIALIZED VIEW dim_fund CASCADE';
-  ELSIF k IS NOT NULL THEN
-    EXECUTE 'DROP VIEW dim_fund CASCADE';
-  END IF;
-END $$;
+-- by the daily apply_analytical re-create.
+--
+-- BUILD, THEN SWAP (#1175). The rebuild used to DROP dim_fund at the top of
+-- this transaction and CREATE it after, so the DROP's AccessExclusiveLock was
+-- held for the whole 70 s build. Every reader queued behind it, and anon's 3 s
+-- statement_timeout turned each wait into 57014: on 2026-11-16 at 17:49:53
+-- UTC-3 (20:49:53 UTC) api.search_funds and api.lookup answered `timeout`
+-- for as long as this file ran. Now the new matview is built in the staging
+-- schema analytical_build (first on this transaction's search_path, so the
+-- CREATE below lands there while the base tables still resolve to public),
+-- with its indexes and smoke check, while public.dim_fund keeps serving. The
+-- second transaction drops the old one and moves the new one in: a lock held
+-- for milliseconds. A failed build leaves public.dim_fund as it was.
+DO $$ BEGIN PERFORM set_config('search_path', 'analytical_build, ' || current_setting('search_path'), true); END $$;
+DROP SCHEMA IF EXISTS analytical_build CASCADE;  -- leftovers of a failed apply only
+CREATE SCHEMA analytical_build;
 
 CREATE MATERIALIZED VIEW dim_fund AS
   SELECT
@@ -104,4 +108,22 @@ BEGIN
   END IF;
 END $$;
 
+COMMIT;
+
+-- The swap. CASCADE drops the dependent classification views
+-- (dim_fund_category / dim_administrator / dim_gestor); 13_dim_classification
+-- rebuilds them in the same apply pass. SET SCHEMA moves the indexes with the
+-- matview, so their names stay ix_dim_fund_pk and ix_dim_fund_name_trgm.
+BEGIN;
+DO $$
+DECLARE k "char" := (SELECT relkind FROM pg_class WHERE oid = to_regclass('public.dim_fund'));
+BEGIN
+  IF k = 'm' THEN
+    EXECUTE 'DROP MATERIALIZED VIEW public.dim_fund CASCADE';
+  ELSIF k IS NOT NULL THEN
+    EXECUTE 'DROP VIEW public.dim_fund CASCADE';
+  END IF;
+END $$;
+ALTER MATERIALIZED VIEW analytical_build.dim_fund SET SCHEMA public;
+DROP SCHEMA analytical_build;  -- RESTRICT: anything left behind fails the swap
 COMMIT;

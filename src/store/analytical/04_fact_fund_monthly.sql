@@ -96,7 +96,21 @@ SET LOCAL statement_timeout = '30min';
 SET LOCAL max_parallel_workers_per_gather = 0;
 SET LOCAL jit = off;
 
-DROP MATERIALIZED VIEW IF EXISTS fact_fund_monthly CASCADE;
+-- BUILD, THEN SWAP (#1175). The DROP ... CASCADE used to open this
+-- transaction, so its AccessExclusiveLock on fact_fund_monthly (and on
+-- mv_period_completeness through the CASCADE) was held for the whole build,
+-- 299 s on 2026-11-16. api.search_funds, api.coverage and api.fund_nav queued
+-- behind it and anon's 3 s statement_timeout answered each with 57014: the
+-- v2 eval's `timeout` from 17:51 to 17:56 UTC-3 (20:51 to 20:56 UTC). Now the
+-- three matviews are built in the staging schema analytical_build (first on
+-- this transaction's search_path, so each CREATE lands there and
+-- mv_period_completeness / mv_metric_coverage read the NEW fact_fund_monthly)
+-- while public keeps serving the old ones. The last transaction of this file
+-- drops the old ones and moves the new ones in, in milliseconds. A failed
+-- build or smoke check leaves public as it was, as the rollback did before.
+DO $$ BEGIN PERFORM set_config('search_path', 'analytical_build, ' || current_setting('search_path'), true); END $$;
+DROP SCHEMA IF EXISTS analytical_build CASCADE;  -- leftovers of a failed apply only
+CREATE SCHEMA analytical_build;
 
 CREATE MATERIALIZED VIEW fact_fund_monthly AS
 
@@ -392,7 +406,8 @@ END $$;
 -- This classifies serving readiness only; it never modifies data.
 -- ---------------------------------------------------------------------------
 
-DROP MATERIALIZED VIEW IF EXISTS mv_period_completeness;
+-- No DROP here: on this search_path an unqualified DROP would find the LIVE
+-- public.mv_period_completeness. The swap below drops it.
 CREATE MATERIALIZED VIEW mv_period_completeness AS
 WITH counts AS (
     SELECT entity_type, period, COUNT(DISTINCT cnpj) AS n_funds
@@ -470,6 +485,22 @@ CREATE UNIQUE INDEX ix_metric_coverage_pk
 
 COMMENT ON MATERIALIZED VIEW mv_metric_coverage IS
     'Filed span per (entity_type, metric) over fact_fund_monthly: first_period / last_period are the oldest and newest periods carrying a NON-NULL value, filed_rows / total_rows say how dense it is. Only pairs with at least one filed value appear — an absent pair means the family never files that metric (catalog().applicability), not that the data is late. Refreshed daily at 06:40 UTC and on every analytical apply. Served by api.metric_coverage().';
+
+COMMIT;
+
+-- The swap. CASCADE drops the old mv_period_completeness / mv_metric_coverage
+-- and every other dependent (dim_administrator, dim_gestor, vw_fii_vs_fiagro,
+-- vw_fund_security_yield, mv_savings_flow_monthly + api.mv_savings_flow_monthly),
+-- which later files of this apply recreate, as before. SET SCHEMA moves each
+-- matview with its indexes and comment, so every name stays the same.
+BEGIN;
+DROP MATERIALIZED VIEW IF EXISTS public.fact_fund_monthly CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS public.mv_period_completeness;
+DROP MATERIALIZED VIEW IF EXISTS public.mv_metric_coverage;
+ALTER MATERIALIZED VIEW analytical_build.fact_fund_monthly SET SCHEMA public;
+ALTER MATERIALIZED VIEW analytical_build.mv_period_completeness SET SCHEMA public;
+ALTER MATERIALIZED VIEW analytical_build.mv_metric_coverage SET SCHEMA public;
+DROP SCHEMA analytical_build;  -- RESTRICT: anything left behind fails the swap
 
 -- The one-call form every consumer uses. NULL entity = the max over families
 -- (a spine upper bound for mixed charts; per-family rows still filter by
