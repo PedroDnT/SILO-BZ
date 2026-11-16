@@ -797,7 +797,7 @@ export const REGISTRY: Registry = {
       "shared": ["id", "from", "to", "limit"],
       "window_months": 12,
       "notes": [
-        "id per kind: chain and exercises take an option prefix (at least 3 characters, e.g. PETR); history and termo one B3 code (codneg); futures one outright contract (DI1F27, DOLF27); futures_curve a root (DI1, DOL or WDO; none: DI1); di_settlement one DI1 contract (none: every contract).",
+        "id per kind: chain and exercises take an option prefix (at least 3 characters, e.g. PETR); history and termo one B3 code (codneg); futures one outright contract (DI1F27, DOLF27); futures_nth a root (DI1, DOL or WDO), with rank; futures_curve a root (DI1, DOL or WDO; none: DI1); di_settlement one DI1 contract (none: every contract).",
         "chain and exercises are cut by the SQL at a tier ceiling without saying so, so the gateway asks for 1,001 rows: a count equal to a tier ceiling (chain 200 or 2000, exercises 500 or 5000, or PostgREST's 1000) or above 1,000 cannot be told from a cut. chain refuses it (over_limit); exercises halves its date window and tries again, and refuses only a single day that is still cut.",
         "Exercises are exercise events, not quotes. DI1 rates are % a.a. on 252 business days, as B3 settles them; nothing is derived."
       ],
@@ -806,9 +806,9 @@ export const REGISTRY: Registry = {
           "name": "kind",
           "visibility": "main",
           "type": "enum",
-          "values": ["chain", "history", "exercises", "termo", "futures", "futures_curve", "di_settlement"],
+          "values": ["chain", "history", "exercises", "termo", "futures", "futures_nth", "futures_curve", "di_settlement"],
           "default": "chain",
-          "doc": "chain: one session's option chain for a prefix. history: one option's daily quotes. exercises: option exercise events for a prefix. termo: one forward (termo) code's quotes. futures: one futures contract's daily settlement. futures_curve: every contract of a root on one session. di_settlement: DI1 settlement rates per session and contract."
+          "doc": "chain: one session's option chain for a prefix. history: one option's daily quotes. exercises: option exercise events for a prefix. termo: one forward (termo) code's quotes. futures: one futures contract's daily settlement. futures_nth: the Nth nearest contract of a root through time (rank 2 = the 2nd contract), each row with its ticker, nothing adjusted. futures_curve: every contract of a root on one session. di_settlement: DI1 settlement rates per session and contract."
         },
         {
           "name": "date",
@@ -825,6 +825,14 @@ export const REGISTRY: Registry = {
           "default": null,
           "default_doc": "today (the SQL's CURRENT_DATE): expired series are left out",
           "doc": "kind chain: only series expiring on or after this date."
+        },
+        {
+          "name": "rank",
+          "visibility": "hidden",
+          "type": "integer",
+          "default": null,
+          "default_doc": "the SQL default, 1 (the nearest contract alive)",
+          "doc": "kind futures_nth: which contract, by maturity, on each session. 1 = the nearest contract alive (the contract of the session's own month is left out, as it matures on that month's first business day), 2 = the next, and so on."
         }
       ],
       "kinds": {
@@ -861,6 +869,13 @@ export const REGISTRY: Registry = {
           "endpoint": "future_series",
           "paging": { "method": "date_window", "order": "asc" }, "daily": true,
           "args": { "id": "p_ticker", "from": "p_from", "to": "p_to" },
+          "require_one_of": ["id"]
+        },
+        "futures_nth": {
+          "doc": "api.future_nth_series: the Nth nearest contract of a root (id: DI1, DOL or WDO) through time, oldest first. Each row is that contract's published row with its ticker, so the roll shows in the ticker column; nothing is adjusted or spliced, and the price jumps at each roll. Refuses above 1000 rows.",
+          "endpoint": "future_nth_series",
+          "paging": { "method": "date_window", "order": "asc" }, "daily": true,
+          "args": { "id": "p_root", "rank": "p_rank", "from": "p_from", "to": "p_to" },
           "require_one_of": ["id"]
         },
         "futures_curve": {
