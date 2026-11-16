@@ -116,7 +116,7 @@ keywords: ["endpoints", "API", "playground", "data"]
 icon: "compass"
 ---
 
-**Deployed preview.** Browse 74 operations across 14 REST resources. Each operation
+**Deployed preview.** Browse 75 operations across 14 REST resources. Each operation
 has a dedicated route with task-specific inputs.
 These pages expose the existing API; they do not add data coverage.
 

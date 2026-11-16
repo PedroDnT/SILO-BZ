@@ -148,7 +148,7 @@ Main parameters, defaults in brackets.
 | `statements` | `kind` [`all`; `income`, `balance`, `cashflow`, `headline`, `versions`], `period` [`both`; `quarterly`, `annual`], `scope` [`consolidated`; `individual`] | 5 years | `as_of` [none], `statement` [`DRE`] | built |
 | `funds` | `kind` [`profile`; `nav`, `holdings`, `debentures`, `properties`], `family` [all; `fi`, `fidc`, `fii`, `fip`, ...] | 3 years | `holding` [none: reverse lookup by ticker or issuer], `status` [all] | built |
 | `fidc` | `kind` [`portfolio`; `tranches`, `aging`, `cedentes`, `sacados`] | 2 years | `series`, `cedente`, `item` [all] | built |
-| `derivatives` | `kind` [`chain`; `history`, `exercises`, `termo`, `futures`, `futures_curve`, `di_settlement`], `date` [latest session] | 1 year | `expiry_from` [today] | built |
+| `derivatives` | `kind` [`chain`; `history`, `exercises`, `termo`, `futures`, `futures_nth`, `futures_curve`, `di_settlement`], `date` [latest session] | 1 year | `expiry_from` [today] | built |
 | `curves` | `kind` [`snapshot`; `history`, `vertices`], `curve` [`PRE`; `DOC`, `DPL`], `tenor` [360 calendar days, the one-year fixed vertex, for history] | 1 year | `date` [latest session] | built |
 | `macro` | `kind` [`series`; `inflation`, `inflation_items`, `fx`, `expectations`] | 1 year; 3 years for inflation | `family`, `currency` [`USD`], `horizon` | built |
 | `positioning` | `kind` [`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`] | 3 months | `sector`, `investor_type` [all] | built |
@@ -262,7 +262,8 @@ Notes:
   selects its fallback.
 - `derivatives`, as built (#1057): `chain` calls `option_chain` (`id` is the
   option prefix), `history` `option_history`, `exercises` `option_exercises`,
-  `termo` `termo_history`, `futures` `future_series`, `futures_curve`
+  `termo` `termo_history`, `futures` `future_series`, `futures_nth`
+  `future_nth_series` (`id` is the root, hidden `rank` default 1; #1158), `futures_curve`
   `future_curve` (`id` is the root; none sends the SQL default `DI1`), and
   `di_settlement` reads the `di_settlement` view, newest first. `date` applies
   to `chain` and `futures_curve`; `expiry_from` to `chain`. Ids are sent upper
@@ -511,7 +512,7 @@ The children of #1052 are the authoritative order.
 | `statements` | `financials`, `income_statements`, `balance_sheets`, `cash_flow_statements`, `company_financials`, `financial_statement_history` |
 | `funds` | `funds`, `fund_profile`, `fund_nav`, `fund_holdings`, `fund_debentures`, `fii_property_history` |
 | `fidc` | `fidc_portfolio`, `fidc_tranches`, `fidc_aging`, `fidc_cedentes`, `fidc_sacados` |
-| `derivatives` | `option_chain`, `option_history`, `option_exercises`, `termo_history`, `future_series`, `future_curve`, `di_settlement` |
+| `derivatives` | `option_chain`, `option_history`, `option_exercises`, `termo_history`, `future_series`, `future_nth_series`, `future_curve`, `di_settlement` |
 | `curves` | `curve`, `curve_history`, `reference_rate` |
 | `macro` | `macro_series`, `inflation`, `inflation_items`, `ptax`, `ptax_daily`, `focus_expectations` |
 | `positioning` | `short_interest`, `short_interest_by_sector`, `lending_trades`, `lending_participants`, `investor_flow` |
