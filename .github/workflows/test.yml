@@ -790,6 +790,42 @@ jobs:
       - name: share_counts and free_float behave (executed, not just compiled)
         run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/share_counts_behaviour.sql
 
+      # #1175: rebuilding dim_fund or fact_fund_monthly must not lock readers
+      # out. Each file runs again with an 8 s pause inside its build
+      # transaction while an anonymous caller, at anon's 3 s statement_timeout,
+      # searches funds and reads freshness. When the build held the DROP's lock
+      # (until 2026-11-16) both calls died with 57014 for the whole build.
+      - name: Anonymous search and freshness answer during a fund matview rebuild
+        run: |
+          set -euo pipefail
+          for f in 01_dim_fund 04_fact_fund_monthly; do
+            python3 - "$f" <<'PY'
+          import sys
+          f = sys.argv[1]
+          sql = open(f"src/store/analytical/{f}.sql", encoding="utf-8").read()
+          anchor = {"01_dim_fund": "CREATE UNIQUE INDEX ix_dim_fund_pk",
+                    "04_fact_fund_monthly": "CREATE UNIQUE INDEX ix_fact_fund_monthly_pk"}[f]
+          assert sql.count(anchor) == 1, anchor
+          open(f"/tmp/{f}_paused.sql", "w", encoding="utf-8").write(
+              sql.replace(anchor, "SELECT pg_sleep(8);\n" + anchor))
+          PY
+            PGOPTIONS="-c silo.ci_smoke_bypass=on" \
+              psql "$POSTGRES_URL" -q -v ON_ERROR_STOP=1 -f "/tmp/${f}_paused.sql" > /tmp/rebuild.log 2>&1 &
+            rebuild=$!
+            sleep 2
+            psql "$POSTGRES_URL" -X -q -v ON_ERROR_STOP=1 <<'SQL'
+          SET ROLE anon;
+          SET statement_timeout = '3s';
+          SELECT count(*) AS search_funds_rows FROM api.search_funds('via parque', 'fii');
+          SELECT count(*) AS coverage_rows FROM api.coverage();
+          SQL
+            wait "$rebuild" || { cat /tmp/rebuild.log; echo "::error::$f failed to rebuild"; exit 1; }
+            echo "$f: the anonymous reads answered while it rebuilt"
+          done
+          # The CASCADEs dropped the dependents later files build; rebuild them.
+          PGOPTIONS="-c silo.ci_smoke_bypass=on" bash scripts/apply_analytical.sh > /tmp/reapply.log 2>&1 || {
+            cat /tmp/reapply.log; exit 1; }
+
       - name: identical index replay preserves indexes; required widening still applies
         run: |
           python3 scripts/guard_noop_ddl.py tests/sql/guard_index_replay_behaviour.sql > /tmp/guard-index-test.sql
