@@ -10,7 +10,7 @@ import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 
 import { TIERS } from "./config.ts";
 import { ERROR_CODES, fromPostgrest } from "./errors.ts";
-import { minusMonths, todayUtcMinus3 } from "./params.ts";
+import { closest, minusMonths, todayUtcMinus3 } from "./params.ts";
 import { decodeCursor, encodeCursor } from "./paging.ts";
 import { callerBearer, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY } from "./registry.ts";
@@ -268,6 +268,15 @@ Deno.test("coverage freshness renames as_of to data_through and narrows by datas
   assertEquals(typo.json.error.code, "bad_request");
   assertEquals(typo.json.error.target, "dataset");
   assertStringIncludes(typo.json.error.message, "funds_fidc");
+  assertStringIncludes(typo.json.error.message, "Closest: funds_fidc.", "the near name comes before the full list");
+});
+
+Deno.test("closest: a shared word or a few edits, at most three, nearest first", () => {
+  const known = ["company_events", "financials", "funds_fidc", "fund_nav", "quotes"];
+  assertEquals(closest(["company_financials"], known), ["financials", "company_events"]);
+  assertEquals(closest(["funds_fdic"], known), ["funds_fidc"]);
+  assertEquals(closest(["quote"], known), ["quotes"]);
+  assertEquals(closest(["cia"], known), [], "nothing near: the message still lists every known name");
 });
 
 Deno.test("coverage metrics and catalog call their endpoints; catalog is data[0]", async () => {

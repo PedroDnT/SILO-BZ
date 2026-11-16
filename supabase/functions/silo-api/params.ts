@@ -222,7 +222,16 @@ function applyFilter(f: FilterSpec, v: Value, rows: Row[]): Row[] {
     const known = [...new Set(rows.map((r) => r[col]).filter((x) => x !== null && x !== undefined).map(String))].sort();
     const missing = want.filter((w) => !known.includes(w));
     if (missing.length) {
-      throw new ApiError(400, "bad_request", `${f.parameter}: no row has ${col} ${missing.join(", ")}. Known: ${known.join(", ")}.`, f.parameter);
+      // The closest names go first, so a guessed name can be corrected even
+      // when a client shows only the start of the message (#1177).
+      const near = closest(missing, known);
+      const hint = near.length ? ` Closest: ${near.join(", ")}.` : "";
+      throw new ApiError(
+        400,
+        "bad_request",
+        `${f.parameter}: no row has ${col} ${missing.join(", ")}.${hint} Known: ${known.join(", ")}.`,
+        f.parameter,
+      );
     }
     return rows.filter((r) => want.includes(String(r[col])));
   }
@@ -234,6 +243,44 @@ function applyFilter(f: FilterSpec, v: Value, rows: Row[]): Row[] {
     const hi = r[f.high as string];
     return typeof lo === "string" && typeof hi === "string" && lo <= d && d <= hi;
   });
+}
+
+/** Levenshtein distance; the names are short, so the quadratic table is fine. */
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/**
+ * The known values nearest to the unknown ones, at most three: a value that
+ * shares a `_`-separated word with an unknown one (company_financials ->
+ * financials, company_events; the longer shared word ranks first), or one
+ * within a third of its length in edits (funds_fdic -> funds_fidc). A value with nothing near gets no suggestion;
+ * the message still lists every known value.
+ */
+export function closest(unknown: string[], known: string[]): string[] {
+  const scored: [number, string][] = [];
+  for (const k of known) {
+    const kWords = k.toLowerCase().split("_").filter(Boolean);
+    let best = Infinity;
+    for (const u of unknown) {
+      const lu = u.toLowerCase();
+      const d = editDistance(lu, k.toLowerCase());
+      if (d <= Math.max(2, Math.floor(lu.length / 3))) best = Math.min(best, d);
+      // A shared word counts for its length, so the name sharing the longer word ranks first.
+      const shared = lu.split("_").filter((w) => w.length > 2 && kWords.includes(w));
+      if (shared.length) best = Math.min(best, d - shared.reduce((n, w) => n + w.length, 0));
+    }
+    if (best !== Infinity) scored.push([best, k]);
+  }
+  return scored.sort((a, b) => a[0] - b[0] || a[1].localeCompare(b[1])).slice(0, 3).map(([, k]) => k);
 }
 
 // ---------------------------------------------------------------------------
