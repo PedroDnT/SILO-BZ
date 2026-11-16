@@ -1,4 +1,4 @@
-"""api.dividends (40_api_dividends.sql, catalog v84, #1157).
+"""api.dividends (40_api_dividends.sql, catalog v85, #1157).
 
 Offline: the SQL text, the catalog and the v2 registry are pinned to each
 other. The executed behaviour (share class, installment payment dates, an

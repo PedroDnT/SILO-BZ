@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "84";
+export const CONTRACT_VERSION = "85";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -54,6 +54,7 @@ export const ENDPOINT_NAMES: string[] = [
   "fund_restatements",
   "funds",
   "future_curve",
+  "future_nth_series",
   "future_series",
   "income_statements",
   "index_history",
@@ -3252,6 +3253,58 @@ export const CONTRACT: Record<string, ContractEntry> = {
           ]
         },
         "p_trade_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "future_nth_series": {
+    "kind": "rpc",
+    "path": "/rpc/future_nth_series",
+    "description": "The Nth nearest futures contract of one root through time, oldest session first, with the same columns as api.future_series (B3 Price Report, b3_futures_settlement, from 2018-01-02). p_root is DI1, DOL or WDO (default DI1, as in future_curve); p_rank is 1 or more (1 = the nearest contract alive, 2 = the next, ...); anything else raises 22023. On each session the contracts of the root are ranked by contract_month, and the contract of the session's own month is left out, because DI1, DOL and WDO mature on the first business day of the contract month: in November the 1st DOL is DOLZ26, the 2nd DOLF27. Rank is by maturity, not by liquidity: past the 1st or 2nd dollar contract, open interest is small. Each row is the published row of that contract, with its ticker, so the roll shows in the ticker column. NOTHING IS ADJUSTED OR SPLICED: the price jumps at each roll, and a return across a ticker change is not a return. A session with fewer than p_rank contracts has no row. Quote columns per root as in api.future_curve: DI1 in rate (% a.a., 252 business days), DOL and WDO in price (BRL per USD 1,000). Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_root": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `'DI1'::text`.",
+          "default": "DI1",
+          "enum": [
+            "DI1",
+            "DOL",
+            "WDO",
+            null
+          ]
+        },
+        "p_rank": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `1`.",
+          "default": 1
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
           "type": [
             "string",
             "null"

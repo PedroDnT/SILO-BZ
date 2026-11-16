@@ -6,6 +6,7 @@
 --   api.future_curve   every contract of one root (DI1, DOL, WDO) on one B3
 --                      session, nearest first
 --   api.future_series  one contract of those roots through time
+--   api.future_nth_series  the Nth nearest contract of a root through time
 --   api.curve          one B3 reference curve (PRE, DOC, DPL) on one session
 --   api.curve_history  one of B3's FIXED vertices of a curve through time
 --
@@ -277,6 +278,114 @@ GRANT EXECUTE ON FUNCTION api.future_series(TEXT, DATE, DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.future_series(TEXT, DATE, DATE) IS
     'One futures contract through time, oldest session first, with the same columns as api.future_curve (B3 Price Report, b3_futures_settlement, from 2018-01-02). p_ticker is an outright DI1, DOL or WDO code such as DI1F27 or DOLF27 — root, B3 month letter (F = January … Z = December), two-digit year — and anything else raises 22023; future_curve lists the contracts of a session. Per root, as in future_curve: DI1 is QUOTED IN RATE, so settlement_rate and the open/low/high/avg/close columns are RATES (% a.a., 252 business days) and settlement_price is the PU; DOL and WDO are QUOTED IN PRICE, BRL per USD 1,000 (DOL USD 50,000 per contract, WDO USD 10,000; B3 contract specification, read 2026-10-21), so their quote columns and settlement_price are that price as published, and settlement_rate is NULL where B3 prints none. A contract is listed years before it matures and stops at maturity, so a window outside its life returns no rows. Nothing is rolled, spliced or made continuous: a constant-maturity rate is B3''s own curve (api.curve, api.curve_history). Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.';
+
+-- ---------------------------------------------------------------------------
+-- future_nth_series — the Nth nearest contract of one root through time (#1158)
+-- ---------------------------------------------------------------------------
+-- On each session the contracts of the root are ranked by contract_month,
+-- leaving out the contract of the session's own month: DI1, DOL and WDO
+-- mature on the first business day of the contract month, so on any session
+-- in month M that contract has matured or matures that day. Rank 1 is the
+-- nearest contract still alive. Each row is that contract's published row,
+-- ticker included, so the roll shows in the ticker column. Nothing is
+-- adjusted or spliced: the series jumps at each roll.
+CREATE OR REPLACE FUNCTION api.future_nth_series(
+    p_root TEXT    DEFAULT 'DI1',  -- DI1, DOL or WDO (the default root of future_curve too)
+    p_rank INTEGER DEFAULT 1,      -- 1 = the nearest contract alive, 2 = the next ...
+    p_from DATE    DEFAULT NULL,   -- NULL = 12 months before p_to
+    p_to   DATE    DEFAULT NULL    -- NULL = today
+)
+RETURNS TABLE (
+    trade_date           DATE,
+    ticker               TEXT,
+    contract_month       DATE,
+    settlement_rate      NUMERIC,
+    settlement_price     NUMERIC,
+    prev_settlement_rate NUMERIC,
+    open_interest        BIGINT,
+    contracts            BIGINT,
+    trades               INT,
+    notional_brl         NUMERIC,
+    open_px              NUMERIC,
+    low_px               NUMERIC,
+    high_px              NUMERIC,
+    avg_px               NUMERIC,
+    close_px             NUMERIC,
+    settlement_status    TEXT,
+    source               TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+#variable_conflict use_column
+DECLARE
+    v_root TEXT := upper(btrim(COALESCE(p_root, '')));
+    v_to   DATE := COALESCE(p_to, CURRENT_DATE);
+    v_from DATE;
+    v_rx   TEXT;
+BEGIN
+    IF v_root NOT IN ('DI1', 'DOL', 'WDO') THEN
+        RAISE EXCEPTION
+            'future_nth_series: root % is not held; b3_futures_settlement holds DI1, DOL and WDO (B3 Price Report, outright contracts, from 2018-01-02)',
+            COALESCE(p_root, 'NULL')
+            USING ERRCODE = '22023';
+    END IF;
+    IF p_rank IS NULL OR p_rank < 1 THEN
+        RAISE EXCEPTION
+            'future_nth_series: p_rank must be 1 or more (1 = the nearest contract alive), got %',
+            COALESCE(p_rank::text, 'NULL')
+            USING ERRCODE = '22023';
+    END IF;
+    v_from := COALESCE(p_from, (v_to - INTERVAL '12 months')::date);
+    IF v_from > v_to THEN
+        RAISE EXCEPTION 'future_nth_series: p_from (%) is after p_to (%)', v_from, v_to
+            USING ERRCODE = '22023';
+    END IF;
+    -- v_root is one of the three literals above, so it is safe in the pattern.
+    v_rx := '^' || v_root || '[FGHJKMNQUVXZ][0-9]{2}$';
+
+    RETURN QUERY
+    -- One page + one, then assert_row_cap REFUSES (22023). No cursor.
+    WITH listed AS (
+        SELECT f.trade_date AS d, f.ticker AS t,
+               make_date(2000 + substr(f.ticker, 5, 2)::int,
+                         strpos('FGHJKMNQUVXZ', substr(f.ticker, 4, 1)), 1) AS m,
+               f.settlement_rate, f.settlement_price, f.prev_settlement_rate,
+               f.open_interest, f.contracts, f.trades, f.notional_brl,
+               f.open_px, f.low_px, f.high_px, f.avg_px, f.close_px,
+               f.settlement_status
+        FROM public.b3_futures_settlement f
+        WHERE f.trade_date BETWEEN v_from AND v_to
+          AND f.ticker ~ v_rx
+    ), ranked AS (
+        SELECT l.*, row_number() OVER (PARTITION BY l.d ORDER BY l.m) AS rk
+        FROM listed l
+        WHERE l.m > date_trunc('month', l.d)::date
+    ), page AS (
+        SELECT r.* FROM ranked r
+        WHERE r.rk = p_rank
+        ORDER BY r.d
+        LIMIT 1001
+    )
+    SELECT g.d, g.t, g.m, g.settlement_rate, g.settlement_price, g.prev_settlement_rate,
+           g.open_interest, g.contracts, g.trades, g.notional_brl,
+           g.open_px, g.low_px, g.high_px, g.avg_px, g.close_px,
+           g.settlement_status, 'b3_price_report'::text
+    FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'future_nth_series')
+    ORDER BY g.d
+    LIMIT 1000;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.future_nth_series(TEXT, INTEGER, DATE, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.future_nth_series(TEXT, INTEGER, DATE, DATE) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.future_nth_series(TEXT, INTEGER, DATE, DATE) TO silo_api;
+
+COMMENT ON FUNCTION api.future_nth_series(TEXT, INTEGER, DATE, DATE) IS
+    'The Nth nearest futures contract of one root through time, oldest session first, with the same columns as api.future_series (B3 Price Report, b3_futures_settlement, from 2018-01-02). p_root is DI1, DOL or WDO (default DI1, as in future_curve); p_rank is 1 or more (1 = the nearest contract alive, 2 = the next, ...); anything else raises 22023. On each session the contracts of the root are ranked by contract_month, and the contract of the session''s own month is left out, because DI1, DOL and WDO mature on the first business day of the contract month: in November the 1st DOL is DOLZ26, the 2nd DOLF27. Rank is by maturity, not by liquidity: past the 1st or 2nd dollar contract, open interest is small. Each row is the published row of that contract, with its ticker, so the roll shows in the ticker column. NOTHING IS ADJUSTED OR SPLICED: the price jumps at each roll, and a return across a ticker change is not a return. A session with fewer than p_rank contracts has no row. Quote columns per root as in api.future_curve: DI1 in rate (% a.a., 252 business days), DOL and WDO in price (BRL per USD 1,000). Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.';
 
 -- ---------------------------------------------------------------------------
 -- curve — one B3 reference curve on one session, shortest vertex first

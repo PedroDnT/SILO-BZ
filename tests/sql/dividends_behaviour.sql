@@ -1,4 +1,4 @@
--- Executed checks for api.dividends (40_api_dividends.sql, catalog v84, #1157).
+-- Executed checks for api.dividends (40_api_dividends.sql, catalog v85, #1157).
 -- The Python tests pin the SQL text; this proves the function DOES the right
 -- thing on rows. Synthetic tickers (DIVA4, DIVF11), inside a transaction that
 -- is rolled back:

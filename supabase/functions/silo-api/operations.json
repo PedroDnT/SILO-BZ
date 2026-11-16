@@ -2418,6 +2418,90 @@
   },
   {
     "resource": "derivatives",
+    "kind": "futures_nth",
+    "path": "/derivatives/futures-nth",
+    "method": "GET",
+    "title": "Nth futures contract history",
+    "group": "Options and futures",
+    "description": "The Nth nearest DI1, DOL or WDO contract through time, oldest first. Each row carries its ticker; nothing is adjusted at a roll.",
+    "parameters": [
+      {
+        "name": "root",
+        "target": "id",
+        "description": "Futures contract root: DI1, DOL or WDO.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "DI1",
+            "DOL",
+            "WDO"
+          ]
+        },
+        "required": true,
+        "advanced": false,
+        "example": "DOL"
+      },
+      {
+        "name": "rank",
+        "target": "rank",
+        "description": "Which contract by maturity: 1 = the nearest alive, 2 = the next.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "required": false,
+        "advanced": false,
+        "example": 2
+      },
+      {
+        "name": "from",
+        "target": "from",
+        "description": "Start date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "to",
+        "target": "to",
+        "description": "End date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "limit",
+        "target": "limit",
+        "description": "Rows per page, subject to your tier.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "required": false,
+        "advanced": true
+      },
+      {
+        "name": "cursor",
+        "target": "cursor",
+        "description": "Cursor from the next page URL.",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "advanced": true
+      }
+    ],
+    "body": []
+  },
+  {
+    "resource": "derivatives",
     "kind": "futures_curve",
     "path": "/derivatives/futures-curve",
     "method": "GET",

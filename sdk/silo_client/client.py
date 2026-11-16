@@ -40,7 +40,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 84  # v84: api.dividends (#1157); history in serve.catalog.py.
+KNOWN_CATALOG_VERSION = 85  # v85: api.dividends (#1157); history in serve.catalog.py.
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -1627,6 +1627,23 @@ class SiloClient:
         """
         return self.rpc(
             "future_series", p_ticker=ticker, p_from=_iso(start), p_to=_iso(end),
+        )
+
+    def future_nth_series(self, root: str, rank: int = 1, start: Datish = None,
+                          end: Datish = None) -> List[Dict[str, Any]]:
+        """The Nth nearest DI1, DOL or WDO contract through time, oldest first.
+
+            silo.future_nth_series("DOL", rank=2, start="2026-01-01")
+
+        On each session rank 1 is the nearest contract still alive (the
+        contract of the session's own month is left out). Each row is that
+        contract's published row, with its ticker: nothing is adjusted, so the
+        price jumps at each roll. Same columns as `future_series`. Default
+        window 12 months.
+        """
+        return self.rpc(
+            "future_nth_series", p_root=root, p_rank=rank,
+            p_from=_iso(start), p_to=_iso(end),
         )
 
     def curve(self, curve: str = "PRE",

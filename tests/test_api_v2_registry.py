@@ -490,7 +490,7 @@ def test_only_portfolio_is_post_and_its_body_fields_are_lists():
 ISSUE_1057 = {
     "derivatives": {
         "chain": "option_chain", "history": "option_history", "exercises": "option_exercises",
-        "termo": "termo_history", "futures": "future_series", "futures_curve": "future_curve",
+        "termo": "termo_history", "futures": "future_series", "futures_nth": "future_nth_series", "futures_curve": "future_curve",
         "di_settlement": "di_settlement",
     },
     "curves": {"snapshot": "curve", "history": "curve_history", "vertices": "reference_rate"},
@@ -506,7 +506,7 @@ ISSUE_1057 = {
 WINDOWS_1057 = {"derivatives": 12, "curves": 12, "macro": 12, "positioning": 3}
 MAIN_1057 = {"derivatives": ["kind", "date"], "curves": ["kind", "curve", "tenor"], "macro": ["kind"], "positioning": ["kind"]}
 HIDDEN_1057 = {
-    "derivatives": {"expiry_from"}, "curves": {"date"},
+    "derivatives": {"expiry_from", "rank"}, "curves": {"date"},
     "macro": {"family", "currency", "horizon"}, "positioning": {"sector", "investor_type"},
 }
 

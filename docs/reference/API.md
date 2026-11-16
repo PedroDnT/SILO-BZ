@@ -316,7 +316,7 @@ listed companies file with CVM IPE. It reads `cia_event` through the internal vi
 - Executed check: `tests/sql/rj_listed_documents_behaviour.sql` in CI's
   `sql-compile` job.
 
-### Cash dividends of a ticker (catalog v84)
+### Cash dividends of a ticker (catalog v85)
 
 `api.dividends(p_ticker, p_from, p_to)` (`40_api_dividends.sql`, #1157) serves one
 ticker's cash distributions: DIVIDENDO, JRS CAP PROPRIO (gross of withholding tax),
@@ -859,6 +859,12 @@ The operator half:
   B3's month letters (the same `_MONTH_LETTERS` the Price Report parser keeps
   outright contracts with). DI1 is quoted in rate, so the quote columns are
   % a.a.; `settlement_price` is the PU.
+- **`future_nth_series(p_root, p_rank, p_from, p_to)` serves the Nth nearest
+  contract through time** (v84, #1158). On each session the contracts of the
+  root are ranked by maturity, leaving out the contract of the session's own
+  month (it matures on that month's first business day); rank 1 is the
+  nearest contract alive. Each row is that contract's published row with its
+  ticker. Nothing is adjusted or spliced, so the price jumps at each roll.
 - **`future_curve` and `future_series` serve DI1, DOL and WDO** (v76, #1000;
   the ingest of DOL and WDO is #999). `p_root` is one of the three, any other
   raises `22023` with the list; `future_series` takes an outright code of
@@ -1289,6 +1295,7 @@ POST /rest/v1/rpc/fund_profile
 POST /rest/v1/rpc/fund_restatement_diff
 POST /rest/v1/rpc/fund_restatements
 POST /rest/v1/rpc/future_curve
+POST /rest/v1/rpc/future_nth_series
 POST /rest/v1/rpc/future_series
 POST /rest/v1/rpc/income_statements
 POST /rest/v1/rpc/index_history

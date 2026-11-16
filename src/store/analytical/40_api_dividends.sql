@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 40_api_dividends.sql
 -- api.dividends(p_ticker, p_from, p_to): the cash distributions of one listed
--- ticker, as B3 publishes them (catalog v84, #1157). No new fetch: the rows are
+-- ticker, as B3 publishes them (catalog v85, #1157). No new fetch: the rows are
 -- already in b3_cash_dividend (migration 51) and b3_corporate_event (26, 72).
 --
 -- TWO B3 SOURCES, and `source` on the row says which one:

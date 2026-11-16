@@ -558,6 +558,30 @@
       }
     }
   },
+  "/derivatives/futures-nth": {
+    "status": 200,
+    "params": {
+      "root": "DOL",
+      "rank": 2,
+      "from": "2026-01-02",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "trade_date": "2026-01-02",
+          "ticker": "DOLH26",
+          "contract_month": "2026-03-01",
+          "settlement_rate": null,
+          "settlement_price": 5494.3
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
   "/derivatives/futures-curve": {
     "status": 200,
     "params": {
