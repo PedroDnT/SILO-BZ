@@ -119,6 +119,16 @@
     "p_tenor_days"
    ]
   },
+  "debt_issues": {
+   "params": [
+    "p_from",
+    "p_id",
+    "p_to"
+   ],
+   "required": [
+    "p_id"
+   ]
+  },
   "dividends": {
    "params": [
     "p_from",

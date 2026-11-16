@@ -1554,6 +1554,41 @@
       }
     }
   },
+  "/statements/debt-issues": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cd_cvm": "9512",
+          "cnpj": "33000167000101",
+          "company": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+          "reference_date": "2025-12-31",
+          "version": 27,
+          "security_type": "Debêntures",
+          "issue_name": "1ª Série da 6ª Emissão de Debêntures Simples, em 3 Séries",
+          "issue_date": "2019-01-15",
+          "maturity_date": "2026-01-15",
+          "quantity": 898397,
+          "issue_value": 898397000.0,
+          "outstanding_balance": 1266447208.93,
+          "transfer_restricted": null,
+          "convertible": null,
+          "redeemable": true,
+          "terms_text": "Emissão pela companhia em 15/01/2019 de debêntures simples, não conversíveis em ações, da espécie quirografária, sem garantia (\"Debêntures\"), em três séries, no montante total de R$ 3.600.000.000,00 (três bilhões e seiscentos milhões de reais) para distribuição pública, nos termos da Instrução da CVM nº 400, de 29 de dezembro de 2003.",
+          "source": "cvm_fre"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    },
+    "caption": "Built from the row CVM published in fre_cia_aberta_outro_valor_mobiliario_2025.csv, mapped as api.debt_issues maps it, before the endpoint was deployed. This excerpt omits pagination links."
+  },
   "/curves/treasury": {
     "status": 200,
     "params": {

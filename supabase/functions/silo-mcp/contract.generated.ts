@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "87";
+export const CONTRACT_VERSION = "88";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -32,6 +32,7 @@ export const ENDPOINT_NAMES: string[] = [
   "credit_market_history",
   "curve",
   "curve_history",
+  "debt_issues",
   "di_settlement",
   "dividends",
   "equities",
@@ -2363,6 +2364,44 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "required": [
         "p_curve",
         "p_tenor_days"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "debt_issues": {
+    "kind": "rpc",
+    "path": "/rpc/debt_issues",
+    "description": "The debt issues (debentures, commercial notes, CRI, CRA, ...) a listed company describes in its CVM FRE, item outros valores mobiliários, yearly from 2010: security type, the issue name as filed, issue date, maturity, quantity, value issued, outstanding balance at the reference date, three flags, and terms_text. One row is one issue as filed, often several series; CVM publishes no ticker, ISIN or series code, so a row does not join to a traded debenture. Only companies that file an FRE (listed issuers) are covered. Rate and indexer exist only in terms_text, free text served as filed and NEVER parsed. The newest version of each reference date is served, which is not point-in-time; reference_date is not a filing date. An empty flag stays NULL. p_id is required and resolves as api.financials resolves it (ticker through CVM's FCA map, 14-digit CNPJ or CVM code, never a name); an id that resolves to nothing returns no rows. p_from / p_to bound the reference date (NULL = no bound). Newest reference date first, then maturity. More than 1000 rows RAISES 22023 (never trimmed).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_id"
       ],
       "additionalProperties": false
     }

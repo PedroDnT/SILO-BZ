@@ -363,6 +363,32 @@ through time, as filed with CVM. v2: `/v2/statements?kind=shares&id=PETR4` and
 - `p_from` / `p_to` bound the reference date; NULL is unbounded. Raise-only above
   one page. Executed check: `tests/sql/share_counts_behaviour.sql`.
 
+### Debt issues of a listed company (catalog v88)
+
+`api.debt_issues(p_id, p_from, p_to)` (`43_api_debt_issues.sql`, migration 86,
+#1164) serves the debt issues a listed company describes in its CVM FRE, item
+"outros valores mobiliários" (`cvm_fre_outro_valor_mobiliario`), yearly, from
+2010. v2: `/v2/statements?kind=debt_issues&id=PETR4`.
+
+- One row is one issue as the company filed it: debentures, commercial notes,
+  CRI, CRA, financial bills or subscription warrants. One row often holds
+  several series. CVM publishes no ticker, ISIN or series code, so a row does
+  not join to a traded debenture.
+- Coverage is listed issuers only. A closed company that issues debentures
+  files no FRE and is not here. Measured 2026-11-16: issuers that file an FRE
+  hold 46% of the active debenture series.
+- The rate and the indexer are NOT parsed. They exist only in `terms_text`, free
+  text that each company writes in its own way. It is served as filed.
+- Columns: security type, the issue name as filed, issue date, maturity date,
+  quantity, value issued, outstanding balance at the reference date, the
+  transfer-restricted, convertible and redeemable flags (NULL when the company
+  left them empty) and `terms_text`.
+- The newest version of each reference date is served, which is not
+  point-in-time. `reference_date` is not a filing date. `p_id` resolves as
+  `api.financials` resolves it; an id that resolves to nothing returns no rows.
+- `p_from` / `p_to` bound the reference date; NULL is unbounded. Raise-only above
+  one page. Executed check: `tests/sql/debt_issues_behaviour.sql`.
+
 ### The research universe (catalog v43)
 
 `api.research_universe()` (`28_api_research.sql`; research-seam spec
@@ -1299,7 +1325,7 @@ fails while a route in that section is missing here, so a new endpoint ships
 with its line. The prose above covers a subset in depth; the catalog's own
 entry is the description of record.
 
-Functions (69), called with `POST`:
+Functions (76), called with `POST`:
 
 ```
 POST /rest/v1/rpc/anbima_classes
@@ -1313,6 +1339,7 @@ POST /rest/v1/rpc/credit_implied_rate
 POST /rest/v1/rpc/credit_market_history
 POST /rest/v1/rpc/curve
 POST /rest/v1/rpc/curve_history
+POST /rest/v1/rpc/debt_issues
 POST /rest/v1/rpc/dividends
 POST /rest/v1/rpc/fidc_aging
 POST /rest/v1/rpc/fidc_cedentes

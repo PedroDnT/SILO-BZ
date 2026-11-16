@@ -790,6 +790,9 @@ jobs:
       - name: share_counts and free_float behave (executed, not just compiled)
         run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/share_counts_behaviour.sql
 
+      - name: debt_issues behaves (executed, not just compiled)
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/debt_issues_behaviour.sql
+
       - name: identical index replay preserves indexes; required widening still applies
         run: |
           python3 scripts/guard_noop_ddl.py tests/sql/guard_index_replay_behaviour.sql > /tmp/guard-index-test.sql
