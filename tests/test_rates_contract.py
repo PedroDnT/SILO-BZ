@@ -28,10 +28,11 @@ SQL27 = (ANALYTICAL / "27_api_rates.sql").read_text(encoding="utf-8")
 SQL19 = (ANALYTICAL / "19_api_contract.sql").read_text(encoding="utf-8")
 SQL11 = (ANALYTICAL / "11_indexes.sql").read_text(encoding="utf-8")
 
-SERVED = ("future_curve", "future_series", "curve", "curve_history")
+SERVED = ("future_curve", "future_series", "future_nth_series", "curve", "curve_history")
 SIGNATURES = {
     "future_curve": "TEXT, DATE",
     "future_series": "TEXT, DATE, DATE",
+    "future_nth_series": "TEXT, INTEGER, DATE, DATE",
     "curve": "TEXT, DATE",
     "curve_history": "TEXT, INT, DATE, DATE",
 }
@@ -110,7 +111,7 @@ def test_the_registry_is_internal():
 def test_every_relation_is_schema_qualified(name):
     body = _body(name)
     for rel in re.findall(r"\b(?:FROM|JOIN)\s+([a-z_][\w.]*)", body, re.I):
-        if rel.lower() == "page":
+        if rel.lower() in ("page", "listed", "ranked"):  # CTEs
             continue
         assert rel.startswith(("public.", "api.")), f"{name}: unqualified {rel}"
 
@@ -137,7 +138,7 @@ def test_nothing_is_derived(name):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ("future_curve", "future_series"))
+@pytest.mark.parametrize("name", ("future_curve", "future_series", "future_nth_series"))
 def test_contract_month_is_read_with_b3s_month_letters(name):
     body = _strip(_chunk(name))
     assert "strpos('FGHJKMNQUVXZ', substr(f.ticker, 4, 1))" in body
@@ -153,6 +154,20 @@ def test_month_letters_are_the_ones_the_ingest_keeps():
     assert pr._MONTH_LETTERS == "FGHJKMNQUVXZ"
     for name in ("future_curve", "future_series"):
         assert f"'{pr._MONTH_LETTERS}'" in _strip(_chunk(name))
+
+
+def test_future_nth_series_ranks_by_maturity_and_leaves_out_the_month_of_the_session():
+    # #1158: on each session rank 1 is the nearest contract still alive. The
+    # contract of the session's own month matured (or matures that day) on the
+    # month's first business day, so it is left out, never served as the 1st.
+    body = _strip(_chunk("future_nth_series"))
+    assert "row_number() OVER (PARTITION BY l.d ORDER BY l.m)" in body
+    assert "WHERE l.m > date_trunc('month', l.d)::date" in body
+    assert "WHERE r.rk = p_rank" in body
+    assert "IF v_root NOT IN ('DI1', 'DOL', 'WDO') THEN" in body
+    assert "IF p_rank IS NULL OR p_rank < 1 THEN" in body
+    comment = _comment("future_nth_series")
+    assert "NOTHING IS ADJUSTED OR SPLICED" in comment and "with its ticker" in comment
 
 
 def test_future_series_accepts_the_held_roots_and_refuses_anything_else():
@@ -349,6 +364,7 @@ def test_sdk_sends_exactly_the_declared_parameters():
     assert sent["future_curve"]["p_root"] == "DOL"
     c.future_curve(trade_date="2026-09-25")
     c.future_series("DI1F27", start="2026-01-01")
+    c.future_nth_series("DOL", rank=2, start="2026-01-01")
     c.curve("DOC")
     c.curve_history("PRE", 360, end="2026-09-01")
     for name in SERVED:

@@ -302,6 +302,15 @@
    ],
    "required": []
   },
+  "future_nth_series": {
+   "params": [
+    "p_from",
+    "p_rank",
+    "p_root",
+    "p_to"
+   ],
+   "required": []
+  },
   "future_series": {
    "params": [
     "p_from",

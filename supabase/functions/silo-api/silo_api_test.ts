@@ -755,7 +755,7 @@ Deno.test("derivatives chain: option_chain with the prefix upper case, asked for
   assertEquals(body(calls[0]), { p_prefix: "PETR", p_limit: 1001 }, "no date: the SQL's latest session; expiry_from: today");
   assertEquals(json.data.length, 10, "the anonymous page of a 40-series chain");
   assert(json.next_page_url);
-  assertEquals(json.meta.request, { kind: "chain", date: null, expiry_from: null, id: "PETR", from: null, to: null, limit: 10 });
+  assertEquals(json.meta.request, { kind: "chain", date: null, expiry_from: null, rank: null, id: "PETR", from: null, to: null, limit: 10 });
   const next = await get(pathOf(json.next_page_url), 200, rowsOf(40));
   assertEquals(next.json.data[0].codneg, "PETRK10", "the next slice of the same chain");
 
@@ -800,6 +800,19 @@ Deno.test("derivatives history, termo, futures need an id and take the 1-year wi
     assertEquals(none.json.error.target, "id");
     assertEquals(none.calls.length, 0);
   }
+});
+
+Deno.test("derivatives futures_nth: root id, rank (default 1), the 1-year window; rank elsewhere is refused", async () => {
+  const r = await get("/v2/derivatives?kind=futures_nth&id=dol&rank=2&from=2026-01-01", 200, "[]", SIGNED);
+  assert(r.calls[0].url.endsWith("/rpc/future_nth_series"));
+  assertEquals(body(r.calls[0]), { p_root: "DOL", p_rank: 2, p_from: "2026-01-01" });
+  const dflt = await get("/v2/derivatives?kind=futures_nth&id=WDO");
+  assertEquals(body(dflt.calls[0]), { p_root: "WDO", p_from: M3 }, "rank none: the SQL default 1");
+  const none = await get("/v2/derivatives?kind=futures_nth");
+  assertEquals(none.json.error.target, "id");
+  assertEquals(none.calls.length, 0);
+  const misplaced = await get("/v2/derivatives?kind=futures&id=DOLF27&rank=2");
+  assertEquals(misplaced.json.error.target, "rank");
 });
 
 Deno.test("derivatives futures_curve: root default DI1 (not sent), date; di_settlement is a ranged GET", async () => {
