@@ -93,11 +93,22 @@ openapi: "{spec_path} {method.upper()} {path}"
             page += '\n<Accordion title="Series codes and units">\n\n'
             page += "\n".join(f"- `{c['value']}`: {c['label']}." for c in choices)
             page += '\n\n</Accordion>\n'
+        if path == "/curves/treasury":
+            # The one resource that names its source (owner decision 2026-11-16, #1163).
+            page += (
+                "\n## Source and licence\n\n"
+                "This data is Tesouro Nacional open data (\"Taxas dos Títulos Ofertados pelo Tesouro Direto\"), "
+                "under the [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/). "
+                "Every row carries `source` (`Tesouro Nacional`) and `licence` (`ODbL-1.0`). "
+                "When you reuse it, credit Tesouro Nacional, and offer a database you derive from it under the same licence.\n\n"
+                "The rates are the platform's posted morning buy and sell quotes, in % a year as published, not trades. "
+                "They can be negative. A null price is a side the title was not on sale on. "
+                "With no dates, the newest base date comes first; one base date holds about 60 titles.\n"
+            )
         status = snapshot["status"]
         label = "Successful response" if status == 200 else f"Error response (HTTP {status})"
-        # A snapshot taken before its endpoint was deployed says where it came from.
-        origin = snapshot.get("note") or f"{label} from a Pro request on 2026-11-13. This excerpt omits fields and pagination links."
-        page += f"\n## Example response\n\n{origin}\n\n```json\n"
+        caption = snapshot.get("caption") or f"{label} from a Pro request on 2026-11-13. This excerpt omits fields and pagination links."
+        page += f"\n## Example response\n\n{caption}\n\n```json\n"
         page += json.dumps(snapshot["excerpt"], indent=2, ensure_ascii=False) + "\n```\n"
         page += '\n## FAQ\n\n<Accordion title="How do I check for more results?">\n\nWhen present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).\n\n</Accordion>\n\n<Accordion title="Can an agent use this data?">\n\nYes. Connect an agent through the [MCP server](/api-docs/v2/mcp).\n\n</Accordion>\n\n[Python DataFrames](/api-docs/v2/python)\n'
         files[f"{slug}.mdx"] = page
@@ -118,7 +129,7 @@ keywords: ["endpoints", "API", "playground", "data"]
 icon: "compass"
 ---
 
-**Deployed preview.** Browse 79 operations across 14 REST resources. Each operation
+**Deployed preview.** Browse 80 operations across 14 REST resources. Each operation
 has a dedicated route with task-specific inputs.
 These pages expose the existing API; they do not add data coverage.
 

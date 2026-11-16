@@ -928,16 +928,17 @@ export const REGISTRY: Registry = {
       "window_months": 12,
       "notes": [
         "PRE and DPL are % a.a. on 252 business days; DOC is % a.a. linear on 360 calendar days, so its vertices under about 30 calendar days are not a rate level. rate_basis rides on every snapshot and history row.",
-        "Past the last maturity of the anchoring contract (DI1, DDI, DAP) B3 extrapolates: the long vertices are not prices. Nothing is interpolated: a tenor that is not one of B3's fixed vertices is refused with the list."
+        "Past the last maturity of the anchoring contract (DI1, DDI, DAP) B3 extrapolates: the long vertices are not prices. Nothing is interpolated: a tenor that is not one of B3's fixed vertices is refused with the list.",
+        "kind treasury is Tesouro Nacional open data under the ODbL 1.0 licence, the one resource that names its source: credit Tesouro Nacional, and offer a database derived from it under the same licence. The rates are the platform's posted retail quotes, not trades."
       ],
       "parameters": [
         {
           "name": "kind",
           "visibility": "main",
           "type": "enum",
-          "values": ["snapshot", "history", "vertices"],
+          "values": ["snapshot", "history", "vertices", "treasury"],
           "default": "snapshot",
-          "doc": "snapshot: one curve on one session, every vertex, with its rate basis. history: one fixed vertex through time. vertices: the raw reference-rate rows (api.reference_rate) of one curve on one session."
+          "doc": "snapshot: one curve on one session, every vertex, with its rate basis. history: one fixed vertex through time. vertices: the raw reference-rate rows (api.reference_rate) of one curve on one session. treasury: Tesouro Direto posted rates and prices per title, newest base date first (Tesouro Nacional, ODbL)."
         },
         {
           "name": "curve",
@@ -961,6 +962,22 @@ export const REGISTRY: Registry = {
           "default": null,
           "default_doc": "the newest session held for the curve (vertices: the newest in the 14 days to today)",
           "doc": "kind snapshot and vertices: the B3 session, YYYY-MM-DD."
+        },
+        {
+          "name": "title",
+          "visibility": "hidden",
+          "type": "string",
+          "default": null,
+          "default_doc": "none: every title type",
+          "doc": "kind treasury: one title type as Tesouro Nacional publishes it (Tesouro Selic, Tesouro Prefixado, Tesouro IPCA+, Tesouro IPCA+ com Juros Semestrais, ...); case is ignored, an unknown type is refused with the list."
+        },
+        {
+          "name": "maturity",
+          "visibility": "hidden",
+          "type": "date",
+          "default": null,
+          "default_doc": "none: every maturity",
+          "doc": "kind treasury: one maturity, YYYY-MM-DD."
         }
       ],
       "kinds": {
@@ -983,6 +1000,12 @@ export const REGISTRY: Registry = {
           "view": true,
           "order": "trade_date.desc,calendar_days.asc",
           "args": { "curve": "curve", "date": "trade_date" }
+        },
+        "treasury": {
+          "doc": "api.treasury_direct: Tesouro Direto posted morning buy and sell rates (% a year, as published) and PU per title, newest base date first. Quotes, not trades; a NULL price is a side not on sale. Every row carries source (Tesouro Nacional) and licence (ODbL-1.0): credit Tesouro Nacional when you reuse it. About 60 titles a base date.",
+          "endpoint": "treasury_direct",
+          "paging": { "method": "date_window", "order": "desc" }, "daily": true,
+          "args": { "title": "p_title", "maturity": "p_maturity", "from": "p_from", "to": "p_to" }
         }
       }
     },

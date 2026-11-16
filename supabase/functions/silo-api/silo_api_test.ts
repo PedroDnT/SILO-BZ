@@ -875,7 +875,7 @@ Deno.test("curves snapshot and history map curve, date and tenor; tenor is used 
   const snap = await get("/v2/curves");
   assert(snap.calls[0].url.endsWith("/rpc/curve"));
   assertEquals(body(snap.calls[0]), { p_curve: "PRE" });
-  assertEquals(snap.json.meta.request, { kind: "snapshot", curve: "PRE", tenor: 360, date: null, from: null, to: null, limit: 10 });
+  assertEquals(snap.json.meta.request, { kind: "snapshot", curve: "PRE", tenor: 360, date: null, title: null, maturity: null, from: null, to: null, limit: 10 });
   const hist = await get("/v2/curves?kind=history&curve=DPL&tenor=720&to=2026-06-30");
   assert(hist.calls[0].url.endsWith("/rpc/curve_history"));
   assertEquals(body(hist.calls[0]), { p_curve: "DPL", p_tenor_days: 720, p_from: "2026-03-30", p_to: "2026-06-30" }, "anonymous: 3 months of daily data");
@@ -884,6 +884,21 @@ Deno.test("curves snapshot and history map curve, date and tenor; tenor is used 
   const curve = await get("/v2/curves?curve=DIC");
   assertEquals(curve.json.error.target, "curve");
   for (const r of [tenor, curve]) assertEquals(r.calls.length, 0);
+});
+
+Deno.test("curves treasury: title and maturity as asked, newest first in date windows; a non-default curve, tenor or date is refused", async () => {
+  const all = await get("/v2/curves?kind=treasury");
+  assert(all.calls[0].url.endsWith("/rpc/treasury_direct"));
+  assertEquals(body(all.calls[0]), { p_from: M3 }, "anonymous: 3 months, every title");
+  const one = await get("/v2/curves?kind=treasury&title=Tesouro%20IPCA%2B&maturity=2035-05-15&from=2026-01-01&to=2026-06-30", 200, "[]", SIGNED);
+  assertEquals(body(one.calls[0]), { p_title: "Tesouro IPCA+", p_maturity: "2035-05-15", p_from: "2026-01-01", p_to: "2026-06-30" });
+  for (const q of ["curve=DOC", "tenor=720", "date=2026-11-13"]) {
+    const r = await get(`/v2/curves?kind=treasury&${q}`);
+    assertEquals(r.json.error.target, q.split("=")[0]);
+    assertEquals(r.calls.length, 0);
+  }
+  const misplaced = await get("/v2/curves?title=Tesouro%20Selic");
+  assertEquals(misplaced.json.error.target, "title");
 });
 
 Deno.test("curves vertices: the newest session found and pinned, or the date asked, read from reference_rate", async () => {

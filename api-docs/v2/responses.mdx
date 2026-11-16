@@ -31,8 +31,8 @@ schema placeholders are not market observations.
     when the task requires Pro. Verify `meta.tier: pro` on successful responses.
   </Accordion>
   <Accordion title="Query limit, timeout or unavailable data">
-    For `over_limit`, narrow the date range or other filters and read the error's
-    hint. For HTTP 429, honor `Retry-After`. A timeout or unavailable response
+    For `over_limit`, read `error.reason`: `row_cap` means narrow the date range
+    or filters, and `tier_cap` means narrow or sign in. Then read the hint. For HTTP 429, honor `Retry-After`. A timeout or unavailable response
     provides no evidence about the requested financial result.
   </Accordion>
 </AccordionGroup>

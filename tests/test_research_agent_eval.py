@@ -8,8 +8,26 @@ import pytest
 
 from research_examples import agent_eval
 
+# Spend recorded before the first paid MCP v2 run (2026-11-16). The reserve
+# tests use it so they check the reserve arithmetic, not today's live spend.
+PRE_RUN_SPEND_USD = 2.164687
 
-def test_capped_reserve_fits_all_twelve_cases_under_the_cumulative_cap():
+
+@pytest.fixture
+def pre_run_ledger(tmp_path, monkeypatch):
+    path = tmp_path / "eval-spend.json"
+    path.write_text(json.dumps({"estimated_usd": PRE_RUN_SPEND_USD,
+                                "entries": [{"run": "pre-run", "case": "L1", "estimated_usd": PRE_RUN_SPEND_USD}]}))
+    monkeypatch.setattr(agent_eval, "SPEND_LEDGER", path)
+    return path
+
+
+def test_live_spend_ledger_stays_inside_the_budget():
+    ledger = agent_eval.load_spend_ledger()
+    assert ledger["estimated_usd"] <= agent_eval.DEFAULT_BUDGET_USD
+
+
+def test_capped_reserve_fits_all_twelve_cases_under_the_cumulative_cap(pre_run_ledger):
     cases = agent_eval.load_cases()
     assert len(cases) == 12
     assert {case["expected_disposition"] for case in cases} == {
@@ -23,7 +41,7 @@ def test_capped_reserve_fits_all_twelve_cases_under_the_cumulative_cap():
     assert prior + len(cases) * agent_eval.worst_case_cost_usd() < agent_eval.DEFAULT_BUDGET_USD
 
 
-def test_offline_v1_budget_check_passes_for_twelve_cases(monkeypatch, capsys):
+def test_offline_v1_budget_check_passes_for_twelve_cases(pre_run_ledger, monkeypatch, capsys):
     monkeypatch.setattr(agent_eval.sys, "argv", ["agent_eval.py"])
     assert agent_eval.main() == 0
     assert "Validated 12 cases" in capsys.readouterr().out

@@ -83,7 +83,7 @@ def test_catalog_publishes_it_raise_only(name):
     payload = catalog_payload()
     assert name in payload["limits"]["page"]["functions"]["raise_only"]
     assert payload["postgrest"][name] == f"POST /rest/v1/rpc/{name}"
-    assert payload["version"] >= 86
+    assert payload["version"] >= 86  # v86 published it; later versions keep it
 
 
 def test_catalog_states_the_limits():

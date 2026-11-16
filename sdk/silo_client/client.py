@@ -1646,6 +1646,22 @@ class SiloClient:
             p_from=_iso(start), p_to=_iso(end),
         )
 
+    def treasury_direct(self, title: Optional[str] = None, maturity: Datish = None,
+                        start: Datish = None, end: Datish = None) -> List[Dict[str, Any]]:
+        """Tesouro Direto posted rates and prices per title, newest base date first.
+
+            silo.treasury_direct()                                # every title, newest date
+            silo.treasury_direct("Tesouro IPCA+", "2035-05-15", start="2026-01-01")
+
+        Tesouro Nacional open data under ODbL 1.0: credit Tesouro Nacional when
+        you reuse it. Rates are posted retail quotes in % a year, not trades;
+        a NULL price is a side not on sale. Refuses above 1000 rows.
+        """
+        return self.rpc(
+            "treasury_direct", p_title=title, p_maturity=_iso(maturity),
+            p_from=_iso(start), p_to=_iso(end),
+        )
+
     def curve(self, curve: str = "PRE",
               trade_date: Datish = None) -> List[Dict[str, Any]]:
         """One B3 reference curve on one session, every vertex as published.

@@ -1,0 +1,1 @@
+| 2026-11-16 | claude/project-thread-q8dvrj | Document the #1166 error contract on the v2 quickstart, MCP and errors pages: `error.reason`, 404 `unknown_id`, and MCP's `Retry-After` on the provenance line. |
