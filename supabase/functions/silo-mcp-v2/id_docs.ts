@@ -42,6 +42,7 @@ export const ID_DOCS: Record<string, string> = {
   "option_exercises.p_prefix": "an option prefix, at least 3 characters (PETR)",
   "termo_history.p_codneg": "one termo code (codneg)",
   "future_series.p_ticker": "one outright futures contract (DI1F27, DOLF27)",
+  "future_nth_series.p_root": "a futures root, DI1, DOL or WDO (with rank: 2 = the 2nd contract)",
   "future_curve.p_root": "a futures root, DI1, DOL or WDO (none: DI1)",
   "di_settlement.ticker": "one DI1 contract (none: every contract)",
   "macro_series.p_series": "an SGS series label or code (SELIC_META, CDI, IGPM, 432)",

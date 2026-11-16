@@ -823,7 +823,7 @@
         "tags": [
           "Markets and macro"
         ],
-        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nOptions, termo and futures: chains, histories, exercises, the DI1 settlement.\n\nExample: `/v2/derivatives?id=PETR&kind=chain`\n\nKinds:\n\n- `chain`: api.option_chain: calls and puts of one prefix on one session, by expiry, strike, side. One call holds the chain, served in pages; a chain the SQL may have cut (199 anonymous, 1,000 rows) is refused.\n- `history`: api.option_history: one option code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.\n- `exercises`: api.option_exercises: exercise prints for a prefix, oldest first. Paged by date windows; a window the SQL may have cut is halved.\n- `termo`: api.termo_history: one termo code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.\n- `futures`: api.future_series: one DI1, DOL or WDO contract through time, oldest first. Refuses above 1000 rows.\n- `futures_curve`: api.future_curve: every contract of a root (id, default DI1) on one session, nearest first.\n- `di_settlement`: api.di_settlement (a GET view): DI1 settlement rate, previous rate, open interest per session and contract, newest first. With no id, every contract, paged with order + limit + offset.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\nid per kind: chain and exercises take an option prefix (at least 3 characters, e.g. PETR); history and termo one B3 code (codneg); futures one outright contract (DI1F27, DOLF27); futures_curve a root (DI1, DOL or WDO; none: DI1); di_settlement one DI1 contract (none: every contract).\n\nchain and exercises are cut by the SQL at a tier ceiling without saying so, so the gateway asks for 1,001 rows: a count equal to a tier ceiling (chain 200 or 2000, exercises 500 or 5000, or PostgREST's 1000) or above 1,000 cannot be told from a cut. chain refuses it (over_limit); exercises halves its date window and tries again, and refuses only a single day that is still cut.\n\nExercises are exercise events, not quotes. DI1 rates are % a.a. on 252 business days, as B3 settles them; nothing is derived.\n\n`GET /v2/derivatives?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nOptions, termo and futures: chains, histories, exercises, the DI1 settlement.\n\nExample: `/v2/derivatives?id=PETR&kind=chain`\n\nKinds:\n\n- `chain`: api.option_chain: calls and puts of one prefix on one session, by expiry, strike, side. One call holds the chain, served in pages; a chain the SQL may have cut (199 anonymous, 1,000 rows) is refused.\n- `history`: api.option_history: one option code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.\n- `exercises`: api.option_exercises: exercise prints for a prefix, oldest first. Paged by date windows; a window the SQL may have cut is halved.\n- `termo`: api.termo_history: one termo code's daily quotes, oldest first. Refuses above 1000 rows: narrow from/to.\n- `futures`: api.future_series: one DI1, DOL or WDO contract through time, oldest first. Refuses above 1000 rows.\n- `futures_nth`: api.future_nth_series: the Nth nearest contract of a root (id: DI1, DOL or WDO) through time, oldest first. Each row is that contract's published row with its ticker, so the roll shows in the ticker column; nothing is adjusted or spliced, and the price jumps at each roll. Refuses above 1000 rows.\n- `futures_curve`: api.future_curve: every contract of a root (id, default DI1) on one session, nearest first.\n- `di_settlement`: api.di_settlement (a GET view): DI1 settlement rate, previous rate, open interest per session and contract, newest first. With no id, every contract, paged with order + limit + offset.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\nid per kind: chain and exercises take an option prefix (at least 3 characters, e.g. PETR); history and termo one B3 code (codneg); futures one outright contract (DI1F27, DOLF27); futures_nth a root (DI1, DOL or WDO), with rank; futures_curve a root (DI1, DOL or WDO; none: DI1); di_settlement one DI1 contract (none: every contract).\n\nchain and exercises are cut by the SQL at a tier ceiling without saying so, so the gateway asks for 1,001 rows: a count equal to a tier ceiling (chain 200 or 2000, exercises 500 or 5000, or PostgREST's 1000) or above 1,000 cannot be told from a cut. chain refuses it (over_limit); exercises halves its date window and tries again, and refuses only a single day that is still cut.\n\nExercises are exercise events, not quotes. DI1 rates are % a.a. on 252 business days, as B3 settles them; nothing is derived.\n\n`GET /v2/derivatives?help` describes the main parameters, `?help=all` adds the hidden ones.",
         "x-mint": {
           "href": "/api-docs/v2/reference/derivatives"
         },
@@ -832,7 +832,7 @@
             "name": "kind",
             "in": "query",
             "required": false,
-            "description": "chain: one session's option chain for a prefix. history: one option's daily quotes. exercises: option exercise events for a prefix. termo: one forward (termo) code's quotes. futures: one futures contract's daily settlement. futures_curve: every contract of a root on one session. di_settlement: DI1 settlement rates per session and contract. Default: chain.",
+            "description": "chain: one session's option chain for a prefix. history: one option's daily quotes. exercises: option exercise events for a prefix. termo: one forward (termo) code's quotes. futures: one futures contract's daily settlement. futures_nth: the Nth nearest contract of a root through time (rank 2 = the 2nd contract), each row with its ticker, nothing adjusted. futures_curve: every contract of a root on one session. di_settlement: DI1 settlement rates per session and contract. Default: chain.",
             "schema": {
               "type": "string",
               "enum": [
@@ -841,6 +841,7 @@
                 "exercises",
                 "termo",
                 "futures",
+                "futures_nth",
                 "futures_curve",
                 "di_settlement"
               ],
@@ -862,7 +863,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "By kind: chain, exercises take an option prefix, at least 3 characters (PETR); history takes one option code (codneg); termo takes one termo code (codneg); futures takes one outright futures contract (DI1F27, DOLF27); futures_curve takes a futures root, DI1, DOL or WDO (none: DI1); di_settlement takes one DI1 contract (none: every contract). Required for kinds chain, history, exercises, termo, futures. Default: none.",
+            "description": "By kind: chain, exercises take an option prefix, at least 3 characters (PETR); history takes one option code (codneg); termo takes one termo code (codneg); futures takes one outright futures contract (DI1F27, DOLF27); futures_nth takes a futures root, DI1, DOL or WDO (with rank: 2 = the 2nd contract); futures_curve takes a futures root, DI1, DOL or WDO (none: DI1); di_settlement takes one DI1 contract (none: every contract). Required for kinds chain, history, exercises, termo, futures, futures_nth. Default: none.",
             "schema": {
               "type": "string"
             },
@@ -915,6 +916,16 @@
             "schema": {
               "type": "string",
               "format": "date"
+            }
+          },
+          {
+            "name": "rank",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind futures_nth: which contract, by maturity, on each session. 1 = the nearest contract alive (the contract of the session's own month is left out, as it matures on that month's first business day), 2 = the next, and so on. Default: the SQL default, 1 (the nearest contract alive).",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
             }
           }
         ],

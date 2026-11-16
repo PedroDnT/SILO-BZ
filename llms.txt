@@ -18,7 +18,7 @@ The REST API and MCP v2 are live in preview. Anonymous data calls need no key. T
 - [Agent onboarding](https://octo-98895abd.mintlify.site/api-docs/v2/agents.md): Give an agent the SILO skill and a reproducible research workflow.
 - [MCP connection guide](https://octo-98895abd.mintlify.site/api-docs/v2/mcp.md): Configure Streamable HTTP and make the first tool calls.
 
-- [v2 operation directory](https://octo-98895abd.mintlify.site/api-docs/v2/endpoints.md): 74 operations mapped to the existing REST resources and MCP tools.
+- [v2 operation directory](https://octo-98895abd.mintlify.site/api-docs/v2/endpoints.md): 75 operations mapped to the existing REST resources and MCP tools.
 - [v2 authentication](https://octo-98895abd.mintlify.site/api-docs/v2/authentication.md): Anonymous, user-session and revocable integration-key access.
 - [v2 pagination and errors](https://octo-98895abd.mintlify.site/api-docs/v2/responses.md): Complete, partial, empty and failed responses.
 
@@ -57,6 +57,7 @@ The REST API and MCP v2 are live in preview. Anonymous data calls need no key. T
 - [Option exercises](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/exercises.md): `GET /derivatives/exercises`.
 - [Termo contracts](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/termo.md): `GET /derivatives/termo`.
 - [Futures history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/futures.md): `GET /derivatives/futures`.
+- [Nth futures contract history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/futures_nth.md): `GET /derivatives/futures-nth`.
 - [Futures curve](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/futures_curve.md): `GET /derivatives/futures-curve`.
 - [DI settlement rates](https://octo-98895abd.mintlify.site/api-docs/v2/operations/derivatives/di_settlement.md): `GET /derivatives/di-settlement`.
 - [Latest yield curve](https://octo-98895abd.mintlify.site/api-docs/v2/operations/curves/snapshot.md): `GET /curves/snapshot`.
