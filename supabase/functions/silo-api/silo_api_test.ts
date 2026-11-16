@@ -189,12 +189,40 @@ Deno.test("search kind=company keeps the company rows; kind=fund maps family, an
 });
 
 Deno.test("a 22023 refusal becomes over_limit with the message, details and hint verbatim", async () => {
-  const pg = { code: "22023", message: "search_funds: 31 funds match, above the anonymous ceiling of 25", details: "d", hint: "narrow p_query" };
+  const pg = { code: "22023", message: "search_funds: 31 funds match, more than 25 rows match, above the anonymous tier ceiling of 25", details: "d", hint: "narrow p_query" };
   const { res, json } = await get("/v2/search?q=fundo&kind=fund", 400, JSON.stringify(pg));
   assertEquals(res.status, 400);
   assertEquals(json.error.code, "over_limit");
+  assertEquals(json.error.reason, "tier_cap");
   assertEquals(json.error.message, pg.message);
   assertEquals(json.error.innererror, { sqlstate: "22023", hint: "narrow p_query", details: "d" });
+});
+
+Deno.test("over_limit carries a stable reason: row_cap, tier_cap or null", () => {
+  const reason = (message: string, details: string | null = null) => {
+    const e = fromPostgrest(400, JSON.stringify({ code: "22023", message, details }), "x");
+    assertEquals(e.code, "over_limit");
+    return e.body().error.reason;
+  };
+  assertEquals(reason("fidc_portfolio: refused, this request would return more than 1000 rows. why To fix: how"), "row_cap");
+  assertEquals(reason("search_funds: more than 1000 rows match, above the pro tier ceiling of 1000."), "tier_cap");
+  assertEquals(reason("panel accepts at most 3 ids per call for anonymous callers; 4 were given."), "tier_cap");
+  assertEquals(reason("panel: universe mode (p_ids empty + p_entity_type) is available to signed-in callers only; ..."), "tier_cap");
+  assertEquals(reason("panel: no ids were given. Pass p_ids, or ... (universe mode, signed-in callers only)."), null);
+  assertEquals(reason("ptax: p_from (2026-01-02) is after p_to (2026-01-01)"), null);
+  assertEquals(reason("quote_history: refused, PETR4 has no coverage", "reason=outside_coverage"), null);
+  assertEquals(fromPostgrest(429, "slow down", "x").body().error.reason, null, "every error carries reason, null off over_limit");
+});
+
+Deno.test("an unknown id (DETAIL reason=unknown_...) is 404 unknown_id, not over_limit (#1118)", async () => {
+  const pg = { code: "22023", message: "quote_history: refused, unknown ticker ZZZZ9", details: "reason=unknown_ticker", hint: null };
+  const { res, json } = await get("/v2/prices?id=ZZZZ9", 400, JSON.stringify(pg));
+  assertEquals(res.status, 404);
+  assertEquals(json.error.code, "unknown_id");
+  assertEquals(json.error.reason, null);
+  assertEquals(json.error.target, "id");
+  assertEquals(json.error.message, pg.message, "SILO's refusal text is unchanged");
+  assertEquals(json.error.innererror.details, "reason=unknown_ticker");
 });
 
 Deno.test("PostgREST errors map to the ten codes", () => {

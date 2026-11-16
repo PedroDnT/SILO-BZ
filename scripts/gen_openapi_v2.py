@@ -45,11 +45,11 @@ def load_registry() -> dict:
     return json.loads(m.group(1))
 
 
-def load_error_codes() -> list[str]:
+def load_error_codes(name: str = "ERROR_CODES") -> list[str]:
     src = ERRORS_TS.read_text(encoding="utf-8")
-    m = re.search(r"export const ERROR_CODES = \[(.*?)\] as const;", src, re.S)
+    m = re.search(rf"export const {name} = \[(.*?)\] as const;", src, re.S)
     if not m:
-        raise SystemExit("ERROR_CODES was not found in errors.ts")
+        raise SystemExit(f"{name} was not found in errors.ts")
     return re.findall(r'"([a-z_]+)"', m.group(1))
 
 
@@ -222,6 +222,7 @@ RESOURCE_GROUPS = {
 
 
 def build(registry: dict, error_codes: list[str]) -> dict:
+    error_reasons = load_error_codes("ERROR_REASONS")
     phrases = load_id_docs()
     tags = {resource: group for group, resources in RESOURCE_GROUPS.items() for resource in resources}
     paths: dict = {
@@ -312,9 +313,14 @@ def build(registry: dict, error_codes: list[str]) -> dict:
                     "properties": {
                         "error": {
                             "type": "object",
-                            "required": ["code", "message", "target", "innererror"],
+                            "required": ["code", "reason", "message", "target", "innererror"],
                             "properties": {
                                 "code": {"type": "string", "enum": error_codes},
+                                "reason": {
+                                    "type": ["string", "null"],
+                                    "enum": [*error_reasons, None],
+                                    "description": "over_limit only: row_cap (over one 1,000-row page: narrow or page) or tier_cap (over the tier ceiling: narrow or sign in). Null otherwise.",
+                                },
                                 "message": {"type": "string"},
                                 "target": {"type": ["string", "null"]},
                                 "innererror": {
