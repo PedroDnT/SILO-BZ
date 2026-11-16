@@ -1444,6 +1444,30 @@ CREATE INDEX IF NOT EXISTS idx_ibge_ipca_item_level_month
 CREATE INDEX IF NOT EXISTS idx_ibge_ipca_item_number_month
     ON ibge_ipca_item_monthly (item_number, reference_month DESC);
 
+-- ---------------------------------------------------------------------------
+-- Tesouro Direto: the Treasury's daily posted rates and prices (migration 86)
+-- ---------------------------------------------------------------------------
+-- Grain (tipo_titulo, data_vencimento, data_base). Rates in percent a year as
+-- published (can be negative); PU in R$, NULL where the source prints 0,00
+-- (not on sale). Posted retail quotes, not trades. ODbL licence.
+CREATE TABLE IF NOT EXISTS tesouro_direto_daily (
+    id               BIGSERIAL     PRIMARY KEY,
+    tipo_titulo      TEXT          NOT NULL,
+    data_vencimento  DATE          NOT NULL,
+    data_base        DATE          NOT NULL,
+    taxa_compra      NUMERIC(10,4),
+    taxa_venda       NUMERIC(10,4),
+    pu_compra        NUMERIC(18,6),
+    pu_venda         NUMERIC(18,6),
+    pu_base          NUMERIC(18,6),
+    fetched_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tesouro_direto_daily UNIQUE (tipo_titulo, data_vencimento, data_base)
+);
+CREATE INDEX IF NOT EXISTS idx_tesouro_direto_daily_base
+    ON tesouro_direto_daily (data_base DESC);
+ALTER TABLE tesouro_direto_daily ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON tesouro_direto_daily FROM PUBLIC;
+
 -- B3 Fundos.NET document register with versions (migration 42; contract in
 -- src/fetchers/fnet_fetcher.py).
 -- fnet_document — one row per FNET document id (each version is a new id).

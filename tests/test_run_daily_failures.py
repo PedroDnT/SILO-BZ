@@ -58,6 +58,9 @@ def _patches(cvm_totals=None, bacen=None, anbima=None, b3=None):
     # code under test never had.
     ibge_ing = MagicMock()
     ibge_ing.daily_update = AsyncMock(return_value={"ibge_ipca_item_monthly": 457})
+    # Tesouro Direto is its own guarded block after IBGE, for the same reason.
+    tesouro_ing = MagicMock()
+    tesouro_ing.daily_update = AsyncMock(return_value={"tesouro_direto_daily": 59})
 
     return (
         patch.object(rd, "CVMIngestor", return_value=cvm),
@@ -66,6 +69,7 @@ def _patches(cvm_totals=None, bacen=None, anbima=None, b3=None):
         _MultiPatch(
             patch.object(rd, "B3Ingestor", return_value=b3_ing),
             patch.object(rd, "IbgeIngestor", return_value=ibge_ing),
+            patch.object(rd, "TesouroIngestor", return_value=tesouro_ing),
         ),
         cvm, bacen_ing, anbima_ing, b3_ing,
     )
