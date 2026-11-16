@@ -1355,6 +1355,138 @@
     "body": []
   },
   {
+    "resource": "statements",
+    "kind": "shares",
+    "path": "/statements/shares",
+    "method": "GET",
+    "title": "Share counts",
+    "group": "Financial statements",
+    "description": "Issued and treasury shares of one company through time: quarterly from 2020, yearly from 2010.",
+    "parameters": [
+      {
+        "name": "identifier",
+        "target": "id",
+        "description": "Company ticker, CNPJ or CVM code.",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "advanced": false,
+        "example": "PETR4"
+      },
+      {
+        "name": "from",
+        "target": "from",
+        "description": "Start date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "to",
+        "target": "to",
+        "description": "End date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "limit",
+        "target": "limit",
+        "description": "Rows per page, subject to your tier.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "required": false,
+        "advanced": true
+      },
+      {
+        "name": "cursor",
+        "target": "cursor",
+        "description": "Cursor from the next page URL.",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "advanced": true
+      }
+    ],
+    "body": []
+  },
+  {
+    "resource": "statements",
+    "kind": "free_float",
+    "path": "/statements/free-float",
+    "method": "GET",
+    "title": "Free float",
+    "group": "Financial statements",
+    "description": "Shares in circulation of one company through time, with the filed percent and the shareholder counts: yearly from 2010.",
+    "parameters": [
+      {
+        "name": "identifier",
+        "target": "id",
+        "description": "Company ticker, CNPJ or CVM code.",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "advanced": false,
+        "example": "PETR4"
+      },
+      {
+        "name": "from",
+        "target": "from",
+        "description": "Start date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "to",
+        "target": "to",
+        "description": "End date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "limit",
+        "target": "limit",
+        "description": "Rows per page, subject to your tier.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "required": false,
+        "advanced": true
+      },
+      {
+        "name": "cursor",
+        "target": "cursor",
+        "description": "Cursor from the next page URL.",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "advanced": true
+      }
+    ],
+    "body": []
+  },
+  {
     "resource": "funds",
     "kind": "profile",
     "path": "/funds/profile",

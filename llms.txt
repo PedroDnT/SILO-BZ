@@ -42,6 +42,8 @@ The REST API and MCP v2 are live in preview. Anonymous data calls need no key. T
 - [Cash flow statements](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/cashflow.md): `GET /statements/cashflow`.
 - [Headline financials](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/headline.md): `GET /statements/headline`.
 - [Filing version history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/versions.md): `GET /statements/versions`.
+- [Share counts](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/shares.md): `GET /statements/shares`.
+- [Free float](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/free_float.md): `GET /statements/free-float`.
 - [Fund profiles](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/profile.md): `GET /funds/profile`.
 - [NAV and flows](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/nav.md): `GET /funds/nav`.
 - [Equity holdings](https://octo-98895abd.mintlify.site/api-docs/v2/operations/funds/holdings.md): `GET /funds/holdings`.

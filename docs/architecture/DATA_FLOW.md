@@ -27,7 +27,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - Daily windows heal late publication: CVM 4 months (gap-aware), the four CDA
   blocks every month through M+5 (~90 days late), last
   year's FII/FIP/SECURIT files in Jan-Mar, COTAHIST and B3's consolidated trade file
-  (in `run_b3_events`) 7 days, BACEN and Tesouro Direto 30 days, fiscal SGS 150 (a failed held research series ends the row `error`). Current-year ITR/DFP: full on
+  (in `run_b3_events`) 7 days, BACEN, Tesouro Direto 30 days, fiscal SGS 150 (a failed held research SGS series ends the row `error`). Current-year ITR/DFP: full on
   Monday (CVM regenerates them Sunday), new documents and lineless headers
   otherwise. Deep history: `backfill.yml`, `market_backfill.yml`,
   `daily_ingest` modes `b3-backfill`, `b3-trade-consolidated` (kept from

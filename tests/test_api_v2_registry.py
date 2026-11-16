@@ -371,6 +371,11 @@ def test_prices_and_statements_windows_are_the_sql_default_windows():
         for kind, plan in _plans(r):
             if "from" not in plan["args"]:
                 continue
+            if "window_months" in plan:
+                # A kind with its own window (shares, free_float: 240) sends
+                # from itself; the SQL function has no default window.
+                assert "to" in plan["args"], (name, kind)
+                continue
             fn = re.search(rf"FUNCTION api\.{plan['endpoint']}\((.*?)\)\s*\n\s*RETURNS", sql, re.S)
             assert fn, plan["endpoint"]
             m = re.search(r"p_from\s+DATE\s+DEFAULT\s+\(CURRENT_DATE\s*-\s*(\d+)\)", fn.group(1))
