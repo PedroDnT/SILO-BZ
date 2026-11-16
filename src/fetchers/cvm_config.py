@@ -517,6 +517,46 @@ class DatasetConfig:
             "csv_name_pattern": "fca_cia_aberta_valor_mobiliario_{year}.csv",
             "description": "FCA valores mobiliários — the published CNPJ↔ticker map, one CSV member of the yearly FCA ZIP",
         },
+        # Share counts (#1161). composicao_capital is one member of the ITR / DFP
+        # yearly ZIP: issued and treasury shares per company, ON / PN / total,
+        # per filed quarter or year. CVM publishes it from 2020 (checked
+        # 2026-11-16: the 2011, 2013, 2016 and 2019 ITR ZIPs and the 2019 DFP
+        # ZIP have no such member). The rows are read through csv_name_pattern,
+        # like FCA, so the multi-member statement reader is not involved.
+        "itr_composicao_capital": {
+            "url_pattern": "{base_url}/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_{year}.zip",
+            "is_zip": True,
+            "multi_csv": False,
+            "csv_name_pattern": "itr_cia_aberta_composicao_capital_{year}.csv",
+            "description": "ITR composição do capital — issued and treasury share counts per company and quarter (2020 on)",
+        },
+        "dfp_composicao_capital": {
+            "url_pattern": "{base_url}/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_{year}.zip",
+            "is_zip": True,
+            "multi_csv": False,
+            "csv_name_pattern": "dfp_cia_aberta_composicao_capital_{year}.csv",
+            "description": "DFP composição do capital — issued and treasury share counts per company and year (2020 on)",
+        },
+        # FRE (Formulário de Referência), yearly ZIP since 2010 (#1161). Two of
+        # its ~60 members: capital_social (the share count per capital type:
+        # emitido, subscrito, integralizado, autorizado) and distribuicao_capital
+        # (shares in circulation, the free float, ON / PN / total and percent,
+        # with the shareholder counts). Headers verified live 2026-11-16 against
+        # fre_cia_aberta_2010.zip and fre_cia_aberta_2025.zip.
+        "fre_capital_social": {
+            "url_pattern": "{base_url}/CIA_ABERTA/DOC/FRE/DADOS/fre_cia_aberta_{year}.zip",
+            "is_zip": True,
+            "multi_csv": False,
+            "csv_name_pattern": "fre_cia_aberta_capital_social_{year}.csv",
+            "description": "FRE capital social — share counts per capital type, ON / PN / total (2010 on)",
+        },
+        "fre_distribuicao_capital": {
+            "url_pattern": "{base_url}/CIA_ABERTA/DOC/FRE/DADOS/fre_cia_aberta_{year}.zip",
+            "is_zip": True,
+            "multi_csv": False,
+            "csv_name_pattern": "fre_cia_aberta_distribuicao_capital_{year}.csv",
+            "description": "FRE distribuição do capital — shares in circulation (free float), ON / PN / total and percent (2010 on)",
+        },
         # FRE (Formulário de Referência) yearly ZIP holds ~38 member CSVs; only
         # the "outros valores mobiliários" member is ingested: the debt issues
         # (debentures, commercial notes, CRI) of listed companies with issue
