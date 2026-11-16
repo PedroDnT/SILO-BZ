@@ -36,6 +36,7 @@ Deno.test("explicit macro route preserves rows and Pro, omits only diagnostics",
     const b = await res.json();
     assertEquals(res.status,200); assertEquals(b.data,rows); assertEquals(b.meta.tier,"pro");
     assertEquals("request" in b.meta, !!suffix);
+    assertEquals(b.meta.endpoint, "api.macro_series", "the citable endpoint stays by default (#1176)");
   }
   const legacy = await h(new Request(base + "/macro?kind=series&id=CDI&from=2026-11-12&to=2026-11-12"));
   assert("request" in (await legacy.json()).meta);

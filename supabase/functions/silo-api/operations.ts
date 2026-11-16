@@ -41,8 +41,8 @@ export function operationBody(operation: Operation, text: string): string {
 export function operationResponse(body: Envelope, details: boolean): Envelope {
   if (details) return body;
   const meta = { ...body.meta };
-  // Keep interpretation, provenance, warnings and tier limits. Only routing/debug
-  // fields are omitted; new safety metadata remains visible by default.
-  for (const key of ["resource", "kind", "request", "endpoint", "id_known"]) delete meta[key];
+  // Keep interpretation, provenance (source, endpoint, data_through), warnings
+  // and tier limits. Only routing/debug fields are omitted.
+  for (const key of ["resource", "kind", "request", "id_known"]) delete meta[key];
   return { ...body, meta } as Envelope;
 }

@@ -1711,7 +1711,7 @@ const CITED: { path: string; method?: "POST"; body?: string; endpoint: string; d
   { path: "/v2/search?q=petrobras", endpoint: "api.lookup", dataset: null },
   { path: "/v2/prices?id=PETR4&from=2026-01-02&to=2026-10-30", endpoint: "api.quote_history", dataset: "quotes" },
   { path: "/v2/statements?id=PETR4&kind=income", endpoint: "api.income_statements", dataset: "financials" },
-  { path: "/v2/funds?id=33000167000101&kind=nav", endpoint: "api.fund_nav", dataset: "fund_nav" },
+  { path: "/v2/funds?id=33000167000101&kind=nav", endpoint: "api.fund_nav", dataset: null },
   { path: "/v2/fidc?id=33000167000101&kind=tranches", endpoint: "api.fidc_tranches", dataset: "fidc_tranches" },
   { path: "/v2/derivatives?id=PETR&kind=chain", endpoint: "api.option_chain", dataset: "derivatives" },
   { path: "/v2/curves?curve=PRE", endpoint: "api.curve", dataset: "reference_curves" },

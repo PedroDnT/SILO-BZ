@@ -63,12 +63,6 @@ export function cachedCoverage(now: () => number = () => Date.now()): Freshness 
 export const COVERAGE_DATASET: Readonly<Record<string, string>> = {
   // prices
   quotes: "quotes",
-  equities: "quotes",
-  bdrs: "quotes",
-  units: "quotes",
-  fund_quotas: "quotes",
-  cash_securities: "quotes",
-  auctions: "quotes",
   quote_history: "quotes",
   quote_latest: "quotes",
   research_universe: "quotes",
@@ -103,9 +97,9 @@ export const COVERAGE_DATASET: Readonly<Record<string, string>> = {
   funds: "funds",
   search_funds: "funds",
   fund_profile: "funds",
-  fund_holdings: "funds",
-  fund_debentures: "funds",
-  fund_nav: "fund_nav",
+  // fund_holdings, fund_debentures (CDA, ~90 days late) and fund_nav (one
+  // blended row for every family) have no coverage row of their own: null,
+  // never the fresher date of another dataset.
   fii_property_history: "fii_property_history",
   fidc_portfolio: "fidc_sectors",
   fidc_tranches: "fidc_tranches",
