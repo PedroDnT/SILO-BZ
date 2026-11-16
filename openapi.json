@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "85",
+    "version": "86",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
-    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Sixty-two set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other fifty-seven ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling.** `search_funds` refuses (`22023`) when more rows\n  match than its per-tier maximum (since v81). Two other functions\n  (`option_chain`, `option_exercises`) still silently lower `p_limit` to a\n  per-tier maximum. No error is raised there, so the only way to know the\n  result was cut is to know the ceiling. Signing in raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
+    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Sixty-three set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other fifty-eight ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling.** `search_funds` refuses (`22023`) when more rows\n  match than its per-tier maximum (since v81). Two other functions\n  (`option_chain`, `option_exercises`) still silently lower `p_limit` to a\n  per-tier maximum. No error is raised there, so the only way to know the\n  result was cut is to know the ceiling. Signing in raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
       "name": "See repository",
       "url": "https://github.com/PedroDnT/SILO-BZ"
@@ -19602,6 +19602,172 @@
                         ]
                       },
                       "source": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/treasury_direct": {
+      "post": {
+        "operationId": "rpc_treasury_direct",
+        "summary": "treasury_direct",
+        "description": "Tesouro Direto posted rates and prices per title (Tesouro Nacional open data, ODbL 1.0: credit Tesouro Nacional; every row carries source and licence). Newest base date first, then title and maturity. With no argument: every title on the newest base date held, which is the sovereign curve the retail platform posts. p_title is a title type as published (Tesouro Selic, Tesouro Prefixado, Tesouro IPCA+, Tesouro IPCA+ com Juros Semestrais, ...; case is ignored; an unknown type raises 22023 with the list); p_maturity one maturity; p_from..p_to a window of base dates (p_from alone: from p_from to the newest). NOTHING IS DERIVED: buy_rate_pct and sell_rate_pct are the morning quotes in % a year as published, and can be negative; buy_pu and sell_pu settle the next business day, base_pu is the same-day mark. These are QUOTES, NOT TRADES. A NULL price is a side the title was not on sale on. Refuses above 1000 rows (22023): about 60 titles a day, so narrow the window or name a title.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Rates"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
+                  },
+                  "p_maturity": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "base_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "maturity": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "buy_rate_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "sell_rate_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "buy_pu": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "sell_pu": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "base_pu": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "source": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "licence": {
                         "type": [
                           "string",
                           "null"

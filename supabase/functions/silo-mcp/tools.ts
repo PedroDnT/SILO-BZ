@@ -104,6 +104,7 @@ export const TOOL_TITLES: ToolSpec[] = [
   t("future_curve", "DI1, DOL and WDO futures curve (B3)"),
   t("future_series", "DI1, DOL or WDO futures contract history (B3)"),
   t("future_nth_series", "Nth nearest DI1, DOL or WDO futures contract through time (B3)"),
+  t("treasury_direct", "Tesouro Direto posted rates and prices per title (Tesouro Nacional, ODbL)"),
   t("curve", "B3 reference curve (PRE, DOC, DPL)"),
   t("curve_history", "B3 reference curve fixed-vertex history"),
   // The research universe (listed shares and units, from the B3 tape).

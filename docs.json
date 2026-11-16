@@ -114,7 +114,8 @@
                 "pages": [
                   "api-docs/v2/operations/curves/snapshot",
                   "api-docs/v2/operations/curves/history",
-                  "api-docs/v2/operations/curves/vertices"
+                  "api-docs/v2/operations/curves/vertices",
+                  "api-docs/v2/operations/curves/treasury"
                 ]
               },
               {

@@ -493,7 +493,7 @@ ISSUE_1057 = {
         "termo": "termo_history", "futures": "future_series", "futures_nth": "future_nth_series", "futures_curve": "future_curve",
         "di_settlement": "di_settlement",
     },
-    "curves": {"snapshot": "curve", "history": "curve_history", "vertices": "reference_rate"},
+    "curves": {"snapshot": "curve", "history": "curve_history", "vertices": "reference_rate", "treasury": "treasury_direct"},
     "macro": {
         "series": "macro_series", "inflation": "inflation", "inflation_items": "inflation_items",
         "fx": "ptax", "expectations": "focus_expectations",
@@ -506,7 +506,7 @@ ISSUE_1057 = {
 WINDOWS_1057 = {"derivatives": 12, "curves": 12, "macro": 12, "positioning": 3}
 MAIN_1057 = {"derivatives": ["kind", "date"], "curves": ["kind", "curve", "tenor"], "macro": ["kind"], "positioning": ["kind"]}
 HIDDEN_1057 = {
-    "derivatives": {"expiry_from", "rank"}, "curves": {"date"},
+    "derivatives": {"expiry_from", "rank"}, "curves": {"date", "title", "maturity"},
     "macro": {"family", "currency", "horizon"}, "positioning": {"sector", "investor_type"},
 }
 

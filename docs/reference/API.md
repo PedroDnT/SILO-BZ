@@ -865,6 +865,18 @@ The operator half:
   month (it matures on that month's first business day); rank 1 is the
   nearest contract alive. Each row is that contract's published row with its
   ticker. Nothing is adjusted or spliced, so the price jumps at each roll.
+- **`treasury_direct(p_title, p_maturity, p_from, p_to)` serves Tesouro
+  Direto posted rates and prices per title** (v86, #1163;
+  `41_api_treasury.sql`, table `tesouro_direto_daily`). With no argument it
+  returns every title on the newest base date; a window is newest first. The
+  rates are the platform's morning buy and sell quotes in % a year as
+  published (they can be negative), not trades; a NULL price is a side not on
+  sale. It is Tesouro Nacional open data under ODbL 1.0: every row carries
+  `source = 'Tesouro Nacional'` and `licence = 'ODbL-1.0'`, so a reuser credits
+  Tesouro Nacional and offers a derived database under the same licence. This
+  is the one endpoint that names its source (owner decision 2026-11-16).
+  Refuses above 1,000 rows (about 60 titles a base date). v2:
+  `GET /v2/curves?kind=treasury` (`title`, `maturity`, `from`, `to`).
 - **`future_curve` and `future_series` serve DI1, DOL and WDO** (v76, #1000;
   the ingest of DOL and WDO is #999). `p_root` is one of the three, any other
   raises `22023` with the list; `future_series` takes an outright code of
@@ -1339,6 +1351,7 @@ POST /rest/v1/rpc/screen_zombie_growth
 POST /rest/v1/rpc/search_funds
 POST /rest/v1/rpc/termo_history
 POST /rest/v1/rpc/trade_consolidated_history
+POST /rest/v1/rpc/treasury_direct
 ```
 
 Views (16), read with `GET` and PostgREST filters:
