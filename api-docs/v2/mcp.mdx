@@ -26,6 +26,6 @@ SILO MCP v2 is a **Deployed preview** with 14 read-only tools.
 
 ## Read tool results
 
-Use the JSON envelope in the first text block of a successful result. It contains `data`, `meta`, and sometimes `next_page_url`. Check `meta.tier` on a data call when testing access. A tool error sets `isError`. Gateway errors include an `error` object and input-validation failures can be plain text.
+Use the JSON envelope in the first text block of a successful result. It contains `data`, `meta`, and sometimes `next_page_url`. Check `meta.tier` on a data call when testing access. A tool error sets `isError`. Gateway errors include an `error` object and input-validation failures can be plain text. Branch on `error.code` and `error.reason`, not on the message: `over_limit` with `reason: row_cap` means narrow or page, `tier_cap` means narrow or sign in, and `unknown_id` means look the id up again with `silo_search`. MCP has no response headers, so a `rate_limited` result ends its provenance line (the second text block) with `· Retry-After <n> s`. Wait that many seconds before the next call. See [pagination and errors](/api-docs/v2/responses#error-contract).
 
 For another GET page, extract the opaque `cursor` from `next_page_url` and call the same tool with that cursor alone. If a POST result supplies a next page, send the same body as well. A tier cap marks a partial result. For research and citation, use the [agent workflow](/api-docs/v2/agents).
