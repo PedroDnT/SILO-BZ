@@ -1487,6 +1487,72 @@
     "body": []
   },
   {
+    "resource": "statements",
+    "kind": "debt_issues",
+    "path": "/statements/debt-issues",
+    "method": "GET",
+    "title": "Debt issues",
+    "group": "Financial statements",
+    "description": "Debentures, commercial notes, CRI, CRA and other debt one listed company describes in its CVM FRE, yearly from 2010. One row is one issue as filed, often several series, with no ticker or ISIN. Rate and indexer appear only in terms_text, unparsed. Companies that file no FRE are not covered.",
+    "parameters": [
+      {
+        "name": "identifier",
+        "target": "id",
+        "description": "Company ticker, CNPJ or CVM code.",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "advanced": false,
+        "example": "PETR4"
+      },
+      {
+        "name": "from",
+        "target": "from",
+        "description": "Start date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "to",
+        "target": "to",
+        "description": "End date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "limit",
+        "target": "limit",
+        "description": "Rows per page, subject to your tier.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "required": false,
+        "advanced": true
+      },
+      {
+        "name": "cursor",
+        "target": "cursor",
+        "description": "Cursor from the next page URL.",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "advanced": true
+      }
+    ],
+    "body": []
+  },
+  {
     "resource": "funds",
     "kind": "profile",
     "path": "/funds/profile",
@@ -2950,6 +3016,83 @@
         },
         "required": false,
         "advanced": false
+      }
+    ],
+    "body": []
+  },
+  {
+    "resource": "curves",
+    "kind": "treasury",
+    "path": "/curves/treasury",
+    "method": "GET",
+    "title": "Tesouro Direto rates and prices",
+    "group": "Interest rate curves",
+    "description": "Tesouro Direto posted buy and sell rates and prices per title, newest base date first. Tesouro Nacional open data under ODbL 1.0: credit Tesouro Nacional.",
+    "parameters": [
+      {
+        "name": "title",
+        "target": "title",
+        "description": "Title type as published, e.g. Tesouro IPCA+. Omit for every title.",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "advanced": false,
+        "example": "Tesouro IPCA+"
+      },
+      {
+        "name": "maturity",
+        "target": "maturity",
+        "description": "One maturity (YYYY-MM-DD). Omit for every maturity.",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "from",
+        "target": "from",
+        "description": "Start date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "to",
+        "target": "to",
+        "description": "End date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "limit",
+        "target": "limit",
+        "description": "Rows per page, subject to your tier.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "required": false,
+        "advanced": true
+      },
+      {
+        "name": "cursor",
+        "target": "cursor",
+        "description": "Cursor from the next page URL.",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "advanced": true
       }
     ],
     "body": []

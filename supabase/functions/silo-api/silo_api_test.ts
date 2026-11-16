@@ -10,7 +10,7 @@ import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 
 import { TIERS } from "./config.ts";
 import { ERROR_CODES, fromPostgrest } from "./errors.ts";
-import { minusMonths, todayUtcMinus3 } from "./params.ts";
+import { closest, minusMonths, todayUtcMinus3 } from "./params.ts";
 import { decodeCursor, encodeCursor } from "./paging.ts";
 import { callerBearer, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY } from "./registry.ts";
@@ -268,6 +268,15 @@ Deno.test("coverage freshness renames as_of to data_through and narrows by datas
   assertEquals(typo.json.error.code, "bad_request");
   assertEquals(typo.json.error.target, "dataset");
   assertStringIncludes(typo.json.error.message, "funds_fidc");
+  assertStringIncludes(typo.json.error.message, "Closest: funds_fidc.", "the near name comes before the full list");
+});
+
+Deno.test("closest: a shared word or a few edits, at most three, nearest first", () => {
+  const known = ["company_events", "financials", "funds_fidc", "fund_nav", "quotes"];
+  assertEquals(closest(["company_financials"], known), ["financials", "company_events"]);
+  assertEquals(closest(["funds_fdic"], known), ["funds_fidc"]);
+  assertEquals(closest(["quote"], known), ["quotes"]);
+  assertEquals(closest(["cia"], known), [], "nothing near: the message still lists every known name");
 });
 
 Deno.test("coverage metrics and catalog call their endpoints; catalog is data[0]", async () => {
@@ -875,7 +884,7 @@ Deno.test("curves snapshot and history map curve, date and tenor; tenor is used 
   const snap = await get("/v2/curves");
   assert(snap.calls[0].url.endsWith("/rpc/curve"));
   assertEquals(body(snap.calls[0]), { p_curve: "PRE" });
-  assertEquals(snap.json.meta.request, { kind: "snapshot", curve: "PRE", tenor: 360, date: null, from: null, to: null, limit: 10 });
+  assertEquals(snap.json.meta.request, { kind: "snapshot", curve: "PRE", tenor: 360, date: null, title: null, maturity: null, from: null, to: null, limit: 10 });
   const hist = await get("/v2/curves?kind=history&curve=DPL&tenor=720&to=2026-06-30");
   assert(hist.calls[0].url.endsWith("/rpc/curve_history"));
   assertEquals(body(hist.calls[0]), { p_curve: "DPL", p_tenor_days: 720, p_from: "2026-03-30", p_to: "2026-06-30" }, "anonymous: 3 months of daily data");
@@ -884,6 +893,21 @@ Deno.test("curves snapshot and history map curve, date and tenor; tenor is used 
   const curve = await get("/v2/curves?curve=DIC");
   assertEquals(curve.json.error.target, "curve");
   for (const r of [tenor, curve]) assertEquals(r.calls.length, 0);
+});
+
+Deno.test("curves treasury: title and maturity as asked, newest first in date windows; a non-default curve, tenor or date is refused", async () => {
+  const all = await get("/v2/curves?kind=treasury");
+  assert(all.calls[0].url.endsWith("/rpc/treasury_direct"));
+  assertEquals(body(all.calls[0]), { p_from: M3 }, "anonymous: 3 months, every title");
+  const one = await get("/v2/curves?kind=treasury&title=Tesouro%20IPCA%2B&maturity=2035-05-15&from=2026-01-01&to=2026-06-30", 200, "[]", SIGNED);
+  assertEquals(body(one.calls[0]), { p_title: "Tesouro IPCA+", p_maturity: "2035-05-15", p_from: "2026-01-01", p_to: "2026-06-30" });
+  for (const q of ["curve=DOC", "tenor=720", "date=2026-11-13"]) {
+    const r = await get(`/v2/curves?kind=treasury&${q}`);
+    assertEquals(r.json.error.target, q.split("=")[0]);
+    assertEquals(r.calls.length, 0);
+  }
+  const misplaced = await get("/v2/curves?title=Tesouro%20Selic");
+  assertEquals(misplaced.json.error.target, "title");
 });
 
 Deno.test("curves vertices: the newest session found and pinned, or the date asked, read from reference_rate", async () => {

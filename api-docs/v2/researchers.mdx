@@ -71,6 +71,19 @@ curl "$SILO_V2/statements?kind=free_float&id=PETR4"
 - `statements?kind=free_float` is per company, yearly from 2010. It has the shares in circulation, the percent as the company filed it, and the shareholder counts.
 - Share counts and free float serve the newest version of each filing, so they are **not** point in time. `as_of` does not apply to them.
 
+### Debt issues
+
+`statements?kind=debt_issues` lists the debentures, commercial notes, CRI, CRA and other debt one listed company describes in its yearly FRE, from 2010.
+
+```bash
+curl "$SILO_V2/statements?kind=debt_issues&id=PETR4"
+```
+
+- Only listed companies file an FRE. A closed company that issues debentures is not here.
+- One row is one issue as filed, often several series. There is no ticker or ISIN, so a row does not join to a traded debenture.
+- The rate and the indexer are only in `terms_text`, free text written by the company. SILO does not parse it.
+- It serves the newest version of each filing, so it is **not** point in time.
+
 ### Citation
 
 Cite the request and the data version, not only the site. A template (fill in the angle brackets):

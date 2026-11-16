@@ -32,11 +32,11 @@ At most 3 main parameters per resource, `kind` included. The default is first.
 | --- | --- | --- | --- |
 | `search` | `q` (none), `kind` (`any`; `company`, `fund`, `universe`), `family` (`all`; `fi`, `fidc`, `fii`, `fip`, `fiagro`) | `limit` | none |
 | `prices` | `kind` (`history`; `latest`, `session`, `index`, `forward`), `freq` (`day`; `month`), `adjust` (`split`; `none`) | `id`, `from`, `to`, `limit` | 12 months |
-| `statements` | `kind` (`all`; `income`, `balance`, `cashflow`, `headline`, `versions`, `shares`, `free_float`), `period` (`both`; `quarterly`, `annual`), `scope` (`consolidated`; `individual`) | `id`, `from`, `to`, `limit` | 60 months |
+| `statements` | `kind` (`all`; `income`, `balance`, `cashflow`, `headline`, `versions`, `shares`, `free_float`, `debt_issues`), `period` (`both`; `quarterly`, `annual`), `scope` (`consolidated`; `individual`) | `id`, `from`, `to`, `limit` | 60 months |
 | `funds` | `kind` (`profile`; `nav`, `holdings`, `debentures`, `properties`), `family` (`all`; `fi`, `fidc`, `fii`, `fip`, `fiagro`) | `id`, `from`, `to`, `limit` | 36 months |
 | `fidc` | `kind` (`portfolio`; `tranches`, `aging`, `cedentes`, `sacados`) | `id`, `from`, `to`, `limit` | 24 months |
-| `derivatives` | `kind` (`chain`; `history`, `exercises`, `termo`, `futures`, `futures_curve`, `di_settlement`), `date` (none) | `id`, `from`, `to`, `limit` | 12 months |
-| `curves` | `kind` (`snapshot`; `history`, `vertices`), `curve` (`PRE`; `DOC`, `DPL`), `tenor` (`360`) | `from`, `to`, `limit` | 12 months |
+| `derivatives` | `kind` (`chain`; `history`, `exercises`, `termo`, `futures`, `futures_nth`, `futures_curve`, `di_settlement`), `date` (none) | `id`, `from`, `to`, `limit`, `rank` (`futures_nth`) | 12 months |
+| `curves` | `kind` (`snapshot`; `history`, `vertices`, `treasury`), `curve` (`PRE`; `DOC`, `DPL`), `tenor` (`360`) | `from`, `to`, `limit` | 12 months |
 | `macro` | `kind` (`series`; `inflation`, `inflation_items`, `fx`, `expectations`) | `id`, `from`, `to`, `limit` | 12 months |
 | `positioning` | `kind` (`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`) | `id`, `from`, `to`, `limit` | 3 months |
 | `events` | `kind` (`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`, `dividends`), `category` (`all`) | `id`, `from`, `to`, `limit` | 12 months |

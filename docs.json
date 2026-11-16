@@ -71,7 +71,8 @@
                   "api-docs/v2/operations/statements/headline",
                   "api-docs/v2/operations/statements/versions",
                   "api-docs/v2/operations/statements/shares",
-                  "api-docs/v2/operations/statements/free_float"
+                  "api-docs/v2/operations/statements/free_float",
+                  "api-docs/v2/operations/statements/debt_issues"
                 ]
               },
               {
@@ -116,7 +117,8 @@
                 "pages": [
                   "api-docs/v2/operations/curves/snapshot",
                   "api-docs/v2/operations/curves/history",
-                  "api-docs/v2/operations/curves/vertices"
+                  "api-docs/v2/operations/curves/vertices",
+                  "api-docs/v2/operations/curves/treasury"
                 ]
               },
               {

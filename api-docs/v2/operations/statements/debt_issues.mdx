@@ -1,0 +1,82 @@
+---
+title: "Debt issues"
+description: "Debentures, commercial notes, CRI, CRA and other debt one listed company describes in its CVM FRE, yearly from 2010. One row is one issue as filed, often several series, with no ticker or ISIN. Rate and indexer appear only in terms_text, unparsed. Companies that file no FRE are not covered."
+keywords: ["statements", "debt_issues", "API", "MCP"]
+openapi: "api-docs/v2/specs/statements-debt_issues.json GET /statements/debt-issues"
+---
+
+
+
+## Overview
+
+Debentures, commercial notes, CRI, CRA and other debt one listed company describes in its CVM FRE, yearly from 2010. One row is one issue as filed, often several series, with no ticker or ISIN. Rate and indexer appear only in terms_text, unparsed. Companies that file no FRE are not covered.
+
+
+## Coverage
+
+Coverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.
+
+## Try the API
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "statements", "kind": "debt_issues", "path": "/statements/debt-issues", "method": "GET", "title": "Debt issues", "group": "Financial statements", "description": "Debentures, commercial notes, CRI, CRA and other debt one listed company describes in its CVM FRE, yearly from 2010. One row is one issue as filed, often several series, with no ticker or ISIN. Rate and indexer appear only in terms_text, unparsed. Companies that file no FRE are not covered.", "parameters": [{"name": "identifier", "target": "id", "description": "Company ticker, CNPJ or CVM code.", "schema": {"type": "string"}, "required": true, "advanced": false, "example": "PETR4"}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/statements-debt_issues.json)
+
+## Example
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/statements/debt-issues?identifier=PETR4&limit=1' \
+  --header "Authorization: Bearer $SILO_TOKEN"
+```
+
+## Example response
+
+Built from the row CVM published in fre_cia_aberta_outro_valor_mobiliario_2025.csv, mapped as api.debt_issues maps it, before the endpoint was deployed. This excerpt omits pagination links.
+
+```json
+{
+  "data": [
+    {
+      "cd_cvm": "9512",
+      "cnpj": "33000167000101",
+      "company": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+      "reference_date": "2025-12-31",
+      "version": 27,
+      "security_type": "Debêntures",
+      "issue_name": "1ª Série da 6ª Emissão de Debêntures Simples, em 3 Séries",
+      "issue_date": "2019-01-15",
+      "maturity_date": "2026-01-15",
+      "quantity": 898397,
+      "issue_value": 898397000.0,
+      "outstanding_balance": 1266447208.93,
+      "transfer_restricted": null,
+      "convertible": null,
+      "redeemable": true,
+      "terms_text": "Emissão pela companhia em 15/01/2019 de debêntures simples, não conversíveis em ações, da espécie quirografária, sem garantia (\"Debêntures\"), em três séries, no montante total de R$ 3.600.000.000,00 (três bilhões e seiscentos milhões de reais) para distribuição pública, nos termos da Instrução da CVM nº 400, de 29 de dezembro de 2003.",
+      "source": "cvm_fre"
+    }
+  ],
+  "meta": {
+    "tier": "pro"
+  }
+}
+```
+
+## FAQ
+
+<Accordion title="How do I check for more results?">
+
+When present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).
+
+</Accordion>
+
+<Accordion title="Can an agent use this data?">
+
+Yes. Connect an agent through the [MCP server](/api-docs/v2/mcp).
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python)

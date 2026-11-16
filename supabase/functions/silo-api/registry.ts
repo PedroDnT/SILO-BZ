@@ -397,7 +397,7 @@ export const REGISTRY: Registry = {
     {
       "name": "statements",
       "status": "built",
-      "summary": "What did the company file? Income, balance sheet, cash flow, headline figures, every stored version, share counts and free float.",
+      "summary": "What did the company file? Income, balance sheet, cash flow, headline figures, every stored version, share counts, free float and debt issues.",
       "example": "/v2/statements?id=PETR4&kind=income",
       "shared": ["id", "from", "to", "limit"],
       "window_months": 60,
@@ -410,9 +410,9 @@ export const REGISTRY: Registry = {
           "name": "kind",
           "visibility": "main",
           "type": "enum",
-          "values": ["all", "income", "balance", "cashflow", "headline", "versions", "shares", "free_float"],
+          "values": ["all", "income", "balance", "cashflow", "headline", "versions", "shares", "free_float", "debt_issues"],
           "default": "all",
-          "doc": "all: every filed line, long (api.financials). income, balance, cashflow: the standard lines, wide. headline: revenue, net income, assets, equity, margins (api.company_financials). versions: every stored version of one statement (api.financial_statement_history). shares: issued and treasury share counts (api.share_counts). free_float: shares in circulation and shareholder counts (api.free_float)."
+          "doc": "all: every filed line, long (api.financials). income, balance, cashflow: the standard lines, wide. headline: revenue, net income, assets, equity, margins (api.company_financials). versions: every stored version of one statement (api.financial_statement_history). shares: issued and treasury share counts (api.share_counts). free_float: shares in circulation and shareholder counts (api.free_float). debt_issues: debentures, commercial notes, CRI, CRA and other debt the company describes in its FRE, listed issuers only, rate as unparsed text (api.debt_issues)."
         },
         {
           "name": "period",
@@ -516,6 +516,14 @@ export const REGISTRY: Registry = {
         "free_float": {
           "doc": "api.free_float: shares in circulation ON / PN / total with the filed percent and the shareholder counts, yearly from 2010 (FRE), newest first, latest stored version. Per company, not per ticker. Paged by date windows.",
           "endpoint": "free_float",
+          "paging": { "method": "date_window", "order": "desc" },
+          "window_months": 240,
+          "args": { "id": "p_id", "from": "p_from", "to": "p_to" },
+          "require_one_of": ["id"]
+        },
+        "debt_issues": {
+          "doc": "api.debt_issues: the debt issues (debentures, commercial notes, CRI, CRA, ...) a listed company describes in its FRE, yearly from 2010, newest reference date first, then maturity, latest stored version. One row is one issue as filed, often several series; no ticker or ISIN, so a row does not join to a traded debenture. Listed issuers only. Rate and indexer only in terms_text, free text, never parsed. Per company, not per ticker. Paged by date windows.",
+          "endpoint": "debt_issues",
           "paging": { "method": "date_window", "order": "desc" },
           "window_months": 240,
           "args": { "id": "p_id", "from": "p_from", "to": "p_to" },
@@ -920,16 +928,17 @@ export const REGISTRY: Registry = {
       "window_months": 12,
       "notes": [
         "PRE and DPL are % a.a. on 252 business days; DOC is % a.a. linear on 360 calendar days, so its vertices under about 30 calendar days are not a rate level. rate_basis rides on every snapshot and history row.",
-        "Past the last maturity of the anchoring contract (DI1, DDI, DAP) B3 extrapolates: the long vertices are not prices. Nothing is interpolated: a tenor that is not one of B3's fixed vertices is refused with the list."
+        "Past the last maturity of the anchoring contract (DI1, DDI, DAP) B3 extrapolates: the long vertices are not prices. Nothing is interpolated: a tenor that is not one of B3's fixed vertices is refused with the list.",
+        "kind treasury is Tesouro Nacional open data under the ODbL 1.0 licence, the one resource that names its source: credit Tesouro Nacional, and offer a database derived from it under the same licence. The rates are the platform's posted retail quotes, not trades."
       ],
       "parameters": [
         {
           "name": "kind",
           "visibility": "main",
           "type": "enum",
-          "values": ["snapshot", "history", "vertices"],
+          "values": ["snapshot", "history", "vertices", "treasury"],
           "default": "snapshot",
-          "doc": "snapshot: one curve on one session, every vertex, with its rate basis. history: one fixed vertex through time. vertices: the raw reference-rate rows (api.reference_rate) of one curve on one session."
+          "doc": "snapshot: one curve on one session, every vertex, with its rate basis. history: one fixed vertex through time. vertices: the raw reference-rate rows (api.reference_rate) of one curve on one session. treasury: Tesouro Direto posted rates and prices per title, newest base date first (Tesouro Nacional, ODbL)."
         },
         {
           "name": "curve",
@@ -953,6 +962,22 @@ export const REGISTRY: Registry = {
           "default": null,
           "default_doc": "the newest session held for the curve (vertices: the newest in the 14 days to today)",
           "doc": "kind snapshot and vertices: the B3 session, YYYY-MM-DD."
+        },
+        {
+          "name": "title",
+          "visibility": "hidden",
+          "type": "string",
+          "default": null,
+          "default_doc": "none: every title type",
+          "doc": "kind treasury: one title type as Tesouro Nacional publishes it (Tesouro Selic, Tesouro Prefixado, Tesouro IPCA+, Tesouro IPCA+ com Juros Semestrais, ...); case is ignored, an unknown type is refused with the list."
+        },
+        {
+          "name": "maturity",
+          "visibility": "hidden",
+          "type": "date",
+          "default": null,
+          "default_doc": "none: every maturity",
+          "doc": "kind treasury: one maturity, YYYY-MM-DD."
         }
       ],
       "kinds": {
@@ -975,6 +1000,12 @@ export const REGISTRY: Registry = {
           "view": true,
           "order": "trade_date.desc,calendar_days.asc",
           "args": { "curve": "curve", "date": "trade_date" }
+        },
+        "treasury": {
+          "doc": "api.treasury_direct: Tesouro Direto posted morning buy and sell rates (% a year, as published) and PU per title, newest base date first. Quotes, not trades; a NULL price is a side not on sale. Every row carries source (Tesouro Nacional) and licence (ODbL-1.0): credit Tesouro Nacional when you reuse it. About 60 titles a base date.",
+          "endpoint": "treasury_direct",
+          "paging": { "method": "date_window", "order": "desc" }, "daily": true,
+          "args": { "title": "p_title", "maturity": "p_maturity", "from": "p_from", "to": "p_to" }
         }
       }
     },
@@ -1587,7 +1618,7 @@ export const REGISTRY: Registry = {
           "visibility": "main",
           "type": "list",
           "default": "all",
-          "doc": "Comma-separated. kind=freshness: dataset names (funds_fidc, quotes, ...). kind=metrics: fund families (fi, fidc, ...). A name no row carries is refused, with the known names."
+          "doc": "Comma-separated. kind=freshness: dataset names, e.g. quotes, financials, company_events, funds_fidc, fund_nav, macro_series; the full list is the dataset column of kind=freshness called with dataset left at all. kind=metrics: fund families, e.g. fi, fidc, fii; the full list is the entity_type column of kind=metrics with dataset left at all. A name no row carries is refused as bad_request, the closest names first and then every known name."
         }
       ],
       "kinds": {

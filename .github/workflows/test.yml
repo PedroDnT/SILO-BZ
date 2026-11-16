@@ -825,6 +825,8 @@ jobs:
           # The CASCADEs dropped the dependents later files build; rebuild them.
           PGOPTIONS="-c silo.ci_smoke_bypass=on" bash scripts/apply_analytical.sh > /tmp/reapply.log 2>&1 || {
             cat /tmp/reapply.log; exit 1; }
+      - name: debt_issues behaves (executed, not just compiled)
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/debt_issues_behaviour.sql
 
       - name: identical index replay preserves indexes; required widening still applies
         run: |

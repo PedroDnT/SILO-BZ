@@ -1,6 +1,6 @@
 {
   "note": "Model-usage estimate from observed runs. Three smoke costs are rounded from earlier run outputs; actual OpenAI billing has not been reconciled.",
-  "estimated_usd": 2.164687,
+  "estimated_usd": 5.460784,
   "entries": [
     {
       "run": "earlier-smoke-1",
@@ -82,6 +82,104 @@
       "transport": "mcp-v2",
       "case": "Q1",
       "estimated_usd": 1.56
+    },
+    {
+      "run": "2026-11-16T20:44:36.089594+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q1",
+      "estimated_usd": 0.017423
+    },
+    {
+      "run": "2026-11-16T20:44:36.089594+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q2",
+      "estimated_usd": 0.017376
+    },
+    {
+      "run": "2026-11-16T20:46:29.905807+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q1",
+      "estimated_usd": 0.251215
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q2",
+      "estimated_usd": 0.251039
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q3",
+      "estimated_usd": 0.508324
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q4",
+      "estimated_usd": 0.308229
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q5",
+      "estimated_usd": 0.358769
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q6",
+      "estimated_usd": 0.48022
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q7",
+      "estimated_usd": 0.191626
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q8",
+      "estimated_usd": 0.190801
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "Q9",
+      "estimated_usd": 0.49658
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "L1",
+      "estimated_usd": 0.074618
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "L2",
+      "estimated_usd": 0.074686
+    },
+    {
+      "run": "2026-11-16T20:47:54.313257+00:00",
+      "model": "gpt-6.1-terra",
+      "transport": "mcp-v2",
+      "case": "L3",
+      "estimated_usd": 0.075191
     }
   ]
 }
