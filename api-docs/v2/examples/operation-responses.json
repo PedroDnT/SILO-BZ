@@ -1496,5 +1496,62 @@
         "tier": "pro"
       }
     }
+  },
+  "/statements/shares": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cd_cvm": "9512",
+          "company": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+          "reference_date": "2025-12-31",
+          "version": 1,
+          "shares_on": 7442231382,
+          "shares_pn": 5446501379,
+          "shares_total": 12888732761,
+          "treasury_on": 0,
+          "treasury_pn": 0,
+          "treasury_total": 0,
+          "source": "cvm_dfp"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
+  },
+  "/statements/free-float": {
+    "status": 200,
+    "params": {
+      "identifier": "PETR4",
+      "limit": 1
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "cd_cvm": "9512",
+          "company": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+          "reference_date": "2025-12-31",
+          "version": 27,
+          "float_on": 3478483761,
+          "float_on_pct": 46.74,
+          "float_pn": 4410960450,
+          "float_pn_pct": 80.987,
+          "float_total": 7889444211,
+          "float_total_pct": 61.212,
+          "holders_individual": 1112256,
+          "source": "cvm_fre"
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    }
   }
 }

@@ -1,0 +1,77 @@
+---
+title: "Free float"
+description: "Shares in circulation of one company through time, with the filed percent and the shareholder counts: yearly from 2010."
+keywords: ["statements", "free_float", "API", "MCP"]
+openapi: "api-docs/v2/specs/statements-free_float.json GET /statements/free-float"
+---
+
+
+
+## Overview
+
+Shares in circulation of one company through time, with the filed percent and the shareholder counts: yearly from 2010.
+
+
+## Coverage
+
+Coverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.
+
+## Try the API
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "statements", "kind": "free_float", "path": "/statements/free-float", "method": "GET", "title": "Free float", "group": "Financial statements", "description": "Shares in circulation of one company through time, with the filed percent and the shareholder counts: yearly from 2010.", "parameters": [{"name": "identifier", "target": "id", "description": "Company ticker, CNPJ or CVM code.", "schema": {"type": "string"}, "required": true, "advanced": false, "example": "PETR4"}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/statements-free_float.json)
+
+## Example
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/statements/free-float?identifier=PETR4&limit=1' \
+  --header "Authorization: Bearer $SILO_TOKEN"
+```
+
+## Example response
+
+Successful response from a Pro request on 2026-11-13. This excerpt omits fields and pagination links.
+
+```json
+{
+  "data": [
+    {
+      "cd_cvm": "9512",
+      "company": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+      "reference_date": "2025-12-31",
+      "version": 27,
+      "float_on": 3478483761,
+      "float_on_pct": 46.74,
+      "float_pn": 4410960450,
+      "float_pn_pct": 80.987,
+      "float_total": 7889444211,
+      "float_total_pct": 61.212,
+      "holders_individual": 1112256,
+      "source": "cvm_fre"
+    }
+  ],
+  "meta": {
+    "tier": "pro"
+  }
+}
+```
+
+## FAQ
+
+<Accordion title="How do I check for more results?">
+
+When present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).
+
+</Accordion>
+
+<Accordion title="Can an agent use this data?">
+
+Yes. Connect an agent through the [MCP server](/api-docs/v2/mcp).
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python)

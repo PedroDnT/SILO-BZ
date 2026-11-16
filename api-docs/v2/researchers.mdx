@@ -40,6 +40,8 @@ The listed shares and units that traded on that date: the ticker and ISIN pairs 
 curl "$SILO_V2/prices?id=PETR4&adjust=none"
 ```
 
+The cash distributions themselves are in [`events?kind=dividends`](/api-docs/v2/operations/events/dividends). Apply them yourself if your study needs a total return.
+
 `adjust=none` is the raw close as traded. Every row carries `adjusted` (true or false), so the two never mix silently. Only `kind=history` is adjusted; `latest`, `session`, `index` and `forward` are never adjusted.
 
 ### Reproducibility: `meta.request`
@@ -53,6 +55,21 @@ curl "$SILO_V2/coverage?dataset=quotes"
 ```
 
 Its `landed_at` and `landed_git_sha` say when the data you read was loaded, and by which version of the pipeline. `data_through` is the newest elapsed period, and `complete_through` is how much the source has fully published.
+
+### Dividends, share counts and free float
+
+These three answer per-stock questions such as yield, payout and liquidity. None of them is filled forward or estimated.
+
+```bash
+curl "$SILO_V2/events?kind=dividends&id=PETR4"
+curl "$SILO_V2/statements?kind=shares&id=PETR4"
+curl "$SILO_V2/statements?kind=free_float&id=PETR4"
+```
+
+- `events?kind=dividends` is per ticker. It has the value per share, `last_date_with` (B3's last session with the right) and `ex_date` (the next session on the tape, from 2019). `payment_date` is known only from 2025 on and is null before. Each installment is its own row.
+- `statements?kind=shares` is per company: PETR3 and PETR4 return the same rows. `source` says which form filed the count: `cvm_itr` and `cvm_dfp` are quarterly from 2020 and include treasury shares, and `cvm_fre` is yearly from 2010 and has no treasury count.
+- `statements?kind=free_float` is per company, yearly from 2010. It has the shares in circulation, the percent as the company filed it, and the shareholder counts.
+- Share counts and free float serve the newest version of each filing, so they are **not** point in time. `as_of` does not apply to them.
 
 ### Citation
 
