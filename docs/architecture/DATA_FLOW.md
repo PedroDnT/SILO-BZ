@@ -22,7 +22,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - A **slice** is (source, doc_type, period): `ok`, `skipped` (unpublished, file
   unchanged, CVM probe down: `daily_scope`), or `error`.
 - The daily run sends the ETag / Last-Modified an ok slice stored
-  (`cvm_source_validator`, 7 days) for CDA, FII, FIP, SECURIT, CIA IPE/FCA; a
+  (`cvm_source_validator`, 7 days) for CDA, FII, FIP, SECURIT, CIA IPE/FCA/FRE; a
   304 is `skipped`, `unchanged:`, fresh to `check_staleness.py`.
 - Daily windows heal late publication: CVM 4 months (gap-aware), the four CDA
   blocks every month through M+5 (~90 days late), last

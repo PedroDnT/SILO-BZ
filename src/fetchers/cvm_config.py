@@ -517,6 +517,18 @@ class DatasetConfig:
             "csv_name_pattern": "fca_cia_aberta_valor_mobiliario_{year}.csv",
             "description": "FCA valores mobiliários — the published CNPJ↔ticker map, one CSV member of the yearly FCA ZIP",
         },
+        # FRE (Formulário de Referência) yearly ZIP holds ~38 member CSVs; only
+        # the "outros valores mobiliários" member is ingested: the debt issues
+        # (debentures, commercial notes, CRI) of listed companies with issue
+        # date, maturity, quantity, value and outstanding balance (#1164).
+        # Header identical in the 2010, 2016, 2025 and 2026 archives.
+        "fre_outro_valor_mobiliario": {
+            "url_pattern": "{base_url}/CIA_ABERTA/DOC/FRE/DADOS/fre_cia_aberta_{year}.zip",
+            "is_zip": True,
+            "multi_csv": False,
+            "csv_name_pattern": "fre_cia_aberta_outro_valor_mobiliario_{year}.csv",
+            "description": "FRE outros valores mobiliários — debt issues of listed companies, one CSV member of the yearly FRE ZIP",
+        },
         "itr": {
             "url_pattern": "{base_url}/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_{year}.zip",
             "is_zip": True,

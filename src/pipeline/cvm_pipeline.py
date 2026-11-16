@@ -89,6 +89,7 @@ from src.pipeline.ingest_cia import (
     ingest_cia_account,
     ingest_cia_filing,
     ingest_cia_ticker,
+    ingest_cia_fre_outro_valor_mobiliario,
 )
 from src.fetchers.cia_fetcher import CIAFetcher
 
@@ -186,6 +187,7 @@ _ALL_TABLES: List[str] = [
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic", "cvm_fii_imovel",
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
     "cia_company", "cia_event", "cia_filing", "cia_account", "cia_ticker",
+    "cvm_fre_outro_valor_mobiliario",
     "cvm_fund_registry", "cvm_etf_registry",
     "cvm_oferta_distrib_160", "cvm_oferta_distrib_400",
 ]
@@ -1867,6 +1869,21 @@ class CVMIngestor:
             return rows_inserted, len(raw_rows)
         return await self._audited("cia_aberta", "fca_valor_mobiliario", year, None, work)
 
+    async def ingest_cia_fre_ovm(self, year: int) -> int:
+        """Ingest one year of FRE "outros valores mobiliários" rows (#1164).
+
+        Same yearly-ZIP shape as FCA: csv_name_pattern selects one member of
+        the ~38 in the FRE ZIP. About 1k to 2.7k rows per year: the debt
+        issues of listed companies.
+        """
+        async def work():
+            raw_rows = await self._fetch_all_pages(
+                "cia_aberta", "fre_outro_valor_mobiliario", year, None
+            )
+            rows_inserted = ingest_cia_fre_outro_valor_mobiliario(self._supabase, raw_rows)
+            return rows_inserted, len(raw_rows)
+        return await self._audited("cia_aberta", "fre_outro_valor_mobiliario", year, None, work)
+
     # ------------------------------------------------------------------
     # CIA_ABERTA — ITR / DFP financial statements (yearly ZIP, ~19 CSVs)
     # ------------------------------------------------------------------
@@ -2479,6 +2496,16 @@ class CVMIngestor:
                 )
                 for year in cia_years
             ]
+            # FRE outros valores mobiliários: debt issues of listed
+            # companies (#1164), 1k-2.7k rows per yearly ZIP.
+            cia_tasks += [
+                IngestTask(
+                    "cvm_fre_outro_valor_mobiliario",
+                    f"cia_aberta/fre_outro_valor_mobiliario {year}",
+                    self.ingest_cia_fre_ovm(year),
+                )
+                for year in cia_years
+            ]
             await self._run_task_batches(
                 cia_tasks,
                 _get_concurrency("cia_aberta", 3),
@@ -2649,6 +2676,13 @@ class CVMIngestor:
                 "cia_ticker",
                 f"cia_aberta/fca_valor_mobiliario {year}",
                 self.ingest_cia_fca(year),
+            ))
+            # FRE outros valores mobiliários (#1164): the current-year ZIP
+            # holds every FRE version filed this year.
+            tasks.append(IngestTask(
+                "cvm_fre_outro_valor_mobiliario",
+                f"cia_aberta/fre_outro_valor_mobiliario {year}",
+                self.ingest_cia_fre_ovm(year),
             ))
             # The current year: a full read on the weekly full-read day (the
             # first run after CVM regenerates the ZIPs), otherwise only the
