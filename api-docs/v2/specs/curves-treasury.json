@@ -1,0 +1,297 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SILO API v2 (deployed preview)",
+    "version": "v2",
+    "description": "The v2 gateway over SILO's schema `api`: 14 resources, five shared parameters, one envelope and one error object. Generated from supabase/functions/silo-api/registry.ts by scripts/gen_openapi_v2.py; do not edit by hand. Deployed preview. The v2 gateway is live; v1 remains available."
+  },
+  "servers": [
+    {
+      "url": "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2",
+      "description": "The silo-api Edge Function (deployed preview)."
+    }
+  ],
+  "security": [
+    {},
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Discovery"
+    },
+    {
+      "name": "Markets and macro"
+    },
+    {
+      "name": "Companies and funds"
+    },
+    {
+      "name": "Research"
+    }
+  ],
+  "paths": {
+    "/curves/treasury": {
+      "get": {
+        "operationId": "v2_curves_treasury",
+        "summary": "Tesouro Direto rates and prices",
+        "tags": [
+          "Markets and macro"
+        ],
+        "description": "Tesouro Direto posted buy and sell rates and prices per title, newest base date first. Tesouro Nacional open data under ODbL 1.0: credit Tesouro Nacional.",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/curves/treasury"
+        },
+        "parameters": [
+          {
+            "name": "title",
+            "in": "query",
+            "required": false,
+            "description": "Title type as published, e.g. Tesouro IPCA+. Omit for every title.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "Tesouro IPCA+"
+          },
+          {
+            "name": "maturity",
+            "in": "query",
+            "required": false,
+            "description": "One maturity (YYYY-MM-DD). Omit for every maturity.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, subject to your tier.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor from the next page URL.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "base_date": "2026-11-13",
+                      "title": "Tesouro IPCA+",
+                      "maturity": "2029-05-15",
+                      "buy_rate_pct": 7.47,
+                      "sell_rate_pct": 7.59,
+                      "buy_pu": 3995.96,
+                      "sell_pu": 3982.95,
+                      "base_pu": 3982.95,
+                      "source": "Tesouro Nacional",
+                      "licence": "ODbL-1.0"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SILO user access token for authenticated data requests."
+      }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {},
+            "description": "Always a list. Rows as the endpoint returned them; null stays null."
+          },
+          "meta": {
+            "type": "object",
+            "required": [
+              "tier"
+            ],
+            "properties": {
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "anonymous",
+                  "signed_in",
+                  "pro"
+                ]
+              },
+              "tier_cap_reached": {
+                "type": "boolean",
+                "description": "True when the result is partial because of the tier cap."
+              }
+            },
+            "additionalProperties": true
+          },
+          "next_page_url": {
+            "type": "string",
+            "description": "Present only when more rows remain. It carries one opaque cursor."
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "reason",
+              "message",
+              "target",
+              "innererror"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "bad_request",
+                  "unknown_parameter",
+                  "unknown_id",
+                  "unauthorized",
+                  "forbidden_for_tier",
+                  "over_limit",
+                  "rate_limited",
+                  "timeout",
+                  "unavailable",
+                  "internal"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "row_cap",
+                  "tier_cap",
+                  null
+                ],
+                "description": "over_limit only: row_cap (over one 1,000-row page: narrow or page) or tier_cap (over the tier ceiling: narrow or sign in). Null otherwise."
+              },
+              "message": {
+                "type": "string"
+              },
+              "target": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "innererror": {
+                "type": "object",
+                "properties": {
+                  "sqlstate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "hint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "details": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

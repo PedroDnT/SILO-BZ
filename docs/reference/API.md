@@ -363,6 +363,32 @@ through time, as filed with CVM. v2: `/v2/statements?kind=shares&id=PETR4` and
 - `p_from` / `p_to` bound the reference date; NULL is unbounded. Raise-only above
   one page. Executed check: `tests/sql/share_counts_behaviour.sql`.
 
+### Debt issues of a listed company (catalog v88)
+
+`api.debt_issues(p_id, p_from, p_to)` (`43_api_debt_issues.sql`, migration 86,
+#1164) serves the debt issues a listed company describes in its CVM FRE, item
+"outros valores mobiliários" (`cvm_fre_outro_valor_mobiliario`), yearly, from
+2010. v2: `/v2/statements?kind=debt_issues&id=PETR4`.
+
+- One row is one issue as the company filed it: debentures, commercial notes,
+  CRI, CRA, financial bills or subscription warrants. One row often holds
+  several series. CVM publishes no ticker, ISIN or series code, so a row does
+  not join to a traded debenture.
+- Coverage is listed issuers only. A closed company that issues debentures
+  files no FRE and is not here. Measured 2026-11-16: issuers that file an FRE
+  hold 46% of the active debenture series.
+- The rate and the indexer are NOT parsed. They exist only in `terms_text`, free
+  text that each company writes in its own way. It is served as filed.
+- Columns: security type, the issue name as filed, issue date, maturity date,
+  quantity, value issued, outstanding balance at the reference date, the
+  transfer-restricted, convertible and redeemable flags (NULL when the company
+  left them empty) and `terms_text`.
+- The newest version of each reference date is served, which is not
+  point-in-time. `reference_date` is not a filing date. `p_id` resolves as
+  `api.financials` resolves it; an id that resolves to nothing returns no rows.
+- `p_from` / `p_to` bound the reference date; NULL is unbounded. Raise-only above
+  one page. Executed check: `tests/sql/debt_issues_behaviour.sql`.
+
 ### The research universe (catalog v43)
 
 `api.research_universe()` (`28_api_research.sql`; research-seam spec
@@ -888,6 +914,18 @@ The operator half:
   month (it matures on that month's first business day); rank 1 is the
   nearest contract alive. Each row is that contract's published row with its
   ticker. Nothing is adjusted or spliced, so the price jumps at each roll.
+- **`treasury_direct(p_title, p_maturity, p_from, p_to)` serves Tesouro
+  Direto posted rates and prices per title** (v87, #1163;
+  `42_api_treasury.sql`, table `tesouro_direto_daily`). With no argument it
+  returns every title on the newest base date; a window is newest first. The
+  rates are the platform's morning buy and sell quotes in % a year as
+  published (they can be negative), not trades; a NULL price is a side not on
+  sale. It is Tesouro Nacional open data under ODbL 1.0: every row carries
+  `source = 'Tesouro Nacional'` and `licence = 'ODbL-1.0'`, so a reuser credits
+  Tesouro Nacional and offers a derived database under the same licence. This
+  is the one endpoint that names its source (owner decision 2026-11-16).
+  Refuses above 1,000 rows (about 60 titles a base date). v2:
+  `GET /v2/curves?kind=treasury` (`title`, `maturity`, `from`, `to`).
 - **`future_curve` and `future_series` serve DI1, DOL and WDO** (v76, #1000;
   the ingest of DOL and WDO is #999). `p_root` is one of the three, any other
   raises `22023` with the list; `future_series` takes an outright code of
@@ -1287,7 +1325,7 @@ fails while a route in that section is missing here, so a new endpoint ships
 with its line. The prose above covers a subset in depth; the catalog's own
 entry is the description of record.
 
-Functions (69), called with `POST`:
+Functions (76), called with `POST`:
 
 ```
 POST /rest/v1/rpc/anbima_classes
@@ -1301,6 +1339,7 @@ POST /rest/v1/rpc/credit_implied_rate
 POST /rest/v1/rpc/credit_market_history
 POST /rest/v1/rpc/curve
 POST /rest/v1/rpc/curve_history
+POST /rest/v1/rpc/debt_issues
 POST /rest/v1/rpc/dividends
 POST /rest/v1/rpc/fidc_aging
 POST /rest/v1/rpc/fidc_cedentes
@@ -1364,6 +1403,7 @@ POST /rest/v1/rpc/search_funds
 POST /rest/v1/rpc/share_counts
 POST /rest/v1/rpc/termo_history
 POST /rest/v1/rpc/trade_consolidated_history
+POST /rest/v1/rpc/treasury_direct
 ```
 
 Views (16), read with `GET` and PostgREST filters:

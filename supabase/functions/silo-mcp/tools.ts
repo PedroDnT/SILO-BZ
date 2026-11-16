@@ -96,6 +96,7 @@ export const TOOL_TITLES: ToolSpec[] = [
   t("dividends", "A ticker's cash dividends, JCP and rendimentos (B3): value per share, ex-date, payment date"),
   t("share_counts", "A company's issued and treasury share counts through time (CVM ITR/DFP from 2020, FRE from 2010)"),
   t("free_float", "A company's free float through time (CVM FRE, yearly from 2010): shares in circulation and percent"),
+  t("debt_issues", "The debt issues (debentures, commercial notes, CRI, CRA) a listed company describes in its CVM FRE, yearly from 2010; rate only as unparsed text"),
   // Industry and macro.
   t("anbima_classes", "ANBIMA class aggregates"),
   t("inflation", "Inflation (BACEN SGS)"),
@@ -106,6 +107,7 @@ export const TOOL_TITLES: ToolSpec[] = [
   t("future_curve", "DI1, DOL and WDO futures curve (B3)"),
   t("future_series", "DI1, DOL or WDO futures contract history (B3)"),
   t("future_nth_series", "Nth nearest DI1, DOL or WDO futures contract through time (B3)"),
+  t("treasury_direct", "Tesouro Direto posted rates and prices per title (Tesouro Nacional, ODbL)"),
   t("curve", "B3 reference curve (PRE, DOC, DPL)"),
   t("curve_history", "B3 reference curve fixed-vertex history"),
   // The research universe (listed shares and units, from the B3 tape).

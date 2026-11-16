@@ -500,6 +500,8 @@ _ORDER: dict[str, str] = {
     # 41_api_share_counts.sql orders a company's periods newest first.
     "share_counts": "newest reference_date first",
     "free_float": "newest reference_date first",
+    # 43_api_debt_issues.sql orders newest reference date first, then maturity.
+    "debt_issues": "newest reference_date first, then nearest maturity",
     # 27_api_rates.sql: one session's contracts and one session's vertices.
     "future_curve": "nearest maturity first",
     "curve": "shortest vertex first",
@@ -679,14 +681,14 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(fund_holdings|fund_debentures)$"), "Holdings"),
     (re.compile(r"^fidc_"), "FIDC"),
     (re.compile(r"^(fund_documents|fund_restatements|fund_restatement_diff)$"), "FNET documents"),
-    (re.compile(r"^(financials|company_financials|financial_statement_history|share_counts|free_float)$"), "Financials"),
+    (re.compile(r"^(financials|company_financials|financial_statement_history|share_counts|free_float|debt_issues)$"), "Financials"),
     (re.compile(r"^fii_property_history$"), "Funds"),
     (re.compile(r"^focus_expectations$"), "Macro expectations"),
     (re.compile(r"^anbima_"), "ANBIMA"),
     (re.compile(r"^inflation"), "Inflation"),
     (re.compile(r"^(macro_series|ptax|ptax_daily)$"), "Macro"),
     (re.compile(r"^(company_events|rj_listed_documents|dividends)$"), "Company events"),
-    (re.compile(r"^(future_curve|future_series|curve|curve_history|di_settlement|reference_rate)$"), "Rates"),
+    (re.compile(r"^(future_curve|future_series|curve|curve_history|di_settlement|reference_rate|treasury_direct)$"), "Rates"),
     (re.compile(r"^(research_universe|index_history)$"), "Research"),
     (re.compile(r"^portfolio_"), "Portfolio"),
     (re.compile(r"^screen_"), "Screens"),
@@ -873,12 +875,12 @@ privilege set for which objects exist at all. It is not hand-maintained, and
 
 Reading one for the other is the most expensive mistake on this API.
 
-* **The row cap refuses.** Sixty-four set-returning functions raise SQLSTATE
+* **The row cap refuses.** Sixty-six set-returning functions raise SQLSTATE
   `22023` when the window they were handed would produce more than 1000 rows.
   Nothing is trimmed, and the error says why and how to fix it (the message,
   plus PostgREST's `details` and `hint`). Five of them (`panel`,
   `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)
-  take a `p_after` cursor so you can walk the series; the other fifty-nine ask you to narrow the window. `fund_nav` paging
+  take a `p_after` cursor so you can walk the series; the other sixty-one ask you to narrow the window. `fund_nav` paging
   additionally REQUIRES `p_entity_type` — its cursor is a bare period, which
   is unique only within one family, and CNPJs that file under both `fi` and
   `fidc` in the same month would otherwise be ambiguous.
