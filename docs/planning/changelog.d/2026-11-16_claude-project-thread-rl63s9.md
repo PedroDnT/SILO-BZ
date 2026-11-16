@@ -1,0 +1,1 @@
+| 2026-11-16 | claude/project-thread-rl63s9 | New `api.dividends(p_ticker, p_from, p_to)` and `/v2/events?kind=dividends` (catalog v85, #1157): one ticker's cash distributions from B3's history and supplement, with value per share, ex-date from the tape and payment date (2025 on, null before). |

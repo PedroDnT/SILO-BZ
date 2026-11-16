@@ -152,7 +152,7 @@ Main parameters, defaults in brackets.
 | `curves` | `kind` [`snapshot`; `history`, `vertices`], `curve` [`PRE`; `DOC`, `DPL`], `tenor` [360 calendar days, the one-year fixed vertex, for history] | 1 year | `date` [latest session] | built |
 | `macro` | `kind` [`series`; `inflation`, `inflation_items`, `fx`, `expectations`] | 1 year; 3 years for inflation | `family`, `currency` [`USD`], `horizon` | built |
 | `positioning` | `kind` [`short_interest`; `short_by_sector`, `lending`, `lending_brokers`, `investor_flow`] | 3 months | `sector`, `investor_type` [all] | built |
-| `events` | `kind` [`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`], `category` [all] | 12 months | `family` [all] | built |
+| `events` | `kind` [`company`; `fund`, `restatements`, `restatement_diff`, `judicial_recovery`, `dividends`], `category` [all] | 12 months | `family` [all] | built |
 | `screens` | `kind` [`list`: the screens with one-line descriptions; one kind per `screen_*` function] | per screen | each screen's thresholds, with today's SQL defaults | built |
 | `panel` | `metric` [`auto`: each family's default metric, as today], `freq` [`month`; `day` for quotes only], `family` [`auto`] | 3 years | `min_nav`, `min_months` [none] | built |
 | `portfolio` (POST) | `kind` [`resolve`; `fees`, `fee_peers`, `lookthrough`, `movement`, `instruments`, `fund_terms`, `equivalents`, `debenture_returns`], `month` [latest complete] | n/a | `max_depth` [4], `as_of` [today], `max_monthly_drop_pct` [none] | built |
@@ -204,6 +204,8 @@ Notes:
   `p_tipo_fundo` (`fii`, `fidc`, `etf`). `company`, `fund` and
   `restatement_diff` need an `id`; `restatements` and `judicial_recovery`
   list every fund or company without one. The fund kinds take a fund CNPJ.
+  `dividends` (#1157) calls `api.dividends` with a B3 ticker as `id` and a
+  60-month window on `last_date_with`; `category` does not apply.
 - `prices`, as built (#1055): `history` calls `quote_history` (`adjust=split`
   selects `close_adj`, `none` the raw `close`; `fields=core` adds `isin`),
   `latest` calls `quote_latest`, `index` calls `index_history`, `forward`

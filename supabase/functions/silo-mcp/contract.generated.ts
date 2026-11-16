@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "84";
+export const CONTRACT_VERSION = "85";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -33,6 +33,7 @@ export const ENDPOINT_NAMES: string[] = [
   "curve",
   "curve_history",
   "di_settlement",
+  "dividends",
   "equities",
   "fidc_aging",
   "fidc_cedentes",
@@ -2359,6 +2360,44 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "required": [
         "p_curve",
         "p_tenor_days"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "dividends": {
+    "kind": "rpc",
+    "path": "/rpc/dividends",
+    "description": "Cash distributions (DIVIDENDO, JRS CAP PROPRIO gross of withholding tax, RENDIMENTO, ...) of one B3 ticker, newest last_date_with first. source b3_cash_history: B3's full history (1995 on) for the company and the ticker's share class (first word of ESPECI), with approval date, last date with rights, value per share, B3's pre-ex close and yield; the company is matched by ticker prefix and the CNPJ CVM's FCA map publishes, never by name. source b3_supplement: an event only B3's ~12-month supplement lists (recent declarations, most FIIs). ex_date is the first B3 cash session after last_date_with on the tape (NULL before 2019 and until that session prints). payment_date is B3's paymentDate from the supplement (2025 on), matched on ISIN, action, date and amount; NULL when B3 published none or the match is ambiguous, never guessed. installment numbers identical installment rows. p_from / p_to bound last_date_with (NULL = unbounded). A ticker with no cash print returns no rows. More than 1000 rows RAISES 22023 (never trimmed): narrow the window.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_ticker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_ticker"
       ],
       "additionalProperties": false
     }

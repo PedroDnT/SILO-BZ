@@ -316,6 +316,30 @@ listed companies file with CVM IPE. It reads `cia_event` through the internal vi
 - Executed check: `tests/sql/rj_listed_documents_behaviour.sql` in CI's
   `sql-compile` job.
 
+### Cash dividends of a ticker (catalog v85)
+
+`api.dividends(p_ticker, p_from, p_to)` (`40_api_dividends.sql`, #1157) serves one
+ticker's cash distributions: DIVIDENDO, JRS CAP PROPRIO (gross of withholding tax),
+RENDIMENTO and the other labels B3 publishes. No new fetch. v2:
+`/v2/events?kind=dividends&id=PETR4`.
+
+- `source = b3_cash_history`: `b3_cash_dividend`, B3's full history (1995 on) for
+  the company and the ticker's share class (first word of its ESPECI). It has the
+  approval date, `last_date_with` (B3's last session with the right), the value
+  per share, B3's pre-ex close and yield. It has no payment date and no ISIN.
+- `source = b3_supplement`: an event that only `b3_corporate_event` lists (about
+  12 months, per ISIN): a recent declaration, or an issuer the history does not
+  carry, such as most FIIs.
+- `ex_date` is the first B3 cash session after `last_date_with` on the tape, so it
+  is NULL before 2019. `payment_date` is the supplement's, on an exact match of
+  ISIN, action, date and amount. It is NULL before 2025 and NULL when installments
+  cannot be matched one to one. Measured 2026-11-16: 963 of 992 history events
+  from 2025-11 to 2026-09 matched.
+- The company is matched by ticker prefix (`api.ticker_lineage`) and the CNPJ
+  that CVM's FCA map publishes, never by name. Installments are separate rows.
+- `p_from` / `p_to` bound `last_date_with`; NULL is unbounded. Raise-only above
+  one page. Executed check: `tests/sql/dividends_behaviour.sql`.
+
 ### The research universe (catalog v43)
 
 `api.research_universe()` (`28_api_research.sql`; research-seam spec
@@ -1301,6 +1325,7 @@ POST /rest/v1/rpc/quote_latest
 POST /rest/v1/rpc/rate_hit
 POST /rest/v1/rpc/research_universe
 POST /rest/v1/rpc/rj_listed_documents
+POST /rest/v1/rpc/dividends
 POST /rest/v1/rpc/screen_captive_vehicles
 POST /rest/v1/rpc/screen_delinquency_drivers
 POST /rest/v1/rpc/screen_dormant_funds

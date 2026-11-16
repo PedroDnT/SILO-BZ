@@ -1,0 +1,276 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SILO API v2 (deployed preview)",
+    "version": "v2",
+    "description": "The v2 gateway over SILO's schema `api`: 14 resources, five shared parameters, one envelope and one error object. Generated from supabase/functions/silo-api/registry.ts by scripts/gen_openapi_v2.py; do not edit by hand. Deployed preview. The v2 gateway is live; v1 remains available."
+  },
+  "servers": [
+    {
+      "url": "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2",
+      "description": "The silo-api Edge Function (deployed preview)."
+    }
+  ],
+  "security": [
+    {},
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Discovery"
+    },
+    {
+      "name": "Markets and macro"
+    },
+    {
+      "name": "Companies and funds"
+    },
+    {
+      "name": "Research"
+    }
+  ],
+  "paths": {
+    "/events/dividends": {
+      "get": {
+        "operationId": "v2_events_dividends",
+        "summary": "Cash dividends of a ticker",
+        "tags": [
+          "Companies and funds"
+        ],
+        "description": "Dividends, JCP and rendimentos of one B3 ticker, newest first: value per share, ex-date and payment date (B3 publishes payment dates since 2025).",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/events/dividends"
+        },
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "query",
+            "required": true,
+            "description": "B3 ticker.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR4"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, subject to your tier.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor from the next page URL.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "ticker": "PETR4",
+                      "isin": "BRPETRACNPR6",
+                      "action": "DIVIDENDO",
+                      "approved_on": "2026-08-06",
+                      "last_date_with": "2026-08-21",
+                      "ex_date": "2026-08-24",
+                      "payment_date": "2026-12-21",
+                      "value_per_share": 0.47156696,
+                      "source": "b3_cash_history"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SILO user access token for authenticated data requests."
+      }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {},
+            "description": "Always a list. Rows as the endpoint returned them; null stays null."
+          },
+          "meta": {
+            "type": "object",
+            "required": [
+              "tier"
+            ],
+            "properties": {
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "anonymous",
+                  "signed_in",
+                  "pro"
+                ]
+              },
+              "tier_cap_reached": {
+                "type": "boolean",
+                "description": "True when the result is partial because of the tier cap."
+              }
+            },
+            "additionalProperties": true
+          },
+          "next_page_url": {
+            "type": "string",
+            "description": "Present only when more rows remain. It carries one opaque cursor."
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "target",
+              "innererror"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "bad_request",
+                  "unknown_parameter",
+                  "unknown_id",
+                  "unauthorized",
+                  "forbidden_for_tier",
+                  "over_limit",
+                  "rate_limited",
+                  "timeout",
+                  "unavailable",
+                  "internal"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "target": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "innererror": {
+                "type": "object",
+                "properties": {
+                  "sqlstate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "hint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "details": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
