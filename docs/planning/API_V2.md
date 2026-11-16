@@ -145,7 +145,7 @@ Main parameters, defaults in brackets.
 | --- | --- | --- | --- | --- |
 | `search` | `q` [empty: list the universe], `kind` [`any`; `company`, `fund`, `universe`], `family` [all] | n/a | `as_of` [none] | built |
 | `prices` | `kind` [`history`; `latest`, `session`, `index`, `forward`], `freq` [`day`; `month`], `adjust` [`split`; `none`] | 1 year | `board` [all], `asset_class` [all], `fields` [core], `date` [latest session] | built |
-| `statements` | `kind` [`all`; `income`, `balance`, `cashflow`, `headline`, `versions`], `period` [`both`; `quarterly`, `annual`], `scope` [`consolidated`; `individual`] | 5 years | `as_of` [none], `statement` [`DRE`] | built |
+| `statements` | `kind` [`all`; `income`, `balance`, `cashflow`, `headline`, `versions`, `shares`, `free_float`], `period` [`both`; `quarterly`, `annual`], `scope` [`consolidated`; `individual`] | 5 years | `as_of` [none], `statement` [`DRE`] | built |
 | `funds` | `kind` [`profile`; `nav`, `holdings`, `debentures`, `properties`], `family` [all; `fi`, `fidc`, `fii`, `fip`, ...] | 3 years | `holding` [none: reverse lookup by ticker or issuer], `status` [all] | built |
 | `fidc` | `kind` [`portfolio`; `tranches`, `aging`, `cedentes`, `sacados`] | 2 years | `series`, `cedente`, `item` [all] | built |
 | `derivatives` | `kind` [`chain`; `history`, `exercises`, `termo`, `futures`, `futures_nth`, `futures_curve`, `di_settlement`], `date` [latest session] | 1 year | `expiry_from` [today] | built |
@@ -225,7 +225,10 @@ Notes:
   `p_doc_type`, so for `headline` the period is a selection on the rows'
   `doc_type`. `versions` needs one statement, so it takes a hidden `statement`
   (default `DRE`) and no `as_of`. With no `id`, every kind lists the research
-  universe, whose `cnpj` links a ticker to its filer.
+  universe, whose `cnpj` links a ticker to its filer. `shares` and
+  `free_float` (#1161) call `api.share_counts` and `api.free_float`: they need
+  an `id`, take a 240-month window on the reference date and ignore `period`
+  and `scope`.
 - `screens`, as built (#1058): with no `kind` (`list`) it reads `catalog()`
   and returns one row per screen: its kind, one line, the family it reads and
   its SQL defaults under v2 names. Any other kind calls `screen_<kind>`. Every
