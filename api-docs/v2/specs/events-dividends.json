@@ -184,6 +184,29 @@
               "tier"
             ],
             "properties": {
+              "source": {
+                "type": "string",
+                "description": "The canonical request to cite: /v2/<resource>? with every applied parameter, defaults included, so it replays the same rows. POST says so; its lists are in meta.body."
+              },
+              "data_through": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date",
+                "description": "The newest elapsed period SILO holds for the dataset this endpoint reads (the coverage resource's data_through for coverage_dataset). Null when no coverage row applies or the coverage read failed; never a guess."
+              },
+              "coverage_dataset": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The coverage dataset data_through comes from; null when none applies."
+              },
+              "data_through_error": {
+                "type": "string",
+                "description": "Present only when the coverage read failed: why data_through is null. The rows are unaffected."
+              },
               "tier": {
                 "type": "string",
                 "enum": [

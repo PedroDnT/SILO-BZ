@@ -39,8 +39,11 @@ schema placeholders are not market observations.
 
 ## Record the evidence
 
-Keep `meta.request`, the returned dates, `meta.endpoint`, `meta.tier`, pagination
-state and retrieval time with your analysis. Query [dataset freshness](/api-docs/v2/operations/coverage/freshness)
+Cite every figure by `meta.source` (the canonical request, `/v2/<resource>?...`
+with every applied parameter), `meta.endpoint` (the `api.*` function read) and
+`meta.data_through` (the newest period SILO holds for that dataset, from
+`meta.coverage_dataset`; `null` means unknown, not current). Keep `meta.request`,
+the returned dates, `meta.tier`, pagination state and retrieval time with your analysis. Query [dataset freshness](/api-docs/v2/operations/coverage/freshness)
 before saying a value is current. Use the [research guide](/api-docs/v2/researchers)
 for point-in-time comparisons.
 

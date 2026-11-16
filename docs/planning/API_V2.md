@@ -330,8 +330,9 @@ uses a secret key.
   "meta": {
     "resource": "prices", "kind": "history",
     "request": { "id": "PETR4", "from": "2025-10-31", "to": "2026-10-30", "adjust": "split" },
-    "data_through": "2026-10-30", "data_version": "landed 2026-10-31T03:41 UTC-3, git 1a2b3c4",
-    "id_known": true, "source": "B3 COTAHIST"
+    "data_through": "2026-10-30", "coverage_dataset": "quotes", "data_version": "landed 2026-10-31T03:41 UTC-3, git 1a2b3c4",
+    "id_known": true, "endpoint": "api.quote_history",
+    "source": "/v2/prices?id=PETR4&kind=history&from=2025-10-31&to=2026-10-30&adjust=split"
   },
   "next_page_url": "https://<gateway>/v2/prices?cursor=..."
 }
@@ -341,6 +342,11 @@ uses a secret key.
 
 - `data` is always the array key. `meta.request` echoes every parameter,
   including the defaults applied, so it can be pasted into a methods section.
+- `meta.source` (built, #1176) is the canonical request, `/v2/<resource>?` with
+  every applied parameter; `meta.endpoint` the `api.*` read; `meta.data_through`
+  the coverage `as_of` of `meta.coverage_dataset`, read once per 10 minutes per
+  gateway (`provenance.ts`), `null` where no coverage row applies or the read
+  failed (`meta.data_through_error` says why). `meta.data_version` is not built.
 - `meta.id_known` says whether an id is one SILO holds, so an empty `data` says
   why; it is `null` for a call that names no id.
 - `limit` is the page size: default the tier's page maximum, coerced down to
