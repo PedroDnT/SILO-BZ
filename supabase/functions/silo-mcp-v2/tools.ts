@@ -27,6 +27,7 @@ import { acceptedParams } from "../silo-api/params.ts";
 import { type BodySpec, type ParamSpec, REGISTRY, type ResourceSpec, SHARED_NAMES } from "../silo-api/registry.ts";
 import { makeHandler as makeGateway } from "../silo-api/server.ts";
 import { CLIENT_IP_HEADERS, type Gate } from "../silo-api/tier.ts";
+import type { Freshness } from "../silo-api/provenance.ts";
 import { idDoc } from "./id_docs.ts";
 
 export const TOOL_PREFIX = "silo_";
@@ -111,6 +112,12 @@ function firstSentence(s: string): string {
   return i < 0 ? s.replace(/\.$/, "") : s.slice(0, i);
 }
 
+/** #1176: what an answer cites. Every data response's meta carries these three. */
+export const CITE =
+  "Cite every figure by meta.source (the canonical SILO request, /v2/<resource>?...), meta.endpoint (the api.* function read) " +
+  "and meta.data_through (the newest period SILO holds for that dataset; null means unknown, not current). " +
+  "Never cite a URL or date the response does not give.";
+
 function describe(r: ResourceSpec, hidden: ParamSpec[]): string {
   const parts: string[] = [r.summary, `Example: ${r.example}`];
   const kinds = Object.entries(r.kinds ?? {});
@@ -125,6 +132,7 @@ function describe(r: ResourceSpec, hidden: ParamSpec[]): string {
   if (r.method === "POST") parts.push("The lists go in body; every other argument goes in the query string the gateway reads.");
   for (const n of r.notes ?? []) parts.push(n);
   parts.push("Read data and meta. Page with the opaque cursor from next_page_url; keep the original body for POST.");
+  parts.push(CITE);
   return parts.join("\n\n");
 }
 
@@ -186,7 +194,7 @@ export const SERVER_INSTRUCTIONS =
   "If meta.tier_cap_reached is true, report a partial result. Keep nulls as missing. Inspect isError before reading data. " +
   "Branch on error.code and error.reason, not the message: over_limit with reason row_cap means narrow or page, " +
   "tier_cap means narrow or sign in; unknown_id means look the id up again with silo_search. " +
-  "On rate_limited wait Retry-After seconds. Cite the observation dates and provenance.";
+  "On rate_limited wait Retry-After seconds. Cite the observation dates of the rows you use. " + CITE;
 
 // ---------------------------------------------------------------------------
 // The call: arguments to one gateway request, run in process.
@@ -291,6 +299,8 @@ export interface CallDeps {
   gateway?: Gateway;
   /** Only when gateway is left out: the gateway's Postgres gate (tests inject one). */
   gate?: Gate;
+  /** Only when gateway is left out: meta.data_through's coverage read (#1176; tests inject one). */
+  freshness?: Freshness;
   /**
    * The inbound MCP request's headers. Authorization and the client IP
    * headers the gateway's rate limit reads (CLIENT_IP_HEADERS) are copied to
@@ -302,8 +312,8 @@ export interface CallDeps {
 /** Copied from the MCP request to the gateway request: the token, and the caller's address. */
 export const FORWARDED_HEADERS: readonly string[] = ["authorization", ...CLIENT_IP_HEADERS];
 
-export function makeGatewayFor(deps: Pick<CallDeps, "env" | "fetchImpl" | "gate">): Gateway {
-  return makeGateway({ env: deps.env, fetchImpl: deps.fetchImpl, gate: deps.gate });
+export function makeGatewayFor(deps: Pick<CallDeps, "env" | "fetchImpl" | "gate" | "freshness">): Gateway {
+  return makeGateway({ env: deps.env, fetchImpl: deps.fetchImpl, gate: deps.gate, freshness: deps.freshness });
 }
 
 /** The gateway's base URL for a request: <SUPABASE_URL>/functions/v1/silo-api. */
@@ -338,13 +348,25 @@ export async function callTool(name: string, rawArgs: unknown, deps: CallDeps): 
   const text = await res.text();
   // MCP has no response headers, so a 429's Retry-After rides on the provenance line.
   const retry = res.headers.get("Retry-After");
-  const provenance = `provenance: ${plan.method} ${plan.path} (silo-api gateway) · HTTP ${res.status}` +
+  let provenance = `provenance: ${plan.method} ${plan.path} (silo-api gateway) · HTTP ${res.status}` +
     (retry ? ` · Retry-After ${retry} s` : "");
   if (!res.ok) return errorResult(text, provenance);
-  const content: TextContent[] = [{ type: "text", text }, { type: "text", text: provenance }];
+  let parsed: { next_page_url?: string; meta?: Record<string, unknown> } | null = null;
   try {
-    const next = (JSON.parse(text) as { next_page_url?: string }).next_page_url;
-    const cursor = next ? new URL(next).searchParams.get("cursor") : null;
+    parsed = JSON.parse(text);
+  } catch {
+    // The envelope is returned verbatim either way; no citation or hint when it is not JSON.
+  }
+  provenance += citation(parsed?.meta);
+  const content: TextContent[] = [{ type: "text", text }, { type: "text", text: provenance }];
+  if (parsed) {
+    const next = parsed.next_page_url;
+    let cursor: string | null = null;
+    try {
+      cursor = next ? new URL(next).searchParams.get("cursor") : null;
+    } catch {
+      // Not a URL: the envelope is returned verbatim, with no paging hint.
+    }
     if (cursor) {
       const text = plan.body === undefined
         ? `More rows remain. Next page: call ${tool.name} with {"cursor": "${cursor}"} and nothing else.`
@@ -352,8 +374,16 @@ export async function callTool(name: string, rawArgs: unknown, deps: CallDeps): 
           `{"body": ${plan.body}, "cursor": "${cursor}"}.`;
       content.push({ type: "text", text });
     }
-  } catch {
-    // The envelope is returned verbatim either way; no hint when it is not JSON.
   }
   return { content };
+}
+
+/** #1176: the provenance line's citation, from meta.source, meta.endpoint and meta.data_through. */
+export function citation(meta: Record<string, unknown> | undefined): string {
+  if (!meta || typeof meta.source !== "string") return "";
+  const endpoint = typeof meta.endpoint === "string" ? ` · read ${meta.endpoint}` : "";
+  const through = typeof meta.data_through === "string"
+    ? ` · data through ${meta.data_through}${typeof meta.coverage_dataset === "string" ? ` (coverage dataset ${meta.coverage_dataset})` : ""}`
+    : " · data through unknown";
+  return ` · cite: SILO ${meta.source}${endpoint}${through}`;
 }

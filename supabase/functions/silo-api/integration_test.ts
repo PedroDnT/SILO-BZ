@@ -50,6 +50,7 @@ Deno.test("integration authenticates via a dedicated account and refuses expiry,
   });
   const handler = makeHandler({
     env,
+    freshness: () => Promise.resolve(new Map()),
     fetchImpl,
     now: () => now,
     gate: { tier: ({ bearer }) => Promise.resolve(bearer === "upstream-jwt" ? "pro" : "anonymous"),
@@ -58,6 +59,7 @@ Deno.test("integration authenticates via a dedicated account and refuses expiry,
   assertEquals((await (await handler(request())).json()).meta.tier, "pro");
   const denied = makeHandler({
     env,
+    freshness: () => Promise.resolve(new Map()),
     fetchImpl,
     now: () => now,
     gate: { tier: () => Promise.resolve("signed_in"), hit: () => Promise.reject("unexpected data request") },

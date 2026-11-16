@@ -23,6 +23,10 @@
 // ip bucket even with a Bearer, #1101); a count above the tier's requests per
 // minute is rate_limited (429, Retry-After). Index and ?help read no data and are not
 // counted. Both calls fail closed (unavailable).
+//
+// Provenance (#1176, provenance.ts): every data response's meta carries
+// source (the canonical /v2 request), endpoint (the api.* read) and
+// data_through (api.coverage()'s as_of for the dataset, cached per gateway).
 
 import { OPERATIONS_BY_PATH, operationQuery, operationBody, operationResponse } from "./operations.ts";
 import { ApiError } from "./errors.ts";
@@ -33,6 +37,7 @@ import { bodyDigest, cursorQuery, decodeCursor } from "./paging.ts";
 import { type BridgeConfig, callerBearer, type CallContext, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY, RESOURCES_BY_NAME, type ResourceSpec } from "./registry.ts";
 import { enforceRate, type Gate, postgresGate } from "./tier.ts";
+import { applyProvenance, cachedCoverage, type Freshness } from "./provenance.ts";
 import { coverage } from "./resources/coverage.ts";
 import { integrationKey, integrationSession } from "./integration.ts";
 import { events } from "./resources/events.ts";
@@ -57,6 +62,8 @@ export interface ServerDeps {
   gate?: Gate;
   /** Epoch milliseconds, for Retry-After. */
   now?: () => number;
+  /** meta.data_through's coverage read (#1176); defaults to api.coverage() cached per gateway. */
+  freshness?: Freshness;
 }
 
 type Handler = (req: ParsedRequest, ctx: CallContext) => Promise<Envelope>;
@@ -124,6 +131,7 @@ async function handle(
   gate: Gate,
   now: () => number,
   resolveIntegration: ReturnType<typeof integrationSession>,
+  freshness: Freshness,
 ): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (req.method !== "GET" && req.method !== "POST") throw new ApiError(405, "bad_request", `${req.method} is not served; v2 is GET, and POST for portfolio.`);
@@ -194,7 +202,9 @@ async function handle(
   gateTier(resource, tier);
   const ctx: CallContext = { cfg, fetchImpl, bearer, tier, now };
   const rate = await enforceRate(gate, ctx, tier, req.headers, now);
-  const body = await HANDLERS[resource.name](parsed, ctx);
+  // #1176: the coverage read runs beside the data call (cached, so usually no round trip).
+  const fresh = freshness(ctx).then((map) => ({ map }), (e) => ({ error: e instanceof Error ? e.message : String(e) }));
+  const body = applyProvenance(await HANDLERS[resource.name](parsed, ctx), method, await fresh);
   if (operation && details && body.next_page_url) body.next_page_url += "&details=true";
   return json(200, operation ? operationResponse(body, details) : body, { "RateLimit-Limit": String(rate.limit), "RateLimit-Remaining": String(rate.remaining) });
 }
@@ -219,9 +229,10 @@ export function makeHandler(deps: ServerDeps = {}): (req: Request) => Promise<Re
   const now = deps.now ?? (() => Date.now());
   const gate = deps.gate ?? postgresGate(now);
   const resolveIntegration = integrationSession(env, fetchImpl, now);
+  const freshness = deps.freshness ?? cachedCoverage(now);
   return async (req: Request) => {
     try {
-      return await handle(req, cfg, fetchImpl, gate, now, resolveIntegration);
+      return await handle(req, cfg, fetchImpl, gate, now, resolveIntegration, freshness);
     } catch (e) {
       if (e instanceof ApiError) return errorResponse(e);
       return errorResponse(new ApiError(500, "internal", `Unexpected gateway error: ${e instanceof Error ? e.message : String(e)}`));

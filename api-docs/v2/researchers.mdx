@@ -48,6 +48,8 @@ The cash distributions themselves are in [`events?kind=dividends`](/api-docs/v2/
 
 Every response echoes, in `meta.request`, every parameter the resource takes with the value the gateway applied, defaults included. Paste it into a methods section and the call can be replayed exactly. `meta.endpoint` names the `api.*` endpoint that answered.
 
+`meta.source` is the same request as one citable line, for example `/v2/prices?id=PETR4&kind=history&from=2025-11-16&to=2026-11-16&...`, and `meta.data_through` is the newest elapsed period SILO holds for the dataset read (`meta.coverage_dataset` names the coverage row). It is `null` where no coverage row applies, such as `search`, `panel`, `screens` and `portfolio`.
+
 `meta.data_version` is planned in the spec but not built yet. Until it is, record the data version from `coverage`:
 
 ```bash

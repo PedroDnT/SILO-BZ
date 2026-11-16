@@ -15,6 +15,7 @@ import { decodeCursor, encodeCursor } from "./paging.ts";
 import { callerBearer, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY } from "./registry.ts";
 import { makeHandler, routeOf } from "./server.ts";
+import { canonicalSource, datasetFor, type Freshness, FRESHNESS_FAIL_MS, FRESHNESS_TTL_MS } from "./provenance.ts";
 import { clientIp, type Gate, retryAfter, TIER_CACHE_MS } from "./tier.ts";
 
 const ENV: Record<string, string> = {
@@ -23,6 +24,9 @@ const ENV: Record<string, string> = {
 };
 const env = (name: string) => ENV[name];
 const BASE = "https://example-ref.supabase.co/functions/v1/silo-api";
+/** meta.data_through's coverage read, stubbed (#1176): no request, fixed dates. */
+const FRESH: Freshness = () => Promise.resolve(new Map([["quotes", "2026-10-30"], ["funds_fidc", "2026-09-01"], ["fund_nav", "2026-10-31"]]));
+
 // A user JWT: the signed-in tier (#1059). PostgREST verifies it; the stub does not.
 const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCJ9.sig";
 const SIGNED = { Authorization: `Bearer ${JWT}` };
@@ -53,7 +57,7 @@ function stubFetch(status: number, body: string) {
 
 async function get(path: string, status = 200, body = "[]", headers: Record<string, string> = {}) {
   const stub = stubFetch(status, body);
-  const handler = makeHandler({ fetchImpl: stub.impl, env, gate: OPEN });
+  const handler = makeHandler({ freshness: FRESH, fetchImpl: stub.impl, env, gate: OPEN });
   const res = await handler(new Request(`${BASE}${path}`, { headers }));
   return { res, json: await res.json(), calls: stub.calls };
 }
@@ -237,7 +241,7 @@ Deno.test("PostgREST errors map to the ten codes", () => {
 });
 
 Deno.test("a network failure is unavailable, never an empty answer", async () => {
-  const handler = makeHandler({ fetchImpl: () => Promise.reject(new Error("dns")), env, gate: OPEN });
+  const handler = makeHandler({ freshness: FRESH, fetchImpl: () => Promise.reject(new Error("dns")), env, gate: OPEN });
   const res = await handler(new Request(`${BASE}/v2/coverage`));
   const body = await res.json();
   assertEquals(res.status, 503);
@@ -340,7 +344,7 @@ function stubView(rows: unknown[]) {
 
 async function getView(path: string, rows: unknown[], headers: Record<string, string> = {}) {
   const stub = stubView(rows);
-  const res = await makeHandler({ fetchImpl: stub.impl, env, gate: OPEN })(new Request(`${BASE}${path}`, { headers }));
+  const res = await makeHandler({ freshness: FRESH, fetchImpl: stub.impl, env, gate: OPEN })(new Request(`${BASE}${path}`, { headers }));
   return { res, json: await res.json(), calls: stub.calls };
 }
 
@@ -1070,7 +1074,7 @@ Deno.test("a view resource asks for one row more than the page, never an exact c
 Deno.test("a view page of db-max-rows cannot ask for one more: a full page may have more (#1098)", async () => {
   const stub = stubView(Array.from({ length: 1500 }, (_, i) => ({ ticker: `T${i}` })));
   const pro: Gate = { tier: () => Promise.resolve("pro"), hit: () => Promise.resolve(1) };
-  const handler = makeHandler({ fetchImpl: stub.impl, env, gate: pro });
+  const handler = makeHandler({ freshness: FRESH, fetchImpl: stub.impl, env, gate: pro });
   const res = await handler(new Request(`${BASE}/v2/positioning?limit=1000`, { headers: SIGNED }));
   const json = await res.json();
   assertEquals(res.status, 200);
@@ -1096,7 +1100,7 @@ const Y3 = minusMonths(todayUtcMinus3(), 36);
 // portfolio is served to signed-in callers (#1059), so post() signs in unless told not to.
 async function post(path: string, payload: unknown, status = 200, rows = "[]", headers: Record<string, string> = SIGNED) {
   const stub = stubFetch(status, rows);
-  const handler = makeHandler({ fetchImpl: stub.impl, env, gate: OPEN });
+  const handler = makeHandler({ freshness: FRESH, fetchImpl: stub.impl, env, gate: OPEN });
   const init: RequestInit = { method: "POST", body: typeof payload === "string" ? payload : JSON.stringify(payload), headers };
   const res = await handler(new Request(`${BASE}${path}`, init));
   return { res, json: await res.json(), calls: stub.calls };
@@ -1233,7 +1237,7 @@ type Row = Record<string, unknown>;
 
 /** Follow next_page_url from `first` to the end; every page must be a 200. */
 async function walk(first: string, impl: FetchLike, headers: Record<string, string> = {}) {
-  const handler = makeHandler({ fetchImpl: impl, env, gate: OPEN });
+  const handler = makeHandler({ freshness: FRESH, fetchImpl: impl, env, gate: OPEN });
   const rows: Row[] = [];
   const pages: { data: Row[]; meta: Record<string, unknown>; next_page_url?: string }[] = [];
   let path: string | null = first;
@@ -1432,7 +1436,7 @@ Deno.test("a walk with a defaulted from keeps its window across midnight (UTC-3)
     return Promise.resolve(new Response(rowsOf(n, (i) => ({ i })), { status: 200 }));
   };
   const clock = { t: Date.parse("2026-11-12T02:30:00Z") }; // 23:30 UTC-3 on 2026-11-11
-  const handler = makeHandler({ fetchImpl: impl, env, gate: OPEN, now: () => clock.t });
+  const handler = makeHandler({ freshness: FRESH, fetchImpl: impl, env, gate: OPEN, now: () => clock.t });
   const call = async (path: string) => {
     const res = await handler(new Request(`${BASE}${path}`));
     return { res, json: await res.json() };
@@ -1543,7 +1547,7 @@ function gateStub(opts: { tier?: unknown; tierStatus?: number; hits?: number[]; 
 const NOW = Date.UTC(2026, 10, 4, 0, 30, 15);
 
 function gated(stub: { impl: FetchLike }, clock: { t: number } = { t: NOW }) {
-  return makeHandler({ fetchImpl: stub.impl, env, now: () => clock.t });
+  return makeHandler({ freshness: FRESH, fetchImpl: stub.impl, env, now: () => clock.t });
 }
 
 const fns = (calls: GateCall[]) => calls.map((c) => c.fn);
@@ -1711,4 +1715,108 @@ Deno.test("filing account selection preserves matching versions and an absent ac
   const malformed = await get("/v2/macro?kind=expectations&family=annual&horizon=2024,2025", 400);
   assertEquals(malformed.json.error.target, "horizon");
   assertEquals(malformed.calls.length, 0);
+});
+
+// ------------------------------------------------------ provenance (#1176) --
+
+// One request per resource: meta.source is the canonical /v2 request (every
+// applied parameter), meta.endpoint the api.* read, meta.data_through the
+// coverage date of the dataset it read, or null where coverage has no row.
+const CITED: { path: string; method?: "POST"; body?: string; endpoint: string; dataset: string | null }[] = [
+  { path: "/v2/search?q=petrobras", endpoint: "api.lookup", dataset: null },
+  { path: "/v2/prices?id=PETR4&from=2026-01-02&to=2026-10-30", endpoint: "api.quote_history", dataset: "quotes" },
+  { path: "/v2/statements?id=PETR4&kind=income", endpoint: "api.income_statements", dataset: "financials" },
+  { path: "/v2/funds?id=33000167000101&kind=nav", endpoint: "api.fund_nav", dataset: null },
+  { path: "/v2/fidc?id=33000167000101&kind=tranches", endpoint: "api.fidc_tranches", dataset: "fidc_tranches" },
+  { path: "/v2/derivatives?id=PETR&kind=chain", endpoint: "api.option_chain", dataset: "derivatives" },
+  { path: "/v2/curves?curve=PRE", endpoint: "api.curve", dataset: "reference_curves" },
+  { path: "/v2/macro?kind=inflation", endpoint: "api.inflation", dataset: "inflation" },
+  { path: "/v2/positioning?id=PETR4", endpoint: "api.short_interest", dataset: "short_interest" },
+  { path: "/v2/events?id=PETR4", endpoint: "api.company_events", dataset: "company_events" },
+  { path: "/v2/screens?kind=dormant_funds", endpoint: "api.screen_dormant_funds", dataset: null },
+  { path: "/v2/panel?id=PETR4,VALE3&metric=close_return", endpoint: "api.panel", dataset: null },
+  { path: "/v2/portfolio?kind=resolve", method: "POST", body: '{"names": ["ITAU RF DI"]}', endpoint: "api.portfolio_resolve", dataset: null },
+  { path: "/v2/coverage", endpoint: "api.coverage", dataset: null },
+];
+
+Deno.test("every resource's meta carries source, endpoint and data_through (#1176)", async () => {
+  const dates: Record<string, string> = {
+    quotes: "2026-11-13", financials: "2026-09-30", fund_nav: "2026-11-01", fidc_tranches: "2026-10-31",
+    derivatives: "2026-11-13", reference_curves: "2026-11-13", inflation: "2026-10-01", short_interest: "2026-11-13",
+    company_events: "2026-11-14",
+  };
+  const freshness: Freshness = () => Promise.resolve(new Map(Object.entries(dates)));
+  const pro: Gate = { tier: () => Promise.resolve("pro"), hit: () => Promise.resolve(1) };
+  assertEquals(CITED.length, REGISTRY.resources.length, "one request per resource");
+  for (const c of CITED) {
+    const stub = stubFetch(200, "[]");
+    const handler = makeHandler({ fetchImpl: stub.impl, env, gate: pro, freshness });
+    const res = await handler(new Request(`${BASE}${c.path}`, { method: c.method ?? "GET", body: c.body, headers: SIGNED }));
+    const json = await res.json();
+    assertEquals(res.status, 200, `${c.path}: ${JSON.stringify(json)}`);
+    const meta = json.meta;
+    assertEquals(meta.endpoint, c.endpoint, c.path);
+    assertEquals(meta.coverage_dataset, c.dataset, c.path);
+    assertEquals(meta.data_through, c.dataset ? dates[c.dataset] : null, c.path);
+    const resource = c.path.slice(4).split("?")[0];
+    const prefix = c.method === "POST" ? `POST /v2/${resource}` : `/v2/${resource}`;
+    assert((meta.source as string).startsWith(prefix), `${c.path}: ${meta.source}`);
+    // The source replays the request: every non-null applied parameter, as sent.
+    const q = new URL(`https://x${(meta.source as string).replace(/^POST /, "").split(" ")[0]}`).searchParams;
+    for (const [k, v] of Object.entries(meta.request as Record<string, unknown>)) {
+      if (v === null) assert(!q.has(k), `${c.path}: null ${k} left out`);
+      else assertEquals(q.get(k), Array.isArray(v) ? v.join(",") : String(v), `${c.path}: ${k}`);
+    }
+    assertEquals(stub.calls.some((x) => x.url.endsWith("/rpc/coverage") && c.endpoint !== "api.coverage"), false, `${c.path}: no coverage call of its own`);
+  }
+});
+
+Deno.test("meta.source lists the applied defaults; a DOL future reads dollar_futures", async () => {
+  const { json } = await get("/v2/prices?id=PETR4", 200, "[]", SIGNED);
+  assertEquals(json.meta.source, `/v2/prices?${new URLSearchParams(
+    Object.entries(json.meta.request).filter(([, v]) => v !== null).map(([k, v]) => [k, String(v)]),
+  )}`);
+  assertStringIncludes(json.meta.source, "kind=history");
+  assertStringIncludes(json.meta.source, "id=PETR4");
+  assertEquals(datasetFor("api.future_series", { id: "DOLF27" }), "dollar_futures");
+  assertEquals(datasetFor("api.future_curve", { id: "WDO" }), "dollar_futures");
+  assertEquals(datasetFor("api.future_curve", { id: null }), "di_futures");
+  assertEquals(datasetFor("api.lookup", {}), null);
+  assertEquals(canonicalSource("panel", { id: ["PETR4", "VALE3"], metric: "close", to: null }), "/v2/panel?id=PETR4%2CVALE3&metric=close");
+});
+
+Deno.test("data_through reads api.coverage once per TTL, anonymously; a failed read is null with a reason, never a fill", async () => {
+  const clock = { t: 1_000_000 };
+  let coverageCalls = 0;
+  let fail = false;
+  const impl = (input: string, init: RequestInit): Promise<Response> => {
+    const url = String(input);
+    if (url.endsWith("/rpc/coverage")) {
+      coverageCalls++;
+      assertEquals((init.headers as Record<string, string>)["Authorization"], undefined, "coverage is read without the caller's token");
+      if (fail) return Promise.resolve(new Response('{"message":"boom"}', { status: 500 }));
+      return Promise.resolve(Response.json([{ dataset: "quotes", as_of: "2026-11-13" }, { dataset: "funds", as_of: null }]));
+    }
+    return Promise.resolve(Response.json([]));
+  };
+  const handler = makeHandler({ fetchImpl: impl, env, gate: OPEN, now: () => clock.t });
+  const call = async () => (await (await handler(new Request(`${BASE}/v2/prices?id=PETR4`, { headers: SIGNED }))).json()).meta;
+  assertEquals((await call()).data_through, "2026-11-13");
+  assertEquals((await call()).data_through, "2026-11-13");
+  assertEquals(coverageCalls, 1, "cached within the TTL");
+  clock.t += FRESHNESS_TTL_MS;
+  fail = true;
+  const failed = await call();
+  assertEquals(coverageCalls, 2, "read again once the TTL passed");
+  assertEquals(failed.data_through, null);
+  assertEquals(failed.coverage_dataset, "quotes");
+  assertStringIncludes(failed.data_through_error, "api.coverage could not be read");
+  await call();
+  assertEquals(coverageCalls, 2, "a failure is remembered briefly, not retried on every call");
+  clock.t += FRESHNESS_FAIL_MS;
+  fail = false;
+  const again = await call();
+  assertEquals(coverageCalls, 3);
+  assertEquals(again.data_through, "2026-11-13");
+  assertEquals("data_through_error" in again, false);
 });

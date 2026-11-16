@@ -1,6 +1,7 @@
 // silo-api: the success envelope and the JSON response helpers.
 //
-//   { "data": [...], "meta": { "resource", "kind", "request", "id_known", "endpoint" }, "next_page_url"? }
+//   { "data": [...], "meta": { "resource", "kind", "request", "id_known", "endpoint",
+//     "source", "data_through", "coverage_dataset" }, "next_page_url"? }
 //
 // meta.request echoes every parameter the resource takes, with the default
 // that was applied, so a request can be pasted into a methods section and
@@ -19,6 +20,12 @@ export interface Meta {
   id_known: boolean | null;
   /** The api.* endpoint that answered (provenance). */
   endpoint?: string;
+  /** The canonical request to cite, /v2/<resource>?... (provenance.ts, #1176). */
+  source?: string;
+  /** The newest elapsed period SILO holds for the dataset read; null when unknown (#1176). */
+  data_through?: string | null;
+  /** The api.coverage() dataset data_through came from; null when none applies. */
+  coverage_dataset?: string | null;
   [key: string]: unknown;
 }
 

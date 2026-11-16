@@ -3,6 +3,8 @@ import { OPERATIONS, operationQuery, operationBody } from "./operations.ts";
 import { REGISTRY } from "./registry.ts";
 import { acceptedParams } from "./params.ts";
 import { makeHandler } from "./server.ts";
+import type { Freshness } from "./provenance.ts";
+const FRESH: Freshness = () => Promise.resolve(new Map());
 const base = "https://test.supabase.co/functions/v1/silo-api/v2";
 const env = (n: string) => ({SUPABASE_URL:"https://test.supabase.co", SUPABASE_ANON_KEY:"test"}[n]);
 const gate = {tier: () => Promise.resolve("pro" as const), hit: () => Promise.resolve(1)};
@@ -28,18 +30,19 @@ Deno.test("all 80 operation mappings reference real resource inputs and body fie
 });
 Deno.test("explicit macro route preserves rows and Pro, omits only diagnostics", async () => {
   const rows = [{series:"CDI",date:"2026-11-12",value:null,unit:"pct_day"}];
-  const h = makeHandler({env, gate, fetchImpl: () => Promise.resolve(Response.json(rows))});
+  const h = makeHandler({env,freshness:FRESH, gate, fetchImpl: () => Promise.resolve(Response.json(rows))});
   for (const suffix of ["", "&details=true"]) {
     const res = await h(new Request(base + "/macro/series?series=CDI&from=2026-11-12&to=2026-11-12" + suffix));
     const b = await res.json();
     assertEquals(res.status,200); assertEquals(b.data,rows); assertEquals(b.meta.tier,"pro");
     assertEquals("request" in b.meta, !!suffix);
+    assertEquals(b.meta.endpoint, "api.macro_series", "the citable endpoint stays by default (#1176)");
   }
   const legacy = await h(new Request(base + "/macro?kind=series&id=CDI&from=2026-11-12&to=2026-11-12"));
   assert("request" in (await legacy.json()).meta);
 });
 Deno.test("explicit routes refuse redundant, duplicate and invalid input", async () => {
-  const h=makeHandler({env,gate,fetchImpl:()=>{throw new Error("must not fetch");}});
+  const h=makeHandler({env,freshness:FRESH,gate,fetchImpl:()=>{throw new Error("must not fetch");}});
   for(const q of ["kind=series", "id=CDI", "series=CDI&series=IGPM", "details=yes", "series=CDI&from=bad"]) {
     assertEquals((await h(new Request(base+"/macro/series?"+q))).status,400,q);
   }
@@ -47,7 +50,7 @@ Deno.test("explicit routes refuse redundant, duplicate and invalid input", async
 });
 Deno.test("new route pagination stays on the same operation and rejects a different kind", async () => {
   const rows = [{series:"CDI",date:"2026-11-11",value:1},{series:"CDI",date:"2026-11-12",value:2}];
-  const h=makeHandler({env,gate,fetchImpl:()=>Promise.resolve(Response.json(rows))});
+  const h=makeHandler({env,freshness:FRESH,gate,fetchImpl:()=>Promise.resolve(Response.json(rows))});
   const first=await (await h(new Request(base+"/macro/series?series=CDI&from=2026-11-11&to=2026-11-12&limit=1&details=true"))).json();
   assert(first.next_page_url.startsWith(base+"/macro/series?cursor="));
   const second=await (await h(new Request(first.next_page_url))).json();
@@ -57,16 +60,16 @@ Deno.test("new route pagination stays on the same operation and rejects a differ
 });
 Deno.test("explicit routes keep tier gates and errors", async () => {
   const anon={tier:()=>Promise.resolve("anonymous" as const),hit:()=>Promise.resolve(1)};
-  const h=makeHandler({env,gate:anon,fetchImpl:()=>Promise.resolve(Response.json([]))});
+  const h=makeHandler({env,freshness:FRESH,gate:anon,fetchImpl:()=>Promise.resolve(Response.json([]))});
   const res=await h(new Request(base+"/macro/series?series=CDI"));
   assertEquals((await res.json()).meta.tier,"anonymous");
   assertEquals((await h(new Request(base+"/screens/list"))).status,403);
-  const failure=makeHandler({env,gate,fetchImpl:()=>Promise.resolve(Response.json({message:"bad token"},{status:401}))});
+  const failure=makeHandler({env,freshness:FRESH,gate,fetchImpl:()=>Promise.resolve(Response.json({message:"bad token"},{status:401}))});
   assertEquals((await failure(new Request(base+"/macro/series?series=CDI"))).status,401);
 });
 Deno.test("hosted internal HTTP paths produce public HTTPS operation continuations", async () => {
   const rows=[{date:"2026-11-11",series:"CDI"},{date:"2026-11-12",series:"CDI"}];
-  const h=makeHandler({env,gate,fetchImpl:()=>Promise.resolve(Response.json(rows))});
+  const h=makeHandler({env,freshness:FRESH,gate,fetchImpl:()=>Promise.resolve(Response.json(rows))});
   const r=await h(new Request("http://test.supabase.co/silo-api/v2/macro/series?series=CDI&from=2026-11-11&to=2026-11-12&limit=1"));
   const b=await r.json();
   assert(b.next_page_url.startsWith(base+"/macro/series?cursor="));

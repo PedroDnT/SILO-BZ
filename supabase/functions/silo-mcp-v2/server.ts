@@ -18,6 +18,7 @@ import { createMcpHandler, fromJsonSchema, McpServer } from "@modelcontextprotoc
 
 import { REGISTRY } from "../silo-api/registry.ts";
 import type { Gate } from "../silo-api/tier.ts";
+import type { Freshness } from "../silo-api/provenance.ts";
 import { callTool, type FetchLike, type Gateway, makeGatewayFor, SERVER_INSTRUCTIONS, TOOLS } from "./tools.ts";
 
 export interface ServerDeps {
@@ -25,6 +26,8 @@ export interface ServerDeps {
   env?: (name: string) => string | undefined;
   /** The gateway's Postgres gate; tests inject one. Default: silo-api's postgresGate. */
   gate?: Gate;
+  /** meta.data_through's coverage read (#1176); tests inject one. Default: api.coverage(), cached per gateway. */
+  freshness?: Freshness;
 }
 
 interface Resolved {
@@ -36,7 +39,7 @@ interface Resolved {
 function resolve(deps: ServerDeps): Resolved {
   const fetchImpl: FetchLike = deps.fetchImpl ?? ((input, init) => fetch(input, init));
   const env = deps.env ?? ((name: string) => Deno.env.get(name));
-  return { env, fetchImpl, gateway: makeGatewayFor({ env, fetchImpl, gate: deps.gate }) };
+  return { env, fetchImpl, gateway: makeGatewayFor({ env, fetchImpl, gate: deps.gate, freshness: deps.freshness }) };
 }
 
 export function buildServer(deps: ServerDeps | Resolved = {}, headers: Headers | null = null): McpServer {
