@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "86",
+    "version": "87",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
-    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Sixty-three set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other fifty-eight ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling.** `search_funds` refuses (`22023`) when more rows\n  match than its per-tier maximum (since v81). Two other functions\n  (`option_chain`, `option_exercises`) still silently lower `p_limit` to a\n  per-tier maximum. No error is raised there, so the only way to know the\n  result was cut is to know the ceiling. Signing in raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
+    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Sixty-five set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other sixty ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling.** `search_funds` refuses (`22023`) when more rows\n  match than its per-tier maximum (since v81). Two other functions\n  (`option_chain`, `option_exercises`) still silently lower `p_limit` to a\n  per-tier maximum. No error is raised there, so the only way to know the\n  result was cut is to know the ceiling. Signing in raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
       "name": "See repository",
       "url": "https://github.com/PedroDnT/SILO-BZ"
@@ -9309,6 +9309,204 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "source": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/free_float": {
+      "post": {
+        "operationId": "rpc_free_float",
+        "summary": "free_float",
+        "description": "A listed company's free float through time, as filed in CVM's FRE (distribuição do capital, yearly, from 2010): shares in circulation ON, PN and total, the percent of each class as the company filed it, and its shareholder counts (individuals, legal entities, institutional investors). Shares in circulation exclude the controller, its related parties, management and treasury. The newest version of each reference date is served, which is not point-in-time; reference_date is not a filing date. Nothing is derived; an empty value stays NULL. p_id is required and resolves as api.financials resolves it; an id that resolves to nothing returns no rows. p_from / p_to bound the reference date (NULL = no bound). Newest first. More than 1000 rows RAISES 22023 (never trimmed).\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Financials"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  }
+                },
+                "required": [
+                  "p_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, newest reference_date first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cd_cvm": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "company": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reference_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "float_on": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "float_on_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "float_pn": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "float_pn_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "float_total": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "float_total_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "holders_individual": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "holders_corporate": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "holders_institutional": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "last_meeting_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
                       },
                       "source": {
                         "type": [
@@ -19136,6 +19334,176 @@
                       "latest_aum": {
                         "type": [
                           "number",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/share_counts": {
+      "post": {
+        "operationId": "rpc_share_counts",
+        "summary": "share_counts",
+        "description": "A listed company's issued share count through time, as filed with CVM: ON, PN and total, plus treasury shares where the form has them. source = cvm_itr / cvm_dfp (composição do capital, quarterly, from 2020) or cvm_fre (FRE capital social, Capital Integralizado, yearly, from 2010; no treasury count, those columns NULL). The newest version of each period is served, which is not point-in-time. Nothing is derived or filled forward; an empty value stays NULL. Counts are per company, not per ticker. p_id is required and resolves as api.financials resolves it (ticker through CVM's FCA map, 14-digit CNPJ or CVM code, never a name); an id that resolves to nothing returns no rows. p_from / p_to bound the reference date (NULL = no bound). Newest period first. More than 1000 rows RAISES 22023 (never trimmed).\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Financials"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  }
+                },
+                "required": [
+                  "p_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, newest reference_date first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cd_cvm": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "company": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reference_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "shares_on": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "shares_pn": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "shares_total": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "treasury_on": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "treasury_pn": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "treasury_total": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "source": {
+                        "type": [
+                          "string",
                           "null"
                         ]
                       }

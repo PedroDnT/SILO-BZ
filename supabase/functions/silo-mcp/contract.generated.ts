@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "86";
+export const CONTRACT_VERSION = "87";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -44,6 +44,7 @@ export const ENDPOINT_NAMES: string[] = [
   "financial_statement_history",
   "financials",
   "focus_expectations",
+  "free_float",
   "fund_debentures",
   "fund_documents",
   "fund_holdings",
@@ -99,6 +100,7 @@ export const ENDPOINT_NAMES: string[] = [
   "screen_silent_filers",
   "screen_zombie_growth",
   "search_funds",
+  "share_counts",
   "short_interest",
   "short_interest_by_sector",
   "termo_history",
@@ -2892,6 +2894,44 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "free_float": {
+    "kind": "rpc",
+    "path": "/rpc/free_float",
+    "description": "A listed company's free float through time, as filed in CVM's FRE (distribuição do capital, yearly, from 2010): shares in circulation ON, PN and total, the percent of each class as the company filed it, and its shareholder counts (individuals, legal entities, institutional investors). Shares in circulation exclude the controller, its related parties, management and treasury. The newest version of each reference date is served, which is not point-in-time; reference_date is not a filing date. Nothing is derived; an empty value stays NULL. p_id is required and resolves as api.financials resolves it; an id that resolves to nothing returns no rows. p_from / p_to bound the reference date (NULL = no bound). Newest first. More than 1000 rows RAISES 22023 (never trimmed).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_id"
+      ],
+      "additionalProperties": false
+    }
+  },
   "fund_debentures": {
     "kind": "rpc",
     "path": "/rpc/fund_debentures",
@@ -4973,6 +5013,44 @@ export const CONTRACT: Record<string, ContractEntry> = {
           "default": null
         }
       },
+      "additionalProperties": false
+    }
+  },
+  "share_counts": {
+    "kind": "rpc",
+    "path": "/rpc/share_counts",
+    "description": "A listed company's issued share count through time, as filed with CVM: ON, PN and total, plus treasury shares where the form has them. source = cvm_itr / cvm_dfp (composição do capital, quarterly, from 2020) or cvm_fre (FRE capital social, Capital Integralizado, yearly, from 2010; no treasury count, those columns NULL). The newest version of each period is served, which is not point-in-time. Nothing is derived or filled forward; an empty value stays NULL. Counts are per company, not per ticker. p_id is required and resolves as api.financials resolves it (ticker through CVM's FCA map, 14-digit CNPJ or CVM code, never a name); an id that resolves to nothing returns no rows. p_from / p_to bound the reference date (NULL = no bound). Newest period first. More than 1000 rows RAISES 22023 (never trimmed).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_id"
+      ],
       "additionalProperties": false
     }
   },

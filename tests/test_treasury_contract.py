@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SQL = (ROOT / "src/store/analytical/41_api_treasury.sql").read_text(encoding="utf-8")
+SQL = (ROOT / "src/store/analytical/42_api_treasury.sql").read_text(encoding="utf-8")
 SIG = "api.treasury_direct(TEXT, DATE, DATE, DATE)"
 
 

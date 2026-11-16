@@ -69,7 +69,9 @@
                   "api-docs/v2/operations/statements/balance",
                   "api-docs/v2/operations/statements/cashflow",
                   "api-docs/v2/operations/statements/headline",
-                  "api-docs/v2/operations/statements/versions"
+                  "api-docs/v2/operations/statements/versions",
+                  "api-docs/v2/operations/statements/shares",
+                  "api-docs/v2/operations/statements/free_float"
                 ]
               },
               {

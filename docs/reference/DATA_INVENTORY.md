@@ -175,7 +175,7 @@ but kept out of `SGS_SERIES`, so it is not in `api.macro_series`.
 
 | Table                  | Grain                                   | Notes |
 | ---------------------- | --------------------------------------- | ----- |
-| `tesouro_direto_daily` | title type × maturity × **base date** | the Treasury's posted morning buy and sell rates (% a year, can be negative) and PU per title on its retail platform, from 2004-12-31; posted quotes, not trades. PU NULL where the source prints 0,00 (not on sale). ODbL licence: credit Tesouro Nacional (migration 86). Served by `api.treasury_direct` (v86) |
+| `tesouro_direto_daily` | title type × maturity × **base date** | the Treasury's posted morning buy and sell rates (% a year, can be negative) and PU per title on its retail platform, from 2004-12-31; posted quotes, not trades. PU NULL where the source prints 0,00 (not on sale). ODbL licence: credit Tesouro Nacional (migration 86). Served by `api.treasury_direct` (v87) |
 
 ### B3 Fundos.NET — the fund document register (`fnet.bmfbovespa.com.br`)
 

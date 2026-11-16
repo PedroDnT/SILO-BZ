@@ -234,6 +234,16 @@
     "p_horizon"
    ]
   },
+  "free_float": {
+   "params": [
+    "p_from",
+    "p_id",
+    "p_to"
+   ],
+   "required": [
+    "p_id"
+   ]
+  },
   "fund_debentures": {
    "params": [
     "p_cnpj",
@@ -685,6 +695,16 @@
     "p_query"
    ],
    "required": []
+  },
+  "share_counts": {
+   "params": [
+    "p_from",
+    "p_id",
+    "p_to"
+   ],
+   "required": [
+    "p_id"
+   ]
   },
   "termo_history": {
    "params": [

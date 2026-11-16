@@ -1,0 +1,1 @@
+| 2026-11-16 | claude/project-thread-sysdnb | Ingest the CVM FRE "outros valores mobiliários" file (2010 on): debt issues of listed companies with issue date, maturity, quantity, value and outstanding balance, in `cvm_fre_outro_valor_mobiliario` (migration 86). Rate text stored as filed, not parsed. Not served yet (#1164). |

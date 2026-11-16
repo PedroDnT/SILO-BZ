@@ -94,6 +94,8 @@ export const TOOL_TITLES: ToolSpec[] = [
   t("company_events", "Company IPE filings (fatos relevantes)"),
   t("rj_listed_documents", "Listed companies' recuperação judicial documents filed with CVM (IPE RJ category and Fatos Relevantes)"),
   t("dividends", "A ticker's cash dividends, JCP and rendimentos (B3): value per share, ex-date, payment date"),
+  t("share_counts", "A company's issued and treasury share counts through time (CVM ITR/DFP from 2020, FRE from 2010)"),
+  t("free_float", "A company's free float through time (CVM FRE, yearly from 2010): shares in circulation and percent"),
   // Industry and macro.
   t("anbima_classes", "ANBIMA class aggregates"),
   t("inflation", "Inflation (BACEN SGS)"),

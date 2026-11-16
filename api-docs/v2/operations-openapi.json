@@ -2152,6 +2152,259 @@
         "security": []
       }
     },
+    "/statements/shares": {
+      "get": {
+        "operationId": "v2_statements_shares",
+        "summary": "Share counts",
+        "tags": [
+          "Companies and funds"
+        ],
+        "description": "Issued and treasury shares of one company through time: quarterly from 2020, yearly from 2010.",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/statements/shares"
+        },
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "query",
+            "required": true,
+            "description": "Company ticker, CNPJ or CVM code.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR4"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, subject to your tier.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor from the next page URL.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cd_cvm": "9512",
+                      "company": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+                      "reference_date": "2025-12-31",
+                      "version": 1,
+                      "shares_on": 7442231382,
+                      "shares_pn": 5446501379,
+                      "shares_total": 12888732761,
+                      "treasury_on": 0,
+                      "treasury_pn": 0,
+                      "treasury_total": 0,
+                      "source": "cvm_dfp"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/statements/free-float": {
+      "get": {
+        "operationId": "v2_statements_free_float",
+        "summary": "Free float",
+        "tags": [
+          "Companies and funds"
+        ],
+        "description": "Shares in circulation of one company through time, with the filed percent and the shareholder counts: yearly from 2010.",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/statements/free_float"
+        },
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "query",
+            "required": true,
+            "description": "Company ticker, CNPJ or CVM code.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "PETR4"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, subject to your tier.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor from the next page URL.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "cd_cvm": "9512",
+                      "company": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+                      "reference_date": "2025-12-31",
+                      "version": 27,
+                      "float_on": 3478483761,
+                      "float_on_pct": 46.74,
+                      "float_pn": 4410960450,
+                      "float_pn_pct": 80.987,
+                      "float_total": 7889444211,
+                      "float_total_pct": 61.212,
+                      "holders_individual": 1112256,
+                      "source": "cvm_fre"
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/funds/profile": {
       "get": {
         "operationId": "v2_funds_profile",

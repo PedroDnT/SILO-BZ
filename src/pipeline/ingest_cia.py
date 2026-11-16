@@ -13,12 +13,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Sequence
 
-from src.parsers.mapping import apply_map, assert_map_matches
+from src.parsers.mapping import apply_map, assert_map_matches, row_hash
 from src.parsers.field_maps import cia_company as _company
 from src.parsers.field_maps import cia_event as _event
 from src.parsers.field_maps import cia_account as _account
 from src.parsers.field_maps import cia_filing as _filing
 from src.parsers.field_maps import cia_fca_valor_mobiliario as _ticker
+from src.parsers.field_maps import cia_fre_outro_valor_mobiliario as _fre_ovm
 from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
@@ -217,6 +218,55 @@ def ingest_cia_ticker(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     )
 
 
+def ingest_cia_fre_outro_valor_mobiliario(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """Parse and upsert FRE "outros valores mobiliários" rows (#1164).
+
+    One row per debt issue (debentures, commercial notes, CRI, ...) of a
+    listed company, every FRE version. The source has no unique row key, so
+    the natural key ends in ``row_hash`` over the source row. Exact repeated
+    rows share a hash and collapse into one; the count is logged. Rows with
+    no CNPJ, reference date, version or document id cannot be keyed and are
+    dropped (never guessed).
+
+    Args:
+        conn      -- _PgClient instance
+        raw_rows  -- rows from CVMFetcher.fetch('cia_aberta',
+                     'fre_outro_valor_mobiliario', year=Y)
+
+    Returns:
+        number of rows upserted
+    """
+    assert_map_matches(
+        raw_rows, _fre_ovm.FIELD_MAP, dataset="cia/fre_outro_valor_mobiliario",
+        required=("cnpj_cia", "data_refer", "versao", "id_documento"),
+    )
+    by_key: Dict[tuple, Dict[str, Any]] = {}
+    dropped = 0
+    for row in raw_rows:
+        typed, residual = apply_map(row, _fre_ovm.FIELD_MAP)
+        if (not typed.get("cnpj_cia") or typed.get("data_refer") is None
+                or typed.get("versao") is None or not typed.get("id_documento")):
+            dropped += 1
+            continue
+        typed["row_hash"] = row_hash(row)
+        typed["raw"] = residual
+        by_key[tuple(typed[c] for c in _fre_ovm.CONFLICT)] = typed
+    repeats = len(raw_rows) - dropped - len(by_key)
+    if dropped or repeats:
+        logger.info(
+            "cia/fre_outro_valor_mobiliario: %d rows without a key dropped, "
+            "%d exact repeats collapsed", dropped, repeats,
+        )
+    if not by_key:
+        return 0
+    return upsert_rows(
+        conn,
+        _fre_ovm.TABLE,
+        list(by_key.values()),
+        conflict_columns=",".join(_fre_ovm.CONFLICT),
+    )
+
+
 def ingest_cia_filing(conn: Any, summary_rows: List[Dict[str, Any]], doc_type: str) -> int:
     """Parse and upsert ITR/DFP summary-header rows into cia_filing.
 
@@ -346,3 +396,65 @@ def ingest_cia_account(conn: Any, members: Sequence[Any], doc_type: str) -> int:
             )
 
     return total
+
+
+# ---------------------------------------------------------------------------
+# Share counts and free float (#1161)
+# ---------------------------------------------------------------------------
+
+def _ingest_cia_counts(
+    conn: Any, raw_rows: List[Dict[str, Any]], fm: Any, dataset: str,
+    date_col: str, extra: Optional[Dict[str, Any]] = None,
+) -> int:
+    """Map, validate and upsert one share-count CSV (composição or FRE).
+
+    A row with no valid 14-digit CNPJ or no reference date cannot be keyed and
+    is dropped and counted, never coerced. A share count below zero is not a
+    count: the row is dropped too. A missing Versao stays NULL (the unique
+    index is NULLS NOT DISTINCT), never set to a guessed 1.
+    """
+    from src.parsers.validation import validate_cnpj
+
+    assert_map_matches(raw_rows, fm.FIELD_MAP, dataset=dataset, required=("cnpj_cia", date_col))
+    records: List[Dict[str, Any]] = []
+    dropped = 0
+    for row in raw_rows:
+        typed, residual = apply_map(row, fm.FIELD_MAP)
+        cnpj = typed.get("cnpj_cia")
+        counts = [v for k, v in typed.items() if k.startswith(("qt_", "n_acionistas_")) and v is not None]
+        if not cnpj or not validate_cnpj(cnpj) or typed.get(date_col) is None or any(v < 0 for v in counts):
+            dropped += 1
+            continue
+        typed.update(extra or {})
+        typed["raw"] = residual
+        records.append(typed)
+    if dropped:
+        logger.warning("%s: dropped %d of %d rows (no valid CNPJ or date, or a negative count)",
+                       dataset, dropped, len(raw_rows))
+    if not records:
+        return 0
+    return upsert_rows(conn, fm.TABLE, records, conflict_columns=",".join(fm.CONFLICT))
+
+
+def ingest_cia_share_count(conn: Any, raw_rows: List[Dict[str, Any]], doc_type: str) -> int:
+    """ITR / DFP composição do capital rows -> cia_share_count (doc_type itr | dfp)."""
+    from src.parsers.field_maps import cia_composicao_capital as _cc
+
+    if doc_type not in ("itr", "dfp"):
+        raise ValueError(f"cia_share_count: doc_type must be itr or dfp, not {doc_type!r}")
+    return _ingest_cia_counts(conn, raw_rows, _cc, f"cia/{doc_type}_composicao_capital",
+                              "dt_refer", {"doc_type": doc_type})
+
+
+def ingest_cia_fre_capital(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """FRE capital social rows -> cia_fre_capital."""
+    from src.parsers.field_maps import cia_fre_capital_social as _cap
+
+    return _ingest_cia_counts(conn, raw_rows, _cap, "cia/fre_capital_social", "data_refer")
+
+
+def ingest_cia_fre_free_float(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """FRE distribuição do capital rows -> cia_fre_free_float."""
+    from src.parsers.field_maps import cia_fre_distribuicao_capital as _ff
+
+    return _ingest_cia_counts(conn, raw_rows, _ff, "cia/fre_distribuicao_capital", "data_refer")

@@ -1,7 +1,7 @@
 -- =============================================================================
--- 41_api_treasury.sql
+-- 42_api_treasury.sql
 -- Tesouro Direto posted rates and prices, served through schema `api`
--- (catalog v86, #1163):
+-- (catalog v87, #1163):
 --
 --   api.treasury_direct  every title on one base date, or a window of base
 --                        dates, optionally one title type and one maturity

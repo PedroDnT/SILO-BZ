@@ -397,7 +397,7 @@ export const REGISTRY: Registry = {
     {
       "name": "statements",
       "status": "built",
-      "summary": "What did the company file? Income, balance sheet, cash flow, headline figures and every stored version.",
+      "summary": "What did the company file? Income, balance sheet, cash flow, headline figures, every stored version, share counts and free float.",
       "example": "/v2/statements?id=PETR4&kind=income",
       "shared": ["id", "from", "to", "limit"],
       "window_months": 60,
@@ -410,9 +410,9 @@ export const REGISTRY: Registry = {
           "name": "kind",
           "visibility": "main",
           "type": "enum",
-          "values": ["all", "income", "balance", "cashflow", "headline", "versions"],
+          "values": ["all", "income", "balance", "cashflow", "headline", "versions", "shares", "free_float"],
           "default": "all",
-          "doc": "all: every filed line, long (api.financials). income, balance, cashflow: the standard lines, wide. headline: revenue, net income, assets, equity, margins (api.company_financials). versions: every stored version of one statement (api.financial_statement_history)."
+          "doc": "all: every filed line, long (api.financials). income, balance, cashflow: the standard lines, wide. headline: revenue, net income, assets, equity, margins (api.company_financials). versions: every stored version of one statement (api.financial_statement_history). shares: issued and treasury share counts (api.share_counts). free_float: shares in circulation and shareholder counts (api.free_float)."
         },
         {
           "name": "period",
@@ -504,6 +504,22 @@ export const REGISTRY: Registry = {
           "args": { "id": "p_id", "statement": "p_statement", "from": "p_from", "to": "p_to", "period": "p_doc_type", "scope": "p_scope" },
           "filters": [{ "parameter": "account_code", "op": "in", "column": "account_code", "map": {} }],
           "when_empty": { "parameter": "id", "plan": { "endpoint": "research_universe", "paging": { "method": "single_page", "reason": "api.research_universe has no cursor and no window; the whole universe is one call (refused over 1000 rows), served in pages" }, "args": {} } }
+        },
+        "shares": {
+          "doc": "api.share_counts: issued shares ON / PN / total per filed period, newest first, latest stored version. source cvm_itr / cvm_dfp: quarterly from 2020, with treasury shares. source cvm_fre: yearly from 2010, no treasury count. Per company, not per ticker. Paged by date windows.",
+          "endpoint": "share_counts",
+          "paging": { "method": "date_window", "order": "desc" },
+          "window_months": 240,
+          "args": { "id": "p_id", "from": "p_from", "to": "p_to" },
+          "require_one_of": ["id"]
+        },
+        "free_float": {
+          "doc": "api.free_float: shares in circulation ON / PN / total with the filed percent and the shareholder counts, yearly from 2010 (FRE), newest first, latest stored version. Per company, not per ticker. Paged by date windows.",
+          "endpoint": "free_float",
+          "paging": { "method": "date_window", "order": "desc" },
+          "window_months": 240,
+          "args": { "id": "p_id", "from": "p_from", "to": "p_to" },
+          "require_one_of": ["id"]
         }
       }
     },

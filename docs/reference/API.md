@@ -340,6 +340,29 @@ RENDIMENTO and the other labels B3 publishes. No new fetch. v2:
 - `p_from` / `p_to` bound `last_date_with`; NULL is unbounded. Raise-only above
   one page. Executed check: `tests/sql/dividends_behaviour.sql`.
 
+### Share counts and free float of a company (catalog v86)
+
+`api.share_counts(p_id, p_from, p_to)` and `api.free_float(p_id, p_from, p_to)`
+(`41_api_share_counts.sql`, migration 87, #1161) serve a listed company's shares
+through time, as filed with CVM. v2: `/v2/statements?kind=shares&id=PETR4` and
+`/v2/statements?kind=free_float&id=PETR4`.
+
+- `share_counts`, `source = cvm_itr` / `cvm_dfp`: the ITR / DFP composição do
+  capital (`cia_share_count`), quarterly, from 2020. It has issued (paid-in) and
+  treasury shares, ON / PN / total. CVM's ITR and DFP files before 2020 do not
+  carry this member.
+- `share_counts`, `source = cvm_fre`: the FRE capital social (`cia_fre_capital`),
+  its "Capital Integralizado" row, yearly, from 2010. It has no treasury count,
+  so those columns are NULL.
+- `free_float`: the FRE distribuição do capital (`cia_fre_free_float`), yearly,
+  from 2010. It has the shares in circulation ON / PN / total, the percent of
+  each class as the company filed it, and the shareholder counts.
+- Both serve the newest version of each period, which is not point-in-time.
+  Nothing is filled forward or computed. The counts are per company, so PETR3
+  and PETR4 return the same rows. `p_id` resolves as `api.financials` resolves it.
+- `p_from` / `p_to` bound the reference date; NULL is unbounded. Raise-only above
+  one page. Executed check: `tests/sql/share_counts_behaviour.sql`.
+
 ### The research universe (catalog v43)
 
 `api.research_universe()` (`28_api_research.sql`; research-seam spec
@@ -866,8 +889,8 @@ The operator half:
   nearest contract alive. Each row is that contract's published row with its
   ticker. Nothing is adjusted or spliced, so the price jumps at each roll.
 - **`treasury_direct(p_title, p_maturity, p_from, p_to)` serves Tesouro
-  Direto posted rates and prices per title** (v86, #1163;
-  `41_api_treasury.sql`, table `tesouro_direto_daily`). With no argument it
+  Direto posted rates and prices per title** (v87, #1163;
+  `42_api_treasury.sql`, table `tesouro_direto_daily`). With no argument it
   returns every title on the newest base date; a window is newest first. The
   rates are the platform's morning buy and sell quotes in % a year as
   published (they can be negative), not trades; a NULL price is a side not on
@@ -1290,6 +1313,7 @@ POST /rest/v1/rpc/credit_implied_rate
 POST /rest/v1/rpc/credit_market_history
 POST /rest/v1/rpc/curve
 POST /rest/v1/rpc/curve_history
+POST /rest/v1/rpc/dividends
 POST /rest/v1/rpc/fidc_aging
 POST /rest/v1/rpc/fidc_cedentes
 POST /rest/v1/rpc/fidc_portfolio
@@ -1299,6 +1323,7 @@ POST /rest/v1/rpc/fii_property_history
 POST /rest/v1/rpc/financial_statement_history
 POST /rest/v1/rpc/financials
 POST /rest/v1/rpc/focus_expectations
+POST /rest/v1/rpc/free_float
 POST /rest/v1/rpc/fund_debentures
 POST /rest/v1/rpc/fund_documents
 POST /rest/v1/rpc/fund_holdings
@@ -1337,7 +1362,6 @@ POST /rest/v1/rpc/quote_latest
 POST /rest/v1/rpc/rate_hit
 POST /rest/v1/rpc/research_universe
 POST /rest/v1/rpc/rj_listed_documents
-POST /rest/v1/rpc/dividends
 POST /rest/v1/rpc/screen_captive_vehicles
 POST /rest/v1/rpc/screen_delinquency_drivers
 POST /rest/v1/rpc/screen_dormant_funds
@@ -1349,6 +1373,7 @@ POST /rest/v1/rpc/screen_restatements
 POST /rest/v1/rpc/screen_silent_filers
 POST /rest/v1/rpc/screen_zombie_growth
 POST /rest/v1/rpc/search_funds
+POST /rest/v1/rpc/share_counts
 POST /rest/v1/rpc/termo_history
 POST /rest/v1/rpc/trade_consolidated_history
 POST /rest/v1/rpc/treasury_direct
