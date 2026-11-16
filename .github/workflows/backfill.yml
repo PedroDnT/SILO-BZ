@@ -30,6 +30,10 @@ on:
         description: "Also backfill the IBGE IPCA item tree with weights (SIDRA 1419 + 7060, from 2012-01) behind api.inflation_items and /macro's contribution bar. Runs after BACEN; a few minutes."
         type: boolean
         default: false
+      tesouro:
+        description: "Also backfill the Tesouro Direto posted rates and prices (one CSV, every base date from 2004-12-31, ~180k rows). A few minutes; the daily run keeps the last 30 days current afterwards."
+        type: boolean
+        default: false
       entity:
         description: "Which CVM entity to fill. Default fi (do not pick all while Postgres is recovering). Years in the form are now used."
         type: choice
@@ -482,6 +486,32 @@ jobs:
           LOG_LEVEL: INFO
         run: |
           python -m src.pipeline.run_backfill --ibge-only
+
+  # Tesouro Direto: the whole history is one CSV, so the backfill is one
+  # download and one upsert. Opt-in, like IBGE.
+  backfill-tesouro:
+    name: "Tesouro Direto rates and prices"
+    needs: apply-schema
+    if: ${{ always() && needs.apply-schema.result == 'success' && inputs.tesouro == true && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Tesouro Direto backfill
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          LOG_LEVEL: INFO
+        run: |
+          python -m src.pipeline.tesouro_pipeline --backfill
 
   # FNET document register (B3 Fundos.NET, backlog B1). Opt-in and alone:
   # run_backfill --fnet-only never rides along with anything else, and every

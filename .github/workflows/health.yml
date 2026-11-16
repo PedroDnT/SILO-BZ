@@ -89,6 +89,9 @@ jobs:
       MAX_PTAX_AGE_DAYS: "6"
       MAX_FOCUS_AGE_DAYS: "14"
       MAX_IPCA_ITEM_AGE_DAYS: "75"
+      # Tesouro Direto publishes each session on the next business day; a
+      # long weekend plus Carnival is 6 days, so 7.
+      MAX_TESOURO_AGE_DAYS: "7"
       # A cvm_ingest_log row still 'running' after this many hours belongs to
       # a process that died (job timeout, SIGKILL, runner loss). The longest
       # ingest job is backfill.yml's 300-minute FI matrix, so 6 h is past any
@@ -467,7 +470,8 @@ jobs:
             "b3_cotahist|trade_date|b3_cotahist WHERE trade_date > CURRENT_DATE - 60|$MAX_COTAHIST_AGE_DAYS" \
             "bacen_ptax|reference_date|bacen_ptax|$MAX_PTAX_AGE_DAYS" \
             "bacen_expectativas (Focus)|reference_date|bacen_expectativas|$MAX_FOCUS_AGE_DAYS" \
-            "ibge_ipca_item_monthly|reference_month|ibge_ipca_item_monthly|$MAX_IPCA_ITEM_AGE_DAYS"; do
+            "ibge_ipca_item_monthly|reference_month|ibge_ipca_item_monthly|$MAX_IPCA_ITEM_AGE_DAYS" \
+            "tesouro_direto_daily|data_base|tesouro_direto_daily WHERE data_base > CURRENT_DATE - 60|$MAX_TESOURO_AGE_DAYS"; do
             IFS='|' read -r label col from limit <<<"$spec"
             age=$(q "SELECT (CURRENT_DATE - max($col))::int FROM $from")
             echo "$label age: ${age:-<none>} days (limit ${limit}d)"

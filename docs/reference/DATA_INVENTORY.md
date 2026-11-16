@@ -171,6 +171,12 @@ but kept out of `SGS_SERIES`, so it is not in `api.macro_series`.
 | ------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ibge_ipca_item_monthly` | node × **month** | general index, 9 groups, 19 subgroups, 51 items, ~377 subitems: weight, monthly / YTD / 12-month change, as published; SIDRA 1419 (2012-01..2019-12) then 7060 (2020-01→) |
 
+### Tesouro Nacional — Tesouro Direto rates and prices (`tesourotransparente.gov.br`)
+
+| Table                  | Grain                                   | Notes |
+| ---------------------- | --------------------------------------- | ----- |
+| `tesouro_direto_daily` | title type × maturity × **base date** | the Treasury's posted morning buy and sell rates (% a year, can be negative) and PU per title on its retail platform, from 2004-12-31; posted quotes, not trades. PU NULL where the source prints 0,00 (not on sale). ODbL licence: credit Tesouro Nacional (migration 86) |
+
 ### B3 Fundos.NET — the fund document register (`fnet.bmfbovespa.com.br`)
 
 | Table                  | Grain                                           | Notes                                                                                                                                                                                                                                                                                      |

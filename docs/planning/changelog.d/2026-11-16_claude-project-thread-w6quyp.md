@@ -1,0 +1,1 @@
+| 2026-11-16 | claude/project-thread-w6quyp | Ingest the Tesouro Direto daily posted rates and prices per title into `tesouro_direto_daily` (migration 86): a daily step for the last 30 days, a `tesouro` backfill input, a health freshness check and an offline test (#1163). Not served yet. |
