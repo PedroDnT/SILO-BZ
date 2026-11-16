@@ -346,3 +346,65 @@ def ingest_cia_account(conn: Any, members: Sequence[Any], doc_type: str) -> int:
             )
 
     return total
+
+
+# ---------------------------------------------------------------------------
+# Share counts and free float (#1161)
+# ---------------------------------------------------------------------------
+
+def _ingest_cia_counts(
+    conn: Any, raw_rows: List[Dict[str, Any]], fm: Any, dataset: str,
+    date_col: str, extra: Optional[Dict[str, Any]] = None,
+) -> int:
+    """Map, validate and upsert one share-count CSV (composição or FRE).
+
+    A row with no valid 14-digit CNPJ or no reference date cannot be keyed and
+    is dropped and counted, never coerced. A share count below zero is not a
+    count: the row is dropped too. A missing Versao stays NULL (the unique
+    index is NULLS NOT DISTINCT), never set to a guessed 1.
+    """
+    from src.parsers.validation import validate_cnpj
+
+    assert_map_matches(raw_rows, fm.FIELD_MAP, dataset=dataset, required=("cnpj_cia", date_col))
+    records: List[Dict[str, Any]] = []
+    dropped = 0
+    for row in raw_rows:
+        typed, residual = apply_map(row, fm.FIELD_MAP)
+        cnpj = typed.get("cnpj_cia")
+        counts = [v for k, v in typed.items() if k.startswith(("qt_", "n_acionistas_")) and v is not None]
+        if not cnpj or not validate_cnpj(cnpj) or typed.get(date_col) is None or any(v < 0 for v in counts):
+            dropped += 1
+            continue
+        typed.update(extra or {})
+        typed["raw"] = residual
+        records.append(typed)
+    if dropped:
+        logger.warning("%s: dropped %d of %d rows (no valid CNPJ or date, or a negative count)",
+                       dataset, dropped, len(raw_rows))
+    if not records:
+        return 0
+    return upsert_rows(conn, fm.TABLE, records, conflict_columns=",".join(fm.CONFLICT))
+
+
+def ingest_cia_share_count(conn: Any, raw_rows: List[Dict[str, Any]], doc_type: str) -> int:
+    """ITR / DFP composição do capital rows -> cia_share_count (doc_type itr | dfp)."""
+    from src.parsers.field_maps import cia_composicao_capital as _cc
+
+    if doc_type not in ("itr", "dfp"):
+        raise ValueError(f"cia_share_count: doc_type must be itr or dfp, not {doc_type!r}")
+    return _ingest_cia_counts(conn, raw_rows, _cc, f"cia/{doc_type}_composicao_capital",
+                              "dt_refer", {"doc_type": doc_type})
+
+
+def ingest_cia_fre_capital(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """FRE capital social rows -> cia_fre_capital."""
+    from src.parsers.field_maps import cia_fre_capital_social as _cap
+
+    return _ingest_cia_counts(conn, raw_rows, _cap, "cia/fre_capital_social", "data_refer")
+
+
+def ingest_cia_fre_free_float(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """FRE distribuição do capital rows -> cia_fre_free_float."""
+    from src.parsers.field_maps import cia_fre_distribuicao_capital as _ff
+
+    return _ingest_cia_counts(conn, raw_rows, _ff, "cia/fre_distribuicao_capital", "data_refer")

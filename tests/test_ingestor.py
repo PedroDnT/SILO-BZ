@@ -75,7 +75,10 @@ def test_daily_annual_plan_keeps_fip_and_cia_slices_separate_from_execution():
                 "cia_aberta/itr 2026", "cia_aberta/dfp 2026"} <= descriptions
         # #383: last year's ITR/DFP, only the documents SILO does not hold.
         assert {"cia_aberta/itr 2025 new versions", "cia_aberta/dfp 2025 new versions"} <= descriptions
-        assert len(tasks) == len(FIP_PERIODIC_CONFIGS) + 6
+        # #1161: share counts (ITR and DFP composição) and the two FRE members.
+        assert {"cia_aberta/itr_composicao_capital 2026", "cia_aberta/dfp_composicao_capital 2026",
+                "cia_aberta/fre_capital_social 2026", "cia_aberta/fre_distribuicao_capital 2026"} <= descriptions
+        assert len(tasks) == len(FIP_PERIODIC_CONFIGS) + 10
     finally:
         for task in tasks:
             task.operation.close()
@@ -200,6 +203,8 @@ class TestCiaItrDfpDailyDispatch:
         ingestor.ingest_cia_cad = lambda: _zero()
         ingestor.ingest_cia_ipe = lambda year: _zero()
         ingestor.ingest_cia_fca = lambda year: _zero()
+        ingestor.ingest_cia_share_counts = lambda doc_type, year: _zero()
+        ingestor.ingest_cia_fre = lambda doc_type, year: _zero()
         ingestor.ingest_cia_itr_dfp = full
         ingestor.ingest_cia_itr_dfp_new_versions = new_versions
         await ingestor.backfill(start_year=2025, end_year=2026, entity_filter="cia_aberta")

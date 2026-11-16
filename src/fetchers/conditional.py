@@ -49,6 +49,11 @@ CONDITIONAL_SLICES: FrozenSet[Tuple[str, str]] = frozenset({
     ("fi", "cda_debentures"),
     ("cia_aberta", "ipe"),
     ("cia_aberta", "fca_valor_mobiliario"),
+    # Share counts and the free float (#1161): one small member per ZIP.
+    ("cia_aberta", "itr_composicao_capital"),
+    ("cia_aberta", "dfp_composicao_capital"),
+    ("cia_aberta", "fre_capital_social"),
+    ("cia_aberta", "fre_distribuicao_capital"),
 })
 
 

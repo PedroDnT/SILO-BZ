@@ -89,6 +89,9 @@ from src.pipeline.ingest_cia import (
     ingest_cia_account,
     ingest_cia_filing,
     ingest_cia_ticker,
+    ingest_cia_share_count,
+    ingest_cia_fre_capital,
+    ingest_cia_fre_free_float,
 )
 from src.fetchers.cia_fetcher import CIAFetcher
 
@@ -186,6 +189,7 @@ _ALL_TABLES: List[str] = [
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic", "cvm_fii_imovel",
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
     "cia_company", "cia_event", "cia_filing", "cia_account", "cia_ticker",
+    "cia_share_count", "cia_fre_capital", "cia_fre_free_float",
     "cvm_fund_registry", "cvm_etf_registry",
     "cvm_oferta_distrib_160", "cvm_oferta_distrib_400",
 ]
@@ -207,6 +211,12 @@ _CIA_IPE_FIRST_YEAR = 2010
 # back to ~2010, but per the workstream brief the standard backfill loads
 # 2019→present.
 _CIA_ITR_DFP_FIRST_YEAR = 2019
+
+# CIA_ABERTA share counts (#1161). The ITR / DFP composição do capital member
+# starts in 2020 (absent from the 2011-2019 ZIPs, checked 2026-11-16); the FRE
+# ZIPs start in 2010.
+_CIA_COMPOSICAO_FIRST_YEAR = 2020
+_CIA_FRE_FIRST_YEAR = 2010
 
 # cvm_fi_diario is RANGE-partitioned on dt_comptc and the earliest partition in
 # schema.sql starts 2019-01-01. CVM publishes HIST daily archives back to 2000,
@@ -1868,6 +1878,62 @@ class CVMIngestor:
         return await self._audited("cia_aberta", "fca_valor_mobiliario", year, None, work)
 
     # ------------------------------------------------------------------
+    # CIA_ABERTA — share counts and the free float (#1161)
+    # ------------------------------------------------------------------
+
+    async def ingest_cia_share_counts(self, doc_type: str, year: int) -> int:
+        """Ingest one year of ITR or DFP composição do capital into cia_share_count.
+
+        One member of the yearly ITR / DFP ZIP, read through csv_name_pattern
+        like FCA; a few hundred rows per quarter.
+        """
+        slice_type = f"{doc_type}_composicao_capital"
+
+        async def work():
+            raw_rows = await self._fetch_all_pages("cia_aberta", slice_type, year, None)
+            n = await self._store(ingest_cia_share_count, self._supabase, raw_rows, doc_type)
+            return n, len(raw_rows)
+        return await self._audited("cia_aberta", slice_type, year, None, work)
+
+    async def ingest_cia_fre(self, doc_type: str, year: int) -> int:
+        """Ingest one year of an FRE member: capital_social or distribuicao_capital."""
+        loaders = {
+            "fre_capital_social": ingest_cia_fre_capital,
+            "fre_distribuicao_capital": ingest_cia_fre_free_float,
+        }
+        loader = loaders[doc_type]
+
+        async def work():
+            raw_rows = await self._fetch_all_pages("cia_aberta", doc_type, year, None)
+            n = await self._store(loader, self._supabase, raw_rows)
+            return n, len(raw_rows)
+        return await self._audited("cia_aberta", doc_type, year, None, work)
+
+    def _cia_share_count_tasks(self, years: List[int]) -> List[IngestTask]:
+        """The share-count and free-float slices for these years (#1161)."""
+        tasks: List[IngestTask] = []
+        for y in years:
+            if y >= _CIA_COMPOSICAO_FIRST_YEAR:
+                for doc_type in ("itr", "dfp"):
+                    tasks.append(IngestTask(
+                        "cia_share_count",
+                        f"cia_aberta/{doc_type}_composicao_capital {y}",
+                        self.ingest_cia_share_counts(doc_type, y),
+                    ))
+            if y >= _CIA_FRE_FIRST_YEAR:
+                tasks.append(IngestTask(
+                    "cia_fre_capital",
+                    f"cia_aberta/fre_capital_social {y}",
+                    self.ingest_cia_fre("fre_capital_social", y),
+                ))
+                tasks.append(IngestTask(
+                    "cia_fre_free_float",
+                    f"cia_aberta/fre_distribuicao_capital {y}",
+                    self.ingest_cia_fre("fre_distribuicao_capital", y),
+                ))
+        return tasks
+
+    # ------------------------------------------------------------------
     # CIA_ABERTA — ITR / DFP financial statements (yearly ZIP, ~19 CSVs)
     # ------------------------------------------------------------------
 
@@ -2479,6 +2545,9 @@ class CVMIngestor:
                 )
                 for year in cia_years
             ]
+            # Share counts and the free float (#1161): small CSV members of the
+            # ITR / DFP and FRE ZIPs, from 2020 and 2010.
+            cia_tasks += self._cia_share_count_tasks(years)
             await self._run_task_batches(
                 cia_tasks,
                 _get_concurrency("cia_aberta", 3),
@@ -2650,6 +2719,10 @@ class CVMIngestor:
                 f"cia_aberta/fca_valor_mobiliario {year}",
                 self.ingest_cia_fca(year),
             ))
+            # Share counts and the free float (#1161): the current year, plus
+            # the previous one in Q1, when the DFP and late FRE versions land in
+            # last year's ZIPs. Conditional downloads skip an unchanged file.
+            tasks += self._cia_share_count_tasks(yearly_years)
             # The current year: a full read on the weekly full-read day (the
             # first run after CVM regenerates the ZIPs), otherwise only the
             # documents SILO does not hold (#961). No `today` keeps the full read.
