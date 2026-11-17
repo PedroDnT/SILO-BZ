@@ -66,14 +66,16 @@ them double-counts), and read `% of float` together with `float_basis`
 broker is its client book, not its own position.
 
 **Index levels** (`b3_index_level`, migration 55; `src/fetchers/b3_index_fetcher.py` →
-`ingest_b3_index.py`, audit `b3` / `index_levels`) hold B3's published daily level for nine
-indices: IBOV (1968), IBXX, IBXL, SMLL, IDIV, UTIL, ICON, IMOB, IFIX. They are levels as
+`ingest_b3_index.py`, audit `b3` / `index_levels`) hold B3's published daily level for twelve
+indices: IBOV (1968), IBXX, IBXL, SMLL, IDIV, UTIL, ICON, IMOB, IFIX, IMAT, IFNC (from 2008)
+and IEEX (from 2000). They are levels as
 published and not adjusted, and B3 labels each a total-return index (Manual, Feb 2023,
 section 1.2), so compare them with `close_total_return`, never `close_adj`. `divisor_step` marks a
 re-scaling session (IBOV has eleven); the ingest refuses any other one-session move beyond a
 factor of two. `run_b3_events` refetches every year of every code each night, so a new code is
 backfilled by the next run and there is no backfill mode. A null `results` is retried, and a
-persistent one raises. IEEX is held back (an unexplained 1999-03 move). Served by
+persistent one raises. IFNC starts in 2008 (its base-date level is 858.40, not B3's stated 1,000) and IEEX in 2000
+(an unexplained 1999-03 move is never stored), #1145. Served by
 `api.index_history`, index codes only; IBOV11 and BOVA11 are not the index.
 
 **FIDC tranche percentages are stored as filed** (migration 70): `cvm_fidc_tranche.vl_rentab_mes`,

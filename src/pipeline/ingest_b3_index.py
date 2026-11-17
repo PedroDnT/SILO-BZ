@@ -37,11 +37,24 @@ SOURCE = "b3_index_statistics"
 # 2005-08-31, IFIX 2010-12-30, IDIV and UTIL 2005-12-29, ICON 2006-12-28, IMOB
 # 2007-12-28). Levels before an index's publication date are B3's own
 # back-calculation and the endpoint does not mark them.
-# IEEX (first served 1994-01-03) is deliberately NOT here: it moved +70% on
-# 1999-03-15 and -29% on 1999-03-31 with no divisor step and nothing in B3's
-# methodology history to explain it, so it stays held until that is sourced.
+#
+# Three sector indices joined on 2026-11-17 (#1145), checked the same way
+# (docs/reference/research/index-candidates-416.md, section 7), and two of them
+# start later than B3's grid does:
+# - IMAT from its first served session, 2005-12-29: level 1,000.00 there, B3's
+#   stated base.
+# - IFNC from 2008. B3 serves it from 2004-12-30, its base date, but at 858.40,
+#   not the 1,000 B3's methodology states, so the back-calculation before B3's
+#   publication (2010-01-04) does not match B3's own definition. A second
+#   published source agrees with the grid's closes from 2007-12-28 on, and sits
+#   30% or more away from it in 2005 to 2007. Nothing before 2008 is stored.
+# - IEEX from 2000 (owner decision, 2026-11-13). B3 serves it from 1994-01-03,
+#   but it moved +70% on 1999-03-15 and -29% on 1999-03-31 with no divisor step
+#   and nothing in B3's methodology history to explain it. Starting in 2000 means
+#   those sessions are never stored; their cause stays an open research item.
 INDEX_CODES: Tuple[str, ...] = (
     "IBOV", "IBXX", "IBXL", "IFIX", "SMLL", "IDIV", "ICON", "IMOB", "UTIL",
+    "IMAT", "IFNC", "IEEX",
 )
 FIRST_YEAR: Dict[str, int] = {
     "IBOV": 1968,
@@ -53,6 +66,9 @@ FIRST_YEAR: Dict[str, int] = {
     "ICON": 2006,
     "IMOB": 2007,
     "UTIL": 2005,
+    "IMAT": 2005,
+    "IFNC": 2008,  # not 2004: see above
+    "IEEX": 2000,  # not 1994: see above
 }
 
 # The sessions on which B3 re-scaled a series, with the divisor. The published

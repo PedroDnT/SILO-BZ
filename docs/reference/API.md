@@ -451,15 +451,27 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
   | IMOB | 2007-12-28    | 4,652 |
   | IFIX | 2010-12-30    | 3,910 |
 
+  Added by #1145 (catalog v89), from the B3 grid on 2026-11-17, ending
+  2026-11-16; held after the next nightly run:
+
+  | Code | First session | Rows |
+  | ---- | ------------- | ---- |
+  | IEEX | 2000-01-03    | 6,662 |
+  | IMAT | 2005-12-29    | 5,172 |
+  | IFNC | 2008-01-02    | 4,680 |
+
   The counts grow one per session; `api.coverage()` is the live figure.
 - **The codes held (v53, #416).** IBOV, IBXX (first session 1994-12-29), IBXL
   (1997-12-30), IFIX (2010-12-30), SMLL (2005-08-31), IDIV and UTIL (2005-12-29),
-  ICON (2006-12-28) and IMOB (2007-12-28), the list `INDEX_CODES` /
+  ICON (2006-12-28) and IMOB (2007-12-28), and since v89 (#1145) IMAT
+  (2005-12-29), IFNC (2008-01-02) and IEEX (2000-01-03), the list `INDEX_CODES` /
   `FIRST_YEAR` in `src/pipeline/ingest_b3_index.py`. Each is checked against its
   base value on its base date, and IBOV, IBXX, IBXL and IFIX against B3's daily
-  bulletin (`docs/reference/research/index-candidates-416.md`). **IEEX is held
-  back:** it moved +70% on 1999-03-15 and -29% on 1999-03-31 with no divisor
-  step and nothing in B3's methodology history to explain it. Levels before an
+  bulletin (`docs/reference/research/index-candidates-416.md`). **IEEX starts
+  in 2000:** it moved +70% on 1999-03-15 and -29% on 1999-03-31 with no divisor
+  step and nothing in B3's methodology history to explain it, so those sessions
+  are never stored. **IFNC starts in 2008:** its level on its base date is
+  858.40, not the 1,000 B3 states, so its back-calculation is not served. Levels before an
   index's publication date are B3's back-calculation and the endpoint does not
   mark them. `coverage()` reads each index's first date from the table, so it
   reports every code's own depth with no SQL edit.

@@ -18,7 +18,7 @@
 -- THE ACCEPTED CODES ARE THE CODES HELD. They are the distinct index_code
 -- values in b3_index_level, which src/pipeline/ingest_b3_index.py fills from a
 -- closed list (IBOV, IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB and UTIL since
--- #416). A ticker is never in the table, so it is refused;
+-- #416; IMAT, IFNC from 2008 and IEEX from 2000 since #1145). A ticker is never in the table, so it is refused;
 -- an index that has not been loaded yet is refused too, and the message lists
 -- what is held (nothing, before the first ingest), which is honest.
 --
@@ -30,9 +30,9 @@
 --
 -- EVERY CODE HELD IS A TOTAL-RETURN INDEX, AS B3 CALLS IT (#416, catalog v53).
 -- B3's own pages say "um indice de retorno total" for IBOV, IBXX, IBXL, SMLL,
--- IFIX, IDIV, ICON, IMOB and UTIL, and its Manual de Definicoes e Procedimentos
--- dos Indices (Feb 2023, section 1.2) defines that as reinvesting each
--- distribution in the index. Catalog v45 to v52 called the series "a price
+-- IFIX, IDIV, ICON, IMOB, UTIL, IMAT, IFNC and IEEX, and its Manual de
+-- Definicoes e Procedimentos dos Indices (Feb 2023, section 1.2) defines that
+-- as reinvesting each distribution in the index. Catalog v45 to v52 called the series "a price
 -- index, not total return", which B3 contradicts. A price-return version, where
 -- B3 has one (IDIV B3 Price Return), carries its own name and is not served.
 -- Do not compare a level with close_adj (price only): the like-for-like stock
@@ -118,7 +118,7 @@ END;
 $fn$;
 
 COMMENT ON FUNCTION api.index_history(TEXT, DATE, DATE, TEXT) IS
-    'Daily levels of one B3-published index (IBOV from 1968-01-02; IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB and UTIL each from its own first session), as published, oldest first. p_index is an INDEX CODE: a ticker, including BOVA11 and IBOV11, raises 22023 naming the codes held, so the options settlement leg or an ETF can never stand in for the index. The series is NOT adjusted: B3 re-scaled it eleven times (divisor 100 on 1983-10-04, 10 on ten other sessions, the last 1997-03-03) and divisor_step is TRUE on the first session after each, where a level ratio is not a return. Each code is a TOTAL-RETURN index as B3 publishes it (distributions reinvested, B3 Manual Feb 2023), so a level already includes dividends: compare it with close_total_return, not close_adj; levels before an index''s publication date are B3''s back-calculation, not marked. No return or adjusted column. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last. Or narrow p_from/p_to. Depth per index is in api.coverage().';
+    'Daily levels of one B3-published index (IBOV from 1968-01-02; IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB, UTIL and IMAT each from its own first session, IFNC from 2008-01-02 and IEEX from 2000-01-03), as published, oldest first. p_index is an INDEX CODE: a ticker, including BOVA11 and IBOV11, raises 22023 naming the codes held, so the options settlement leg or an ETF can never stand in for the index. The series is NOT adjusted: B3 re-scaled it eleven times (divisor 100 on 1983-10-04, 10 on ten other sessions, the last 1997-03-03) and divisor_step is TRUE on the first session after each, where a level ratio is not a return. Each code is a TOTAL-RETURN index as B3 publishes it (distributions reinvested, B3 Manual Feb 2023), so a level already includes dividends: compare it with close_total_return, not close_adj; levels before an index''s publication date are B3''s back-calculation, not marked. No return or adjusted column. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last. Or narrow p_from/p_to. Depth per index is in api.coverage().';
 
 REVOKE ALL ON FUNCTION api.index_history(TEXT, DATE, DATE, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.index_history(TEXT, DATE, DATE, TEXT) TO anon, authenticated;
