@@ -1,0 +1,1 @@
+| 2026-11-17 | claude/project-thread-fsnmth | `deploy_mcp.yml` gains a `target` input: `silo-mcp` (default, unchanged) or `v2`, which deploys the v2 gateway (`silo-api`) and MCP v2 (`silo-mcp-v2`) and checks that `/v2/` answers 200. Before this, v2 had no dispatch path and every v2 change waited for a manual deploy (#1182). |

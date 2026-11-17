@@ -44,7 +44,7 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
   `engine_image.yml` (build, smoke, no publish).
 - A merge deploys nothing to the database. Migrations apply on the next
   workflow run, analytical SQL on the next scheduled run or `analytics-only`.
-  `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo needs
+  MCP and v2 need `deploy_mcp.yml`; the Cloudflare demo needs
   `deploy_cloudflare.yml`, which ends with a paid end-to-end report.
 - Dashboard merges do not publish (`vercel.json` disables production Git
   deploys); the deploy hook does, after a weekday scheduled apply or

@@ -1,5 +1,9 @@
 name: Deploy MCP
 
+# target=silo-mcp (default) deploys supabase/functions/silo-mcp, below.
+# target=v2 deploys the v2 gateway (silo-api) and MCP v2 (silo-mcp-v2, which
+# bundles silo-api's code), then checks that /v2/ answers (#1182).
+#
 # Deploys supabase/functions/silo-mcp — the read-only remote MCP over schema
 # api — from the dispatched ref, then proves the live endpoint serves every
 # tool in tools.ts. Manual on purpose: an MCP tool calls an api.* function
@@ -17,6 +21,14 @@ name: Deploy MCP
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "silo-mcp: the v1 MCP. v2: the v2 gateway (silo-api) and MCP v2 (silo-mcp-v2). Apply analytics first."
+        type: choice
+        default: silo-mcp
+        options:
+          - silo-mcp
+          - v2
 
 permissions:
   contents: read
@@ -27,7 +39,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy silo-mcp
+    name: Deploy ${{ inputs.target }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -48,6 +60,7 @@ jobs:
           version: latest
 
       - name: Deploy silo-mcp
+        if: ${{ inputs.target == 'silo-mcp' }}
         # --yes: the CLI (version latest) asks for confirmation and refuses
         # without a terminal; measured on run 43200655362, 2026-11-12.
         run: supabase functions deploy silo-mcp --project-ref "$PROJECT_REF" --no-verify-jwt --yes
@@ -59,6 +72,7 @@ jobs:
       # through the MCP (scripts/check_live_contract.py). Retried while the new
       # bundle propagates.
       - name: Live contract matches this commit
+        if: ${{ inputs.target == 'silo-mcp' }}
         run: |
           set -euo pipefail
           for attempt in 1 2 3 4 5 6; do
@@ -69,4 +83,29 @@ jobs:
             sleep 10
           done
           echo "::error::the published REST/MCP contract does not match this commit (see the FAIL lines above)"
+          exit 1
+
+      - name: Deploy silo-api and silo-mcp-v2
+        if: ${{ inputs.target == 'v2' }}
+        run: |
+          supabase functions deploy silo-api --project-ref "$PROJECT_REF" --no-verify-jwt --yes
+          supabase functions deploy silo-mcp-v2 --project-ref "$PROJECT_REF" --no-verify-jwt --yes
+
+      # The deploy succeeding says the bundle uploaded. Ask the gateway: an
+      # anonymous GET /v2/ answers 200 once the new bundle serves.
+      - name: v2 gateway answers
+        if: ${{ inputs.target == 'v2' }}
+        run: |
+          set -euo pipefail
+          url="https://$PROJECT_REF.supabase.co/functions/v1/silo-api/v2/"
+          for attempt in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || true)
+            if [ "$code" = "200" ]; then
+              echo "ok    GET /v2/ answered 200"
+              exit 0
+            fi
+            echo "attempt $attempt: GET /v2/ answered $code; retrying"
+            sleep 10
+          done
+          echo "::error::the v2 gateway did not answer 200 at $url"
           exit 1
