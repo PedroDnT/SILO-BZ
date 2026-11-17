@@ -283,16 +283,18 @@ async def test_every_year_is_fetched_and_one_log_row_is_written(monkeypatch, aud
     assert (row["status"], row["rows"], row["error"]) == ("ok", 2, None)
 
 
-def test_the_configured_indices_are_the_verified_eight_plus_ibov_and_never_ieex():
-    """#416: IBOV and the eight verified codes, each with its own first year.
-    IEEX stays out (unexplained +70% / -29% in 1999-03)."""
+def test_the_configured_indices_are_the_verified_codes_each_from_its_first_year():
+    """#416: IBOV and eight verified codes; #1145: IMAT, IFNC and IEEX.
+    IFNC starts in 2008 (its base-date level is not B3's stated 1,000) and IEEX
+    in 2000 (unexplained +70% / -29% in 1999-03, owner decision 2026-11-13)."""
     assert idx.INDEX_CODES == (
         "IBOV", "IBXX", "IBXL", "IFIX", "SMLL", "IDIV", "ICON", "IMOB", "UTIL",
+        "IMAT", "IFNC", "IEEX",
     )
-    assert "IEEX" not in idx.INDEX_CODES and "IEEX" not in idx.FIRST_YEAR
     assert idx.FIRST_YEAR == {
         "IBOV": 1968, "IBXX": 1994, "IBXL": 1997, "IFIX": 2010, "SMLL": 2005,
         "IDIV": 2005, "ICON": 2006, "IMOB": 2007, "UTIL": 2005,
+        "IMAT": 2005, "IFNC": 2008, "IEEX": 2000,
     }
     assert set(idx.FIRST_YEAR) == set(idx.INDEX_CODES)
     assert len(set(idx.INDEX_CODES)) == len(idx.INDEX_CODES)
@@ -322,6 +324,9 @@ async def test_each_configured_index_is_fetched_from_its_own_first_year(monkeypa
     written = up.call_args.args[1]
     first = {c: min(r["trade_date"] for r in written if r["index_code"] == c) for c in seen}
     assert first["UTIL"].year == 2005 and first["IBXX"].year == 1994 and first["IFIX"].year == 2010
+    # #1145: nothing before the chosen start is requested, so nothing is stored
+    assert first["IEEX"] == date(2000, 6, 1) and min(seen["IEEX"]) == 2000
+    assert first["IFNC"] == date(2008, 6, 1) and min(seen["IFNC"]) == 2008
 
 
 @pytest.mark.asyncio

@@ -271,3 +271,33 @@ check, so it is left to the owner.
   two bulletins (only their first 10 and 20 pages were read).
 - Total return versus price by the numbers: this note relies on B3's stated
   type. It did not compute either series from constituents.
+
+## 7. IMAT, IFNC and IEEX (#1145, 2026-11-17)
+
+Measured on 2026-11-17 (UTC-3) from a cloud session: every year of each code was
+fetched from the endpoint with the shipped `B3IndexFetcher` and parsed with
+`parse_year`, then checked with `mark_divisor_steps` and against IBOV's
+sessions. B3's index pages and its methodology history (Aug 2022) were read
+through a web search the same day.
+
+| Code | First session served | B3 base (methodology history) | Level on the base date | Guard | Sessions vs IBOV | Starts in SILO |
+| ---- | -------------------- | ----------------------------- | ---------------------- | ----- | ---------------- | -------------- |
+| IMAT | 2005-12-29 | 1,000 on 2005-12-29, published from 2011-05-02 | 1,000.00 | passes | equal | 2005-12-29 |
+| IFNC | 2004-12-30 | 1,000 on 2004-12-30, published from 2010-01-04 | **858.40** | passes | equal | 2008-01-02 |
+| IEEX | 1994-01-03 | 1,000 on 1994-12-29 | 1,000.00 | passes from 2000 | equal | 2000-01-03 |
+
+- **Return type.** B3's IMAT and IFNC pages say "um índice de retorno total";
+  IEEX's says the same, with reinvestment in the asset itself (section 1).
+- **IFNC's base does not match.** B3's grid starts at its base date with 858.40,
+  not 1,000. A second published source agrees with the grid's closes on
+  2007-12-28, 2008-12-30 and 2025-12-30, but its 2005 to 2007 levels sit 30% or
+  more away (first session of 2006: 1,455.96 here, 2,012.37 there). The
+  pre-publication back-calculation is therefore not served, and SILO holds IFNC
+  from 2008.
+- **IEEX starts in 2000** (owner decision, 2026-11-13), so the unexplained
+  1999-03 sessions of section 3 are never stored. Their cause stays open.
+- **Latest sessions.** All three match a second published source on 2026-10-14
+  (IFNC 23,045.95, IMAT 6,310.52, IEEX 150,737.57), and IFNC matches on every
+  session from 2026-10-13 to 2026-11-09.
+- **Largest one-session moves kept** (all inside the guard): IFNC -22.5% on
+  2026-10-26, IMAT -15.8% on 2020-03-12, IEEX -17.2% on 2026-10-26.

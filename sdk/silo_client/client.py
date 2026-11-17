@@ -40,7 +40,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 88  # v88: api.debt_issues (#1164); history in serve.catalog.py.
+KNOWN_CATALOG_VERSION = 89  # v89: IMAT, IFNC, IEEX in index_history (#1145); history in serve.catalog.py.
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -700,8 +700,9 @@ class SiloClient:
     ) -> List[Dict[str, Any]]:
         """Daily levels of a B3-published index **as published**: columns
         index_code, trade_date, level, divisor_step, source. IBOV from
-        1968-01-02; IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB and UTIL each
-        from its own first session (`coverage()` has the depth).
+        1968-01-02; IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB, UTIL and IMAT
+        each from its own first session, IFNC from 2008-01-02 and IEEX from
+        2000-01-03 (`coverage()` has the depth).
 
         `index` is an INDEX CODE ("IBOV"), never a ticker: BOVA11 (an ETF) and
         IBOV11 (the Ibovespa options settlement code, whose price is each
