@@ -59,7 +59,7 @@ price, fees, index, CNPJ and ISIN). NAV/cotistas are **JS-rendered**, so this ru
 rate-limits direct scraping) — not a plain HTTP fetch.
 
 Pieces (FETCH → PARSE → STORE):
-- `apify/etfsbrasil_scraper.js` — the web-scraper `pageFunction`; it returns the page's
+- `src/fetchers/etfsbrasil_scraper.js` — the web-scraper `pageFunction`; it returns the page's
   full rendered text + `__NEXT_DATA__` JSON (field parsing is done server-side in Python).
 - `src/fetchers/apify_etf_fetcher.py` — `ApifyETFFetcher` starts
   `apify/playwright-scraper` (limited permissions; override with `APIFY_ETF_ACTOR`)
