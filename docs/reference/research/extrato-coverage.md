@@ -61,7 +61,7 @@ balancete-derived estimate).
 
 - **Universe (denominator).** The 26,046 FI funds of #514: a `vl_quota` in
   `fact_fund_monthly` in 2026-07..2026-09; 25,193 in band A (PL >= R$1M), 853 in
-  band B. List: `.github/research/lamina_universe.txt` (CNPJ, band, in
+  band B. List: `.github/research/lamina_universe.txt`, removed in #1188 (git history) (CNPJ, band, in
   `cvm_fi_diario` 2026-09, PL, two balancete-derived fee estimates; public
   registry facts). The balancete estimate is the one defined in
   `lamina-coverage.md` section 2 (`est_aug`, % a year, 22,802 funds have it). The

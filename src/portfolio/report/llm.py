@@ -44,13 +44,15 @@ DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_EFFORT = "medium"
 # The owner's choice for SILO_LLM_PROVIDER=openai (2026-10-04): gpt-5.1 at medium
 # reasoning, replacing gpt-6-luna (2026-10-03), because the repository's OPENAI_API_KEY
-# gets 403 model_not_found on every gpt-6-* model (probe_openai_models.yml lists gpt-5,
-# gpt-5.1, gpt-5-mini, gpt-5-nano, gpt-5-pro, gpt-4o and gpt-4o-mini as callable). Its
-# model page (https://developers.openai.com/api/docs/models/gpt-5.1, read 2026-10-04)
-# lists reasoning.effort none (default), low, medium and high, so medium is sent
+# gets 403 model_not_found on every gpt-6-* model (the probe workflow, retired in #1188,
+# listed gpt-5, gpt-5.1, gpt-5-mini, gpt-5-nano, gpt-5-pro, gpt-4o and gpt-4o-mini as
+# callable). gpt-5.1's model page
+# (https://developers.openai.com/api/docs/models/gpt-5.1, read 2026-10-04) lists reasoning.effort none (default), low, medium and high, so medium is sent
 # explicitly, and structured outputs on the Responses API. The same page and
 # https://developers.openai.com/api/docs/deprecations (read 2026-10-04) mark gpt-5.1
 # deprecated on 2026-10-01, shutdown 2027-04-01, recommended replacement gpt-6-sol.
+# To re-check by hand when a model retires, list the ids the key can reach:
+#   curl -s https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY" | jq -r '.data[].id'
 OPENAI_DEFAULT_MODEL = "gpt-5.1"
 OPENAI_DEFAULT_EFFORT = "medium"
 DEFAULT_MAX_TOKENS = 16000
