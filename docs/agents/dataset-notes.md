@@ -243,3 +243,7 @@ and additionally re-fetches any month in the window with no successful `cvm_inge
 row, so a slice CVM publishes late (its 1–2 month lag) is healed on the next run instead of
 missed forever. A not-yet-published month 404s and is logged `skipped`, not `error`. Deep
 history is still `run_backfill`'s job, not the daily window's.
+
+**IPCA group codes.** BACEN's IPCA group codes 1640–1643 are Comunicação / Saúde / Despesas
+pessoais / Educação — measured against SIDRA, not IBGE's order; never reorder them
+by intuition.

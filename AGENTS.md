@@ -93,78 +93,13 @@ current task to include it.
 
 ## The shape of the system: 4 infra, 4 products
 
-Reach for this before reporting a problem — it decides whose problem it is, and
-symptoms routinely surface one layer away from their cause.
-
-**Infrastructure** (four, and only four):
-
-|                    | Runs                                                              | Fails as                                        |
-| ------------------ | ----------------------------------------------------------------- | ----------------------------------------------- |
-| **GitHub Actions** | ingestion + parse (`run_daily`, `run_backfill`, health, watchdog) | a red run, a slice in `cvm_ingest_log`          |
-| **Supabase**       | the Postgres store                                                | disk pressure, a failing query, a missing grant |
-| **Vercel**         | hosting for `dashboard/` only; `webapp/` is not deployed          | a build error, a stale or mis-pointed domain    |
-| **Cloudflare**     | the portfolio-diagnosis demo: a Worker, the engine Container, private R2 for traces, an LLM provider (`deploy/cloudflare/`) | a Worker error, a Container timeout, a missing secret, an LLM refusal |
-
-**Products** (what anyone actually consumes):
-
-|                     | Is                      | Contract                                         |
-| ------------------- | ----------------------- | ------------------------------------------------ |
-| **the API**         | schema `api` + `serve/` | `docs/reference/API.md`, `api.catalog()`, `api.coverage()` |
-| **the dashboard**   | the Evidence sites      | parquet built at deploy time                     |
-| **the stored data** | the warehouse itself    | the integrity rules below                        |
-| **the diagnosis**   | `src/portfolio/` (statement readers, engine, report, investigator) behind the Cloudflare Worker | `docs/reference/portfolio/`, ADR 0001 (stateless), ADR 0003 (traces in R2) |
-
-Two consequences worth stating, both learned the expensive way:
-
-1. **Diagnose at the right layer.** A dashboard showing no data has at least
-   four possible causes across three layers — the data never landed (GitHub),
-   the analytical view is stale or wrong (Supabase), the build read a fine
-   database but the domain serves an older deployment (Vercel), or the page
-   is guarding correctly against a source that is genuinely empty. Row counts
-   in a build log and pixels on the public URL are different observations;
-   on 2026-09-16 they disagreed, and only the second was true for users.
-2. **Do not confuse OUR health with the SOURCE's.** `landed_at` says the
-   pipeline ran and succeeded — that is ours to fix. `complete_through` says
-   how much CVM has published — that is Brazil's filing calendar, not an
-   outage. Gating red/green on the second is how DB Health taught itself to
-   cry wolf.
+The infra and products tables and two consequences: `docs/agents/system-shape.md`.
+Read it and `docs/architecture/SYSTEM.md` before you report a problem.
 
 ## What this is
 
-Headless ingestion pipeline for Brazilian public financial data, built for **financial
-accountability** across three populations: **funds** (NAV, delinquency, tranche
-performance, structural health), **listed companies** (ITR/DFP statements, events, the
-published ticker map), and **markets** (the B3 tape, the securities-lending book,
-investor-type flows, BACEN macro). It downloads, parses, validates, and upserts data
-from **CVM** (fund disclosures:
-FI, FIDC, FII, FIP, FIAGRO, SECURIT, plus listed-company CIA filings), **BACEN** (SGS
-time series including the 26-code IPCA set behind `api.inflation`, PTAX, Focus
-expectativas), **IBGE** (SIDRA tables 1419/7060, the IPCA item tree with weights →
-`ibge_ipca_item_monthly`, served by `api.inflation_items`), and **B3** (public
-COTAHIST quotation zips → `b3_cotahist`) into a **Supabase Postgres** database via
-psycopg2. BACEN's IPCA group codes 1640–1643 are Comunicação / Saúde / Despesas
-pessoais / Educação — measured against SIDRA, not IBGE's order; never reorder them
-by intuition.
-
-There is **no public ingest API** and no localhost ingest HTTP server. Downstream
-dashboards (`dashboard/`, `webapp/`) query Supabase directly. The **read contract**
-for apps is schema `api` plus `serve/` (`docs/reference/API.md`). Serving roadmap (catalog →
-SQL smoke → pool → honest returns → lookup → privileges → HTTPS) is
-`docs/planning/SERVING.md`. Operators trigger ingest with GitHub Actions or
-`python -m src.pipeline.run_daily` / `run_backfill` (optional `--entity`).
-
-> Read `docs/architecture/` for the four-page model of the system (`SYSTEM.md`,
-> `DATA_FLOW.md`, `OPERATIONS.md`, `DECISIONS.md`), `README.md` for what SILO is
-> and what it covers (operator commands are folded at
-> its end and in `scripts/README.md`), `docs/reference/DATABASE_MAINTENANCE.md` for the
-> ongoing DB upkeep runbook (checks, cadence, audit-log triage, partition rollover,
-> troubleshooting), and `docs/planning/CHANGELOG.md` for the
-> workstream history. A previous version had multiple FastAPI
-> services + a Solana "Delos Oracle" + a `b3_calc_api`; all were removed. Do not
-> reintroduce Docker/Alembic, local Postgres-as-source-of-truth, or a **fake** B3
-> quote API — see "What's intentionally not here" in `README.md`. Public COTAHIST
-> zips are in scope (`b3_cotahist`). The user-facing read API is schema `api` +
-> `serve/` (`docs/reference/API.md`); do not expose landing tables or reintroduce an ingest HTTP API.
+See `README.md`. There is **no public ingest API** and no localhost ingest HTTP server.
+IPCA group codes 1640–1643: `docs/agents/dataset-notes.md`.
 
 ## Data integrity rules (NON-NEGOTIABLE)
 
