@@ -43,7 +43,7 @@ Public surface
 --------------
     ApifyETFFetcher().fetch(tickers) -> list[dict]   # one scraped record per ticker
 
-The actor's pageFunction lives in apify/etfsbrasil_scraper.js (read at call time
+The actor's pageFunction lives in src/fetchers/etfsbrasil_scraper.js (read at call time
 and passed in the run input), so there is nothing to pre-deploy on Apify — only an
 API token is required.
 
@@ -76,7 +76,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 _ETF_URL = "https://www.etfsbrasil.com.br/etfs/{ticker}"
-_PAGE_FUNCTION_PATH = Path(__file__).resolve().parents[2] / "apify" / "etfsbrasil_scraper.js"
+_PAGE_FUNCTION_PATH = Path(__file__).resolve().parent / "etfsbrasil_scraper.js"
 _APIFY_BASE = "https://api.apify.com/v2"
 _DEFAULT_ACTOR = "apify~playwright-scraper"
 # Wait budget for one scrape, in seconds. Measured: the first async run
