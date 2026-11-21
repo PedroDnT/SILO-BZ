@@ -367,7 +367,7 @@ balancete number must be labelled "estimated from the fund's own balancete", nev
 - Script and universe list on this branch: `.github/research/lamina_coverage.py`,
   `.github/research/lamina_universe.txt`; workflow `.github/workflows/lamina_header_probe.yml`
   (overwritten on this branch only, because GitHub dispatches an indexed workflow
-  file).
+  file). All three reached main and were removed in #1188; read them in git history.
 - SQL (read-only): the universe over `fact_fund_monthly` and `cvm_fi_diario`
   (`dt_comptc` in 2026-09), and the 81781001 estimate over `cvm_fi_balancete_resumo`
   for 2026-06-30, 2026-07-31, 2026-08-31 (the balancete's newest month is 2026-08).
