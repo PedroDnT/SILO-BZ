@@ -93,6 +93,21 @@ Sign-in (GitHub OAuth, [`/signin.html`](https://silo-bz-deloslabs.vercel.app/sig
 | `credit_implied.yml` | 06:00 UTC-3 (09:00 UTC) when `B3_CREDIT_ENABLED=1`, and dispatch | `date_from`, `date_to`, optional `codes` (the schedule prices the last 10 days): calculated yield of each B3 DEB trade PU into the private `b3_credit_implied_rate` (`credit/implied_rate` in `cvm_ingest_log`); applies the schema first |
 | `research_snapshot.yml` | Sundays 12:17 UTC-3 (15:17 UTC) when `SNAPSHOT_ENABLED=1`; on dispatch | read-only export of the research datasets to Parquet plus `manifest.json`, one consistent state; a 14-day workflow artifact, and R2 `snapshots/<id>/` once `R2_BUCKET` is set (#984) |
 
+CI, agents, deploy and one-off checks:
+
+| Workflow | When | What |
+| --- | --- | --- |
+| `market_backfill.yml` | on dispatch | historical fill of the market-data series (`sources`, `start_year`, `end_year`), one year per job, in the ingest writer group; applies the schema first |
+| `research_build.yml` | on dispatch | read-only build of the DUSTIN-BR research matrix and its walk-forward regime model, uploaded as an artifact with the quality and model reports |
+| `deploy_mcp.yml` | on dispatch | deploys the read-only remote MCP (`target` `silo-mcp`, or `v2` for the v2 gateway and MCP v2) and checks the live endpoint; apply analytics first |
+| `deploy_cloudflare.yml` | on dispatch | deploys the portfolio-diagnosis demo (Worker and engine container) and checks it end to end with the synthetic statement template |
+| `engine_image.yml` | PRs that touch the engine, `src/portfolio/` or its tests; on dispatch | builds the portfolio-diagnosis engine image and smoke-tests the running container; publishes nothing |
+| `portfolio_effort_ab.yml` | on dispatch | measures report time and cost at several reasoning efforts on one synthetic engine JSON; reads no database, deploys nothing |
+| `cnpj_length_check.yml` | on dispatch, and PRs that change the file | one-off, read-only count of CNPJ digit lengths in public source files; no secrets, no database |
+| `codex.yml` | issues and comments that mention `@codex`; Wednesdays 10:00 UTC-3 (13:00 UTC) when `CODEX_BUILDER_ENABLED` is `true`; on dispatch | the Codex issue responder and Builder: it answers the mention or works the eligible issue queue (dispatch defaults to `dry_run`) |
+| `conventions.yml` | issues opened, comments, PR reviews | the shared agent conventions: triages a new issue, and an `@claude` mention by the owner, a member or a collaborator starts the agent |
+| `dependabot_automerge.yml` | every PR opened, reopened or updated | turns on auto-merge for a Dependabot pip or Actions patch or minor bump; the required pytest check still gates the merge |
+
 Secrets: `POSTGRES_URL` (Supabase, `sslmode=require`); `VERCEL_DEPLOY_HOOK_URL` (deploy hook of the Vercel project `silo-bz` on `main`, team `deloslabs`; it is the only thing that publishes the site); `APIFY_TOKEN` (optional). Day-to-day upkeep (checks, audit-log triage, partition rollover, symptom to fix): [docs/reference/DATABASE_MAINTENANCE.md](docs/reference/DATABASE_MAINTENANCE.md). Operator tooling: [scripts/README.md](scripts/README.md).
 
 OTC debenture capture (#662) has an initial implementation with retrieval
