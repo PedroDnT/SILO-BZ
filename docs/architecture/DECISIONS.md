@@ -25,4 +25,5 @@ source. A new decision that is hard to reverse gets its own file in
 | Investigator facts are quotes from public documents, tiered A/B/C; no number from a model | Every fact is checkable; Exa only after Fundos.NET and RAD; cached in R2 | [#605](https://github.com/PedroDnT/SILO-BZ/issues/605) |
 | Proposed: refresh analytical matviews `CONCURRENTLY`; re-create a file only when its hash changes | Ends the daily lock and rebuild; baseline timings first | [ADR 0005](../adr/0005-analytical-refresh-concurrently-with-hash-ledger.md) |
 | Proposed: a `schema_migrations` ledger (file, hash); apply only new files, fail on a changed applied one | Ends the 14-minute daily replay and its lock failures; reversible | [ADR 0006](../adr/0006-migration-ledger-instead-of-replay.md) |
+| Dashboard npm alerts that need a server, dev server or test runner are accepted; patch fixes are taken | The site is static output; Evidence pins kit, vite and svelte | [ADR 0007](../adr/0007-dashboard-npm-alerts-accepted-build-time-risk.md) |
 | Times are shown in UTC-3 | The owner reads Brasília time; storage unchanged | [AGENTS.md](../../AGENTS.md) |
