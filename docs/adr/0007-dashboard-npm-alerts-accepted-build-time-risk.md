@@ -44,10 +44,10 @@ attributes, DOM clobbering, and during SSR), and some kit advisories (XSS during
 Each needs attacker-controlled input rendered into the page. They are accepted because the fix
 needs svelte 5 or a newer kit, which Evidence does not allow, not because they are unreachable.
 
-**Not decided here.** After the bump, `body-parser` and `express` still appear, now only through
-`qs` 6.16.0 (GHSA-6pq8-jhm2-2vcw, a `qs.stringify` DoS; the range ends at 6.16.0). That advisory
-is newer than the decision and has a fix under the existing `qs` override. It is left to a
-follow-up issue.
+**Fixed by the 6.16.2 override (#1195).** After the bump, `body-parser` and `express` still
+appeared, only through `qs` 6.16.0 (GHSA-6pq8-jhm2-2vcw, a `qs.stringify` DoS; the range ends at
+6.16.0). That advisory is newer than the decision. The `qs` override now pins 6.16.2, which is
+outside the range.
 
 ## Revisit when
 
