@@ -126,11 +126,14 @@ under Evidence 40.1.8. JSON has no comments, so the reason for each is here.
 Measured 2026-10-07 with `npm audit` (against `package-lock.json`) and the
 npm bulk advisory endpoint. "From" is the version the override key names.
 Where the key names no version, the unpinned version was not measured.
+The `qs` and `body-parser` rows and the `npm audit` total below were
+measured again on 2026-11-25, after each pin moved to a later patch
+release; the other rows keep the 2026-10-07 measurement.
 
 | Override                                 | Pinned to | Advisories the pin clears                                                   | Pinned version still reported                                                     |
 | ---------------------------------------- | --------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `qs`                                     | 6.16.0    | not measured (key names no version)                                         | none                                                                              |
-| `body-parser`                            | 1.20.8    | not measured (key names no version)                                         | none                                                                              |
+| `qs`                                     | 6.16.2    | GHSA-6pq8-jhm2-2vcw (DoS, moderate), cleared by the bump from 6.16.0 (#1198); measured 2026-11-25 | none (measured 2026-11-25)                                          |
+| `body-parser`                            | 1.20.9    | GHSA-27r3-jxmh-p828 (DoS, high), cleared by the bump from 1.20.8 (#1194); measured 2026-11-25     | none (measured 2026-11-25)                                          |
 | `minimatch@9.0.3`                        | 9.0.9     | GHSA-3ppc-4f35-3m26, GHSA-7r86-cg39-jmmj, GHSA-23c5-xmqv-rm74 (ReDoS, high) | none                                                                              |
 | `nanoid@3.3.8`                           | 3.3.18    | GHSA-xwg4-73v4-xw9w, GHSA-28wg-ghj8-5hjv, GHSA-2v37-7h3g-55p8 (high)                             | none                                                                              |
 | `trim@0.0.1`                             | 0.0.3     | GHSA-w5p7-h5w8-2hfq (ReDoS, high)                                           | none                                                                              |
@@ -141,8 +144,11 @@ Where the key names no version, the unpinned version was not measured.
 | `vite`                                   | 5.4.21    | not measured (key names no version)                                         | GHSA-4w7w-66w2-5vf9, GHSA-v6wh-96g9-6wx3, GHSA-fx2h-pf6j-xcff (fixed above 6.4.2) |
 | `cmdk-sv` → `@melt-ui/svelte` → `nanoid` | 5.1.16    | not measured (key names no version)                                         | none                                                                              |
 
-With the overrides in place, `npm audit` still reports 37 packages (2
-critical, 13 high, 22 moderate). Most come from Evidence's own ranges
+With the overrides in place, `npm audit --package-lock-only` still reports
+33 packages (2 critical, 7 high, 24 moderate), measured 2026-11-25. Why
+they are accepted is recorded in
+[ADR 0007](../docs/adr/0007-dashboard-npm-alerts-accepted-build-time-risk.md).
+Most come from Evidence's own ranges
 (`svelte`, `@sveltejs/kit`, `tailwindcss`, `braces`, `tinypool`, `echarts`).
 An override cannot fix them without a major bump that Evidence 40 does not
 support. The `vite` and `vitest` pins hold a version that is still reported:
