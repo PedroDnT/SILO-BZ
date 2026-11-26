@@ -73,7 +73,17 @@ class TesouroFetchError(RuntimeError):
 
 
 def _retry_config() -> Tuple[int, float]:
-    return env_retry_config("TESOURO", attempts="4", delay="5")
+    # 6 attempts, linear 30 s: the waits are 30+60+90+120+150 s, about 7.5 min.
+    # The old budget (4 attempts, 5 s) gave up in about 30 s, and the host
+    # refused the connection on 4 of 6 daily runs (2026-11-21..26, #1201).
+    # The file holds the whole history, so a later try loses no data.
+    return env_retry_config("TESOURO", attempts="6", delay="30")
+
+
+def _describe(exc: BaseException) -> str:
+    """``ConnectError()`` prints as an empty string; keep the class name."""
+    text = str(exc)
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
 async def fetch_csv() -> bytes:
@@ -85,7 +95,9 @@ async def fetch_csv() -> bytes:
             try:
                 resp = await client.get(CSV_URL)
             except httpx.HTTPError as exc:
-                logger.warning("Tesouro Direto request error attempt=%d/%d: %s", n, attempts, exc)
+                logger.warning(
+                    "Tesouro Direto request error attempt=%d/%d: %s", n, attempts, _describe(exc)
+                )
                 raise Retry(exc) from exc
             if resp.status_code in _RETRY_STATUSES:
                 logger.warning("Tesouro Direto HTTP %s attempt=%d/%d", resp.status_code, n, attempts)
@@ -101,7 +113,7 @@ async def fetch_csv() -> bytes:
             attempts=attempts,
             backoff=linear(delay),
             exhausted=lambda last, n: TesouroFetchError(
-                f"Tesouro Direto: failed after {n} attempts: {last}"
+                f"Tesouro Direto: failed after {n} attempts: {_describe(last)}"
             ),
         )
 
