@@ -24,6 +24,8 @@ Notes
 * ``VL_CONTA`` is expressed in ``ESCALA_MOEDA`` units (MIL observed). It is mapped
   here as a raw ``numeric`` (pre-scale); ``ingest_cia_account`` multiplies it to
   absolute reais. ``escala_moeda`` is kept as the original string for audit.
+  The per-share accounts (``3.99`` and under) are not multiplied: they are
+  published in reais per share (#1115).
 * ``GRUPO_DFP`` (a long description), ``MOEDA``, ``DENOM_CIA`` fall through to the
   ``raw`` JSONB residual (denormalised / not modelled as typed columns).
 * ``COLUNA_DF`` exists ONLY in the DMPL members (statement of changes in equity):

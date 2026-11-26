@@ -46,6 +46,20 @@ def _scale_factor(escala_moeda: Optional[str]) -> float:
     return factor
 
 
+# Per-share lines of the income statement (earnings per share: 3.99 and every
+# account under it, e.g. 3.99.01.02 for ON basic). The source publishes them in
+# reais per share whatever ESCALA_MOEDA the filing declares, so they are stored
+# as published and never multiplied (#1115).
+_PER_SHARE_ROOT = "3.99"
+
+
+def _is_per_share_account(cd_conta: Optional[str]) -> bool:
+    """True for ``3.99`` and anything under ``3.99.``; ``3.990`` and ``3.9`` are not."""
+    if not cd_conta:
+        return False
+    return cd_conta == _PER_SHARE_ROOT or cd_conta.startswith(_PER_SHARE_ROOT + ".")
+
+
 def ingest_cia_company(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """Parse and upsert CAD rows into cia_company.
 
@@ -326,7 +340,11 @@ def ingest_cia_account(conn: Any, members: Sequence[Any], doc_type: str) -> int:
     from the member name (CIAFetcher), ``doc_type`` from the call argument, and the
     remaining columns from the declarative field map. ``VL_CONTA`` is scaled to
     absolute reais via ESCALA_MOEDA (e.g. MIL → ×1000); the original escala_moeda
-    string is preserved for audit. Unmapped CSV fields fall through to ``raw``.
+    string is preserved for audit. The per-share accounts (``3.99`` and under,
+    earnings per share) are the exception: they are published in reais per share
+    and stored unscaled, with ``escala_moeda`` still as published (#1115).
+    Unmapped CSV fields fall through to ``raw``; ``VL_CONTA`` is mapped, so
+    ``raw`` holds no copy of it.
 
     Non-account members (``_summary`` header, composicao_capital, parecer) are
     skipped — they have ``escopo is None`` (``is_account_data`` False) and are
@@ -382,7 +400,10 @@ def ingest_cia_account(conn: Any, members: Sequence[Any], doc_type: str) -> int:
             ):
                 continue
 
-            if typed.get("vl_conta") is not None:
+            # Money lines go to absolute reais. A per-share line already is in
+            # reais per share, so it keeps the published value; escala_moeda is
+            # stored as published either way.
+            if typed.get("vl_conta") is not None and not _is_per_share_account(typed["cd_conta"]):
                 typed["vl_conta"] = typed["vl_conta"] * _scale_factor(typed.get("escala_moeda"))
 
             records.append(typed)
