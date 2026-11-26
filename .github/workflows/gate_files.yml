@@ -1,0 +1,79 @@
+name: Gate files
+
+# Fails while a pull request that changes a gate file has auto-merge on. Gate
+# files (.github/, .claude/, the rule files, the pipeline verifier: the list is
+# scripts/gate_files.py) are merged by the owner, by hand. Until this check,
+# only prompt text said so (#1208).
+#
+# Trigger: pull_request_target, so this file and scripts/gate_files.py both
+# come from main and a pull request cannot edit the check that judges it. To
+# keep that trigger safe, the job never checks out or runs the pull request's
+# code: it reads the list of changed files through the API, and its token can
+# only read.
+#
+# Separate from test.yml, so that turning auto-merge on or off does not rerun
+# the whole suite.
+#
+# Known limit: if a pull request is already green and someone enables
+# auto-merge, GitHub can merge before this check reruns. The check stops the
+# usual agent flow, where auto-merge is enabled while CI is still running. It
+# is not a full control: that needs a separate bot identity for agents.
+#
+# A Dependabot pull request always passes. That path has its own gate in
+# dependabot_automerge.yml, and its Actions bumps change .github/workflows/.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, auto_merge_enabled, auto_merge_disabled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: gate-files-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate-files:
+    name: gate files (no auto-merge)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The gate script comes from the default branch, never from the PR.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Refuse auto-merge on a gate-file pull request
+        env:
+          # Through env, never interpolated into the script: PR fields are input.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          AUTO_MERGE: ${{ github.event.pull_request.auto_merge != null }}
+        run: |
+          set -euo pipefail
+          if [ "$AUTHOR" = "dependabot[bot]" ]; then
+            echo "Dependabot pull request: dependabot_automerge.yml is its gate. Pass."
+            exit 0
+          fi
+          # A renamed file counts under both names: moving a gate file away
+          # changes it too.
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/changed.txt"
+          python3 scripts/gate_files.py < "$RUNNER_TEMP/changed.txt" > "$RUNNER_TEMP/gate.txt"
+          if [ ! -s "$RUNNER_TEMP/gate.txt" ]; then
+            echo "No gate file changed. Pass."
+            exit 0
+          fi
+          echo "Gate files changed by this pull request:"
+          sed 's/^/  /' "$RUNNER_TEMP/gate.txt"
+          if [ "$AUTO_MERGE" = "true" ]; then
+            files=$(paste -sd ' ' "$RUNNER_TEMP/gate.txt")
+            echo "::error::This pull request changes gate files ($files) and has auto-merge on. Turn auto-merge off, then the owner merges by hand."
+            exit 1
+          fi
+          echo "Auto-merge is off. Pass: the owner merges by hand."

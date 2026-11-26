@@ -33,6 +33,10 @@ change.
   (root `AGENTS.md`). No agent may edit a gate: `tests/` may gain tests but not
   lose or loosen them, and `scripts/verify_pipeline.py`, `.github/workflows/`,
   `.claude/`, `CLAUDE.md` and the root `AGENTS.md` are out of bounds.
+  The gate list's source is `scripts/gate_files.py`: all of `.github/` and
+  `.claude/`, `CLAUDE.md`, the root `AGENTS.md`, this file and
+  `scripts/verify_pipeline.py`. `gate_files.yml` runs it on every pull request
+  and fails while one that changes a gate file has auto-merge on (#1208).
 
 - **Scope stays with Pedro.** The Builder works only on issues Pedro labelled
   `ready-for-agent` (the triage label, `docs/agents/triage-labels.md`; `agent-ok` until 2026-10-05). The Scout and the Sentinel have a fixed scope written in their
