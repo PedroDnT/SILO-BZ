@@ -48,6 +48,12 @@ Grouped by when you would reach for them.
 | `rotate_db_password.sh` | Rotating the database owner's password, run by hand on the owner's machine after the reset in the Supabase dashboard. Tests the new password on the session pooler **before** writing anything, then updates `SUPABASE_POOLER_URL` and `POSTGRES_URL` in `.env` and the GitHub secret `POSTGRES_URL`, and walks the one Vercel edit (`EVIDENCE_SOURCE__supabase__password`, production and preview together). The password is never printed. GitHub secrets and Vercel sensitive variables cannot be read back, so the flow only goes outward. |
 | `build_etf_seed.py`      | Regenerates the curated B3 ETF seed at `src/store/seeds/etf_registry_seed.csv`.                                                                                           |
 
+## One-off repairs (they write; the owner runs them)
+
+| Script                       | What it does |
+| ---------------------------- | ------------ |
+| `drop_perfil_day1_twins.py`  | Deletes the `cvm_fi_perfil` rows dated on day 1 that have a twin on another day of the same month (#1121; an early file version left 9,204 of them). Month by month through `pg_client`, one transaction per month, row counts before and after. Reports only unless `--apply` is given (`--dry-run` is the default). Lists the day-1 rows with no twin and counts the fund-months with rows on 2 or more other dates; it changes neither. Safe to run twice. Run it after the re-ingest of 2026-08 and 2026-09: `--start 2026-08 --end 2026-09 --dry-run`, then the same with `--apply`. |
+
 ## One-off, historical
 
 Kept for provenance. The Supabase cutover is long finished; these are not part of

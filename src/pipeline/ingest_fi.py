@@ -435,11 +435,21 @@ def ingest_fi_cda_debentures(
 def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: int) -> int:
     """Parse and upsert FI monthly investor profile rows.
 
+    `period` is the date the source publishes in DT_COMPTC, stored as published:
+    the last day of the competency month, not the first. The key is
+    (cnpj, period), so a second date for the same fund and month is a second row.
+
+    A row whose DT_COMPTC is blank or does not parse is dropped and counted, as
+    the CDA path does. Until #1121 such a row was stamped with the first of the
+    requested month; that invented the date and left a second row beside the
+    month-end one when a later file carried it (9,204 stored rows on day 1).
+    `year` and `month` only name the file in the log line.
+
     Returns:
         number of rows upserted
     """
-    first_of_month = _date(year, month, 1)
     records: List[Dict[str, Any]] = []
+    undated = 0
 
     assert_map_matches(
         raw_rows, _perfil.FIELD_MAP, dataset="fi/perfil_mensal",
@@ -448,14 +458,20 @@ def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month
     for row in raw_rows:
         typed, residual = apply_map(row, _perfil.FIELD_MAP)
         typed["raw"] = residual
-        # Ensure period is always first-of-month
-        if typed.get("period") is None:
-            typed["period"] = first_of_month
+        if not isinstance(typed.get("period"), _date):
+            undated += 1
+            continue
 
         if not typed.get("cnpj"):
             continue
 
         records.append(typed)
+
+    if undated:
+        logger.warning(
+            "%s %04d-%02d: dropped %d of %d rows with no parseable DT_COMPTC",
+            _perfil.TABLE, year, month, undated, len(raw_rows),
+        )
 
     if not records:
         return 0
