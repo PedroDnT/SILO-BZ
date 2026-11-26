@@ -77,7 +77,11 @@ TABLE = "cvm_ingest_log"
 #: commit history. Text holding an integer. "1" = the parsers as of migration
 #: 44 (2026-09-24); rows older than that carry NULL, not "0". "2" = SECURIT
 #: keeps every filed row and maps the CRA/CRI securitizer (migration 52).
-PARSER_VERSION = "2"
+#: "3" = cia_account stores the per-share accounts (3.99 and under) in reais
+#: per share, no longer multiplied by ESCALA_MOEDA (#1115);
+#: scripts/fix_cia_eps_scale.py reads this number to refuse a correction of
+#: rows the fixed ingest already wrote.
+PARSER_VERSION = "3"
 
 # A git object name: SHA-1 (40 hex) or SHA-256 (64 hex). Abbreviated names
 # are accepted from 7 so a locally exported short sha is not thrown away.

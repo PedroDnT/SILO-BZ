@@ -191,6 +191,17 @@ never guessed) and `parser_version` (`PARSER_VERSION` in `src/pipeline/ingest_lo
 bump it only when a parser or field map changes what a stored value means).
 `api.coverage()` exposes `landed_git_sha`, the commit of the run that set `landed_at`.
 
+**Listed-company statement values** (`cia_account.vl_conta`, #1115): a money line is
+stored in absolute reais, the published value times its `escala_moeda` factor (MIL =
+1,000). The per-share accounts, `cd_conta` `3.99` and everything under `3.99.` (earnings
+per share), are stored **in reais per share, unscaled**: read them as they are and never
+divide or multiply by `escala_moeda`, which stays as published (usually `MIL`) on those
+rows too. The column is `NUMERIC(28,2)`, so a per-share value keeps 2 decimals. `raw`
+holds no copy of the published value. `PARSER_VERSION` 3 marks the ingest that stopped
+scaling them; the rows stored before it were divided once by
+`scripts/fix_cia_eps_scale.py`, which records each corrected year in
+`cia_account_eps_scale_fix` and refuses a second run.
+
 The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_analytical.sh`
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,
 rebuilt by the apply; the pg*cron jobs in `08_cron_schedules.sql` do not run, because the

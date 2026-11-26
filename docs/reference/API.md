@@ -34,7 +34,9 @@ additional `/v1` routes. Discover them through `POST /rest/v1/rpc/catalog`.
   every stored version. Its grain is a filed account line and filed period;
   `period_start`/`period_end` distinguish quarterly from year-to-date rows.
   Filing metadata appears only on an exact header-key match. Values are already
-  scaled at ingest and remain in the filed currency. It refuses above 1,000 rows.
+  scaled at ingest and remain in the filed currency; the per-share lines (account
+  `3.99` and under) are in currency per share, as published, whatever
+  `filed_scale` says (#1115). It refuses above 1,000 rows.
 - `fii_property_history(p_cnpj, p_from, p_to)` returns CVM property-register
   source rows for one exact fund CNPJ and reference-date window. CVM provides no
   stable property id, so `row_hash` identifies a source row, not a durable
