@@ -89,10 +89,12 @@ function bytesToB64url(bytes: Uint8Array): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function b64urlToBytes(token: string): Uint8Array {
+function b64urlToBytes(token: string): Uint8Array<ArrayBuffer> {
   const b64 = token.replace(/-/g, "+").replace(/_/g, "/");
   const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
-  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  const out = new Uint8Array(new ArrayBuffer(bin.length));
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 /** The token a next_page_url carries: the payload and its signature. */
@@ -111,7 +113,7 @@ export async function openCursor(token: string, resource: string, secret: string
   const payload = token.slice(0, dot);
   const sigText = token.slice(dot + 1);
   if (!/^[A-Za-z0-9_-]+$/.test(sigText)) throw badCursor("its signature is not base64url");
-  let sig: Uint8Array;
+  let sig: Uint8Array<ArrayBuffer>;
   try {
     sig = b64urlToBytes(sigText);
   } catch {
