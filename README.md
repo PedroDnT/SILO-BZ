@@ -107,6 +107,7 @@ CI, agents, deploy and one-off checks:
 | `codex.yml` | issues and comments that mention `@codex`; Wednesdays 10:00 UTC-3 (13:00 UTC) when `CODEX_BUILDER_ENABLED` is `true`; on dispatch | the Codex issue responder and Builder: it answers the mention or works the eligible issue queue (dispatch defaults to `dry_run`) |
 | `conventions.yml` | issues opened, comments, PR reviews | the shared agent conventions: triages a new issue, and an `@claude` mention by the owner, a member or a collaborator starts the agent |
 | `dependabot_automerge.yml` | every PR opened, reopened or updated | turns on auto-merge for a Dependabot pip or Actions patch or minor bump; the required pytest check still gates the merge |
+| `gate_files.yml` | every PR opened, reopened or updated, and when its auto-merge is turned on or off | fails while a PR that changes a gate file (`.github/`, `.claude/`, `CLAUDE.md`, `AGENTS.md`, `docs/planning/AGENTS.md`, `scripts/verify_pipeline.py`; the list is `scripts/gate_files.py`) has auto-merge on, so the owner merges it by hand; runs from `main` and never runs the PR's code |
 
 Secrets: `POSTGRES_URL` (Supabase, `sslmode=require`); `VERCEL_DEPLOY_HOOK_URL` (deploy hook of the Vercel project `silo-bz` on `main`, team `deloslabs`; it is the only thing that publishes the site); `APIFY_TOKEN` (optional). Day-to-day upkeep (checks, audit-log triage, partition rollover, symptom to fix): [docs/reference/DATABASE_MAINTENANCE.md](docs/reference/DATABASE_MAINTENANCE.md). Operator tooling: [scripts/README.md](scripts/README.md).
 

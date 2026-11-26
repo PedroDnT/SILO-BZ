@@ -27,7 +27,7 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 - Landed rows stay. After a failed `run_daily`, ANALYZE, the apply and deploy
   hook still run. Matviews, `api.panel`, the dashboard may be partly stale; run is red.
   `landed_at` and `api.coverage()` show freshness by source.
-- Schema/apply failures hold back publication until a successful run or
+- Schema/apply failures hold publication until a successful run or
   `mode=analytics-only` with `rebuild_dashboard=true`.
 - Plain views (quotes, short interest) show new data at once, not their
   matview-fed columns: `days_to_cover` joins `mv_b3_adtv_21`;
@@ -38,15 +38,16 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 
 ## Changes
 
-- PR → `test.yml` (pytest, SQL compile, Deno) → auto-merge.
+- PR → `test.yml` (pytest, SQL compile, Deno) → auto-merge;
+  `gate_files.yml`: red if on for a gate file.
   Hook and PR CI share a DB-password guard.
-  A PR touching `src/portfolio/` or `deploy/cloudflare/engine/` also runs
+  PRs on `src/portfolio/` or `deploy/cloudflare/engine/` run
   `engine_image.yml` (build, smoke, no publish).
-- A merge deploys nothing to the database. Migrations apply on the next
+- A merge deploys nothing to the DB. Migrations apply on the next
   workflow run, analytical SQL on the next scheduled run or `analytics-only`.
-  MCP and v2 need `deploy_mcp.yml`; the Cloudflare demo needs
-  `deploy_cloudflare.yml`, which ends with a paid end-to-end report.
-- Dashboard merges do not publish (`vercel.json` disables production Git
+  MCP and v2 need `deploy_mcp.yml`; the Cloudflare demo
+  `deploy_cloudflare.yml`, ending in a paid end-to-end report.
+- Dashboard merges do not publish (`vercel.json`: no production Git
   deploys); the deploy hook does, after a weekday scheduled apply or
   `rebuild_dashboard=true`.
 - Writers share the `supabase-ingest` group, one pending run: dispatch one at
@@ -63,7 +64,7 @@ Sun 12:17      snapshot       research Parquet + manifest, read-only; opt-in
 
 - `scripts/verify_pipeline.py`: manual; ✗ exits 1.
 - All issuers' B3 events once: `mode=b3-corporate-events-full`.
-- DB Health checks lag on `fact_fund_monthly`. The other views share its apply.
+- DB Health checks lag on `fact_fund_monthly`. Other views share its apply.
 - `codex.yml`: issue replies; Builder gated (#1079). [Registry](../planning/AGENTS.md).
 
 [Maintenance](../reference/DATABASE_MAINTENANCE.md) · [Supabase](../reference/supabase_operations.md) · [V2 keys](../reference/SILO_V2_INTEGRATION.md)
