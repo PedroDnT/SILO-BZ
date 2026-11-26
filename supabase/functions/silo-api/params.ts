@@ -35,6 +35,8 @@ export interface PagingContext {
   base: string;
   /** POST only: the body's digest (paging.ts bodyDigest). */
   body?: string;
+  /** The secret that signs the next cursor (SILO_CURSOR_KEY, #1117). */
+  key?: string;
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;

@@ -2,12 +2,14 @@
 //
 // The cursor is base64url of a JSON state: the resource, every original
 // query parameter as sent, a digest of a POST body, the paging method, the
-// position, and the rows served so far. It is NOT signed. So the gateway
-// never trusts it: the parameters it carries are parsed again exactly like a
-// fresh request (parseQuery, then every check), the position is validated by
-// the method that reads it, and the page size and the rows-per-call cap come
-// from the CURRENT caller's tier, never from the cursor. An edited cursor can
-// at most restart the walk at a position a fresh request could reach.
+// position, and the rows served so far. It is signed (#1117): the token is
+// `<payload>.<HMAC-SHA256 of payload>`, keyed by the SILO_CURSOR_KEY secret,
+// and an unsigned or edited token is refused. Before #1117 a caller could
+// reset the rows-served count and walk past the rows-per-call cap.
+// The gateway still does not trust the payload: the parameters it carries are
+// parsed again exactly like a fresh request (parseQuery, then every check),
+// the position is validated by the method that reads it, and the page size
+// and the rows-per-call cap come from the CURRENT caller's tier.
 //
 // The walkers here are pure over a fetch callback: run.ts gives them the one
 // call to make, and they decide the window, the key and the slice.
@@ -60,6 +62,64 @@ function b64urlDecode(token: string): string {
 
 export function encodeCursor(state: CursorState): string {
   return b64urlEncode(JSON.stringify(state));
+}
+
+/** The secret that signs cursors. Without it the gateway issues and reads no cursor (fail closed). */
+export const CURSOR_KEY_ENV = "SILO_CURSOR_KEY";
+
+function missingKey(): ApiError {
+  return new ApiError(
+    503,
+    "unavailable",
+    `silo-api is misconfigured: ${CURSOR_KEY_ENV} is not set, so no cursor can be signed or checked.`,
+    "cursor",
+  );
+}
+
+function hmacKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
+    "sign",
+    "verify",
+  ]);
+}
+
+function bytesToB64url(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function b64urlToBytes(token: string): Uint8Array {
+  const b64 = token.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+
+/** The token a next_page_url carries: the payload and its signature. */
+export async function sealCursor(state: CursorState, secret: string | undefined): Promise<string> {
+  if (!secret) throw missingKey();
+  const payload = encodeCursor(state);
+  const sig = await crypto.subtle.sign("HMAC", await hmacKey(secret), new TextEncoder().encode(payload));
+  return `${payload}.${bytesToB64url(new Uint8Array(sig))}`;
+}
+
+/** Check the signature (constant time, by WebCrypto), then decode the payload. */
+export async function openCursor(token: string, resource: string, secret: string | undefined): Promise<CursorState> {
+  if (!secret) throw missingKey();
+  const dot = token.indexOf(".");
+  if (dot <= 0 || token.indexOf(".", dot + 1) !== -1) throw badCursor("it is not signed");
+  const payload = token.slice(0, dot);
+  const sigText = token.slice(dot + 1);
+  if (!/^[A-Za-z0-9_-]+$/.test(sigText)) throw badCursor("its signature is not base64url");
+  let sig: Uint8Array;
+  try {
+    sig = b64urlToBytes(sigText);
+  } catch {
+    throw badCursor("its signature is not base64url");
+  }
+  const ok = await crypto.subtle.verify("HMAC", await hmacKey(secret), sig, new TextEncoder().encode(payload));
+  if (!ok) throw badCursor("its signature does not match (it was edited, or issued before a key change)");
+  return decodeCursor(payload, resource);
 }
 
 const METHODS: Method[] = ["p_after", "date_window", "view_offset", "single_page"];
@@ -125,8 +185,8 @@ export function bodyDigest(text: string): string {
 /**
  * The day a cursor's walk counts its defaulted window from: the cursor's
  * own request day, when it is today or yesterday (UTC-3), so a walk that
- * crosses midnight keeps its window (#1103). The cursor is unsigned, so an
- * older or a later day is refused: an edited day must not move a defaulted
+ * crosses midnight keeps its window (#1103). The cursor is signed (#1117);
+ * still, an older or a later day is refused: an edited day must not move a defaulted
  * window, and with it the tier's daily window, anywhere else.
  */
 export function cursorDay(state: CursorState | null, today: string): string {

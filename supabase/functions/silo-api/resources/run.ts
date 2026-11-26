@@ -32,7 +32,7 @@ import {
   afterPos,
   cursorDay,
   type CursorState,
-  encodeCursor,
+  sealCursor,
   type Method,
   offsetPos,
   slicePage,
@@ -233,7 +233,7 @@ export async function runKind(
   if (!p) throw new ApiError(500, "internal", "More rows remain, but the request carries no paging context to build next_page_url.");
   const state: CursorState = { v: 1, r: resource.name, q: p.q, m: method, p: walked.pos, n: total, t: day };
   if (p.body !== undefined) state.b = p.body;
-  env.next_page_url = `${p.base}?cursor=${encodeCursor(state)}`;
+  env.next_page_url = `${p.base}?cursor=${await sealCursor(state, p.key)}`;
   return env;
 }
 

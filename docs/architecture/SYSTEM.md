@@ -53,8 +53,8 @@ it read-only. Four infrastructures, four products.
    is a row in the private `api_user_tier`) and counts each request with
    `api.rate_hit()` in `api_rate_counter`, the one table an API caller writes.
    The tier picks the bucket: anonymous, token or not, is `ip:`; else `u:`.
-   v1 paths skip the gateway, so they are not counted. A cursor carries
-   its walk's first day, so a defaulted window survives midnight;
+   v1 paths skip the gateway, so they are not counted. A cursor is HMAC-signed
+   (`SILO_CURSOR_KEY`) and keeps its walk's first day;
    a POST cursor (MCP too) needs the first page's body.
 
 `webapp/` is not deployed. The v2 REST/MCP preview is live.

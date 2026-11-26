@@ -6,7 +6,7 @@ import { makeHandler } from "./server.ts";
 import type { Freshness } from "./provenance.ts";
 const FRESH: Freshness = () => Promise.resolve(new Map());
 const base = "https://test.supabase.co/functions/v1/silo-api/v2";
-const env = (n: string) => ({SUPABASE_URL:"https://test.supabase.co", SUPABASE_ANON_KEY:"test"}[n]);
+const env = (n: string) => ({SUPABASE_URL:"https://test.supabase.co", SUPABASE_ANON_KEY:"test", SILO_CURSOR_KEY:"test-cursor-key"}[n]);
 const gate = {tier: () => Promise.resolve("pro" as const), hit: () => Promise.resolve(1)};
 Deno.test("all 81 operation mappings reference real resource inputs and body fields", () => {
   assertEquals(OPERATIONS.length, 81);
