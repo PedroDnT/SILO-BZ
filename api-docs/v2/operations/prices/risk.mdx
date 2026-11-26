@@ -32,6 +32,21 @@ curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-a
   --header "Authorization: Bearer $SILO_TOKEN"
 ```
 
+## Method
+
+OLS cascade on daily simple returns, computed from the stock's total-return closes and the total-return index levels after they are joined on the date:
+
+```text
+beta_market = cov(r, m) / var(m)
+gamma       = cov(s, m) / var(m);   s_perp = s - gamma * m
+beta_sector = cov(r - beta_market * m, s_perp) / var(s_perp)
+eps         = r - beta_market * m - beta_sector * s_perp
+shares      = beta_market^2 var(m), beta_sector^2 var(s_perp), var(eps), each / var(r)
+hedge_ibov  = -(beta_market - beta_sector * gamma);   hedge_sector = -beta_sector
+```
+
+Every step, the sector map, the shock and liquidity checks and a worked example: [How the risk decomposition is computed](/api-docs/guides/risk-decomposition).
+
 ## Example response
 
 Computed with api.risk_decompose's method on the production ITUB4 and index rows of 2025-11-18 to 2026-11-25, before the endpoint was deployed. This excerpt omits fields and pagination links.

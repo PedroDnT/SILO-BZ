@@ -114,7 +114,9 @@ order by ibov_weight desc nulls last, ticker
 >
 > One shock day can dominate a 1-year window (the 2026-10-26 election session:
 > IBOV -13.9%). The ex-shock columns repeat the split without those sessions.
-> Method and every input: the `risk_decompose` endpoint
+> Every formula, with a worked example:
+> [How the risk decomposition is computed](https://octo-98895abd.mintlify.site/api-docs/guides/risk-decomposition).
+> The same numbers for any share: the `risk_decompose` endpoint
 > (`/v2/prices?id=ITUB4&kind=risk`).
 
 <BigValue data={risk_headline} value=members title="IBOV Members" fmt=num0/>

@@ -523,7 +523,16 @@ over HTTP, by the owner's decision of 2026-11-26 (`docs/architecture/DECISIONS.m
 - **Method.** OLS cascade on daily simple returns. The stock's
   `close_total_return` and the index levels are inner-joined on `trade_date`
   first, then returned, so a session with no trade never makes the stock's
-  return span two sessions while IBOV's spans one. The three shares add to 1.
+  return span two sessions while IBOV's spans one. With `r` stock, `m` IBOV,
+  `s` sector index (sample moments, divisor n - 1):
+  `beta_market = cov(r,m)/var(m)`; `gamma = cov(s,m)/var(m)`,
+  `s_perp = s - gamma*m`; `beta_sector = cov(r - beta_market*m, s_perp)/var(s_perp)`;
+  `eps = r - beta_market*m - beta_sector*s_perp`. The shares are
+  `beta_market^2 var(m)`, `beta_sector^2 var(s_perp)` and `var(eps)` over
+  `var(r)`, and add to 1 (to rounding at 6 decimals). Hedge per R$ 1 long:
+  `hedge_ibov = -(beta_market - beta_sector*gamma)`, `hedge_sector = -beta_sector`.
+  Volatilities annualize with `sqrt(252 * n / (window_sessions - 1))`.
+  Every step with a worked ITUB4 example: `api-docs/guides/risk-decomposition.mdx`.
 - **Inputs.** Above 10% of sessions without a total return, the whole stock leg
   is `close_adj` (`stock_series = price_only`). Default window 252 returns to the
   last IBOV session, at most 1000 sessions, clamped to the ticker's first session.
