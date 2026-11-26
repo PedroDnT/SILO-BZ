@@ -125,6 +125,26 @@ async def test_a_persistent_error_raises(one_attempt):
 
 
 @pytest.mark.asyncio
+async def test_a_refused_connection_names_the_error_class(one_attempt):
+    def handler(request):
+        raise httpx.ConnectError("")
+
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        with pytest.raises(TesouroFetchError, match="failed after 1 attempts: ConnectError"):
+            await fetch_csv()
+
+
+def test_the_default_retry_budget_waits_minutes_not_seconds(monkeypatch):
+    from src.fetchers.tesouro_direto_fetcher import _retry_config
+
+    monkeypatch.delenv("TESOURO_MAX_RETRIES", raising=False)
+    monkeypatch.delenv("TESOURO_RETRY_DELAY", raising=False)
+    attempts, delay = _retry_config()
+    # linear backoff waits delay * n after try n, never after the last
+    assert sum(delay * n for n in range(1, attempts)) >= 5 * 60
+
+
+@pytest.mark.asyncio
 async def test_daily_update_upserts_the_window_on_the_natural_key_and_logs_ok():
     upserts = []
 
