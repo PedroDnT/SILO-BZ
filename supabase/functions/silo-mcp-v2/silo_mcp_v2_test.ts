@@ -21,6 +21,7 @@ import type { Freshness } from "../silo-api/provenance.ts";
 const ENV: Record<string, string> = {
   SUPABASE_URL: "https://example-ref.supabase.co/",
   SUPABASE_ANON_KEY: "test-anon-key",
+  SILO_CURSOR_KEY: "test-cursor-key",
 };
 const env = (name: string) => ENV[name];
 const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCJ9.sig";

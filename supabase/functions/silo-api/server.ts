@@ -33,7 +33,7 @@ import { ApiError } from "./errors.ts";
 import { HIGHER_TIER, type Tier, TIERS } from "./config.ts";
 import { CORS, type Envelope, envelope, errorResponse, json } from "./envelope.ts";
 import { acceptedParams, parseBody, type ParsedRequest, parseQuery } from "./params.ts";
-import { bodyDigest, cursorQuery, decodeCursor } from "./paging.ts";
+import { bodyDigest, CURSOR_KEY_ENV, cursorQuery, openCursor } from "./paging.ts";
 import { type BridgeConfig, callerBearer, type CallContext, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY, RESOURCES_BY_NAME, type ResourceSpec } from "./registry.ts";
 import { enforceRate, type Gate, postgresGate } from "./tier.ts";
@@ -132,6 +132,7 @@ async function handle(
   now: () => number,
   resolveIntegration: ReturnType<typeof integrationSession>,
   freshness: Freshness,
+  cursorKey: string | undefined,
 ): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (req.method !== "GET" && req.method !== "POST") throw new ApiError(405, "bad_request", `${req.method} is not served; v2 is GET, and POST for portfolio.`);
@@ -173,7 +174,7 @@ async function handle(
 
   // A cursor fixes every parameter of the walk; its own are parsed like a fresh request.
   const token = inputQuery.get("cursor");
-  const cursor = token === null ? null : decodeCursor(token, resource.name);
+  const cursor = token === null ? null : await openCursor(token, resource.name, cursorKey);
   const query = cursor ? cursorQuery(inputQuery, cursor) : inputQuery;
   const parsed = parseQuery(resource, query);
   let digest: string | undefined;
@@ -190,7 +191,7 @@ async function handle(
   const pageBase = !("error" in cfg)
     ? `${cfg.restUrl.replace(/\/rest\/v1$/, "")}/functions/v1/silo-api/v2${operation?.path ?? "/" + resource.name}`
     : `${url.origin}${url.pathname}`;
-  parsed.paging = { cursor, q: Object.fromEntries(query.entries()), base: pageBase, body: digest };
+  parsed.paging = { cursor, q: Object.fromEntries(query.entries()), base: pageBase, body: digest, key: cursorKey };
   if ("error" in cfg) throw new ApiError(503, "unavailable", `silo-api is misconfigured: ${cfg.error}`);
   const presented = callerBearer(req.headers.get("authorization"), cfg);
   const integration = integrationKey(presented);
@@ -230,9 +231,10 @@ export function makeHandler(deps: ServerDeps = {}): (req: Request) => Promise<Re
   const gate = deps.gate ?? postgresGate(now);
   const resolveIntegration = integrationSession(env, fetchImpl, now);
   const freshness = deps.freshness ?? cachedCoverage(now);
+  const cursorKey = env(CURSOR_KEY_ENV)?.trim() || undefined;
   return async (req: Request) => {
     try {
-      return await handle(req, cfg, fetchImpl, gate, now, resolveIntegration, freshness);
+      return await handle(req, cfg, fetchImpl, gate, now, resolveIntegration, freshness, cursorKey);
     } catch (e) {
       if (e instanceof ApiError) return errorResponse(e);
       return errorResponse(new ApiError(500, "internal", `Unexpected gateway error: ${e instanceof Error ? e.message : String(e)}`));

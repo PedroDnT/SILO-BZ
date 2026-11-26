@@ -11,7 +11,7 @@ import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { TIERS } from "./config.ts";
 import { ERROR_CODES, fromPostgrest } from "./errors.ts";
 import { closest, minusMonths, todayUtcMinus3 } from "./params.ts";
-import { decodeCursor, encodeCursor } from "./paging.ts";
+import { decodeCursor, sealCursor } from "./paging.ts";
 import { callerBearer, configFromEnv, type FetchLike } from "./postgrest.ts";
 import { REGISTRY } from "./registry.ts";
 import { makeHandler, routeOf } from "./server.ts";
@@ -21,8 +21,13 @@ import { clientIp, type Gate, retryAfter, TIER_CACHE_MS } from "./tier.ts";
 const ENV: Record<string, string> = {
   SUPABASE_URL: "https://example-ref.supabase.co/",
   SUPABASE_ANON_KEY: "test-anon-key",
+  SILO_CURSOR_KEY: "test-cursor-key",
 };
 const env = (name: string) => ENV[name];
+/** A cursor signed with the test key: what a caller who holds the secret could mint. */
+const seal = (state: Parameters<typeof sealCursor>[0]) => sealCursor(state, ENV.SILO_CURSOR_KEY);
+/** The payload half of a signed cursor token. */
+const payloadOf = (token: string) => token.split(".")[0];
 const BASE = "https://example-ref.supabase.co/functions/v1/silo-api";
 /** meta.data_through's coverage read, stubbed (#1176): no request, fixed dates. */
 const FRESH: Freshness = () => Promise.resolve(new Map([["quotes", "2026-10-30"], ["funds_fidc", "2026-09-01"], ["fund_nav", "2026-10-31"]]));
@@ -1057,7 +1062,7 @@ Deno.test("a view resource asks for one row more than the page, never an exact c
   assertEquals(more.json.meta.rows_served, 10);
   assertEquals(more.json.meta.rows_total, null);
   assert(more.json.next_page_url, "the extra row came back: more remain");
-  const state = decodeCursor(new URL(more.json.next_page_url).searchParams.get("cursor")!, "positioning");
+  const state = decodeCursor(payloadOf(new URL(more.json.next_page_url).searchParams.get("cursor")!), "positioning");
   assertEquals(state.p, { off: 10 });
 
   const last = await getView(pathOf(more.json.next_page_url), rows.slice(10));
@@ -1394,7 +1399,37 @@ Deno.test("a cursor fixes every parameter: a different one is bad_request, the s
   for (const r of [other, added, garbage, elsewhere]) assertEquals(r.calls.length, 0);
 });
 
-Deno.test("an unsigned cursor never widens a tier: its parameters are parsed again and the tier is the caller's", async () => {
+Deno.test("an unsigned or edited cursor is refused before any upstream call (#1117)", async () => {
+  const universe = JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ ticker: `T${i}` })));
+  const first = await get("/v2/search?kind=universe", 200, universe);
+  const token = new URL(first.json.next_page_url).searchParams.get("cursor")!;
+  assertEquals(token.split(".").length, 2, "payload.signature");
+  const state = decodeCursor(payloadOf(token), "search");
+  const { encodeCursor } = await import("./paging.ts");
+  const forged = encodeCursor({ ...state, n: 0 });
+  const tampered = `${forged}.${token.split(".")[1]}`;
+  const otherKey = await sealCursor({ ...state, n: 0 }, "not-the-key");
+  for (const [name, t] of [["unsigned", forged], ["edited payload", tampered], ["other key", otherKey], ["no payload", `.${token.split(".")[1]}`]]) {
+    const r = await get(`/v2/search?cursor=${t}`, 200, universe);
+    assertEquals(r.res.status, 400, name);
+    assertEquals(r.json.error.target, "cursor", name);
+    assertEquals(r.calls.length, 0, `${name}: refused before any upstream call`);
+  }
+  const ok = await get(`/v2/search?cursor=${token}`, 200, universe);
+  assertEquals(ok.res.status, 200, "the token as issued is served");
+});
+
+Deno.test("without SILO_CURSOR_KEY the gateway neither issues nor reads a cursor (fail closed, #1117)", async () => {
+  const universe = JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ ticker: `T${i}` })));
+  const noKey = (name: string) => (name === "SILO_CURSOR_KEY" ? undefined : ENV[name]);
+  const stub: FetchLike = () => Promise.resolve(new Response(universe, { status: 200 }));
+  const handler = makeHandler({ freshness: FRESH, fetchImpl: stub, env: noKey, gate: OPEN });
+  const res = await handler(new Request(`${BASE}/v2/search?kind=universe`));
+  assertEquals(res.status, 503);
+  assertEquals((await res.json()).error.target, "cursor");
+});
+
+Deno.test("a signed cursor still never widens a tier: its parameters are parsed again and the tier is the caller's", async () => {
   const universe = JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ ticker: `T${i}` })));
   const first = await get("/v2/search?kind=universe&limit=100", 200, universe, SIGNED);
   const token = new URL(first.json.next_page_url).searchParams.get("cursor")!;
@@ -1402,17 +1437,17 @@ Deno.test("an unsigned cursor never widens a tier: its parameters are parsed aga
   assertEquals(replay.json.data.length, 0, "anonymous replaying a signed-in cursor past its own cap is served nothing more");
   assertEquals(replay.json.meta.tier_cap_reached, true);
 
-  const state = decodeCursor(token, "search");
-  const reset = encodeCursor({ ...state, n: 0, q: { ...state.q, limit: "1000" } });
+  const state = decodeCursor(payloadOf(token), "search");
+  const reset = await seal({ ...state, n: 0, q: { ...state.q, limit: "1000" } });
   const edited = await get(`/v2/search?cursor=${reset}`, 200, universe);
   assertEquals(edited.json.data.length, 10, "limit from an edited cursor is still coerced to the caller's page maximum");
   assertEquals(edited.json.data[0].ticker, "T100", "a position is only a position");
 
-  const badKind = encodeCursor({ ...state, q: { ...state.q, kind: "nope" } });
+  const badKind = await seal({ ...state, q: { ...state.q, kind: "nope" } });
   assertEquals((await get(`/v2/search?cursor=${badKind}`)).json.error.target, "kind", "validated like a fresh request");
-  const badPos = encodeCursor({ ...state, p: { off: -3 } });
+  const badPos = await seal({ ...state, p: { off: -3 } });
   assertEquals((await get(`/v2/search?cursor=${badPos}`)).json.error.target, "cursor");
-  const outside = encodeCursor({
+  const outside = await seal({
     v: 1,
     r: "macro",
     q: { id: "CDI", from: "2020-01-01", to: "2020-12-31" },
@@ -1446,7 +1481,7 @@ Deno.test("a walk with a defaulted from keeps its window across midnight (UTC-3)
   assertEquals(first.json.meta.request.from, "2026-08-11", "3 anonymous months back from 2026-11-11");
   assertEquals(sent[0].p_from, "2026-08-11");
   const token = new URL(first.json.next_page_url).searchParams.get("cursor")!;
-  assertEquals(decodeCursor(token, "derivatives").t, "2026-11-11");
+  assertEquals(decodeCursor(payloadOf(token), "derivatives").t, "2026-11-11");
 
   clock.t = Date.parse("2026-11-12T03:30:00Z"); // 00:30 UTC-3 on 2026-11-12: a new day
   sent.length = 0;
@@ -1460,10 +1495,10 @@ Deno.test("a walk with a defaulted from keeps its window across midnight (UTC-3)
   const fresh = await call("/v2/derivatives?kind=exercises&id=VALE");
   assertEquals(fresh.json.meta.request.from, "2026-08-12");
 
-  // The cursor is unsigned: a request day other than today or yesterday is refused, never trusted.
-  const state = decodeCursor(token, "derivatives");
+  // Even with a valid signature, a request day other than today or yesterday is refused.
+  const state = decodeCursor(payloadOf(token), "derivatives");
   for (const t of ["2026-11-10", "2026-11-13", "2026-02-30"]) {
-    const edited = await call(`/v2/derivatives?cursor=${encodeCursor({ ...state, t })}`);
+    const edited = await call(`/v2/derivatives?cursor=${await seal({ ...state, t })}`);
     assertEquals(edited.res.status, 400, t);
     assertEquals(edited.json.error.target, "cursor", t);
   }

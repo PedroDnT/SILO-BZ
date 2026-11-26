@@ -380,12 +380,17 @@ uses a secret key.
   with a different value is `bad_request`, naming that parameter; repeating
   the same value is allowed. On `POST /v2/portfolio` the cursor carries a
   digest of the body, and the next page is a POST with the same body.
-- **Unsigned.** The cursor is not signed, so the gateway trusts nothing in it.
-  Its parameters are parsed again exactly like a fresh request, the position
-  is validated by the method that reads it (a date window must lie inside the
-  request's own `from`..`to`), and the page size and the rows-per-call cap are
-  the current caller's tier, never the cursor's. Editing a cursor can at most
-  restart a walk at a position a fresh request could reach.
+- **Signed (#1117).** The token is `<payload>.<signature>`, an HMAC-SHA256 of
+  the payload keyed by the Edge Function secret `SILO_CURSOR_KEY` (shared by
+  `silo-api` and `silo-mcp-v2`). An unsigned or edited cursor is `bad_request`
+  on `cursor`, before any upstream call. Without the secret the gateway issues
+  and reads no cursor (`unavailable`, fail closed). Changing the secret ends
+  every open walk. Before #1117 the cursor was unsigned, and resetting its
+  rows-served count walked past the rows-per-call cap.
+  The payload is still not trusted: its parameters are parsed again exactly
+  like a fresh request, the position is validated by the method that reads it
+  (a date window must lie inside the request's own `from`..`to`), and the page
+  size and the rows-per-call cap are the current caller's tier.
 - **Four methods**, declared on every plan in the registry (`paging`; a test
   checks every plan has one):
   - `p_after`: the function's own cursor (`panel`, `quote_history`,
