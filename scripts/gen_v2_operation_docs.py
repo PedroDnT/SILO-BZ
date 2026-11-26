@@ -105,6 +105,22 @@ openapi: "{spec_path} {method.upper()} {path}"
                 "They can be negative. A null price is a side the title was not on sale on. "
                 "With no dates, the newest base date comes first; one base date holds about 60 titles.\n"
             )
+        if path == "/prices/risk":
+            page += (
+                "\n## Method\n\n"
+                "OLS cascade on daily simple returns, computed from the stock's total-return closes and the "
+                "total-return index levels after they are joined on the date:\n\n"
+                "```text\n"
+                "beta_market = cov(r, m) / var(m)\n"
+                "gamma       = cov(s, m) / var(m);   s_perp = s - gamma * m\n"
+                "beta_sector = cov(r - beta_market * m, s_perp) / var(s_perp)\n"
+                "eps         = r - beta_market * m - beta_sector * s_perp\n"
+                "shares      = beta_market^2 var(m), beta_sector^2 var(s_perp), var(eps), each / var(r)\n"
+                "hedge_ibov  = -(beta_market - beta_sector * gamma);   hedge_sector = -beta_sector\n"
+                "```\n\n"
+                "Every step, the sector map, the shock and liquidity checks and a worked example: "
+                "[How the risk decomposition is computed](/api-docs/guides/risk-decomposition).\n"
+            )
         status = snapshot["status"]
         label = "Successful response" if status == 200 else f"Error response (HTTP {status})"
         caption = snapshot.get("caption") or f"{label} from a Pro request on 2026-11-13. This excerpt omits fields and pagination links."
@@ -129,7 +145,7 @@ keywords: ["endpoints", "API", "playground", "data"]
 icon: "compass"
 ---
 
-**Deployed preview.** Browse 80 operations across 14 REST resources. Each operation
+**Deployed preview.** Browse 81 operations across 14 REST resources. Each operation
 has a dedicated route with task-specific inputs.
 These pages expose the existing API; they do not add data coverage.
 

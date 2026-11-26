@@ -512,6 +512,40 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
   from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client
   role can read `b3_index_level`.
 
+### Risk decomposition (catalog v90)
+
+`api.risk_decompose(p_ticker, p_from, p_to, p_sector)` (`44_api_risk_decompose.sql`)
+returns one row: the shares of one B3 share's daily return variance explained by
+IBOV, by a B3 sector index made orthogonal to IBOV, and by neither. v2:
+`/v2/prices?id=ITUB4&kind=risk` (hidden `sector`). It is the one reducer served
+over HTTP, by the owner's decision of 2026-11-26 (`docs/architecture/DECISIONS.md`).
+
+- **Method.** OLS cascade on daily simple returns. The stock's
+  `close_total_return` and the index levels are inner-joined on `trade_date`
+  first, then returned, so a session with no trade never makes the stock's
+  return span two sessions while IBOV's spans one. With `r` stock, `m` IBOV,
+  `s` sector index (sample moments, divisor n - 1):
+  `beta_market = cov(r,m)/var(m)`; `gamma = cov(s,m)/var(m)`,
+  `s_perp = s - gamma*m`; `beta_sector = cov(r - beta_market*m, s_perp)/var(s_perp)`;
+  `eps = r - beta_market*m - beta_sector*s_perp`. The shares are
+  `beta_market^2 var(m)`, `beta_sector^2 var(s_perp)` and `var(eps)` over
+  `var(r)`, and add to 1 (to rounding at 6 decimals). Hedge per R$ 1 long:
+  `hedge_ibov = -(beta_market - beta_sector*gamma)`, `hedge_sector = -beta_sector`.
+  Volatilities annualize with `sqrt(252 * n / (window_sessions - 1))`.
+  Every step with a worked ITUB4 example: `api-docs/guides/risk-decomposition.mdx`.
+- **Inputs.** Above 10% of sessions without a total return, the whole stock leg
+  is `close_adj` (`stock_series = price_only`). Default window 252 returns to the
+  last IBOV session, at most 1000 sessions, clamped to the ticker's first session.
+  Fewer than 120 returns: `status = insufficient_sample`, no split.
+- **Sector leg.** A fixed map from today's CVM setor (`api.risk_sector_leg`):
+  IFNC, IMAT, IEEX, UTIL, IMOB, ICON. Any other setor gets two parts (flag
+  `no_sector_index`). It is not index membership: SILO holds no sector-index
+  portfolio, so a large member's own risk lands in `sector_share`.
+- **Checks.** Shock sessions (|IBOV return - median| > 4 x 1.4826 x MAD) are
+  listed and the `ex_shock_*` columns repeat the split without them; `illiquid`
+  and `beta_dimson` flag stale prices.
+- One row, so no row cap. Executed check: `tests/sql/risk_decompose_behaviour.sql`.
+
 ### The fixed-income ETFs: B3's FORWARD segment (catalog v65)
 
 `api.trade_consolidated_history(p_ticker, p_from, p_to, p_after)`
@@ -1337,7 +1371,7 @@ fails while a route in that section is missing here, so a new endpoint ships
 with its line. The prose above covers a subset in depth; the catalog's own
 entry is the description of record.
 
-Functions (76), called with `POST`:
+Functions (77), called with `POST`:
 
 ```
 POST /rest/v1/rpc/anbima_classes
@@ -1400,6 +1434,7 @@ POST /rest/v1/rpc/quote_history
 POST /rest/v1/rpc/quote_latest
 POST /rest/v1/rpc/rate_hit
 POST /rest/v1/rpc/research_universe
+POST /rest/v1/rpc/risk_decompose
 POST /rest/v1/rpc/rj_listed_documents
 POST /rest/v1/rpc/screen_captive_vehicles
 POST /rest/v1/rpc/screen_delinquency_drivers

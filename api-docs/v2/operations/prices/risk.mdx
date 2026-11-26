@@ -1,0 +1,110 @@
+---
+title: "Risk decomposition"
+description: "Split one share's daily return variance into the Ibovespa, a B3 sector index made orthogonal to it, and the residual specific to the stock. One row with the three shares (they add to 1), betas, hedge ratios per R$ 1 long, annualized volatilities and the same split without shock sessions. Realized and historical only, not investment advice."
+keywords: ["prices", "risk", "API", "MCP"]
+openapi: "api-docs/v2/specs/prices-risk.json GET /prices/risk"
+---
+
+
+
+## Overview
+
+Split one share's daily return variance into the Ibovespa, a B3 sector index made orthogonal to it, and the residual specific to the stock. One row with the three shares (they add to 1), betas, hedge ratios per R$ 1 long, annualized volatilities and the same split without shock sessions. Realized and historical only, not investment advice.
+
+
+## Coverage
+
+Coverage varies by dataset and date. [Check current dataset coverage](/api-docs/v2/operations/coverage/freshness) before drawing conclusions from missing data.
+
+## Try the API
+
+
+import { OperationQuery } from "/snippets/operation-query.jsx";
+
+<OperationQuery operation={{"resource": "prices", "kind": "risk", "path": "/prices/risk", "method": "GET", "title": "Risk decomposition", "group": "Stock prices", "description": "Split one share's daily return variance into the Ibovespa, a B3 sector index made orthogonal to it, and the residual specific to the stock. One row with the three shares (they add to 1), betas, hedge ratios per R$ 1 long, annualized volatilities and the same split without shock sessions. Realized and historical only, not investment advice.", "parameters": [{"name": "ticker", "target": "id", "description": "Trading symbol of a share or unit.", "schema": {"type": "string"}, "required": true, "advanced": false, "example": "ITUB4"}, {"name": "from", "target": "from", "description": "Start date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "to", "target": "to", "description": "End date (YYYY-MM-DD).", "schema": {"type": "string", "format": "date"}, "required": false, "advanced": false}, {"name": "sector", "target": "sector", "description": "Sector leg: none, or a B3 index code other than IBOV. Omit to use the map from the company's CVM sector.", "schema": {"type": "string"}, "required": false, "advanced": true}, {"name": "limit", "target": "limit", "description": "Rows per page, subject to your tier.", "schema": {"type": "integer", "minimum": 1}, "required": false, "advanced": true}, {"name": "cursor", "target": "cursor", "description": "Cursor from the next page URL.", "schema": {"type": "string"}, "required": false, "advanced": true}], "body": []}} />
+
+[Request and response schema](/api-docs/v2/specs/prices-risk.json)
+
+## Example
+
+```bash
+curl --request GET 'https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2/prices/risk?ticker=ITUB4&from=2025-11-18&to=2026-11-25' \
+  --header "Authorization: Bearer $SILO_TOKEN"
+```
+
+## Method
+
+OLS cascade on daily simple returns, computed from the stock's total-return closes and the total-return index levels after they are joined on the date:
+
+```text
+beta_market = cov(r, m) / var(m)
+gamma       = cov(s, m) / var(m);   s_perp = s - gamma * m
+beta_sector = cov(r - beta_market * m, s_perp) / var(s_perp)
+eps         = r - beta_market * m - beta_sector * s_perp
+shares      = beta_market^2 var(m), beta_sector^2 var(s_perp), var(eps), each / var(r)
+hedge_ibov  = -(beta_market - beta_sector * gamma);   hedge_sector = -beta_sector
+```
+
+Every step, the sector map, the shock and liquidity checks and a worked example: [How the risk decomposition is computed](/api-docs/guides/risk-decomposition).
+
+## Example response
+
+Computed with api.risk_decompose's method on the production ITUB4 and index rows of 2025-11-18 to 2026-11-25, before the endpoint was deployed. This excerpt omits fields and pagination links.
+
+```json
+{
+  "data": [
+    {
+      "ticker": "ITUB4",
+      "status": "ok",
+      "window_from": "2025-11-18",
+      "window_to": "2026-11-25",
+      "n_returns": 251,
+      "stock_series": "total_return",
+      "sector_leg": "IFNC",
+      "sector_leg_basis": "cvm_setor_map",
+      "market_share": 0.799814,
+      "sector_share": 0.052996,
+      "residual_share": 0.14719,
+      "vol_total": 0.308641,
+      "vol_market": 0.276025,
+      "vol_sector": 0.071052,
+      "vol_residual": 0.118411,
+      "beta_market": 1.131368,
+      "beta_sector": 0.664317,
+      "gamma": 1.453225,
+      "hedge_ibov": -0.165966,
+      "hedge_sector": -0.664317,
+      "ex_shock_n_returns": 248,
+      "ex_shock_market_share": 0.711204,
+      "ex_shock_sector_share": 0.106974,
+      "ex_shock_residual_share": 0.181823,
+      "shock_dates": [
+        "2025-12-05",
+        "2026-10-05",
+        "2026-10-26"
+      ],
+      "shock_sensitive": false
+    }
+  ],
+  "meta": {
+    "tier": "pro"
+  }
+}
+```
+
+## FAQ
+
+<Accordion title="How do I check for more results?">
+
+When present, follow `next_page_url` to request the next page. See [pagination and errors](/api-docs/v2/responses).
+
+</Accordion>
+
+<Accordion title="Can an agent use this data?">
+
+Yes. Connect an agent through the [MCP server](/api-docs/v2/mcp).
+
+</Accordion>
+
+[Python DataFrames](/api-docs/v2/python)

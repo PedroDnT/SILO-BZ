@@ -592,7 +592,7 @@ Deno.test("prices defaults: quote_history, split-adjusted core fields, adjusted 
   assertEquals(body(calls[0]), { p_ticker: "PETR4", p_from: M3, p_fields: ["close_adj", "isin"], p_after: "" }, "no to: the SQL's default end applies");
   assertEquals(json.data, [{ ...rows[0], adjusted: true }]);
   assertEquals(json.meta.request, {
-    kind: "history", freq: "day", adjust: "split", board: null, asset_class: "all", fields: "core", date: null,
+    kind: "history", freq: "day", adjust: "split", board: null, asset_class: "all", fields: "core", date: null, sector: null,
     id: "PETR4", from: M3, to: null, limit: 10,
   });
   assertEquals(json.meta.window_narrowed_to_tier, { months: 3, tier: "anonymous" }, "the 1-year default, narrowed to the anonymous daily window");

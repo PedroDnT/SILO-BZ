@@ -8,9 +8,9 @@ const FRESH: Freshness = () => Promise.resolve(new Map());
 const base = "https://test.supabase.co/functions/v1/silo-api/v2";
 const env = (n: string) => ({SUPABASE_URL:"https://test.supabase.co", SUPABASE_ANON_KEY:"test"}[n]);
 const gate = {tier: () => Promise.resolve("pro" as const), hit: () => Promise.resolve(1)};
-Deno.test("all 80 operation mappings reference real resource inputs and body fields", () => {
-  assertEquals(OPERATIONS.length, 80);
-  assertEquals(new Set(OPERATIONS.map(o => o.path)).size, 80);
+Deno.test("all 81 operation mappings reference real resource inputs and body fields", () => {
+  assertEquals(OPERATIONS.length, 81);
+  assertEquals(new Set(OPERATIONS.map(o => o.path)).size, 81);
   for (const op of OPERATIONS) {
     const r = REGISTRY.resources.find(r => r.name === op.resource)!;
     assert(r.kinds?.[op.kind]);

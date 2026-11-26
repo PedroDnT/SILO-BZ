@@ -605,6 +605,17 @@
    "params": [],
    "required": []
   },
+  "risk_decompose": {
+   "params": [
+    "p_from",
+    "p_sector",
+    "p_ticker",
+    "p_to"
+   ],
+   "required": [
+    "p_ticker"
+   ]
+  },
   "rj_listed_documents": {
    "params": [
     "p_doc_type",

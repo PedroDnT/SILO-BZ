@@ -1613,5 +1613,54 @@
       ]
     },
     "caption": "Rows of api.treasury_direct run on the source file of 2026-11-16, before the first deploy; replace with a live response after it. This excerpt omits pagination links."
+  },
+  "/prices/risk": {
+    "status": 200,
+    "params": {
+      "ticker": "ITUB4",
+      "from": "2025-11-18",
+      "to": "2026-11-25"
+    },
+    "body": null,
+    "excerpt": {
+      "data": [
+        {
+          "ticker": "ITUB4",
+          "status": "ok",
+          "window_from": "2025-11-18",
+          "window_to": "2026-11-25",
+          "n_returns": 251,
+          "stock_series": "total_return",
+          "sector_leg": "IFNC",
+          "sector_leg_basis": "cvm_setor_map",
+          "market_share": 0.799814,
+          "sector_share": 0.052996,
+          "residual_share": 0.14719,
+          "vol_total": 0.308641,
+          "vol_market": 0.276025,
+          "vol_sector": 0.071052,
+          "vol_residual": 0.118411,
+          "beta_market": 1.131368,
+          "beta_sector": 0.664317,
+          "gamma": 1.453225,
+          "hedge_ibov": -0.165966,
+          "hedge_sector": -0.664317,
+          "ex_shock_n_returns": 248,
+          "ex_shock_market_share": 0.711204,
+          "ex_shock_sector_share": 0.106974,
+          "ex_shock_residual_share": 0.181823,
+          "shock_dates": [
+            "2025-12-05",
+            "2026-10-05",
+            "2026-10-26"
+          ],
+          "shock_sensitive": false
+        }
+      ],
+      "meta": {
+        "tier": "pro"
+      }
+    },
+    "caption": "Computed with api.risk_decompose's method on the production ITUB4 and index rows of 2025-11-18 to 2026-11-25, before the endpoint was deployed. This excerpt omits fields and pagination links."
   }
 }

@@ -57,7 +57,8 @@
                   "api-docs/v2/operations/prices/latest",
                   "api-docs/v2/operations/prices/session",
                   "api-docs/v2/operations/prices/index",
-                  "api-docs/v2/operations/prices/forward"
+                  "api-docs/v2/operations/prices/forward",
+                  "api-docs/v2/operations/prices/risk"
                 ]
               },
               {
@@ -242,6 +243,7 @@
               "api-docs/guides/pagination",
               "api-docs/guides/fundamentals",
               "api-docs/guides/research",
+              "api-docs/guides/risk-decomposition",
               "api-docs/spreadsheets"
             ]
           },

@@ -1,0 +1,226 @@
+---
+title: "How the risk decomposition is computed"
+description: "The exact method behind /v2/prices?kind=risk and the dashboard's /risk page: the data, the join, every formula, the shock and liquidity checks, and a worked ITUB4 example you can check by hand."
+icon: "chart-pie"
+---
+
+### Overview
+
+The `risk_decompose` endpoint (`/v2/prices?id=ITUB4&kind=risk`, MCP and SQL `api.risk_decompose`) splits the daily return variance of one B3 share or unit into 3 parts:
+
+1. **Market**: the part that the Ibovespa (`IBOV`) explains.
+2. **Sector**: the part that one B3 sector index explains, after its own Ibovespa part is removed.
+3. **Residual**: the part that neither explains. This is the risk specific to the stock.
+
+The three shares add to 1. The endpoint also gives the betas, the hedge ratios per R$ 1 long, the annualized volatilities, and the same split without shock sessions. This page gives every step, so that you can compute the same numbers from `quote_history` and `index_history`.
+
+<Warning>
+  **Realized and historical only.** The numbers describe a past window. A hedge ratio is the amount of each index that would have removed that leg of the variance in that window. It is not trade advice and it is not a forecast.
+</Warning>
+
+### 1. The data
+
+| Leg | Series | Basis |
+|---|---|---|
+| Stock, `r` | `quote_history` field `close_total_return` | Dividends reinvested |
+| Market, `m` | `index_history` level of `IBOV` | Total return index |
+| Sector, `s` | `index_history` level of the sector index | Total return index |
+
+The stock and the indices are on the same basis, because all three reinvest cash distributions.
+
+**Sessions with no total return.** A session where `close_total_return` is null is dropped. It is never filled. The count is in `null_sessions` and the reasons are in `null_reasons`, with flag `null_sessions_dropped`.
+
+**The price-only fallback.** Some shares have no total-return series (for example, no cash distribution resolved for the ISIN). When more than 10% of the stock's sessions in the window have a null `close_total_return`, the whole stock series uses `close_adj` instead. `close_adj` is adjusted for splits but not for dividends. Then `stock_series = "price_only"` and the flag `price_only` is set. The two bases are never mixed inside one series. The indices stay total return.
+
+### 2. Join the levels, then compute the returns
+
+The tape has no row for a session where the stock did not trade. If you compute the stock return and the index return separately and then join them on the date, a stock return can span 2 sessions while the Ibovespa return on the same date spans 1. That makes the covariances wrong.
+
+The endpoint does it in this order:
+
+1. Inner join the three **level** series on `trade_date`. A date that is missing in any leg is not in the table.
+2. Compute simple returns from consecutive rows of the joined table: `r_t = P_t / P_(t-1) - 1`, and the same for `m_t` and `s_t`.
+
+So on every row, the three returns span the same sessions.
+
+### 3. The window
+
+- `to`: the default is today. It moves back to the last Ibovespa session on or before that date.
+- `from`: the default is 253 Ibovespa sessions back, which gives 252 returns.
+- If the ticker's first session on the tape is after `from`, the window starts at the first session, with flag `window_clamped`.
+- A window of more than 1000 Ibovespa sessions (about 4 years) is refused with SQLSTATE `22023`.
+- If fewer than 120 joined returns remain, the endpoint returns `status = "insufficient_sample"`. The counts are still in the answer, but the split columns are null. Betas from a smaller sample are too noisy to split the variance in 3 parts.
+
+### 4. The split: an OLS cascade
+
+All variances and covariances are sample statistics (divisor `n - 1`) over the `n` joined returns.
+
+**Step 1. The market beta.**
+
+```text
+beta_market = cov(r, m) / var(m)
+```
+
+**Step 2. Remove the Ibovespa part from the sector index.** A sector index moves with the Ibovespa. Without this step, the sector leg would count part of the market twice.
+
+```text
+gamma  = cov(s, m) / var(m)        the sector index's beta to IBOV
+s_perp = s - gamma * m             the sector move that IBOV does not explain
+```
+
+By construction, `cov(s_perp, m) = 0`.
+
+**Step 3. The sector beta.**
+
+```text
+beta_sector = cov(r - beta_market * m, s_perp) / var(s_perp)
+```
+
+**Step 4. The residual.**
+
+```text
+eps = r - beta_market * m - beta_sector * s_perp
+```
+
+`eps` is uncorrelated with `m` and with `s_perp`, so the variance of the stock splits exactly:
+
+```text
+var(r) = beta_market^2 * var(m) + beta_sector^2 * var(s_perp) + var(eps)
+```
+
+**Step 5. The shares.**
+
+```text
+market_share   = beta_market^2 * var(m)      / var(r)
+sector_share   = beta_sector^2 * var(s_perp) / var(r)
+residual_share = var(eps)                    / var(r)
+```
+
+Each share is rounded to 6 decimals, so their sum can show 0.999999 or 1.000001.
+
+This cascade gives the same fit as one regression of `r` on `m` and `s` together. It only decides how to assign the variance that `m` and `s` share: the market gets all of it, and the sector leg gets only what is left.
+
+### 5. The hedge ratios
+
+Put `s_perp = s - gamma * m` back into the fit:
+
+```text
+r ≈ beta_market * m + beta_sector * (s - gamma * m)
+  = (beta_market - beta_sector * gamma) * m + beta_sector * s
+```
+
+To remove both legs from R$ 1 long of the stock, you hold the opposite position in each index:
+
+```text
+hedge_ibov   = -(beta_market - beta_sector * gamma)
+hedge_sector = -beta_sector
+```
+
+The Ibovespa hedge is smaller than `beta_market` when the sector index already carries Ibovespa exposure (`gamma` > 0). BOVA11 or WIN futures are the tradable proxies for the Ibovespa. No listed ETF tracks most B3 sector indices.
+
+### 6. The volatilities
+
+```text
+ann         = sqrt(252 * n / (window_sessions - 1))
+vol_total   = sd(r) * ann
+vol_market  = |beta_market| * sd(m) * ann
+vol_sector  = |beta_sector| * sd(s_perp) * ann
+vol_residual = sd(eps) * ann
+```
+
+`window_sessions` is the number of Ibovespa sessions in the window. For a stock that trades every session, `n = window_sessions - 1` and `ann = sqrt(252)`. When sessions are missing, some joined returns span several sessions, and the factor corrects for that. The variances add up. The volatilities do not, because they are square roots.
+
+### 7. The sector leg
+
+With no `sector` parameter, the endpoint maps the company's **current** CVM sector (`setor_current` in `research_universe`) to one B3 sector index. A holding company (`Emp. Adm. Part. - <sector>`) takes the index of its sector.
+
+| Index | CVM sectors |
+|---|---|
+| `IFNC` | Bancos; Seguradoras e Corretoras; Intermediação Financeira; Crédito Imobiliário |
+| `IMAT` | Metalurgia e Siderurgia; Extração Mineral; Papel e Celulose; Petroquímicos e Borracha; Embalagens |
+| `IEEX` | Energia Elétrica |
+| `UTIL` | Saneamento, Serv. Água e Gás |
+| `IMOB` | Construção Civil, Mat. Constr. e Decoração (both spellings) |
+| `ICON` | Comércio (Atacado e Varejo); Alimentos; Bebidas e Fumo; Têxtil e Vestuário; Educação; Hospedagem e Turismo; Brinquedos e Lazer |
+
+Any other sector (for example oil and gas, telecom, transport, health) has no sector leg. Then the split has 2 parts, `sector_share` is null, and the flag `no_sector_index` is set. The answer gives `sector_leg_basis = "cvm_setor_map"` or `"none"`.
+
+To choose the leg yourself, send `sector` with any index code that the platform holds other than `IBOV`, or `none` for 2 parts. Then `sector_leg_basis = "caller"`.
+
+<Note>
+  **The map is not index membership.** The platform holds no sector-index portfolio. When the stock is a large member of its own sector index (for example a top-3 weight), the index contains the stock, so part of the stock's own risk goes into `sector_share` and `residual_share` is too small. The endpoint cannot detect this.
+</Note>
+
+### 8. The shock check
+
+One large session can dominate a 1-year window. For example, on the 2026-10-26 election session the Ibovespa fell 13.9%.
+
+A shock session is a joined row where the Ibovespa return is far from its median:
+
+```text
+med         = median(m)
+robust_sigma = 1.4826 * median(|m - med|)
+shock       = |m - med| > 4 * robust_sigma
+```
+
+The median absolute deviation is used, not the standard deviation, because the shock itself makes the standard deviation larger and can hide a smaller shock.
+
+The endpoint lists the dates in `shock_dates` and runs steps 4 to 6 again without them. The results are the `ex_shock_*` columns, with the same annualization factor. If there is no shock session, or fewer than 120 returns remain without them, the `ex_shock_*` columns are null. The flag `shock_sensitive` is set when any share changes by more than 0.10 (10 percentage points).
+
+### 9. The liquidity check
+
+- `no_trade_sessions`: the sum of `prior_no_trade_sessions` over the stock's rows in the window, without the first row (its count looks back before the window).
+- `zero_returns`: the joined returns that are exactly 0.
+- `illiquid`: true when either count is more than 5% of the window.
+
+Stale prices push the betas toward 0 and make the residual too large. The Dimson beta is the check. It is always in the answer:
+
+```text
+r_t = a + b0 * m_t + b1 * m_(t-1) + e_t       (OLS on the joined returns)
+beta_dimson = b0 + b1
+```
+
+`m_(t-1)` is the previous joined return. When `beta_dimson` is much larger than `beta_market`, the stock's price reacts to the market with a delay.
+
+### 10. A worked example: ITUB4
+
+`ITUB4`, 2025-11-18 to 2026-11-25, 251 returns, total-return series, sector leg `IFNC` from the map (a bank).
+
+| Value | Result |
+|---|---:|
+| `beta_market` | 1.131368 |
+| `gamma` (IFNC to IBOV) | 1.453225 |
+| `beta_sector` | 0.664317 |
+| `market_share` | 0.799814 |
+| `sector_share` | 0.052996 |
+| `residual_share` | 0.147190 |
+| `vol_total` | 0.308641 |
+| `vol_market` | 0.276025 |
+
+Check it by hand:
+
+- The shares: 0.799814 + 0.052996 + 0.147190 = 1.000000.
+- The market share from the volatilities: (0.276025 / 0.308641)^2 = 0.7998.
+- The Ibovespa hedge: -(1.131368 - 0.664317 × 1.453225) = -(1.131368 - 0.965403) = -0.165966.
+- The sector hedge: -0.664317.
+
+So R$ 1 long ITUB4 had about 80% of its variance in the market leg. The Ibovespa hedge is only R$ 0.17 short, because the IFNC hedge of R$ 0.66 short already carries Ibovespa exposure (gamma 1.45).
+
+Three shock sessions were found: 2025-12-05, 2026-10-05 and 2026-10-26. Without them (248 returns), the shares are 0.711 market, 0.107 sector and 0.182 residual. No share moved by more than 0.10, so `shock_sensitive` is false.
+
+The example response on the [operation page](/api-docs/v2/operations/prices/risk) holds the full row.
+
+### 11. The `flags` column
+
+| Flag | Meaning |
+|---|---|
+| `window_clamped` | The window starts at the ticker's first session, after the `from` you asked for. |
+| `no_sector_index` | The company's sector has no index in the map. 2 parts. |
+| `price_only` | The stock leg is `close_adj`, with no dividends (section 1). |
+| `null_sessions_dropped` | Some sessions had no total return and were dropped (10% or less). |
+| `illiquid` | No-trade sessions or zero returns are above 5% of the window. Read `beta_dimson`. |
+| `shock_sensitive` | A share changes by more than 0.10 without the shock sessions. |
+
+### 12. The dashboard page
+
+The dashboard's `/risk` page runs this endpoint with its defaults for every member of the Ibovespa theoretical portfolio on the newest reference date. It is rebuilt once a day. A member that the endpoint refuses (for example, a price series that cannot be adjusted) is a row with its refusal text and no split.

@@ -677,6 +677,82 @@
     "body": []
   },
   {
+    "resource": "prices",
+    "kind": "risk",
+    "path": "/prices/risk",
+    "method": "GET",
+    "title": "Risk decomposition",
+    "group": "Stock prices",
+    "description": "Split one share's daily return variance into the Ibovespa, a B3 sector index made orthogonal to it, and the residual specific to the stock. One row with the three shares (they add to 1), betas, hedge ratios per R$ 1 long, annualized volatilities and the same split without shock sessions. Realized and historical only, not investment advice.",
+    "parameters": [
+      {
+        "name": "ticker",
+        "target": "id",
+        "description": "Trading symbol of a share or unit.",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "advanced": false,
+        "example": "ITUB4"
+      },
+      {
+        "name": "from",
+        "target": "from",
+        "description": "Start date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "to",
+        "target": "to",
+        "description": "End date (YYYY-MM-DD).",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        },
+        "required": false,
+        "advanced": false
+      },
+      {
+        "name": "sector",
+        "target": "sector",
+        "description": "Sector leg: none, or a B3 index code other than IBOV. Omit to use the map from the company's CVM sector.",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "advanced": true
+      },
+      {
+        "name": "limit",
+        "target": "limit",
+        "description": "Rows per page, subject to your tier.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "required": false,
+        "advanced": true
+      },
+      {
+        "name": "cursor",
+        "target": "cursor",
+        "description": "Cursor from the next page URL.",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "advanced": true
+      }
+    ],
+    "body": []
+  },
+  {
     "resource": "statements",
     "kind": "all",
     "path": "/statements/all",

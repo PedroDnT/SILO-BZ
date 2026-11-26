@@ -115,6 +115,7 @@ export const TOOL_TITLES: ToolSpec[] = [
   // The benchmark index: levels by B3 index code (IBOV, IBXX, ...), never a
   // ticker. Every code is a total-return index, as B3 labels it.
   t("index_history", "Index levels (B3 total-return indices), by index code"),
+  t("risk_decompose", "Split a B3 share's daily return variance into Ibovespa, sector index and residual, with betas and hedge ratios (realized, not advice)"),
   // B3's FORWARD segment: the fixed-income ETFs COTAHIST does not carry.
   t("credit_market_history", "Debenture market observations with audited capture cutoffs"),
   t("credit_implied_rate", "Debenture implied rate: the CALCULATED yield of a B3 traded PU, with check tags"),

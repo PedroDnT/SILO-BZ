@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "89",
+    "version": "90",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
     "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Sixty-six set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Five of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`, `trade_consolidated_history`)\n  take a `p_after` cursor so you can walk the series; the other sixty-one ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling.** `search_funds` refuses (`22023`) when more rows\n  match than its per-tier maximum (since v81). Two other functions\n  (`option_chain`, `option_exercises`) still silently lower `p_limit` to a\n  per-tier maximum. No error is raised there, so the only way to know the\n  result was cut is to know the ceiling. Signing in raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
@@ -17501,6 +17501,389 @@
                           "null"
                         ],
                         "format": "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/risk_decompose": {
+      "post": {
+        "operationId": "rpc_risk_decompose",
+        "summary": "risk_decompose",
+        "description": "Where the daily return variance of one B3 share or unit lives, over a window: market (IBOV), sector (a B3 sector index, made orthogonal to IBOV) and residual (the part specific to the stock). One row. market_share, sector_share and residual_share add to 1; vol_* are annualized volatilities; beta_market, beta_sector, gamma (the sector index's beta to IBOV) and hedge ratios per R$ 1 long (hedge_ibov = -(beta_market - beta_sector x gamma), hedge_sector = -beta_sector). The ex_shock_* columns are the same split without the shock sessions (shock_dates: |IBOV return - median| > 4 x 1.4826 x MAD), NULL when there is none; shock_sensitive when a share moves more than 0.10. Method: OLS cascade on daily simple returns computed from the inner join of the stock's close_total_return (dividends reinvested) and the total-return index levels on trade_date, so every series spans the same sessions. Sessions with no total return are dropped and counted (null_reasons); above 10% of the window the stock leg is close_adj for the whole window (stock_series price_only, no dividends). Sector leg (p_sector NULL): SILO's map from today's CVM setor: IFNC banks and insurers, IMAT steel, mining, pulp, petrochemicals and packaging, IEEX electric power, UTIL sanitation and gas, IMOB construction, ICON retail, food, beverages, textiles, education, travel and leisure; any other setor has no sector leg (two parts, flag no_sector_index). The map is not index membership. p_sector = an index code held other than IBOV, or none. Window: p_to defaults to today (moved to the last IBOV session), p_from to 252 returns back, clamped to the ticker's first session (flag window_clamped); more than 1000 sessions RAISES 22023. Fewer than 120 returns: status insufficient_sample, the split columns NULL. illiquid when no-trade sessions or zero returns exceed 5% of the window (stale prices bias betas to 0; beta_dimson is the check). Realized and historical only, not investment advice. Refusals from quote_history (unknown_ticker, ...) pass through.",
+        "tags": [
+          "Research"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_ticker": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_sector": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
+                  }
+                },
+                "required": [
+                  "p_ticker"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "ticker": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "isin": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "setor_current": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "window_from": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "window_to": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "window_sessions": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "n_returns": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "stock_series": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "sector_leg": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "sector_leg_basis": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "market_share": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "sector_share": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "residual_share": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "vol_total": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "vol_market": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "vol_sector": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "vol_residual": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "beta_market": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "beta_sector": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "gamma": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "hedge_ibov": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "hedge_sector": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ex_shock_n_returns": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "ex_shock_market_share": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ex_shock_sector_share": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ex_shock_residual_share": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ex_shock_vol_total": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ex_shock_beta_market": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ex_shock_beta_sector": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ex_shock_hedge_ibov": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ex_shock_hedge_sector": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "shock_dates": {
+                        "type": [
+                          "array",
+                          "null"
+                        ],
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date"
+                        }
+                      },
+                      "shock_sensitive": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "null_sessions": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "null_reasons": {
+                        "type": [
+                          "object",
+                          "null"
+                        ]
+                      },
+                      "no_trade_sessions": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "zero_returns": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "illiquid": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "beta_dimson": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "flags": {
+                        "type": [
+                          "array",
+                          "null"
+                        ],
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "method": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "data_revision": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     }
                   }

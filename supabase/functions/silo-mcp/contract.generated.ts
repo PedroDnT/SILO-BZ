@@ -11,7 +11,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "89";
+export const CONTRACT_VERSION = "90";
 
 // The MCP tool names: every api.* function and view granted to anon /
 // authenticated in src/store/analytical/NN_*.sql (serve/endpoint_manifest.py).
@@ -89,6 +89,7 @@ export const ENDPOINT_NAMES: string[] = [
   "quotes",
   "reference_rate",
   "research_universe",
+  "risk_decompose",
   "rj_listed_documents",
   "screen_captive_vehicles",
   "screen_delinquency_drivers",
@@ -4536,6 +4537,52 @@ export const CONTRACT: Record<string, ContractEntry> = {
     "inputSchema": {
       "type": "object",
       "properties": {},
+      "additionalProperties": false
+    }
+  },
+  "risk_decompose": {
+    "kind": "rpc",
+    "path": "/rpc/risk_decompose",
+    "description": "Where the daily return variance of one B3 share or unit lives, over a window: market (IBOV), sector (a B3 sector index, made orthogonal to IBOV) and residual (the part specific to the stock). One row. market_share, sector_share and residual_share add to 1; vol_* are annualized volatilities; beta_market, beta_sector, gamma (the sector index's beta to IBOV) and hedge ratios per R$ 1 long (hedge_ibov = -(beta_market - beta_sector x gamma), hedge_sector = -beta_sector). The ex_shock_* columns are the same split without the shock sessions (shock_dates: |IBOV return - median| > 4 x 1.4826 x MAD), NULL when there is none; shock_sensitive when a share moves more than 0.10. Method: OLS cascade on daily simple returns computed from the inner join of the stock's close_total_return (dividends reinvested) and the total-return index levels on trade_date, so every series spans the same sessions. Sessions with no total return are dropped and counted (null_reasons); above 10% of the window the stock leg is close_adj for the whole window (stock_series price_only, no dividends). Sector leg (p_sector NULL): SILO's map from today's CVM setor: IFNC banks and insurers, IMAT steel, mining, pulp, petrochemicals and packaging, IEEX electric power, UTIL sanitation and gas, IMOB construction, ICON retail, food, beverages, textiles, education, travel and leisure; any other setor has no sector leg (two parts, flag no_sector_index). The map is not index membership. p_sector = an index code held other than IBOV, or none. Window: p_to defaults to today (moved to the last IBOV session), p_from to 252 returns back, clamped to the ticker's first session (flag window_clamped); more than 1000 sessions RAISES 22023. Fewer than 120 returns: status insufficient_sample, the split columns NULL. illiquid when no-trade sessions or zero returns exceed 5% of the window (stale prices bias betas to 0; beta_dimson is the check). Realized and historical only, not investment advice. Refusals from quote_history (unknown_ticker, ...) pass through.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_ticker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_sector": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_ticker"
+      ],
       "additionalProperties": false
     }
   },

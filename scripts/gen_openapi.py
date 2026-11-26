@@ -689,7 +689,7 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(macro_series|ptax|ptax_daily)$"), "Macro"),
     (re.compile(r"^(company_events|rj_listed_documents|dividends)$"), "Company events"),
     (re.compile(r"^(future_curve|future_series|curve|curve_history|di_settlement|reference_rate|treasury_direct)$"), "Rates"),
-    (re.compile(r"^(research_universe|index_history)$"), "Research"),
+    (re.compile(r"^(research_universe|index_history|risk_decompose)$"), "Research"),
     (re.compile(r"^portfolio_"), "Portfolio"),
     (re.compile(r"^screen_"), "Screens"),
     (re.compile(r"^(short_interest|short_interest_by_sector|investor_flow)$"), "Short interest & flows"),

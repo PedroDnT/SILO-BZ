@@ -61,6 +61,12 @@ const REQUIRED = [
 // apply_schema.py, analytical views with apply_analytical.sh, and naming the
 // wrong one sends whoever reads this log down the wrong path.
 const REQUIRED_AFTER_MIGRATION = [
+  // /risk reads the per-member split the analytical layer builds.
+  {
+    relation: 'mv_risk_decompose_ibov', column: null,
+    source: 'src/store/analytical/44_api_risk_decompose.sql',
+    fix: 'bash scripts/apply_analytical.sh',
+  },
   {
     relation: 'cvm_fii_imovel', column: null,
     source: 'src/store/migrations/15_fii_trimestral_members.sql',
