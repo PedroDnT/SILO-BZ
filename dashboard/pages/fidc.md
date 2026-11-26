@@ -1,7 +1,7 @@
 ---
 title: FIDC Credit Monitor
 hide_title: true
-sidebar_position: 9
+sidebar_position: 10
 ---
 
 <!--

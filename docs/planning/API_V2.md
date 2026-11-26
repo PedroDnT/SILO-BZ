@@ -209,7 +209,8 @@ Notes:
 - `prices`, as built (#1055): `history` calls `quote_history` (`adjust=split`
   selects `close_adj`, `none` the raw `close`; `fields=core` adds `isin`),
   `latest` calls `quote_latest`, `index` calls `index_history`, `forward`
-  calls `trade_consolidated_history`. `session` is one GET on a view:
+  calls `trade_consolidated_history`, `risk` calls `risk_decompose` (one row;
+  hidden `sector`, 12-month window). `session` is one GET on a view:
   `asset_class=all` reads `quotes` (standard lot); each other class reads its
   own view (`equities`, `bdrs`, `units`, `fund_quotas`, `cash_securities`,
   `auctions`) so no column and no odd or block lot is lost. Its hidden `date`
@@ -524,7 +525,7 @@ The children of #1052 are the authoritative order.
 | New | Replaces |
 | --- | --- |
 | `search` | `lookup`, `search_funds`, `research_universe` |
-| `prices` | `quote_history`, `quote_latest`, `quotes`, `equities`, `bdrs`, `units`, `fund_quotas`, `cash_securities`, `auctions`, `index_history`, `trade_consolidated_history` |
+| `prices` | `quote_history`, `quote_latest`, `quotes`, `equities`, `bdrs`, `units`, `fund_quotas`, `cash_securities`, `auctions`, `index_history`, `trade_consolidated_history`, `risk_decompose` |
 | `statements` | `financials`, `income_statements`, `balance_sheets`, `cash_flow_statements`, `company_financials`, `financial_statement_history` |
 | `funds` | `funds`, `fund_profile`, `fund_nav`, `fund_holdings`, `fund_debentures`, `fii_property_history` |
 | `fidc` | `fidc_portfolio`, `fidc_tranches`, `fidc_aging`, `fidc_cedentes`, `fidc_sacados` |

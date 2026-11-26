@@ -257,6 +257,8 @@ exists as data.
 
 - Fabricate a last close, a filled month, or a ticker↔CNPJ join.
 - Serve Pearson / rank / spread over HTTP so agents stop at those four answers.
+  One exception, by the owner's decision of 2026-11-26: `api.risk_decompose`,
+  one fixed method with every input in its row (`docs/reference/API.md`).
 - Expose `cvm_ingest_log`, `b3_cotahist` (options tape), or Portuguese landing
   columns as the user API.
 - Mix ingest triggers with the read API (the old ingest Flask is deleted).

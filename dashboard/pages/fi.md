@@ -1,7 +1,7 @@
 ---
 title: FI Industry
 hide_title: true
-sidebar_position: 8
+sidebar_position: 9
 ---
 
 <!--

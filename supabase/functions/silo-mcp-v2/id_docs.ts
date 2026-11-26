@@ -20,6 +20,7 @@ export const ID_DOCS: Record<string, string> = {
   "quote_latest.p_ticker": "a B3 ticker (PETR4)",
   "quotes.ticker": "a B3 ticker (none: every ticker of the session)",
   "index_history.p_index": "a B3 index code (IBOV, IFIX, ...)",
+  "risk_decompose.p_ticker": "a B3 share or unit ticker (ITUB4)",
   "trade_consolidated_history.p_ticker": "a B3 FORWARD-segment ticker",
   "financials.p_id": "a listed company's ticker, 14-digit CNPJ or CVM code",
   "income_statements.p_id": "a listed company's ticker, 14-digit CNPJ or CVM code",

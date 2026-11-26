@@ -185,7 +185,7 @@
         "tags": [
           "Markets and macro"
         ],
-        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nWhat did it trade at? Daily history (split-adjusted by default), latest quote, sessions, indices, B3 FORWARD prints.\n\nExample: `/v2/prices?id=PETR4`\n\nKinds:\n\n- `history`: api.quote_history: one ticker, oldest first, 1 year to the latest session by default, paged with the function's p_after cursor. With no id: the research universe (the tickers held).\n- `latest`: api.quote_latest: the ticker's newest session (raw, adjusted false). With no id: the research universe.\n- `session`: One session's quotes from one price view (raw, adjusted false). Paged with order + limit + offset; the default session is pinned in the cursor.\n- `index`: api.index_history: one B3 index code (IBOV, IFIX, ...), levels as published (total-return indices, not adjusted). With no id the SQL refusal names the codes held.\n- `forward`: api.trade_consolidated_history: one FORWARD-segment ticker; last_price is the close, ref_price is never a trade.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\n`GET /v2/prices?help` describes the main parameters, `?help=all` adds the hidden ones.",
+        "description": "<Warning>Deployed preview. The v2 gateway is live; v1 remains available.</Warning>\n\nWhat did it trade at? Daily history (split-adjusted by default), latest quote, sessions, indices, B3 FORWARD prints, and the risk split of a share.\n\nExample: `/v2/prices?id=PETR4`\n\nKinds:\n\n- `history`: api.quote_history: one ticker, oldest first, 1 year to the latest session by default, paged with the function's p_after cursor. With no id: the research universe (the tickers held).\n- `latest`: api.quote_latest: the ticker's newest session (raw, adjusted false). With no id: the research universe.\n- `session`: One session's quotes from one price view (raw, adjusted false). Paged with order + limit + offset; the default session is pinned in the cursor.\n- `index`: api.index_history: one B3 index code (IBOV, IFIX, ...), levels as published (total-return indices, not adjusted). With no id the SQL refusal names the codes held.\n- `forward`: api.trade_consolidated_history: one FORWARD-segment ticker; last_price is the close, ref_price is never a trade.\n- `risk`: api.risk_decompose: one row for one share or unit. market_share, sector_share and residual_share of the daily return variance add to 1; betas, gamma (the sector index's beta to IBOV), hedge ratios per R$ 1 long, annualized volatilities, and the same split without shock sessions (ex_shock_*). OLS cascade on daily simple returns from the joined total-return levels. The window is from..to (default 12 months); at most 1000 sessions. Realized and historical only, not advice.\n\nWith no `from`, a dated kind reads the last 12 months to `to`.\n\n`GET /v2/prices?help` describes the main parameters, `?help=all` adds the hidden ones.",
         "x-mint": {
           "href": "/api-docs/v2/reference/prices"
         },
@@ -194,7 +194,7 @@
             "name": "kind",
             "in": "query",
             "required": false,
-            "description": "history: one ticker's daily series. latest: its newest session. session: every quote of one session (the seven price views in one). index: a B3 index's daily levels. forward: B3 FORWARD-segment prints (fixed-income ETFs COTAHIST does not carry). Default: history.",
+            "description": "history: one ticker's daily series. latest: its newest session. session: every quote of one session (the seven price views in one). index: a B3 index's daily levels. forward: B3 FORWARD-segment prints (fixed-income ETFs COTAHIST does not carry). risk: one share's daily return variance split into IBOV, a sector index and the residual, one row (realized, not advice). Default: history.",
             "schema": {
               "type": "string",
               "enum": [
@@ -202,7 +202,8 @@
                 "latest",
                 "session",
                 "index",
-                "forward"
+                "forward",
+                "risk"
               ],
               "default": "history"
             }
@@ -239,7 +240,7 @@
             "name": "id",
             "in": "query",
             "required": false,
-            "description": "By kind: history, latest take a B3 ticker (PETR4); session takes a B3 ticker (none: every ticker of the session); index takes a B3 index code (IBOV, IFIX, ...); forward takes a B3 FORWARD-segment ticker. With no id, kinds history, latest read api.research_universe (what SILO holds). Default: none.",
+            "description": "By kind: history, latest take a B3 ticker (PETR4); session takes a B3 ticker (none: every ticker of the session); index takes a B3 index code (IBOV, IFIX, ...); forward takes a B3 FORWARD-segment ticker; risk takes a B3 share or unit ticker (ITUB4). Required for kind risk. With no id, kinds history, latest read api.research_universe (what SILO holds). Default: none.",
             "schema": {
               "type": "string"
             },
@@ -334,6 +335,15 @@
             "schema": {
               "type": "string",
               "format": "date"
+            }
+          },
+          {
+            "name": "sector",
+            "in": "query",
+            "required": false,
+            "description": "Hidden parameter (`?help=all` lists it). kind risk. none (market and residual only), or a B3 index code other than IBOV: IFNC, IMAT, IEEX, UTIL, IMOB, ICON, IBXX, IBXL, SMLL, IDIV. Default: SILO's map from the company's CVM setor to a B3 sector index; a setor with no index gets no sector leg.",
+            "schema": {
+              "type": "string"
             }
           }
         ],

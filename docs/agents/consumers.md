@@ -5,9 +5,9 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 `@evidence-dev/postgres` and only read — never write.
 
 - **`dashboard/`** — fund **and market** analytics at
-  [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/), 22
+  [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/), 23
   pages. Industry and backdrop: Overview (`/`), Industry Structure (`/industry`),
-  Macro Context (`/macro`), Rates and Curves (`/rates`), B3 Markets (`/markets`), B3 Options (`/options`),
+  Macro Context (`/macro`), Rates and Curves (`/rates`), B3 Markets (`/markets`), B3 Options (`/options`), Risk Decomposition (`/risk`),
   Short Monitor (`/short`), Follow the Money (`/flows`). By asset class: FI (`/fi`), FIDC Credit Monitor
   (`/fidc`), FII Market (`/fii`), Securitization (`/securit`), ETF (`/etf`).
   Granular: Managers (`/managers`), Fund Explorer (`/fund`), Fund Holdings

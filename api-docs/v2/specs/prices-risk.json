@@ -1,0 +1,342 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SILO API v2 (deployed preview)",
+    "version": "v2",
+    "description": "The v2 gateway over SILO's schema `api`: 14 resources, five shared parameters, one envelope and one error object. Generated from supabase/functions/silo-api/registry.ts by scripts/gen_openapi_v2.py; do not edit by hand. Deployed preview. The v2 gateway is live; v1 remains available."
+  },
+  "servers": [
+    {
+      "url": "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-api/v2",
+      "description": "The silo-api Edge Function (deployed preview)."
+    }
+  ],
+  "security": [
+    {},
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Discovery"
+    },
+    {
+      "name": "Markets and macro"
+    },
+    {
+      "name": "Companies and funds"
+    },
+    {
+      "name": "Research"
+    }
+  ],
+  "paths": {
+    "/prices/risk": {
+      "get": {
+        "operationId": "v2_prices_risk",
+        "summary": "Risk decomposition",
+        "tags": [
+          "Markets and macro"
+        ],
+        "description": "Split one share's daily return variance into the Ibovespa, a B3 sector index made orthogonal to it, and the residual specific to the stock. One row with the three shares (they add to 1), betas, hedge ratios per R$ 1 long, annualized volatilities and the same split without shock sessions. Realized and historical only, not investment advice.",
+        "x-mint": {
+          "href": "/api-docs/v2/operations/prices/risk"
+        },
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "query",
+            "required": true,
+            "description": "Trading symbol of a share or unit.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "ITUB4"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End date (YYYY-MM-DD).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "sector",
+            "in": "query",
+            "required": false,
+            "description": "Sector leg: none, or a B3 index code other than IBOV. Omit to use the map from the company's CVM sector.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, subject to your tier.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Cursor from the next page URL.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "description": "Optional Bearer token for signed-in or Pro access.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "details",
+            "in": "query",
+            "required": false,
+            "description": "Include request diagnostics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The v2 envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                "example": {
+                  "data": [
+                    {
+                      "ticker": "ITUB4",
+                      "status": "ok",
+                      "window_from": "2025-11-18",
+                      "window_to": "2026-11-25",
+                      "n_returns": 251,
+                      "stock_series": "total_return",
+                      "sector_leg": "IFNC",
+                      "sector_leg_basis": "cvm_setor_map",
+                      "market_share": 0.799814,
+                      "sector_share": 0.052996,
+                      "residual_share": 0.14719,
+                      "vol_total": 0.308641,
+                      "vol_market": 0.276025,
+                      "vol_sector": 0.071052,
+                      "vol_residual": 0.118411,
+                      "beta_market": 1.131368,
+                      "beta_sector": 0.664317,
+                      "gamma": 1.453225,
+                      "hedge_ibov": -0.165966,
+                      "hedge_sector": -0.664317,
+                      "ex_shock_n_returns": 248,
+                      "ex_shock_market_share": 0.711204,
+                      "ex_shock_sector_share": 0.106974,
+                      "ex_shock_residual_share": 0.181823,
+                      "shock_dates": [
+                        "2025-12-05",
+                        "2026-10-05",
+                        "2026-10-26"
+                      ],
+                      "shock_sensitive": false
+                    }
+                  ],
+                  "meta": {
+                    "tier": "pro"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "The v2 error object. A SILO refusal (over_limit) keeps its message, hint and details verbatim.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SILO user access token for authenticated data requests."
+      }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {},
+            "description": "Always a list. Rows as the endpoint returned them; null stays null."
+          },
+          "meta": {
+            "type": "object",
+            "required": [
+              "tier"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "The canonical request to cite: /v2/<resource>? with every applied parameter, defaults included, so it replays the same rows. POST says so; its lists are in meta.body."
+              },
+              "data_through": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date",
+                "description": "The newest elapsed period SILO holds for the dataset this endpoint reads (the coverage resource's data_through for coverage_dataset). Null when no coverage row applies or the coverage read failed; never a guess."
+              },
+              "coverage_dataset": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The coverage dataset data_through comes from; null when none applies."
+              },
+              "data_through_error": {
+                "type": "string",
+                "description": "Present only when the coverage read failed: why data_through is null. The rows are unaffected."
+              },
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "anonymous",
+                  "signed_in",
+                  "pro"
+                ]
+              },
+              "tier_cap_reached": {
+                "type": "boolean",
+                "description": "True when the result is partial because of the tier cap."
+              }
+            },
+            "additionalProperties": true
+          },
+          "next_page_url": {
+            "type": "string",
+            "description": "Present only when more rows remain. It carries one opaque cursor."
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "reason",
+              "message",
+              "target",
+              "innererror"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "bad_request",
+                  "unknown_parameter",
+                  "unknown_id",
+                  "unauthorized",
+                  "forbidden_for_tier",
+                  "over_limit",
+                  "rate_limited",
+                  "timeout",
+                  "unavailable",
+                  "internal"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "row_cap",
+                  "tier_cap",
+                  null
+                ],
+                "description": "over_limit only: row_cap (over one 1,000-row page: narrow or page) or tier_cap (over the tier ceiling: narrow or sign in). Null otherwise."
+              },
+              "message": {
+                "type": "string"
+              },
+              "target": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "innererror": {
+                "type": "object",
+                "properties": {
+                  "sqlstate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "hint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "details": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

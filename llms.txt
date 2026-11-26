@@ -36,6 +36,7 @@ The REST API and MCP v2 are live in preview. Anonymous data calls need no key. T
 - [Market session](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/session.md): `GET /prices/session`.
 - [Index history](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/index.md): `GET /prices/index`.
 - [Forward prices](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/forward.md): `GET /prices/forward`.
+- [Risk decomposition](https://octo-98895abd.mintlify.site/api-docs/v2/operations/prices/risk.md): `GET /prices/risk`.
 - [As-filed line items](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/all.md): `GET /statements/all`.
 - [Income statements](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/income.md): `GET /statements/income`.
 - [Balance sheets](https://octo-98895abd.mintlify.site/api-docs/v2/operations/statements/balance.md): `GET /statements/balance`.

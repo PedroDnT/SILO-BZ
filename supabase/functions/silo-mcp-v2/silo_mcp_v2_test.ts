@@ -323,7 +323,7 @@ Deno.test("MCP: tools/list returns the 14 tools, read-only, with their enums and
   for (const t of tools) assertEquals(t.annotations?.readOnlyHint, true, t.name);
   const prices = tools.find((t) => t.name === "silo_prices")!;
   assertEquals(prices.inputSchema.properties.adjust.default, "split");
-  assertEquals(prices.inputSchema.properties.kind.enum, ["history", "latest", "session", "index", "forward"]);
+  assertEquals(prices.inputSchema.properties.kind.enum, ["history", "latest", "session", "index", "forward", "risk"]);
   assert("options" in prices.inputSchema.properties);
 });
 

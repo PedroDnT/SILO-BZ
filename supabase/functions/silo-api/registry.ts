@@ -283,7 +283,7 @@ export const REGISTRY: Registry = {
     {
       "name": "prices",
       "status": "built",
-      "summary": "What did it trade at? Daily history (split-adjusted by default), latest quote, sessions, indices, B3 FORWARD prints.",
+      "summary": "What did it trade at? Daily history (split-adjusted by default), latest quote, sessions, indices, B3 FORWARD prints, and the risk split of a share.",
       "example": "/v2/prices?id=PETR4",
       "shared": ["id", "from", "to", "limit"],
       "window_months": 12,
@@ -292,9 +292,9 @@ export const REGISTRY: Registry = {
           "name": "kind",
           "visibility": "main",
           "type": "enum",
-          "values": ["history", "latest", "session", "index", "forward"],
+          "values": ["history", "latest", "session", "index", "forward", "risk"],
           "default": "history",
-          "doc": "history: one ticker's daily series. latest: its newest session. session: every quote of one session (the seven price views in one). index: a B3 index's daily levels. forward: B3 FORWARD-segment prints (fixed-income ETFs COTAHIST does not carry)."
+          "doc": "history: one ticker's daily series. latest: its newest session. session: every quote of one session (the seven price views in one). index: a B3 index's daily levels. forward: B3 FORWARD-segment prints (fixed-income ETFs COTAHIST does not carry). risk: one share's daily return variance split into IBOV, a sector index and the residual, one row (realized, not advice)."
         },
         {
           "name": "freq",
@@ -343,6 +343,14 @@ export const REGISTRY: Registry = {
           "default": null,
           "default_doc": "the latest session in the 14 days to today that matches the other filters",
           "doc": "kind session. The session date, YYYY-MM-DD."
+        },
+        {
+          "name": "sector",
+          "visibility": "hidden",
+          "type": "string",
+          "default": null,
+          "default_doc": "SILO's map from the company's CVM setor to a B3 sector index; a setor with no index gets no sector leg",
+          "doc": "kind risk. none (market and residual only), or a B3 index code other than IBOV: IFNC, IMAT, IEEX, UTIL, IMOB, ICON, IBXX, IBXL, SMLL, IDIV."
         }
       ],
       "kinds": {
@@ -391,6 +399,14 @@ export const REGISTRY: Registry = {
           "args": { "id": "p_ticker", "from": "p_from", "to": "p_to" },
           "filters": [{ "parameter": "freq", "op": "month_last", "column": "trade_date", "all": "day" }],
           "uses": ["fields"]
+        },
+        "risk": {
+          "doc": "api.risk_decompose: one row for one share or unit. market_share, sector_share and residual_share of the daily return variance add to 1; betas, gamma (the sector index's beta to IBOV), hedge ratios per R$ 1 long, annualized volatilities, and the same split without shock sessions (ex_shock_*). OLS cascade on daily simple returns from the joined total-return levels. The window is from..to (default 12 months); at most 1000 sessions. Realized and historical only, not advice.",
+          "endpoint": "risk_decompose",
+          "paging": { "method": "single_page", "reason": "api.risk_decompose returns one row" },
+          "window_months": 12,
+          "args": { "id": "p_ticker", "from": "p_from", "to": "p_to", "sector": "p_sector" },
+          "require_one_of": ["id"]
         }
       }
     },
